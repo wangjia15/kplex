@@ -111,6 +111,12 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
     forceRender((x) => x + 1);
   };
 
+  const toggleConnectorStyle = async () => {
+    plugin.settings.connectorStyle = plugin.settings.connectorStyle === "straight" ? "bezier" : "straight";
+    await plugin.saveSettings(false);
+    forceRender((x) => x + 1);
+  };
+
   if (!page) return <div className="excalibrain-app excalibrain-empty">Building K-Plex index…</div>;
 
   const linked = plugin.isDocumentLeafLinked();
@@ -154,6 +160,12 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
             title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each thought’s children"}
             on={plugin.settings.graphDepth === 2}
             onClick={() => void toggleExpandedView()}
+          />
+          <ToolButton
+            icon="spline"
+            title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"}
+            on={plugin.settings.connectorStyle === "bezier"}
+            onClick={() => void toggleConnectorStyle()}
           />
           <span className="excalibrain-toolbar-divider" />
           <ToolButton icon="settings" title="Open K-Plex settings" onClick={() => plugin.openSettings()} />

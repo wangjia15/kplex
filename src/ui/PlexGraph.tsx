@@ -5,7 +5,7 @@ import type { ExcaliBrainSettings } from "../settings";
 import type { GateRole, GateSide, GraphPage, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
 import { LinkDirection } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
-import { buildScene, effectiveLabelLimit, gateDiameter, type ZoneViewport } from "./layout";
+import { buildScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
 
@@ -222,6 +222,8 @@ function buildZoneDisplayLayout(
   nodes: PositionedNode[],
   filter: string,
   settings: ExcaliBrainSettings,
+  index: GraphIndex,
+  centerPath: string,
 ): ZoneDisplayLayout {
   const filtering = filter.trim().length > 0;
   const filtered = filtering ? nodes.filter((node) => matchesZoneFilter(node, filter)) : nodes;
@@ -255,7 +257,8 @@ function buildZoneDisplayLayout(
         localPositions.set(node.page.path, { x: x + node.width / 2, y: y + rowHeight / 2 });
         x += node.width + columnGap;
       }
-      y += rowHeight + rowGap;
+      const rowReserve = Math.max(0, ...row.map((node) => expandedChildReserve(node.page, index, settings, centerPath)));
+      y += rowHeight + rowReserve + rowGap;
     }
     const contentHeight = Math.max(panel.height, Math.max(topPadding + bottomPadding, y - (filtered.length ? rowGap : 0) + bottomPadding));
     return { nodes: filtered, localPositions, contentHeight, count: filtered.length, filtering };
@@ -265,7 +268,7 @@ function buildZoneDisplayLayout(
   let y = topPadding;
   for (const node of filtered) {
     localPositions.set(node.page.path, { x: node.x - panel.left, y: y + node.height / 2 });
-    y += node.height + gap;
+    y += node.height + expandedChildReserve(node.page, index, settings, centerPath) + gap;
   }
   const contentHeight = Math.max(panel.height, Math.max(topPadding + bottomPadding, y - (filtered.length ? gap : 0) + bottomPadding));
   return { nodes: filtered, localPositions, contentHeight, count: filtered.length, filtering };
@@ -375,6 +378,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
   const zoneScrollRefs = useRef<Partial<Record<ScrollZone, HTMLDivElement>>>({});
   const [camera, setCamera] = useState({ x: 0, y: 0, scale: 1 });
   const [hover, setHover] = useState<HoverState>(null);
+  const hoverIntentTimer = useRef<number | null>(null);
   const [zoneScrollTop, setZoneScrollTop] = useState<ScrollValues>({ ...EMPTY_SCROLLS });
   const [zoneFilterOpen, setZoneFilterOpen] = useState<ZoneBooleanMap>({});
   const [zoneFilters, setZoneFilters] = useState<ZoneStringMap>({});
@@ -385,6 +389,20 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
   const panDrag = useRef<{ pointerId: number; button: number; x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
   const suppressActivateUntil = useRef(0);
   const layoutSaveTimer = useRef<number | null>(null);
+
+  const clearHoverIntent = (clearActive = false) => {
+    if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
+    hoverIntentTimer.current = null;
+    if (clearActive) setHover(null);
+  };
+
+  const scheduleHoverIntent = (next: Exclude<HoverState, null>) => {
+    clearHoverIntent(false);
+    hoverIntentTimer.current = window.setTimeout(() => {
+      hoverIntentTimer.current = null;
+      setHover(next);
+    }, 2000);
+  };
   const sceneLayoutKey = [
     activePath,
     scene.nodes.map((node) => `${node.role}:${node.page.path}`).join("|"),
@@ -458,7 +476,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     setZoneFilterOpen({});
     setZoneFilters({});
     setExpandedScrollTop({});
-    setHover(null);
+    clearHoverIntent(true);
     setConnectDrag(null);
     setNodeDrag(null);
     panDrag.current = null;
@@ -491,7 +509,10 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       const target = e.target as Element | null;
+      // Native wheel scrolling is retained only inside bounded thought lists. Everywhere else
+      // the wheel zooms, regardless of whether the wheel/middle button is currently pressed.
       if (target?.closest?.(".kplex-zone-scroll, .kplex-expanded-scroll, .modal-container")) return;
+      e.preventDefault();
       const rect = el.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
@@ -500,16 +521,27 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
         const nextScale = Math.max(0.3, Math.min(MAX_ZOOM, c.scale * factor));
         const worldX = (px - c.x) / c.scale;
         const worldY = (py - c.y) / c.scale;
-        return { scale: nextScale, x: px - worldX * nextScale, y: py - worldY * nextScale };
+        const next = { scale: nextScale, x: px - worldX * nextScale, y: py - worldY * nextScale };
+        // If the middle/left/right pan gesture is also active, reset its anchor to the newly
+        // zoomed camera so the next pointermove cannot snap back to the pre-zoom position.
+        const drag = panDrag.current;
+        if (drag) {
+          drag.x = e.clientX;
+          drag.y = e.clientY;
+          drag.cx = next.x;
+          drag.cy = next.y;
+        }
+        return next;
       });
     };
-    el.addEventListener("wheel", wheel, { passive: true });
+    el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
   }, []);
 
   useEffect(() => () => {
     if (layoutSaveTimer.current !== null) window.clearTimeout(layoutSaveTimer.current);
     if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
+    if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
   }, []);
 
   const scheduleLayoutSave = () => {
@@ -526,7 +558,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
       const panel = scene.zoneViewports[zone];
       if (!panel) continue;
       const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone);
-      layouts[zone] = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings);
+      layouts[zone] = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings, index, neighborhood?.center.path ?? activePath);
     }
     return layouts;
   }, [scene.nodes, scene.zoneViewports, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision]);
@@ -698,6 +730,11 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     const origin = index.get(connectDrag.originPath);
     if (!origin) return new Set<string>();
     const blocked = index.gateNeighbourPaths(origin, connectDrag.gate);
+    // Folder and tag thoughts can be navigated and can become the center thought, but they are
+    // structural nodes rather than writable relationship endpoints. Never offer drag-linking to them.
+    for (const node of scene.nodes) {
+      if (node.page.isFolder || node.page.isTag) blocked.add(node.page.path);
+    }
     if (!origin.file || origin.file.extension !== "md") {
       for (const node of scene.nodes) if (!node.page.file || node.page.file.extension !== "md") blocked.add(node.page.path);
     }
@@ -717,18 +754,21 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
   }, [connectDrag, visibleEdges]);
 
   const startGateDrag = (node: PositionedNode, gate: GateSide, event: PointerEvent<HTMLSpanElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || node.page.isFolder || node.page.isTag) return;
     event.preventDefault();
     event.stopPropagation();
+    clearHoverIntent(false);
     setHover({ kind: "gate", path: node.page.path, gate });
     setConnectDrag({ originPath: node.page.path, gate, pointerId: event.pointerId, current: toWorld(event.clientX, event.clientY) });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const startNodeDrag = (node: PositionedNode, event: PointerEvent<HTMLDivElement>) => {
-    // Left-drag keeps the relationship-moving gesture. Middle/right drags bubble to the Plex
-    // so every mouse button can pan even when the pointer starts on a thought.
-    if (event.button !== 0 || !normalizedRole(node.role)) return;
+    // Left-drag keeps the relationship-moving gesture. Folder/tag relationships are structural
+    // and are intentionally not editable through drag-relinking. Middle/right drags bubble to
+    // the Plex so every mouse button can pan even when the pointer starts on a thought.
+    if (event.button !== 0 || !normalizedRole(node.role) || node.page.isFolder || node.page.isTag || neighborhood?.center.isFolder || neighborhood?.center.isTag) return;
+    clearHoverIntent(true);
     event.stopPropagation();
     const world = toWorld(event.clientX, event.clientY);
     const displayed = renderedNodeMap.get(node.page.path) ?? node;
@@ -799,27 +839,28 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
       const semanticRole = targetGate
         ? plugin.inverseGateRole(semanticRoleForGate(targetGate))
         : semanticRoleForGate(drag.gate);
+      const disabledTarget = Boolean(target?.isFolder || target?.isTag);
       const fixedTarget = target && target.path !== drag.originPath && !connectBlockedPaths.has(target.path) ? target : undefined;
       setConnectDrag(null);
-      setHover(null);
+      clearHoverIntent(true);
       suppressActivateUntil.current = Date.now() + 180;
-      if (origin) {
+      if (origin && !disabledTarget) {
         plugin.openRelationModal({
           mode: "create",
           origin,
           semanticRole,
           fixedTarget,
-          onCommitted: () => setHover(null),
+          onCommitted: () => clearHoverIntent(true),
         });
       }
       return;
     }
     if (nodeDrag && e.pointerId === nodeDrag.pointerId) {
       const drag = nodeDrag;
+      const original = scene.nodes.find((node) => node.page.path === drag.path);
       if (drag.moved) {
         suppressActivateUntil.current = Date.now() + 220;
         const draggedNode = renderedNodeMap.get(drag.path);
-        const original = scene.nodes.find((node) => node.page.path === drag.path);
         const center = neighborhood?.center;
         if (draggedNode && original && center) {
           const nextRole = semanticRoleForPosition({ x: draggedNode.x, y: draggedNode.y });
@@ -831,10 +872,15 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
               fixedTarget: original.page,
               existingDirection: original.linkDirection,
               semanticRole: nextRole,
-              onCommitted: () => setHover(null),
+              onCommitted: () => clearHoverIntent(true),
             });
           }
         }
+      } else if (original) {
+        // Starting a potential relationship-relink drag uses pointer capture. Some Chromium/React
+        // combinations then suppress the synthetic click, so make a tap explicitly navigate.
+        suppressActivateUntil.current = Date.now() + 180;
+        onActivate(original.page);
       }
       setNodeDrag(null);
       return;
@@ -845,7 +891,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
   const cancel = (e: PointerEvent<HTMLDivElement>) => {
     if (connectDrag?.pointerId === e.pointerId) {
       setConnectDrag(null);
-      setHover(null);
+      clearHoverIntent(true);
     }
     if (nodeDrag?.pointerId === e.pointerId) setNodeDrag(null);
     if (panDrag.current?.pointerId === e.pointerId) panDrag.current = null;
@@ -877,10 +923,10 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
       dragging={nodeDrag?.path === baseNode.page.path}
       connectionState={connectionStateFor(baseNode)}
       onActivate={() => { if (Date.now() >= suppressActivateUntil.current) onActivate(baseNode.page); }}
-      onOpen={() => { if (Date.now() >= suppressActivateUntil.current) onOpen(baseNode.page); }}
-      onHoverNode={() => { if (!connectDrag && !nodeDrag) setHover({ kind: "node", path: baseNode.page.path }); }}
-      onHoverGate={(_, gate) => { if (!connectDrag && !nodeDrag) setHover({ kind: "gate", path: baseNode.page.path, gate }); }}
-      onHoverEnd={() => { if (!connectDrag && !nodeDrag) setHover(null); }}
+      onOpen={() => onOpen(baseNode.page)}
+      onHoverNode={() => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "node", path: baseNode.page.path }); }}
+      onHoverGate={(_, gate) => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "gate", path: baseNode.page.path, gate }); }}
+      onHoverEnd={() => { if (!connectDrag && !nodeDrag) clearHoverIntent(true); }}
       onHoverPreview={(_, targetEl, event) => {
         if (!connectDrag && !nodeDrag) plugin.triggerHoverPreview(baseNode.page, targetEl, event, neighborhood.center.file?.path ?? "");
       }}
@@ -902,7 +948,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
   const renderScrollZone = (zone: ScrollZone, panel: ZoneViewport) => {
     const allNodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone && nodeDrag?.path !== node.page.path);
     const filter = zoneFilters[zone] ?? "";
-    const layout = zoneDisplayLayouts[zone] ?? buildZoneDisplayLayout(zone, panel, allNodes, filter, settings);
+    const layout = zoneDisplayLayouts[zone] ?? buildZoneDisplayLayout(zone, panel, allNodes, filter, settings, index, neighborhood?.center.path ?? activePath);
     const displayedNodes = layout.nodes.filter((node) => nodeDrag?.path !== node.page.path);
     return <div
       key={zone}
@@ -1007,7 +1053,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
                 expandedPreviewTimer.current = window.setTimeout(() => {
                   expandedPreviewTimer.current = null;
                   plugin.triggerHoverPreview(child.relation.page, target, nativeEvent, neighborhood?.center.file?.path ?? "");
-                }, 1000);
+                }, 3000);
               }}
               onPointerLeave={() => {
                 if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
@@ -1058,8 +1104,8 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
           labelBackground={alphaHexToCss(settings.backgroundColor, "#0c3e6a")}
           highlighted={!connectDrag && interaction.edgeIds.has(edge.id)}
           dimmed={connectDrag ? connectBlockedEdgeIds.has(edge.id) : hover !== null && !interaction.edgeIds.has(edge.id)}
-          onHover={() => { if (!connectDrag && !nodeDrag) setHover({ kind: "edge", id: edge.id }); }}
-          onLeave={() => { if (!connectDrag && !nodeDrag) setHover(null); }}
+          onHover={() => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "edge", id: edge.id }); }}
+          onLeave={() => { if (!connectDrag && !nodeDrag) clearHoverIntent(true); }}
         />)}
         {expandedConnectors.map((connector) => <path
           key={`expanded-edge:${connector.key}`}

@@ -34,6 +34,12 @@ const DEFAULT_RELATION = (): Omit<Relation, "target"> => ({
 });
 
 type FieldCacheEntry = { mtime: number; meta: ParsedFileMetadata; content: string };
+type SearchEntry = {
+  page: GraphPage;
+  name: string;
+  aliases: string[];
+  path: string;
+};
 
 type RelationVector = {
   pi: boolean; pd: boolean; ci: boolean; cd: boolean;
@@ -69,6 +75,7 @@ export class GraphIndex {
   private generation = 0;
   private building = false;
   private rebuildQueued = false;
+  private searchEntries: SearchEntry[] = [];
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {}
 
@@ -100,6 +107,7 @@ export class GraphIndex {
       this.addUnresolvedLinks();
       await this.enrichMarkdownPages(run);
       if (run !== this.generation) return;
+      this.rebuildSearchIndex();
       this.emit();
     } finally {
       this.building = false;
@@ -108,6 +116,18 @@ export class GraphIndex {
         void this.rebuild();
       }
     }
+  }
+
+
+  private rebuildSearchIndex(): void {
+    // Search must stay responsive in very large vaults. Pre-normalize the inexpensive fields
+    // once per index rebuild instead of calling titleFor() and sorting 20k+ pages per keystroke.
+    this.searchEntries = [...this.pages.values()].map((page) => ({
+      page,
+      name: page.name.toLowerCase(),
+      aliases: page.aliases.map((alias) => alias.toLowerCase()),
+      path: page.path.toLowerCase(),
+    })).sort((a, b) => naturalCompare(a.page.name, b.page.name) || naturalCompare(a.page.path, b.page.path));
   }
 
   private createPage(params: Partial<GraphPage> & Pick<GraphPage, "path" | "name">): GraphPage {
@@ -651,14 +671,38 @@ export class GraphIndex {
 
   search(query: string, limit = 40): GraphPage[] {
     const q = query.trim().toLowerCase();
-    const candidates = [...this.pages.values()].filter((page) => this.visibleTarget(page, this.plugin.settings));
-    const scored = candidates.map((page) => {
-      const title = this.titleFor(page).toLowerCase();
-      const path = page.path.toLowerCase();
-      const score = !q ? 5 : title === q ? 0 : title.startsWith(q) ? 1 : title.includes(q) ? 2 : path.includes(q) ? 3 : 99;
-      return { page, score };
-    }).filter((x) => x.score < 99)
-      .sort((a, b) => a.score - b.score || naturalCompare(this.titleFor(a.page), this.titleFor(b.page)));
-    return scored.slice(0, limit).map((x) => x.page);
+    const settings = this.plugin.settings;
+    const max = Math.max(1, limit);
+
+    if (!q) {
+      const output: GraphPage[] = [];
+      for (const entry of this.searchEntries) {
+        if (!this.visibleTarget(entry.page, settings)) continue;
+        output.push(entry.page);
+        if (output.length >= max) break;
+      }
+      return output;
+    }
+
+    // Keep four stable priority buckets instead of allocating and sorting the full vault for
+    // every keypress. This makes 20k-100k file vaults behave like a small list search.
+    const exact: GraphPage[] = [];
+    const prefix: GraphPage[] = [];
+    const contains: GraphPage[] = [];
+    const pathMatches: GraphPage[] = [];
+    const add = (bucket: GraphPage[], page: GraphPage) => { if (bucket.length < max) bucket.push(page); };
+
+    for (const entry of this.searchEntries) {
+      if (!this.visibleTarget(entry.page, settings)) continue;
+      const aliasExact = entry.aliases.some((alias) => alias === q);
+      const aliasPrefix = entry.aliases.some((alias) => alias.startsWith(q));
+      const aliasContains = entry.aliases.some((alias) => alias.includes(q));
+      if (entry.name === q || aliasExact) add(exact, entry.page);
+      else if (entry.name.startsWith(q) || aliasPrefix) add(prefix, entry.page);
+      else if (entry.name.includes(q) || aliasContains) add(contains, entry.page);
+      else if (entry.path.includes(q)) add(pathMatches, entry.page);
+    }
+
+    return [...exact, ...prefix, ...contains, ...pathMatches].slice(0, max);
   }
 }

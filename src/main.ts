@@ -15,8 +15,36 @@ export default class ExcaliBrainPlugin extends Plugin {
   private lastDocumentLeaf: WorkspaceLeaf | null = null;
   private readonly hoverParent: HoverParent = { hoverPopover: null };
 
+  private runningExcaliBrainSettings(): unknown | null {
+    // Obsidian does not currently expose the community-plugin registry as public API. The
+    // legacy ExcaliBrain plugin does expose its loaded settings on the plugin instance, so keep
+    // this guarded bridge isolated here. K-Plex has its own manifest id (k-plex), allowing both
+    // plugins to run side by side during migration.
+    type RuntimePlugin = Plugin & { settings?: unknown };
+    type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
+    const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
+    const legacy = manager?.plugins?.excalibrain;
+    if (!legacy || legacy === (this as unknown as RuntimePlugin)) return null;
+    return legacy.settings ?? null;
+  }
+
   async onload(): Promise<void> {
-    this.settings = migrateAndMergeSettings(await this.loadData());
+    const ownData = await this.loadData();
+    const ownRecord = ownData && typeof ownData === "object" ? ownData as Record<string, unknown> : null;
+    const alreadyKplex = Boolean(
+      ownRecord?.kplexInitialized ||
+      ownRecord?.connectorStyle ||
+      ownRecord?.graphDepth ||
+      ownRecord?.parentColumns ||
+      ownRecord?.childColumns ||
+      ownRecord?.noteTypeField
+    );
+    this.settings = migrateAndMergeSettings(ownData);
+    if (alreadyKplex && !ownRecord?.kplexInitialized) {
+      this.settings.kplexInitialized = true;
+      await this.saveData(this.settings);
+    }
+
     this.index = new GraphIndex(this);
 
     this.registerView(EXCALIBRAIN_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ExcaliBrainView(leaf, this));
@@ -56,8 +84,24 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
     this.app.workspace.onLayoutReady(() => {
-      this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
-      void this.rebuildIndex(false);
+      void (async () => {
+        this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
+
+        // Delay the one-time migration until layout-ready. Community plugins have normally all
+        // completed onload by then, so an enabled legacy ExcaliBrain instance is reliably visible
+        // even when it happened to load after K-Plex. Existing K-Plex data always wins.
+        if (!alreadyKplex) {
+          const legacySettings = this.runningExcaliBrainSettings();
+          if (legacySettings) {
+            this.settings = migrateAndMergeSettings(legacySettings);
+            new Notice("Imported ExcaliBrain settings into K-Plex.", 2600);
+          }
+          this.settings.kplexInitialized = true;
+          await this.saveData(this.settings);
+        }
+
+        await this.rebuildIndex(false);
+      })();
     });
   }
 
@@ -195,7 +239,17 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
     let leaf = this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)[0];
     if (!leaf) {
-      leaf = this.app.workspace.getLeaf(true);
+      if (this.settings.startInPopout) {
+        try {
+          // Public Workspace API: "window" creates a pop-out leaf on desktop.
+          leaf = this.app.workspace.getLeaf("window");
+        } catch {
+          // Graceful fallback for platforms where pop-out windows are unavailable.
+          leaf = this.app.workspace.getLeaf(true);
+        }
+      } else {
+        leaf = this.app.workspace.getLeaf(true);
+      }
       await leaf.setViewState({ type: EXCALIBRAIN_VIEW_TYPE, active: true });
     }
     await this.app.workspace.revealLeaf(leaf);

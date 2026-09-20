@@ -1,5 +1,5 @@
 import type { ExcaliBrainSettings } from "../settings";
-import type { Neighborhood, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import type { GraphPage, Neighborhood, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
 import { resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import type { GraphIndex } from "../index/GraphIndex";
 
@@ -72,6 +72,21 @@ function makeNode(
   };
 }
 
+const EXPANDED_CLUSTER_TOP_GAP = 14;
+const EXPANDED_MINI_ROW_HEIGHT = 28;
+const EXPANDED_MINI_COLUMNS = 3;
+const EXPANDED_MINI_VISIBLE_ROWS = 2;
+
+export function expandedChildReserve(page: GraphPage, index: GraphIndex, settings: ExcaliBrainSettings, centerPath: string): number {
+  if (settings.graphDepth !== 2) return 0;
+  const childCount = index.neighbours(page, "child")
+    .filter((child) => child.page.path !== centerPath)
+    .slice(0, settings.maxItemCount).length;
+  if (!childCount) return 0;
+  const visibleRows = Math.min(EXPANDED_MINI_VISIBLE_ROWS, Math.ceil(childCount / EXPANDED_MINI_COLUMNS));
+  return EXPANDED_CLUSTER_TOP_GAP + visibleRows * EXPANDED_MINI_ROW_HEIGHT;
+}
+
 function distributeGrid(
   items: Neighbour[],
   baseY: number,
@@ -82,26 +97,53 @@ function distributeGrid(
   index: GraphIndex,
   settings: ExcaliBrainSettings,
   role: Role,
+  centerPath: string,
 ): PositionedNode[] {
   const nodes = items.map((n) => makeNode(n, role, index, settings));
-  const positioned: PositionedNode[] = [];
+  if (!nodes.length) return nodes;
 
-  for (let start = 0, row = 0; start < nodes.length; start += maxColumns, row += 1) {
+  const rows: Array<{ nodes: PositionedNode[]; height: number; reserve: number }> = [];
+  for (let start = 0; start < nodes.length; start += maxColumns) {
     const rowNodes = nodes.slice(start, start + maxColumns);
-    const rowHeight = Math.max(...rowNodes.map((n) => n.height));
-    const rowWidth = rowNodes.reduce((sum, n) => sum + n.width, 0) + columnGap * Math.max(0, rowNodes.length - 1);
-    let x = -rowWidth / 2;
-    const y = baseY + rowDirection * row * (rowHeight + rowGap);
-
-    for (const node of rowNodes) {
-      node.x = x + node.width / 2;
-      node.y = y;
-      positioned.push(node);
-      x += node.width + columnGap;
-    }
+    rows.push({
+      nodes: rowNodes,
+      height: Math.max(...rowNodes.map((n) => n.height)),
+      // Expanded child strips grow downward from their parent thought. A row therefore only
+      // reserves extra height when at least one thought in that row actually has children.
+      reserve: Math.max(0, ...rowNodes.map((n) => expandedChildReserve(n.page, index, settings, centerPath))),
+    });
   }
 
-  return positioned;
+  let previousY = baseY;
+  let previousHeight = rows[0].height;
+  let previousReserve = rows[0].reserve;
+
+  rows.forEach((row, rowIndex) => {
+    let y: number;
+    if (rowIndex === 0) {
+      // Parent mini-children grow back toward the center, so move only that first parent row
+      // upward when it actually has expanded descendants. Child rows grow away from center.
+      y = rowDirection === -1 ? baseY - row.reserve : baseY;
+    } else if (rowDirection === 1) {
+      y = previousY + previousHeight / 2 + previousReserve + rowGap + row.height / 2;
+    } else {
+      y = previousY - previousHeight / 2 - rowGap - row.reserve - row.height / 2;
+    }
+
+    const rowWidth = row.nodes.reduce((sum, n) => sum + n.width, 0) + columnGap * Math.max(0, row.nodes.length - 1);
+    let x = -rowWidth / 2;
+    for (const node of row.nodes) {
+      node.x = x + node.width / 2;
+      node.y = y;
+      x += node.width + columnGap;
+    }
+
+    previousY = y;
+    previousHeight = row.height;
+    previousReserve = row.reserve;
+  });
+
+  return nodes;
 }
 
 function distributeVertical(
@@ -111,22 +153,35 @@ function distributeVertical(
   index: GraphIndex,
   settings: ExcaliBrainSettings,
   role: Role,
+  centerPath: string,
 ): PositionedNode[] {
   const nodes = items.map((n) => makeNode(n, role, index, settings));
   if (!nodes.length) return nodes;
-  const totalHeight = nodes.reduce((sum, n) => sum + n.height, 0) + gap * Math.max(0, nodes.length - 1);
-  let y = -totalHeight / 2;
-  for (const node of nodes) {
+
+  const reserves = nodes.map((node) => expandedChildReserve(node.page, index, settings, centerPath));
+  nodes[0].x = x;
+  nodes[0].y = 0;
+  for (let i = 1; i < nodes.length; i += 1) {
+    const previous = nodes[i - 1];
+    const node = nodes[i];
     node.x = x;
-    node.y = y + node.height / 2;
-    y += node.height + gap;
+    node.y = previous.y + previous.height / 2 + reserves[i - 1] + gap + node.height / 2;
   }
+
+  // Center the complete occupied strip (including expanded children) around the Plex midline.
+  const top = nodes[0].y - nodes[0].height / 2;
+  const lastIndex = nodes.length - 1;
+  const bottom = nodes[lastIndex].y + nodes[lastIndex].height / 2 + reserves[lastIndex];
+  const shift = -(top + bottom) / 2;
+  for (const node of nodes) node.y += shift;
   return nodes;
 }
 
-function shiftBottomTo(nodes: PositionedNode[], bottomLimit: number): void {
+function shiftBottomTo(nodes: PositionedNode[], bottomLimit: number, index: GraphIndex, settings: ExcaliBrainSettings, centerPath: string): void {
   if (!nodes.length) return;
-  const currentBottom = Math.max(...nodes.map((node) => node.y + node.height / 2));
+  const currentBottom = Math.max(...nodes.map((node) =>
+    node.y + node.height / 2 + expandedChildReserve(node.page, index, settings, centerPath)
+  ));
   if (currentBottom <= bottomLimit) return;
   const shift = currentBottom - bottomLimit;
   for (const node of nodes) node.y -= shift;
@@ -193,31 +248,30 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
     gateStats: index.gateStats(neighborhood.center),
   };
 
-  // Compactness only controls inter-node spacing and label length. Expanded mode reserves
-  // additional vertical room for each thought's second-level child strip.
+  // Compactness controls inter-node spacing and label length. Expanded view adds vertical
+  // space per thought/row only when that thought actually has visible child thoughts.
   const compactFactor = clamp(1.5 / settings.compactingFactor, 0.58, 1.45);
   const legacySpacing = clamp(settings.minLinkLength / 18, 0.72, 1.7);
-  const expanded = settings.graphDepth === 2;
-  const columnGap = 54 * compactFactor * legacySpacing + (expanded ? 54 : 0);
-  const rowGap = 44 * compactFactor * legacySpacing + (expanded ? 92 : 0);
-  const centerGap = 72 * compactFactor * legacySpacing + (expanded ? 74 : 0);
-  const sideGap = 24 * compactFactor * legacySpacing + (expanded ? 84 : 0);
+  const columnGap = 54 * compactFactor * legacySpacing;
+  const rowGap = 44 * compactFactor * legacySpacing;
+  const centerGap = 72 * compactFactor * legacySpacing;
+  const sideGap = 24 * compactFactor * legacySpacing;
 
   const typicalHeight = 30;
   const parentBaseY = -(center.height / 2 + typicalHeight / 2 + centerGap);
   const childBaseY = center.height / 2 + typicalHeight / 2 + centerGap;
 
-  const parents = distributeGrid(neighborhood.parents, parentBaseY, -1, Math.max(1, Math.min(4, Math.round(settings.parentColumns))), columnGap, rowGap, index, settings, "parent");
-  const children = distributeGrid(neighborhood.children, childBaseY, 1, Math.max(1, Math.min(7, Math.round(settings.childColumns))), columnGap, rowGap, index, settings, "child");
+  const parents = distributeGrid(neighborhood.parents, parentBaseY, -1, Math.max(1, Math.min(4, Math.round(settings.parentColumns))), columnGap, rowGap, index, settings, "parent", neighborhood.center.path);
+  const children = distributeGrid(neighborhood.children, childBaseY, 1, Math.max(1, Math.min(7, Math.round(settings.childColumns))), columnGap, rowGap, index, settings, "child", neighborhood.center.path);
 
   const maxCenterHalfWidth = center.width / 2;
   const sideX = maxCenterHalfWidth + (205 * compactFactor * legacySpacing);
-  const left = distributeVertical(neighborhood.leftFriends, -sideX, sideGap, index, settings, "left");
-  const right = distributeVertical(neighborhood.rightFriends, sideX, sideGap, index, settings, "right");
+  const left = distributeVertical(neighborhood.leftFriends, -sideX, sideGap, index, settings, "left", neighborhood.center.path);
+  const right = distributeVertical(neighborhood.rightFriends, sideX, sideGap, index, settings, "right", neighborhood.center.path);
 
   const rightExtent = right.length ? Math.max(...right.map((n) => n.x + n.width / 2)) : maxCenterHalfWidth;
   const siblingCenterX = Math.max(sideX + 300 * compactFactor, rightExtent + 205 * compactFactor);
-  const siblings = distributeVertical(neighborhood.siblings, siblingCenterX, sideGap, index, settings, "sibling");
+  const siblings = distributeVertical(neighborhood.siblings, siblingCenterX, sideGap, index, settings, "sibling", neighborhood.center.path);
 
   // Side/sibling zones must finish before the children zone starts. This prevents a bounded
   // sibling/friend list from sitting on top of the first child row when either list is long.
@@ -225,9 +279,9 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
     ? Math.min(...children.map((node) => node.y - node.height / 2))
     : center.height / 2 + centerGap + 18;
   const sideBottom = childSectionTop - Math.max(24, 24 * compactFactor);
-  shiftBottomTo(left, sideBottom);
-  shiftBottomTo(right, sideBottom);
-  shiftBottomTo(siblings, sideBottom);
+  shiftBottomTo(left, sideBottom, index, settings, neighborhood.center.path);
+  shiftBottomTo(right, sideBottom, index, settings, neighborhood.center.path);
+  shiftBottomTo(siblings, sideBottom, index, settings, neighborhood.center.path);
 
   const zoneViewports: Partial<Record<ScrollZone, ZoneViewport>> = {};
   const parentViewport = viewportFor("parent", parents, settings.parentMaxHeight, "bottom");

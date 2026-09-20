@@ -25,4 +25,4 @@ Legacy visibility settings are applied before neighborhood construction. `maxIte
 - Dataview is no longer required. The built-in parser covers common frontmatter values, arrays, wiki links, Markdown links, URLs, and `Field::` inline fields.
 - Excalidraw is no longer the render surface. Styles are translated into CSS/SVG equivalents.
 - Excalidraw-specific properties such as hachure rendering and roughness are retained in persisted settings but only approximated in the React renderer.
-- Embedded central-note frames are represented by the dedicated content pane instead of Excalidraw embeddables.
+- Legacy central-note synchronization is represented by K-Plex's linkable Obsidian document leaf instead of an Excalidraw embeddable.

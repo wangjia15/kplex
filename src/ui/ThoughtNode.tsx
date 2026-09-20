@@ -83,6 +83,7 @@ export function ThoughtNode({
     dimmed ? "is-dimmed" : "",
     dragging ? "is-dragging" : "",
     connectionState !== "normal" ? `is-connect-${connectionState}` : "",
+    node.page.isFolder || node.page.isTag ? "is-structural-thought" : "",
   ].filter(Boolean).join(" ");
 
   const clearPreview = () => {
@@ -105,7 +106,7 @@ export function ThoughtNode({
       previewTimer.current = window.setTimeout(() => {
         previewTimer.current = null;
         onHoverPreview(node, target, nativeEvent);
-      }, 1000);
+      }, 3000);
     }}
     onPointerLeave={() => { clearPreview(); onHoverEnd(); }}
     onClick={click}
@@ -120,13 +121,15 @@ export function ThoughtNode({
       const stat = node.gateStats[gate];
       return <span key={gate} className={`excalibrain-gate-wrap gate-wrap-${gate}`}>
         <span
-          className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}`}
+          className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}${node.page.isFolder || node.page.isTag ? " is-link-disabled" : ""}`}
           data-kplex-gate={gate}
           onPointerEnter={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
           onPointerLeave={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
           onPointerDown={(e: PointerEvent<HTMLSpanElement>) => { clearPreview(); onGatePointerDown(node, gate, e); }}
           onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
-          title={`${gate} gate${stat.hasAny ? ` · ${stat.visibleCount} visible` : " · no relationships"}`}
+          title={node.page.isFolder || node.page.isTag
+            ? `${gate} gate · drag linking is disabled for folder and tag thoughts`
+            : `${gate} gate${stat.hasAny ? ` · ${stat.visibleCount} visible` : " · no relationships"}`}
         />
         {settings.showNeighborCount && stat.visibleCount > 0 && <span className="excalibrain-gate-count">{stat.visibleCount}</span>}
       </span>;

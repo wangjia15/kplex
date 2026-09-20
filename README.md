@@ -1,6 +1,6 @@
-# ExcaliBrain React Rebuild
+# K-Plex
 
-A ground-up React rebuild of ExcaliBrain for Obsidian. The plugin keeps the original ExcaliBrain graph semantics and persisted settings keys while replacing the Excalidraw/Dataview rendering stack with a dedicated, TheBrain-inspired visual application.
+K-Plex (Knowledge Plex) is a ground-up React successor to ExcaliBrain for Obsidian. The plugin keeps the original ExcaliBrain graph semantics and persisted settings keys while replacing the Excalidraw/Dataview rendering stack with a dedicated, TheBrain-inspired visual application.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ The installable plugin artifacts are written to `./build/`:
 - `build/manifest.json`
 - `build/styles.css`
 
-Copy those three files to `.obsidian/plugins/excalibrain/` in a test vault and enable **ExcaliBrain** in Obsidian.
+Copy those three files to `.obsidian/plugins/k-plex/` in a test vault and enable **K-Plex** in Obsidian. K-Plex uses its own plugin id so it can run beside legacy ExcaliBrain for one-time settings migration.
 
 ## Development
 
@@ -62,7 +62,8 @@ The rebuilt plugin no longer requires Dataview or Excalidraw. It reads Obsidian 
 - Use the search box for instant thought activation.
 - Pan by dragging empty graph space and zoom with the mouse wheel.
 - Parents are north, children south, jumps/friends west, next/right-friends east, and optional siblings appear on the eastern periphery.
-- The content pane renders the active Markdown note and provides mapped links.
+- Folder and tag thoughts can become the central Plex thought; structural folder/tag relationships are read-only in drag-linking.
+- K-Plex can link to an Obsidian document leaf so graph navigation and note navigation stay synchronized.
 - Past thoughts remain available in the footer for fast navigation.
 
 ## Status

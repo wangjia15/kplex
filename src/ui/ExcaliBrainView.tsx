@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import type ExcaliBrainPlugin from "../main";
 import { ExcaliBrainApp } from "./App";
 
-export const EXCALIBRAIN_VIEW_TYPE = "excalibrain-react-view";
+export const EXCALIBRAIN_VIEW_TYPE = "k-plex-react-view";
 
 export class ExcaliBrainView extends ItemView {
   private root: Root | null = null;

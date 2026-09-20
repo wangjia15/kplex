@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type MouseEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type MouseEvent } from "react";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { GraphPage } from "../types";
 import { ObsidianIcon } from "./ObsidianIcon";
@@ -6,7 +6,12 @@ import { ObsidianIcon } from "./ObsidianIcon";
 export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate: (page: GraphPage) => void }) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
-  const results = focused ? index.search(query, 24) : [];
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(query), 60);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const results = focused ? index.search(searchQuery, 24) : [];
 
   return <div className="excalibrain-search-shell">
     <div className="excalibrain-search-icon"><ObsidianIcon name="search" size={16} /></div>

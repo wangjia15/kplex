@@ -232,6 +232,8 @@
 }
 .excalibrain-gate.has-connections { background: var(--kplex-gate-fill, rgba(226,239,255,.84)); }
 .excalibrain-gate.is-empty { background: transparent; }
+.excalibrain-gate.is-link-disabled { cursor: default; opacity: .56; }
+.excalibrain-gate.is-link-disabled::after { display: none; }
 .excalibrain-gate:hover,
 .excalibrain-gate.is-highlighted { opacity: 1; box-shadow: 0 0 0 2px rgba(139,205,255,.30), 0 0 9px rgba(162,216,255,.72); }
 .excalibrain-gate-count {
@@ -801,4 +803,91 @@
   pointer-events: none;
   opacity: .52;
   filter: drop-shadow(0 1px 1px rgba(0,0,0,.38));
+}
+
+/* Interaction polish: navigable thoughts use a pointer; the Plex background remains pannable. */
+.excalibrain-role-parent,
+.excalibrain-role-child,
+.excalibrain-role-left,
+.excalibrain-role-right,
+.excalibrain-role-previous,
+.excalibrain-role-next,
+.excalibrain-role-sibling,
+.excalibrain-thought.is-structural-thought {
+  cursor: pointer;
+}
+.excalibrain-thought:hover { filter: none; }
+.excalibrain-thought.is-highlighted:hover { filter: brightness(1.22); }
+.excalibrain-thought.is-dragging { cursor: grabbing; }
+
+/* Bottom-left density controls: deliberately neutral, thin native-range replacements. */
+.kplex-layout-controls {
+  gap: 14px;
+  padding: 6px 9px 5px;
+  border: 1px solid rgba(255,255,255,.055);
+  border-radius: 7px;
+  background: rgba(6,15,24,.42);
+  box-shadow: 0 4px 14px rgba(0,0,0,.14);
+}
+.kplex-mini-slider {
+  grid-template-rows: 12px 10px;
+  width: 94px;
+  gap: 2px;
+  font-size: 7px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(230,240,250,.60);
+}
+.excalibrain-plex .kplex-layout-controls .kplex-mini-slider input[type="range"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 90px !important;
+  height: 10px !important;
+  min-height: 10px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  cursor: ew-resize;
+}
+.excalibrain-plex .kplex-layout-controls .kplex-mini-slider input[type="range"]::-webkit-slider-runnable-track {
+  -webkit-appearance: none !important;
+  height: 1px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: rgba(226,238,250,.44) !important;
+  box-shadow: none !important;
+}
+.excalibrain-plex .kplex-layout-controls .kplex-mini-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 7px !important;
+  height: 7px !important;
+  min-width: 7px !important;
+  min-height: 7px !important;
+  margin-top: -3px !important;
+  padding: 0 !important;
+  border: 1px solid rgba(255,255,255,.9) !important;
+  border-radius: 50% !important;
+  background: rgba(231,240,249,.96) !important;
+  box-shadow: 0 0 0 1px rgba(3,10,18,.55) !important;
+}
+.excalibrain-plex .kplex-layout-controls .kplex-mini-slider input[type="range"]::-moz-range-track {
+  height: 1px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: rgba(226,238,250,.44) !important;
+  box-shadow: none !important;
+}
+.excalibrain-plex .kplex-layout-controls .kplex-mini-slider input[type="range"]::-moz-range-thumb {
+  width: 7px !important;
+  height: 7px !important;
+  padding: 0 !important;
+  border: 1px solid rgba(255,255,255,.9) !important;
+  border-radius: 50% !important;
+  background: rgba(231,240,249,.96) !important;
+  box-shadow: 0 0 0 1px rgba(3,10,18,.55) !important;
 }

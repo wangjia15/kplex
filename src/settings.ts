@@ -129,6 +129,8 @@ export interface ExcaliBrainSettings {
   childMaxHeight: number;
   noteTypeField: string;
   noteTypeStyles: Record<string, NodeStyle>;
+  kplexInitialized: boolean;
+  startInPopout: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -206,7 +208,9 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   parentMaxHeight: 320,
   childMaxHeight: 320,
   noteTypeField: "Note type",
-  noteTypeStyles: {}
+  noteTypeStyles: {},
+  kplexInitialized: false,
+  startInPopout: false
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -293,6 +297,8 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     parentMaxHeight: Math.max(120, Math.min(900, Number(old.parentMaxHeight ?? DEFAULT_SETTINGS.parentMaxHeight))),
     childMaxHeight: Math.max(120, Math.min(900, Number(old.childMaxHeight ?? DEFAULT_SETTINGS.childMaxHeight))),
     noteTypeField: String(old.noteTypeField ?? DEFAULT_SETTINGS.noteTypeField),
+    kplexInitialized: Boolean(old.kplexInitialized),
+    startInPopout: Boolean(old.startInPopout),
   };
 }
 
@@ -582,6 +588,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
                 control: { type: "toggle", key: "autoOpenCentralDocument" }
               },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
+              { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
             ]
           },
           {
@@ -622,7 +629,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Inverse inferred parent/child direction", control: { type: "toggle", key: "inverseInfer" } },
               {
                 name: "Connector style",
-                control: { type: "dropdown", key: "connectorStyle", defaultValue: "bezier", options: { bezier: "Bézier", straight: "Straight" } }
+                control: { type: "dropdown", key: "connectorStyle", defaultValue: "bezier", options: { bezier: "Curved", straight: "Straight" } }
               },
               { name: "Start arrowhead", control: { type: "dropdown", key: "baseLinkStyle.startArrowHead", defaultValue: "none", options: ARROW_OPTIONS } },
               { name: "End arrowhead", control: { type: "dropdown", key: "baseLinkStyle.endArrowHead", defaultValue: "none", options: ARROW_OPTIONS } },

@@ -1,5 +1,5 @@
 {
-  "name": "excalibrain",
+  "name": "k-plex",
   "version": "1.0.0",
   "description": "A TheBrain-inspired visual knowledge navigator for Obsidian, rebuilt in React.",
   "main": "build/main.js",
