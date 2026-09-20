@@ -91,11 +91,21 @@ export function extractLinksFromValue(app: App, value: unknown, file: TFile): st
   return [...found].filter(Boolean);
 }
 
-export function getNormalizedFieldValues(meta: ParsedFileMetadata, normalizedField: string): unknown[] {
+export function getNormalizedFrontmatterValues(meta: ParsedFileMetadata, normalizedField: string): unknown[] {
   const values: unknown[] = [];
   for (const [key, value] of Object.entries(meta.frontmatter)) {
     if (normalizeFieldName(key) === normalizedField) values.push(value);
   }
-  if (meta.inlineFields[normalizedField]) values.push(...meta.inlineFields[normalizedField]);
   return values;
+}
+
+export function getNormalizedInlineFieldValues(meta: ParsedFileMetadata, normalizedField: string): unknown[] {
+  return meta.inlineFields[normalizedField] ? [...meta.inlineFields[normalizedField]] : [];
+}
+
+export function getNormalizedFieldValues(meta: ParsedFileMetadata, normalizedField: string): unknown[] {
+  return [
+    ...getNormalizedFrontmatterValues(meta, normalizedField),
+    ...getNormalizedInlineFieldValues(meta, normalizedField),
+  ];
 }

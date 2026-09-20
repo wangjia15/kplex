@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
 import type { GraphIndex } from "../index/GraphIndex";
+import { ObsidianIcon } from "./ObsidianIcon";
 
 export function ContentPane({ plugin, index, page, owner, onOpen, onActivate }: {
   plugin: ExcaliBrainPlugin;
@@ -56,10 +57,10 @@ export function ContentPane({ plugin, index, page, owner, onOpen, onActivate }: 
     </header>
 
     <div className="excalibrain-content-scroll">
-      {page.url && <div className="excalibrain-special-content"><div className="excalibrain-special-icon">🌐</div><a href={page.url}>{page.url}</a></div>}
-      {page.isFolder && <div className="excalibrain-special-content"><div className="excalibrain-special-icon">📂</div><p>Folder thought</p></div>}
-      {page.isTag && <div className="excalibrain-special-content"><div className="excalibrain-special-icon">#</div><p>Tag thought</p></div>}
-      {page.file && page.file.extension !== "md" && <div className="excalibrain-special-content"><div className="excalibrain-special-icon">📎</div><p>{page.file.name}</p></div>}
+      {page.url && <div className="excalibrain-special-content"><div className="excalibrain-special-icon"><ObsidianIcon name="globe" size={32} /></div><a href={page.url}>{page.url}</a></div>}
+      {page.isFolder && <div className="excalibrain-special-content"><div className="excalibrain-special-icon"><ObsidianIcon name="folder" size={32} /></div><p>Folder thought</p></div>}
+      {page.isTag && <div className="excalibrain-special-content"><div className="excalibrain-special-icon"><ObsidianIcon name="tag" size={32} /></div><p>Tag thought</p></div>}
+      {page.file && page.file.extension !== "md" && <div className="excalibrain-special-content"><div className="excalibrain-special-icon"><ObsidianIcon name="paperclip" size={32} /></div><p>{page.file.name}</p></div>}
       {loading && <div className="excalibrain-loading">Rendering note…</div>}
       <div ref={contentRef} className="excalibrain-markdown markdown-rendered" />
 

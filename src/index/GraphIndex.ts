@@ -5,6 +5,8 @@ import {
   LinkDirection,
   RelationType,
   type GraphPage,
+  type GateSide,
+  type GateStats,
   type Neighbour,
   type Neighborhood,
   type Relation,
@@ -13,6 +15,8 @@ import {
 import {
   extractLinksFromValue,
   getNormalizedFieldValues,
+  getNormalizedFrontmatterValues,
+  getNormalizedInlineFieldValues,
   normalizeFieldName,
   parseFileMetadata,
   type ParsedFileMetadata
@@ -118,6 +122,7 @@ export class GraphIndex {
       neighbours: params.neighbours ?? new Map(),
       aliases: params.aliases ?? [],
       tags: params.tags ?? [],
+      noteType: params.noteType ?? null,
       primaryStyleTag: params.primaryStyleTag ?? null,
       styleTags: params.styleTags ?? [],
       frontmatter: params.frontmatter ?? {},
@@ -232,6 +237,21 @@ export class GraphIndex {
     page.tags = meta.tags;
     page.frontmatter = meta.frontmatter;
     page.inlineFields = meta.inlineFields;
+
+    // Note type is deliberately a document property (YAML frontmatter), not an inline field.
+    // It is the primary style discriminator in K-Plex.
+    const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
+    const noteTypeValue = getNormalizedFrontmatterValues(meta, noteTypeField)[0];
+    const unwrapNoteType = (value: unknown): string | null => {
+      const first = Array.isArray(value) ? value[0] : value;
+      if (typeof first !== "string" && typeof first !== "number") return null;
+      let text = String(first).trim();
+      const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/);
+      if (wiki) text = wiki[1].trim();
+      return text || null;
+    };
+    page.noteType = unwrapNoteType(noteTypeValue);
+
     const styleTags = page.tags.filter((tag) => this.plugin.settings.tagStyleList.some((prefix) => tag.startsWith(prefix)));
     const primaryField = normalizeFieldName(this.plugin.settings.primaryTagField);
     const primaryValues = getNormalizedFieldValues(meta, primaryField).flatMap((v) => typeof v === "string" ? v.match(/#[^\s\])$"'\\]+/g) ?? [] : []);
@@ -254,19 +274,34 @@ export class GraphIndex {
       [hierarchy.next, "next"]
     ];
 
+    // Frontmatter relationship fields take priority over inline Dataview fields. This is
+    // especially important for drag-relinking: adding a document property must be able to
+    // override a stale relation that still exists in the body of the note.
+    const frontmatterTargets = new Set<string>();
+    const applyValues = (values: unknown[], role: Role, groupIndex: number, field: string, inline: boolean): void => {
+      for (const value of values) {
+        for (const path of extractLinksFromValue(this.app, value, file)) {
+          if (inline && frontmatterTargets.has(path)) continue;
+          const target = this.ensureTarget(path);
+          if (!inline) frontmatterTargets.add(target.path);
+          if (groupIndex === 0) this.addHidden(page, target);
+          else this.addExplicitPair(page, target, role, field);
+        }
+      }
+    };
+
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
       const [fieldNames, role] = groups[groupIndex];
       for (const originalName of fieldNames) {
         const field = normalizeFieldName(originalName);
-        const values = getNormalizedFieldValues(meta, field);
-        if (!values.length) continue;
-        for (const value of values) {
-          for (const path of extractLinksFromValue(this.app, value, file)) {
-            const target = this.ensureTarget(path);
-            if (groupIndex === 0) this.addHidden(page, target);
-            else this.addExplicitPair(page, target, role, field);
-          }
-        }
+        applyValues(getNormalizedFrontmatterValues(meta, field), role, groupIndex, field, false);
+      }
+    }
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+      const [fieldNames, role] = groups[groupIndex];
+      for (const originalName of fieldNames) {
+        const field = normalizeFieldName(originalName);
+        applyValues(getNormalizedInlineFieldValues(meta, field), role, groupIndex, field, true);
       }
     }
 
@@ -489,6 +524,65 @@ export class GraphIndex {
       output.push({ page: relation.target, relationType, typeDefinition, linkDirection: relation.direction, role });
     }
     return output.sort((a, b) => naturalCompare(this.titleFor(a.page), this.titleFor(b.page)));
+  }
+
+  isConnected(source: GraphPage, targetPath: string): boolean {
+    if (source.neighbours.has(targetPath)) return true;
+    const target = this.get(targetPath);
+    return target?.neighbours.has(source.path) ?? false;
+  }
+
+  gateStats(page: GraphPage): GateStats {
+    const roleSets: Record<GateSide, Role[]> = {
+      top: ["parent"],
+      bottom: ["child"],
+      left: ["left", "previous"],
+      right: ["right", "next"],
+    };
+
+    const result: GateStats = {
+      top: { visibleCount: 0, hasAny: false },
+      bottom: { visibleCount: 0, hasAny: false },
+      left: { visibleCount: 0, hasAny: false },
+      right: { visibleCount: 0, hasAny: false },
+    };
+
+    for (const [gate, roles] of Object.entries(roleSets) as Array<[GateSide, Role[]]>) {
+      const visible = new Set<string>();
+      for (const role of roles) {
+        for (const neighbour of this.neighbours(page, role)) visible.add(neighbour.page.path);
+      }
+      result[gate].visibleCount = visible.size;
+
+      for (const relation of page.neighbours.values()) {
+        if (relation.isHidden) continue;
+        if (roles.some((role) => this.classify(relation, role) !== null)) {
+          result[gate].hasAny = true;
+          break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  gateNeighbourPaths(page: GraphPage, gate: GateSide): Set<string> {
+    const roleSets: Record<GateSide, Role[]> = {
+      top: ["parent"],
+      bottom: ["child"],
+      left: ["left", "previous"],
+      right: ["right", "next"],
+    };
+    const paths = new Set<string>();
+    // Relationship editing must honor the semantic connection even when its target is
+    // hidden by the current inferred/type visibility filters. This is the same distinction
+    // used by gateStats(): gate fill represents all relationships, while the count represents
+    // only the currently visible ones.
+    for (const relation of page.neighbours.values()) {
+      if (relation.isHidden) continue;
+      if (roleSets[gate].some((role) => this.classify(relation, role) !== null)) paths.add(relation.target.path);
+    }
+    return paths;
   }
 
   getNeighborhood(path: string): Neighborhood | null {

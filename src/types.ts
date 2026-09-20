@@ -12,7 +12,9 @@ export enum LinkDirection {
 }
 
 export type Role = "parent" | "child" | "left" | "right" | "previous" | "next" | "sibling";
+export type GateRole = "parent" | "child" | "left" | "right";
 export type GateSide = "top" | "bottom" | "left" | "right";
+export type ScrollZone = "parent" | "child" | "left" | "right" | "sibling";
 export type StrokeStyle = "solid" | "dashed" | "dotted";
 export type FillStyle = "solid" | "hachure" | "cross-hatch";
 export type Arrowhead = "none" | "arrow" | "bar" | "dot" | "triangle";
@@ -31,6 +33,7 @@ export type Hierarchy = {
 
 export type NodeStyle = {
   prefix?: string;
+  icon?: string;
   backgroundColor?: string;
   fillStyle?: FillStyle;
   textColor?: string;
@@ -100,6 +103,7 @@ export type GraphPage = {
   neighbours: Map<string, Relation>;
   aliases: string[];
   tags: string[];
+  noteType: string | null;
   primaryStyleTag: string | null;
   styleTags: string[];
   frontmatter: Record<string, unknown>;
@@ -124,11 +128,21 @@ export type Neighborhood = {
   siblings: Neighbour[];
 };
 
+export type GateStat = {
+  /** Connections currently visible after K-Plex visibility/inferred filters. */
+  visibleCount: number;
+  /** True when the semantic gate has any relationship, even when its target is filtered out. */
+  hasAny: boolean;
+};
+
+export type GateStats = Record<GateSide, GateStat>;
+
 export type PositionedNode = {
   page: GraphPage;
   role: Role | "center";
   relationType?: RelationType;
   typeDefinition?: string;
+  linkDirection?: LinkDirection | null;
   x: number;
   y: number;
   width: number;
@@ -136,6 +150,7 @@ export type PositionedNode = {
   style: NodeStyle;
   label: string;
   neighbourCount: number;
+  gateStats: GateStats;
 };
 
 export type PositionedEdge = {

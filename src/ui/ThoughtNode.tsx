@@ -1,10 +1,12 @@
-import type { CSSProperties, MouseEvent, PointerEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import type { GateSide, PositionedNode } from "../types";
 import { alphaHexToCss } from "../index/style";
 import type { ExcaliBrainSettings } from "../settings";
 import { gateDiameter } from "./layout";
+import { ObsidianIcon } from "./ObsidianIcon";
 
 const GATES: GateSide[] = ["top", "bottom", "left", "right"];
+export type ConnectionDragState = "normal" | "candidate" | "blocked" | "origin";
 
 export function ThoughtNode({
   node,
@@ -13,11 +15,16 @@ export function ThoughtNode({
   highlighted,
   dimmed,
   highlightedGates,
+  dragging,
+  connectionState = "normal",
   onActivate,
   onOpen,
   onHoverNode,
   onHoverGate,
   onHoverEnd,
+  onHoverPreview,
+  onGatePointerDown,
+  onNodePointerDown,
 }: {
   node: PositionedNode;
   settings: ExcaliBrainSettings;
@@ -25,12 +32,18 @@ export function ThoughtNode({
   highlighted: boolean;
   dimmed: boolean;
   highlightedGates: ReadonlySet<GateSide>;
+  dragging?: boolean;
+  connectionState?: ConnectionDragState;
   onActivate: (node: PositionedNode) => void;
   onOpen: (node: PositionedNode) => void;
   onHoverNode: (node: PositionedNode) => void;
   onHoverGate: (node: PositionedNode, gate: GateSide) => void;
   onHoverEnd: () => void;
+  onHoverPreview: (node: PositionedNode, target: HTMLElement, event: globalThis.PointerEvent) => void;
+  onGatePointerDown: (node: PositionedNode, gate: GateSide, event: PointerEvent<HTMLSpanElement>) => void;
+  onNodePointerDown: (node: PositionedNode, event: PointerEvent<HTMLDivElement>) => void;
 }) {
+  const previewTimer = useRef<number | null>(null);
   const style = node.style;
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
   const prefix = style.prefix ?? "";
@@ -68,28 +81,55 @@ export function ThoughtNode({
     selected ? "is-selected" : "",
     highlighted ? "is-highlighted" : "",
     dimmed ? "is-dimmed" : "",
+    dragging ? "is-dragging" : "",
+    connectionState !== "normal" ? `is-connect-${connectionState}` : "",
   ].filter(Boolean).join(" ");
+
+  const clearPreview = () => {
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    previewTimer.current = null;
+  };
+
+  useEffect(() => () => clearPreview(), []);
 
   return <div
     className={classes}
     style={nodeCss}
-    onPointerDown={(e: PointerEvent<HTMLDivElement>) => e.stopPropagation()}
-    onPointerEnter={() => onHoverNode(node)}
-    onPointerLeave={onHoverEnd}
+    data-kplex-path={node.page.path}
+    onPointerDown={(e: PointerEvent<HTMLDivElement>) => { clearPreview(); onNodePointerDown(node, e); }}
+    onPointerEnter={(e: PointerEvent<HTMLDivElement>) => {
+      onHoverNode(node);
+      clearPreview();
+      const target = e.currentTarget;
+      const nativeEvent = e.nativeEvent;
+      previewTimer.current = window.setTimeout(() => {
+        previewTimer.current = null;
+        onHoverPreview(node, target, nativeEvent);
+      }, 1000);
+    }}
+    onPointerLeave={() => { clearPreview(); onHoverEnd(); }}
     onClick={click}
     onDoubleClick={(e: MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onOpen(node); }}
-    title={`${node.label}\n${node.page.path}`}
+    aria-label={`${node.label} — ${node.page.path}`}
   >
-    <span className="excalibrain-thought-label">{display}</span>
-    {settings.showNeighborCount && node.neighbourCount > 0 && <span className="excalibrain-count">{node.neighbourCount}</span>}
-    {GATES.map((gate) => <span
-      key={gate}
-      className={`excalibrain-gate gate-${gate}${highlightedGates.has(gate) ? " is-highlighted" : ""}`}
-      onPointerEnter={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
-      onPointerLeave={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
-      onPointerDown={(e: PointerEvent<HTMLSpanElement>) => e.stopPropagation()}
-      onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
-      title={`${gate} gate`}
-    />)}
+    <span className="excalibrain-thought-label">
+      {style.icon && <ObsidianIcon name={style.icon} size={node.role === "center" ? 18 : 13} className="excalibrain-node-icon" />}
+      <span>{display}</span>
+    </span>
+    {GATES.map((gate) => {
+      const stat = node.gateStats[gate];
+      return <span key={gate} className={`excalibrain-gate-wrap gate-wrap-${gate}`}>
+        <span
+          className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}`}
+          data-kplex-gate={gate}
+          onPointerEnter={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
+          onPointerLeave={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
+          onPointerDown={(e: PointerEvent<HTMLSpanElement>) => { clearPreview(); onGatePointerDown(node, gate, e); }}
+          onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
+          title={`${gate} gate${stat.hasAny ? ` · ${stat.visibleCount} visible` : " · no relationships"}`}
+        />
+        {settings.showNeighborCount && stat.visibleCount > 0 && <span className="excalibrain-gate-count">{stat.visibleCount}</span>}
+      </span>;
+    })}
   </div>;
 }

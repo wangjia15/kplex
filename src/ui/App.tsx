@@ -4,6 +4,34 @@ import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
+import { ObsidianIcon } from "./ObsidianIcon";
+
+type BooleanToolbarSetting =
+  | "showAttachments"
+  | "showVirtualNodes"
+  | "showInferredNodes"
+  | "showPageNodes"
+  | "renderAlias"
+  | "showFolderNodes"
+  | "showTagNodes"
+  | "showURLNodes"
+  | "renderSiblings";
+
+function ToolButton({ icon, title, on, disabled, onClick }: {
+  icon: string;
+  title: string;
+  on?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return <button
+    className={`excalibrain-icon-button${on ? " is-on" : ""}`}
+    title={title}
+    aria-label={title}
+    disabled={disabled}
+    onClick={onClick}
+  ><ObsidianIcon name={icon} size={17} /></button>;
+}
 
 export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
   const [, forceRender] = useState(0);
@@ -57,9 +85,9 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
     if (target) activate(target, false);
   };
 
-  const toggleSetting = async (key: "followActiveFile" | "autoOpenCentralDocument" | "renderSiblings" | "showInferredNodes") => {
+  const toggleToolbarSetting = async (key: BooleanToolbarSetting) => {
     plugin.settings[key] = !plugin.settings[key];
-    await plugin.saveSettings(key === "showInferredNodes");
+    await plugin.saveSettings(false);
     forceRender((x) => x + 1);
   };
 
@@ -68,30 +96,55 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
     forceRender((x) => x + 1);
   };
 
+  const toggleNavigationSync = async () => {
+    const enabled = !(plugin.settings.autoOpenCentralDocument && plugin.settings.followActiveFile);
+    plugin.settings.autoOpenCentralDocument = enabled;
+    plugin.settings.followActiveFile = enabled;
+    if (!enabled && plugin.isDocumentLeafLinked()) await plugin.setDocumentLeafLinked(false);
+    await plugin.saveSettings(false);
+    forceRender((x) => x + 1);
+  };
+
   if (!page) return <div className="excalibrain-app excalibrain-empty">Building K-Plex index…</div>;
 
   const linked = plugin.isDocumentLeafLinked();
   const linkedLabel = plugin.getLinkedDocumentLeafLabel();
+  const syncOn = plugin.settings.autoOpenCentralDocument && plugin.settings.followActiveFile;
 
   return <div className="excalibrain-app">
     <div className="excalibrain-main-column">
       <header className="excalibrain-topbar">
-        <div className="excalibrain-brand"><span className="excalibrain-brand-mark">◉</span><strong>K-Plex</strong></div>
-        <button className="excalibrain-icon-button" title="Back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0}>←</button>
-        <button className="excalibrain-icon-button" title="Forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1}>→</button>
+        <div className="excalibrain-brand"><ObsidianIcon name="brain-circuit" size={20} className="excalibrain-brand-mark" /><strong>K-Plex</strong></div>
+        <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
+        <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
         <SearchBox index={plugin.index} onActivate={activate} />
         <div className="excalibrain-top-actions">
-          <button className={plugin.settings.followActiveFile ? "is-on" : ""} onClick={() => void toggleSetting("followActiveFile")} title="Follow document navigation in K-Plex">◎ Follow</button>
-          <button className={`kplex-auto-open${plugin.settings.autoOpenCentralDocument ? " is-on" : ""}`} onClick={() => void toggleSetting("autoOpenCentralDocument")} title="Open the selected K-Plex thought in the document leaf">🔌</button>
-          <button
-            className={`kplex-link${linked ? " is-on" : ""}`}
-            onClick={() => void toggleDocumentLink()}
-            disabled={!plugin.settings.autoOpenCentralDocument}
+          <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
+          <ToolButton
+            icon={linked ? "pin" : "pin-off"}
             title={linked ? `Unlink K-Plex from ${linkedLabel ?? "the document leaf"}` : "Link K-Plex to the most recent document leaf"}
-          >{linked ? "📌 Linked" : "📌 Link"}</button>
-          <button className={plugin.settings.renderSiblings ? "is-on" : ""} onClick={() => void toggleSetting("renderSiblings")}>Siblings</button>
-          <button className={plugin.settings.showInferredNodes ? "is-on" : ""} onClick={() => void toggleSetting("showInferredNodes")}>Inferred</button>
-          <button className="kplex-rebuild" onClick={() => void plugin.rebuildIndex()} title="Rebuild index">↻</button>
+            on={linked}
+            disabled={!plugin.settings.autoOpenCentralDocument}
+            onClick={() => void toggleDocumentLink()}
+          />
+          <ToolButton
+            icon={syncOn ? "link" : "unlink"}
+            title="Synchronize K-Plex navigation with the active or linked document leaf"
+            on={syncOn}
+            onClick={() => void toggleNavigationSync()}
+          />
+          <span className="excalibrain-toolbar-divider" />
+          <ToolButton icon="paperclip" title="Show or hide attachments" on={plugin.settings.showAttachments} onClick={() => void toggleToolbarSetting("showAttachments")} />
+          <ToolButton icon="circle-minus" title="Show or hide virtual thoughts" on={plugin.settings.showVirtualNodes} onClick={() => void toggleToolbarSetting("showVirtualNodes")} />
+          <ToolButton icon="git-pull-request-draft" title="Show or hide inferred relationships" on={plugin.settings.showInferredNodes} onClick={() => void toggleToolbarSetting("showInferredNodes")} />
+          <ToolButton icon="file-text" title="Show or hide Markdown page thoughts" on={plugin.settings.showPageNodes} onClick={() => void toggleToolbarSetting("showPageNodes")} />
+          <ToolButton icon="venetian-mask" title="Show aliases instead of file names" on={plugin.settings.renderAlias} onClick={() => void toggleToolbarSetting("renderAlias")} />
+          <ToolButton icon="folder" title="Show or hide folder thoughts" on={plugin.settings.showFolderNodes} onClick={() => void toggleToolbarSetting("showFolderNodes")} />
+          <ToolButton icon="tag" title="Show or hide tag thoughts" on={plugin.settings.showTagNodes} onClick={() => void toggleToolbarSetting("showTagNodes")} />
+          <ToolButton icon="globe" title="Show or hide web link thoughts" on={plugin.settings.showURLNodes} onClick={() => void toggleToolbarSetting("showURLNodes")} />
+          <ToolButton icon="grip" title="Show or hide siblings" on={plugin.settings.renderSiblings} onClick={() => void toggleToolbarSetting("renderSiblings")} />
+          <span className="excalibrain-toolbar-divider" />
+          <ToolButton icon="settings" title="Open K-Plex settings" onClick={() => plugin.openSettings()} />
         </div>
       </header>
 
@@ -101,7 +154,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
           <div className="excalibrain-zone-label zone-left">JUMPS / FRIENDS</div>
           <div className="excalibrain-zone-label zone-right">NEXT / RELATED</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph index={plugin.index} settings={plugin.settings} activePath={page.path} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={plugin.settings} activePath={page.path} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

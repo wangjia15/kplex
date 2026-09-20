@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent, type MouseEvent } from "react";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { GraphPage } from "../types";
+import { ObsidianIcon } from "./ObsidianIcon";
 
 export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate: (page: GraphPage) => void }) {
   const [query, setQuery] = useState("");
@@ -8,7 +9,7 @@ export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate
   const results = focused ? index.search(query, 24) : [];
 
   return <div className="excalibrain-search-shell">
-    <div className="excalibrain-search-icon">⌕</div>
+    <div className="excalibrain-search-icon"><ObsidianIcon name="search" size={16} /></div>
     <input
       className="excalibrain-search"
       value={query}

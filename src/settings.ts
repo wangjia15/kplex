@@ -1,6 +1,6 @@
-import { App, PluginSettingTab, type SettingDefinitionItem } from "obsidian";
+import { App, Modal, Notice, PluginSettingTab, getIcon, type SettingDefinitionItem } from "obsidian";
 import type ExcaliBrainPlugin from "./main";
-import type { Hierarchy, LinkStyle, NodeStyle } from "./types";
+import type { Arrowhead, Hierarchy, LinkStyle, NodeStyle } from "./types";
 
 export const DEFAULT_LINK_STYLE: LinkStyle = {
   strokeColor: "#696969ff",
@@ -46,7 +46,7 @@ export const DEFAULT_HIERARCHY_DEFINITION: Hierarchy = {
   parents: ["Parent", "Parents", "up", "u", "North", "origin", "inception", "source", "parent domain"],
   children: ["Children", "Child", "down", "d", "South", "leads to", "contributes to", "nurtures"],
   leftFriends: ["Friends", "Friend", "Jump", "Jumps", "j", "similar", "supports", "alternatives", "advantages", "pros"],
-  rightFriends: ["opposes", "disadvantages", "missing", "cons"],
+  rightFriends: ["Challenger", "opposes", "disadvantages", "missing", "cons"],
   previous: ["Previous", "Prev", "West", "w", "Before"],
   next: ["Next", "n", "East", "e", "After"],
   hidden: ["hidden"]
@@ -111,18 +111,24 @@ export interface ExcaliBrainSettings {
   ontologySuggesterMidSentenceTrigger: string;
   boldFields: boolean;
   allowAutozoom: boolean;
-  maxZoom: number;
   allowAutofocuOnSearch: boolean;
   defaultAlwaysOnTop: boolean;
   embedCentralNode: boolean;
   centerEmbedWidth: number;
   centerEmbedHeight: number;
-  // New React UI preferences. Old data.json files simply omit these.
+  // React/K-Plex additions. Existing ExcaliBrain data.json files simply omit these.
   showContentPane: boolean;
   followActiveFile: boolean;
   contentPaneWidth: number;
   graphDepth: 1 | 2;
   connectorStyle: "bezier" | "straight";
+  parentColumns: number;
+  childColumns: number;
+  siblingMaxHeight: number;
+  parentMaxHeight: number;
+  childMaxHeight: number;
+  noteTypeField: string;
+  noteTypeStyles: Record<string, NodeStyle>;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -156,12 +162,12 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   baseNodeStyle: DEFAULT_NODE_STYLE,
   centralNodeStyle: { fontSize: 30, backgroundColor: "#b5b5b5ff", textColor: "#000000ff" },
   inferredNodeStyle: { backgroundColor: "#000005b3", textColor: "#95c7f3ff" },
-  urlNodeStyle: { prefix: "🌐 " },
+  urlNodeStyle: { icon: "globe" },
   virtualNodeStyle: { backgroundColor: "#ff000066", fillStyle: "hachure", textColor: "#ffffffff" },
   siblingNodeStyle: { fontSize: 15 },
-  attachmentNodeStyle: { prefix: "📎 " },
-  folderNodeStyle: { prefix: "📂 ", strokeShaprness: "sharp", borderColor: "#ffd700ff", textColor: "#ffd700ff" },
-  tagNodeStyle: { prefix: "#", strokeShaprness: "sharp", borderColor: "#4682b4ff", textColor: "#4682b4ff" },
+  attachmentNodeStyle: { icon: "paperclip" },
+  folderNodeStyle: { icon: "folder", strokeShaprness: "sharp", borderColor: "#ffd700ff", textColor: "#ffd700ff" },
+  tagNodeStyle: { icon: "tag", strokeShaprness: "sharp", borderColor: "#4682b4ff", textColor: "#4682b4ff" },
   tagNodeStyles: {},
   tagStyleList: [],
   primaryTagField: "Note type",
@@ -184,23 +190,41 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   ontologySuggesterMidSentenceTrigger: "(",
   boldFields: false,
   allowAutozoom: true,
-  maxZoom: 1,
   allowAutofocuOnSearch: true,
   defaultAlwaysOnTop: false,
   embedCentralNode: false,
   centerEmbedWidth: 550,
   centerEmbedHeight: 700,
-  showContentPane: true,
+  showContentPane: false,
   followActiveFile: true,
   contentPaneWidth: 38,
   graphDepth: 1,
-  connectorStyle: "bezier"
+  connectorStyle: "bezier",
+  parentColumns: 3,
+  childColumns: 5,
+  siblingMaxHeight: 340,
+  parentMaxHeight: 320,
+  childMaxHeight: 320,
+  noteTypeField: "Note type",
+  noteTypeStyles: {}
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
 
+function mergeLegacyIconStyle(defaultStyle: NodeStyle, saved: NodeStyle | undefined, legacyPrefix: string): NodeStyle {
+  const merged = { ...defaultStyle, ...(saved ?? {}) };
+  // Classic ExcaliBrain used emoji/text prefixes as built-in icons. K-Plex renders built-in
+  // UI/node icons through Obsidian getIcon(), while preserving genuinely custom prefixes.
+  if (merged.prefix === legacyPrefix) {
+    delete merged.prefix;
+    merged.icon ??= defaultStyle.icon;
+  }
+  return merged;
+}
+
 export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
-  const old = (raw && typeof raw === "object" ? raw : {}) as Partial<ExcaliBrainSettings> & { hierarchy?: Partial<Hierarchy> };
+  const rawSettings = (raw && typeof raw === "object" ? raw : {}) as Partial<ExcaliBrainSettings> & { hierarchy?: Partial<Hierarchy>; maxZoom?: unknown };
+  const { maxZoom: _legacyMaxZoom, ...old } = rawSettings;
   const hierarchyRaw: Partial<Hierarchy> = old.hierarchy ?? {};
   const hierarchy: Hierarchy = {
     ...DEFAULT_HIERARCHY_DEFINITION,
@@ -212,9 +236,14 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     hidden: hierarchyRaw.hidden ?? DEFAULT_HIERARCHY_DEFINITION.hidden,
     exclusions: hierarchyRaw.exclusions ?? DEFAULT_HIERARCHY_DEFINITION.exclusions
   };
+  // K-Plex adds Challenger as the canonical right-gate ontology while retaining every
+  // legacy right-friend field. Existing vaults therefore gain the requested default without
+  // losing any ExcaliBrain ontology aliases.
+  if (!hierarchy.rightFriends.some((field) => norm(field) === "challenger")) {
+    hierarchy.rightFriends = ["Challenger", ...hierarchy.rightFriends];
+  }
 
-  // Mirror the classic initializeHierarchy() precedence rules. Hidden and parent fields may overlap;
-  // lower-priority groups are filtered against all higher-priority normalized field names.
+  // Mirror classic initializeHierarchy() precedence rules.
   const sortFields = (items: string[]) => [...items].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   const normalized = (items: string[]) => items.map(norm);
   hierarchy.hidden = sortFields(hierarchy.hidden);
@@ -240,27 +269,221 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     baseLinkStyle: { ...DEFAULT_LINK_STYLE, ...(old.baseLinkStyle ?? {}) },
     centralNodeStyle: { ...DEFAULT_SETTINGS.centralNodeStyle, ...(old.centralNodeStyle ?? {}) },
     inferredNodeStyle: { ...DEFAULT_SETTINGS.inferredNodeStyle, ...(old.inferredNodeStyle ?? {}) },
-    urlNodeStyle: { ...DEFAULT_SETTINGS.urlNodeStyle, ...(old.urlNodeStyle ?? {}) },
+    urlNodeStyle: mergeLegacyIconStyle(DEFAULT_SETTINGS.urlNodeStyle, old.urlNodeStyle, "🌐 "),
     virtualNodeStyle: { ...DEFAULT_SETTINGS.virtualNodeStyle, ...(old.virtualNodeStyle ?? {}) },
     siblingNodeStyle: { ...DEFAULT_SETTINGS.siblingNodeStyle, ...(old.siblingNodeStyle ?? {}) },
-    attachmentNodeStyle: { ...DEFAULT_SETTINGS.attachmentNodeStyle, ...(old.attachmentNodeStyle ?? {}) },
-    folderNodeStyle: { ...DEFAULT_SETTINGS.folderNodeStyle, ...(old.folderNodeStyle ?? {}) },
-    tagNodeStyle: { ...DEFAULT_SETTINGS.tagNodeStyle, ...(old.tagNodeStyle ?? {}) },
+    attachmentNodeStyle: mergeLegacyIconStyle(DEFAULT_SETTINGS.attachmentNodeStyle, old.attachmentNodeStyle, "📎 "),
+    folderNodeStyle: mergeLegacyIconStyle(DEFAULT_SETTINGS.folderNodeStyle, old.folderNodeStyle, "📂 "),
+    tagNodeStyle: mergeLegacyIconStyle(DEFAULT_SETTINGS.tagNodeStyle, old.tagNodeStyle, "#"),
     inferredLinkStyle: { ...DEFAULT_SETTINGS.inferredLinkStyle, ...(old.inferredLinkStyle ?? {}) },
     folderLinkStyle: { ...DEFAULT_SETTINGS.folderLinkStyle, ...(old.folderLinkStyle ?? {}) },
     tagLinkStyle: { ...DEFAULT_SETTINGS.tagLinkStyle, ...(old.tagLinkStyle ?? {}) },
     tagNodeStyles: old.tagNodeStyles ?? {},
     tagStyleList: old.tagStyleList ?? [],
+    noteTypeStyles: old.noteTypeStyles ?? {},
     hierarchyLinkStyles: old.hierarchyLinkStyles ?? {},
     navigationHistory: old.navigationHistory ?? [],
     excludeFilepaths: old.excludeFilepaths ?? [],
     primaryTagFieldLowerCase: norm(old.primaryTagField ?? DEFAULT_SETTINGS.primaryTagField),
-    connectorStyle: old.connectorStyle === "straight" ? "straight" : "bezier"
+    connectorStyle: old.connectorStyle === "straight" ? "straight" : "bezier",
+    parentColumns: Math.max(1, Math.min(4, Number(old.parentColumns ?? DEFAULT_SETTINGS.parentColumns))),
+    childColumns: Math.max(1, Math.min(7, Number(old.childColumns ?? DEFAULT_SETTINGS.childColumns))),
+    siblingMaxHeight: Math.max(120, Math.min(900, Number(old.siblingMaxHeight ?? DEFAULT_SETTINGS.siblingMaxHeight))),
+    parentMaxHeight: Math.max(120, Math.min(900, Number(old.parentMaxHeight ?? DEFAULT_SETTINGS.parentMaxHeight))),
+    childMaxHeight: Math.max(120, Math.min(900, Number(old.childMaxHeight ?? DEFAULT_SETTINGS.childMaxHeight))),
+    noteTypeField: String(old.noteTypeField ?? DEFAULT_SETTINGS.noteTypeField),
   };
 }
 
 const csv = (value: string[]) => value.join(", ");
 const fromCsv = (value: string) => value.split(",").map((x) => x.trim()).filter(Boolean);
+const sixHex = (value?: string, fallback = "#000000") => /^#[0-9a-f]{6}/i.test(value ?? "") ? (value as string).slice(0, 7) : fallback;
+const eightHex = (value: string) => `${value.slice(0, 7)}ff`;
+
+function appendIcon(button: HTMLElement, name: string): void {
+  const icon = getIcon(name);
+  if (!icon) return;
+  icon.classList.add("kplex-lucide");
+  button.prepend(icon);
+}
+
+class NoteTypeStyleModal extends Modal {
+  constructor(
+    app: App,
+    private initialName: string | null,
+    private initialStyle: NodeStyle,
+    private onSave: (name: string, style: NodeStyle, previousName: string | null) => Promise<void>,
+    private onDelete?: (name: string) => Promise<void>,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText(this.initialName ? "Edit note type style" : "Add note type style");
+    this.contentEl.addClass("kplex-style-editor");
+
+    const form = this.contentEl.createDiv({ cls: "kplex-style-form" });
+    const field = (label: string, input: HTMLElement) => {
+      const row = form.createDiv({ cls: "kplex-style-row" });
+      row.createEl("label", { text: label });
+      row.appendChild(input);
+    };
+
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = this.initialName ?? "";
+    nameInput.placeholder = "Project";
+    field("Note type value", nameInput);
+
+    const iconInput = document.createElement("input");
+    iconInput.type = "text";
+    iconInput.value = this.initialStyle.icon ?? "";
+    iconInput.placeholder = "Lucide icon name, e.g. book-open";
+    field("Lucide icon", iconInput);
+
+    const background = document.createElement("input");
+    background.type = "color";
+    background.value = sixHex(this.initialStyle.backgroundColor, "#182433");
+    field("Background", background);
+
+    const text = document.createElement("input");
+    text.type = "color";
+    text.value = sixHex(this.initialStyle.textColor, "#ffffff");
+    field("Text", text);
+
+    const border = document.createElement("input");
+    border.type = "color";
+    border.value = sixHex(this.initialStyle.borderColor, "#6f849a");
+    field("Border", border);
+
+    const fontSize = document.createElement("input");
+    fontSize.type = "number";
+    fontSize.min = "8";
+    fontSize.max = "40";
+    fontSize.step = "1";
+    fontSize.value = String(this.initialStyle.fontSize ?? 18);
+    field("Font size", fontSize);
+
+    const actions = this.contentEl.createDiv({ cls: "kplex-style-actions" });
+    if (this.initialName && this.onDelete) {
+      const remove = actions.createEl("button", { cls: "mod-warning", text: "Delete" });
+      appendIcon(remove, "trash-2");
+      remove.addEventListener("click", () => {
+        void this.onDelete!(this.initialName!).then(() => this.close());
+      });
+    }
+    const cancel = actions.createEl("button", { text: "Cancel" });
+    appendIcon(cancel, "x");
+    cancel.addEventListener("click", () => this.close());
+
+    const save = actions.createEl("button", { cls: "mod-cta", text: "Save" });
+    appendIcon(save, "check");
+    save.addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        nameInput.focus();
+        nameInput.classList.add("is-invalid");
+        return;
+      }
+      const style: NodeStyle = {
+        ...this.initialStyle,
+        icon: iconInput.value.trim() || undefined,
+        backgroundColor: eightHex(background.value),
+        textColor: eightHex(text.value),
+        borderColor: eightHex(border.value),
+        fontSize: Math.max(8, Math.min(40, Number(fontSize.value) || 18)),
+      };
+      void this.onSave(name, style, this.initialName).then(() => this.close());
+    });
+    window.setTimeout(() => nameInput.focus(), 0);
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+class LegacySettingsImportModal extends Modal {
+  private rawText = "";
+
+  constructor(app: App, private plugin: ExcaliBrainPlugin, private onImported: () => void) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText("Import ExcaliBrain settings");
+    this.contentEl.addClass("kplex-import-settings-modal");
+
+    this.contentEl.createEl("p", {
+      text: "Choose an ExcaliBrain data.json backup. K-Plex will migrate compatible ontology, visibility, navigation and appearance settings, then rebuild the index."
+    });
+
+    const fileRow = this.contentEl.createDiv({ cls: "kplex-import-file-row" });
+    const fileInput = fileRow.createEl("input", { attr: { type: "file", accept: "application/json,.json" } });
+    const status = this.contentEl.createDiv({ cls: "kplex-import-status", text: "No file selected." });
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (!file) {
+        this.rawText = "";
+        status.setText("No file selected.");
+        return;
+      }
+      void file.text().then((text) => {
+        this.rawText = text;
+        status.setText(file.name);
+      }).catch((error: unknown) => {
+        this.rawText = "";
+        status.setText(`Could not read file: ${String(error)}`);
+      });
+    });
+
+    const actions = this.contentEl.createDiv({ cls: "kplex-style-actions" });
+    const cancel = actions.createEl("button", { text: "Cancel" });
+    appendIcon(cancel, "x");
+    cancel.addEventListener("click", () => this.close());
+
+    const importButton = actions.createEl("button", { cls: "mod-cta", text: "Import" });
+    appendIcon(importButton, "download");
+    importButton.addEventListener("click", () => {
+      if (!this.rawText) {
+        status.setText("Choose an ExcaliBrain data.json file first.");
+        return;
+      }
+      try {
+        const parsed = JSON.parse(this.rawText) as unknown;
+        // Import legacy keys without resetting K-Plex-only preferences that do not exist in an
+        // ExcaliBrain data.json (layout columns, bounded-zone heights, connector style, etc.).
+        const current = this.plugin.settings;
+        const imported = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+        const importedHierarchy = imported.hierarchy && typeof imported.hierarchy === "object"
+          ? imported.hierarchy as Record<string, unknown>
+          : {};
+        this.plugin.settings = migrateAndMergeSettings({
+          ...current,
+          ...imported,
+          hierarchy: { ...current.hierarchy, ...importedHierarchy },
+        });
+      } catch (error) {
+        status.setText(`Invalid JSON: ${String(error)}`);
+        return;
+      }
+      importButton.disabled = true;
+      void this.plugin.saveSettings(true).then(() => {
+        new Notice("ExcaliBrain settings imported into K-Plex.", 2600);
+        this.onImported();
+        this.close();
+      }).catch((error: unknown) => {
+        importButton.disabled = false;
+        status.setText(`Import failed: ${String(error)}`);
+      });
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
 
 type DeclarativeSettingKey =
   | keyof ExcaliBrainSettings
@@ -272,7 +495,11 @@ type DeclarativeSettingKey =
   | "hierarchy.next"
   | "hierarchy.hidden"
   | "excludeFilepathsCsv"
-  | "backgroundColorHex";
+  | "backgroundColorHex"
+  | "baseLinkStyle.startArrowHead"
+  | "baseLinkStyle.endArrowHead"
+  | "baseLinkStyle.showLabel"
+  | "baseNodeStyle.gateRadius";
 
 const HIERARCHY_KEY_MAP: Record<string, keyof Hierarchy> = {
   "hierarchy.parents": "parents",
@@ -289,8 +516,17 @@ const REINDEX_SETTING_KEYS = new Set<string>([
   "inverseInfer",
   "showFullTagName",
   "primaryTagField",
+  "noteTypeField",
   ...Object.keys(HIERARCHY_KEY_MAP)
 ]);
+
+const ARROW_OPTIONS: Record<Arrowhead, string> = {
+  none: "None",
+  arrow: "Arrow",
+  triangle: "Triangle",
+  dot: "Dot",
+  bar: "Bar",
+};
 
 export class ExcaliBrainSettingTab extends PluginSettingTab {
   constructor(app: App, private ebPlugin: ExcaliBrainPlugin) {
@@ -298,131 +534,192 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
     this.containerEl.addClass("kplex-settings");
   }
 
+  private openNoteTypeStyleEditor(name: string | null): void {
+    const style = name ? this.ebPlugin.settings.noteTypeStyles[name] ?? {} : {};
+    new NoteTypeStyleModal(
+      this.app,
+      name,
+      style,
+      async (nextName, nextStyle, previousName) => {
+        if (previousName && previousName !== nextName) delete this.ebPlugin.settings.noteTypeStyles[previousName];
+        this.ebPlugin.settings.noteTypeStyles[nextName] = nextStyle;
+        await this.ebPlugin.saveSettings(false);
+        this.update();
+      },
+      async (removeName) => {
+        delete this.ebPlugin.settings.noteTypeStyles[removeName];
+        await this.ebPlugin.saveSettings(false);
+        this.update();
+      },
+    ).open();
+  }
+
+  private openLegacySettingsImporter(): void {
+    new LegacySettingsImportModal(this.app, this.ebPlugin, () => this.update()).open();
+  }
+
   getSettingDefinitions(): SettingDefinitionItem<DeclarativeSettingKey>[] {
+    const noteTypes = Object.keys(this.ebPlugin.settings.noteTypeStyles).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
     return [
       {
-        name: "K-Plex",
-        desc: "Knowledge Plex visual navigation. Legacy ExcaliBrain data.json setting keys remain supported for compatibility.",
-        searchable: false
-      },
-      {
-        type: "group",
-        heading: "Graph",
+        type: "page",
+        name: "Graph",
+        desc: "Navigation, layout, visibility and connector behavior.",
         items: [
           {
-            name: "Follow document navigation",
-            desc: "When enabled, K-Plex follows navigation in the active document leaf. If a leaf is linked in the K-Plex toolbar, only that linked leaf is followed.",
-            control: { type: "toggle", key: "followActiveFile" }
+            type: "group",
+            heading: "Navigation",
+            items: [
+              {
+                name: "Follow document navigation",
+                desc: "When enabled, K-Plex follows navigation in the active document leaf. If a leaf is linked in the toolbar, only that linked leaf is followed.",
+                control: { type: "toggle", key: "followActiveFile" }
+              },
+              {
+                name: "Open selected thought in document leaf",
+                desc: "Legacy autoOpenCentralDocument behavior. When enabled, navigating K-Plex opens the central thought in the active or linked document leaf.",
+                control: { type: "toggle", key: "autoOpenCentralDocument" }
+              },
+              { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
+            ]
           },
           {
-            name: "Open selected thought in document leaf",
-            desc: "Legacy autoOpenCentralDocument behavior. When enabled, navigating K-Plex opens the central thought in the active or linked document leaf.",
-            control: { type: "toggle", key: "autoOpenCentralDocument" }
+            type: "group",
+            heading: "Layout",
+            items: [
+              { name: "Parent columns", desc: "Maximum number of parent nodes in each row.", control: { type: "slider", key: "parentColumns", min: 1, max: 4, step: 1 } },
+              { name: "Child columns", desc: "Maximum number of child nodes in each row.", control: { type: "slider", key: "childColumns", min: 1, max: 7, step: 1 } },
+              { name: "Parent maximum height", desc: "Parent rows become vertically scrollable above this height.", control: { type: "slider", key: "parentMaxHeight", min: 140, max: 800, step: 20 } },
+              { name: "Child maximum height", desc: "Child rows become vertically scrollable above this height.", control: { type: "slider", key: "childMaxHeight", min: 140, max: 800, step: 20 } },
+              { name: "Friend & sibling maximum height", desc: "Friend and sibling lists become vertically scrollable above this height.", control: { type: "slider", key: "siblingMaxHeight", min: 140, max: 800, step: 20 } },
+              { name: "Maximum thoughts per zone", control: { type: "slider", key: "maxItemCount", min: 5, max: 100, step: 5 } },
+              { name: "Compact view", control: { type: "toggle", key: "compactView" } },
+              { name: "Compacting factor", control: { type: "slider", key: "compactingFactor", min: 0.75, max: 3, step: 0.05 } },
+              { name: "Minimum link length", desc: "Legacy spacing control translated to Plex spacing.", control: { type: "slider", key: "minLinkLength", min: 6, max: 40, step: 1 } },
+            ]
           },
           {
-            name: "Show siblings",
-            desc: "Display other children of the visible parents.",
-            control: { type: "toggle", key: "renderSiblings" }
+            type: "group",
+            heading: "Visibility",
+            items: [
+              { name: "Show siblings", control: { type: "toggle", key: "renderSiblings" } },
+              { name: "Show inferred relationships", control: { type: "toggle", key: "showInferredNodes" } },
+              { name: "Ghost / unresolved thoughts", control: { type: "toggle", key: "showVirtualNodes" } },
+              { name: "Web links", control: { type: "toggle", key: "showURLNodes" } },
+              { name: "Attachments", control: { type: "toggle", key: "showAttachments" } },
+              { name: "Folders", control: { type: "toggle", key: "showFolderNodes" } },
+              { name: "Tags", control: { type: "toggle", key: "showTagNodes" } },
+              { name: "Markdown pages", control: { type: "toggle", key: "showPageNodes" } },
+              { name: "Gate counts", desc: "Show the number of currently visible relationships beside each gate.", control: { type: "toggle", key: "showNeighborCount" } },
+            ]
           },
           {
-            name: "Show inferred links",
-            control: { type: "toggle", key: "showInferredNodes" }
+            type: "group",
+            heading: "Relationships",
+            items: [
+              { name: "Infer normal links as friends", control: { type: "toggle", key: "inferAllLinksAsFriends" } },
+              { name: "Inverse inferred parent/child direction", control: { type: "toggle", key: "inverseInfer" } },
+              {
+                name: "Connector style",
+                control: { type: "dropdown", key: "connectorStyle", defaultValue: "bezier", options: { bezier: "Bézier", straight: "Straight" } }
+              },
+              { name: "Start arrowhead", control: { type: "dropdown", key: "baseLinkStyle.startArrowHead", defaultValue: "none", options: ARROW_OPTIONS } },
+              { name: "End arrowhead", control: { type: "dropdown", key: "baseLinkStyle.endArrowHead", defaultValue: "none", options: ARROW_OPTIONS } },
+              { name: "Reverse arrow direction", desc: "Legacy inverseArrowDirection behavior.", control: { type: "toggle", key: "inverseArrowDirection" } },
+              { name: "Show relationship labels", control: { type: "toggle", key: "baseLinkStyle.showLabel" } },
+            ]
           },
-          {
-            name: "Infer all normal links as friends",
-            control: { type: "toggle", key: "inferAllLinksAsFriends" }
-          },
-          {
-            name: "Inverse inferred parent/child direction",
-            control: { type: "toggle", key: "inverseInfer" }
-          },
-          {
-            name: "Maximum thoughts per zone",
-            control: { type: "slider", key: "maxItemCount", min: 5, max: 100, step: 5 }
-          },
-          {
-            name: "Compact view",
-            desc: "Uses the legacy compactView and compactingFactor settings to tighten the Plex layout.",
-            control: { type: "toggle", key: "compactView" }
-          },
-          {
-            name: "Compacting factor",
-            control: { type: "slider", key: "compactingFactor", min: 0.75, max: 3, step: 0.05 }
-          },
-          {
-            name: "Minimum link length",
-            desc: "Legacy spacing control, translated to Plex spacing in the React renderer.",
-            control: { type: "slider", key: "minLinkLength", min: 6, max: 40, step: 1 }
-          },
-          {
-            name: "Connector style",
-            desc: "Choose curved Bézier connectors or straight connectors. Both attach to the relevant node gates.",
-            control: {
-              type: "dropdown",
-              key: "connectorStyle",
-              defaultValue: "bezier",
-              options: { bezier: "Bézier", straight: "Straight" }
-            }
-          },
-          {
-            name: "Auto fit on navigation",
-            control: { type: "toggle", key: "allowAutozoom" }
-          },
-          {
-            name: "Maximum zoom",
-            control: { type: "slider", key: "maxZoom", min: 0.5, max: 2, step: 0.05 }
-          }
         ]
       },
       {
-        type: "group",
-        heading: "Visibility",
+        type: "page",
+        name: "Ontology",
+        desc: "Field names that place relationships around the Plex.",
         items: [
-          { name: "Ghost / unresolved thoughts", control: { type: "toggle", key: "showVirtualNodes" } },
-          { name: "Web links", control: { type: "toggle", key: "showURLNodes" } },
-          { name: "Attachments", control: { type: "toggle", key: "showAttachments" } },
-          { name: "Folders", control: { type: "toggle", key: "showFolderNodes" } },
-          { name: "Tags", control: { type: "toggle", key: "showTagNodes" } },
-          { name: "Markdown pages", control: { type: "toggle", key: "showPageNodes" } }
+          {
+            type: "group",
+            heading: "Relationship fields",
+            cls: "kplex-ontology-fields",
+            items: [
+              { name: "Parent fields", control: { type: "textarea", key: "hierarchy.parents", rows: 3 } },
+              { name: "Child fields", control: { type: "textarea", key: "hierarchy.children", rows: 3 } },
+              { name: "Left friend / jump fields", control: { type: "textarea", key: "hierarchy.leftFriends", rows: 3 } },
+              { name: "Right friend / challenger fields", control: { type: "textarea", key: "hierarchy.rightFriends", rows: 3 } },
+              { name: "Previous fields", control: { type: "textarea", key: "hierarchy.previous", rows: 3 } },
+              { name: "Next fields", control: { type: "textarea", key: "hierarchy.next", rows: 3 } },
+              { name: "Hidden fields", control: { type: "textarea", key: "hierarchy.hidden", rows: 3 } },
+            ]
+          },
+          {
+            type: "group",
+            heading: "Ontology suggester",
+            items: [
+              { name: "Enable ontology suggester", control: { type: "toggle", key: "allowOntologySuggester" } },
+              { name: "Parent trigger", control: { type: "text", key: "ontologySuggesterParentTrigger" } },
+              { name: "Child trigger", control: { type: "text", key: "ontologySuggesterChildTrigger" } },
+              { name: "Left friend trigger", control: { type: "text", key: "ontologySuggesterLeftFriendTrigger" } },
+              { name: "Right friend trigger", control: { type: "text", key: "ontologySuggesterRightFriendTrigger" } },
+              { name: "Previous trigger", control: { type: "text", key: "ontologySuggesterPreviousTrigger" } },
+              { name: "Next trigger", control: { type: "text", key: "ontologySuggesterNextTrigger" } },
+            ]
+          },
         ]
       },
       {
-        type: "group",
-        heading: "Ontology (legacy compatible)",
-        cls: "kplex-ontology-settings",
+        type: "page",
+        name: "Compatibility",
+        desc: "Migration and legacy ExcaliBrain interoperability.",
         items: [
-          { name: "Parent fields", control: { type: "textarea", key: "hierarchy.parents", rows: 3 } },
-          { name: "Child fields", control: { type: "textarea", key: "hierarchy.children", rows: 3 } },
-          { name: "Left friend / jump fields", control: { type: "textarea", key: "hierarchy.leftFriends", rows: 3 } },
-          { name: "Right friend fields", control: { type: "textarea", key: "hierarchy.rightFriends", rows: 3 } },
-          { name: "Previous fields", control: { type: "textarea", key: "hierarchy.previous", rows: 3 } },
-          { name: "Next fields", control: { type: "textarea", key: "hierarchy.next", rows: 3 } },
-          { name: "Hidden fields", control: { type: "textarea", key: "hierarchy.hidden", rows: 3 } }
-        ]
+          {
+            type: "group",
+            heading: "ExcaliBrain",
+            items: [
+              {
+                name: "Import ExcaliBrain settings",
+                desc: "Import a backed-up ExcaliBrain data.json file and migrate compatible settings into K-Plex.",
+                action: () => this.openLegacySettingsImporter(),
+              },
+            ],
+          },
+        ],
       },
       {
-        type: "group",
-        heading: "Appearance",
+        type: "page",
+        name: "Appearance",
+        desc: "Node, gate and note type styling.",
         items: [
-          { name: "Plex background", control: { type: "color", key: "backgroundColorHex" } },
-          { name: "Render aliases", control: { type: "toggle", key: "renderAlias" } },
-          { name: "Neighbor counts", control: { type: "toggle", key: "showNeighborCount" } },
-          { name: "Show full tag names", control: { type: "toggle", key: "showFullTagName" } },
           {
-            name: "Primary tag field",
-            desc: "Legacy primaryTagField used to select tag-specific node styles.",
-            control: { type: "text", key: "primaryTagField" }
+            type: "group",
+            heading: "Plex",
+            items: [
+              { name: "Plex background", control: { type: "color", key: "backgroundColorHex" } },
+              { name: "Render aliases", control: { type: "toggle", key: "renderAlias" } },
+              { name: "Show full tag names", control: { type: "toggle", key: "showFullTagName" } },
+              { name: "Gate radius", desc: "Legacy node gate radius, in pixels.", control: { type: "slider", key: "baseNodeStyle.gateRadius", min: 2, max: 8, step: 0.5 } },
+              { name: "Primary tag field", desc: "Legacy primaryTagField used for tag-specific styles.", control: { type: "text", key: "primaryTagField" } },
+              { name: "Custom node title script", desc: "Legacy expression evaluated with dvPage and defaultName variables.", control: { type: "textarea", key: "nodeTitleScript", rows: 5 } },
+              { name: "Excluded path prefixes", desc: "Comma separated; matches legacy excludeFilepaths behavior.", control: { type: "textarea", key: "excludeFilepathsCsv", rows: 4 } },
+            ]
           },
           {
-            name: "Custom node title script",
-            desc: "Legacy expression evaluated with dvPage and defaultName variables.",
-            control: { type: "textarea", key: "nodeTitleScript", rows: 5 }
+            type: "group",
+            heading: "Note type",
+            items: [
+              { name: "Document property", desc: "The YAML property whose value selects the primary node style.", control: { type: "text", key: "noteTypeField" } },
+            ]
           },
           {
-            name: "Excluded path prefixes",
-            desc: "Comma separated; matches the legacy excludeFilepaths behavior.",
-            control: { type: "textarea", key: "excludeFilepathsCsv", rows: 4 }
-          }
+            type: "group",
+            heading: "Note type styles",
+            items: [
+              { name: "Add note type style", desc: "Create a primary visual style for a Note type document property value.", action: () => this.openNoteTypeStyleEditor(null) },
+              ...noteTypes.map((name) => ({
+                name,
+                desc: this.ebPlugin.settings.noteTypeStyles[name]?.icon ? `Lucide icon: ${this.ebPlugin.settings.noteTypeStyles[name].icon}` : "Edit this note type style",
+                action: () => this.openNoteTypeStyleEditor(name),
+              })),
+            ]
+          },
         ]
       }
     ];
@@ -433,6 +730,10 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
     if (hierarchyKey) return csv(this.ebPlugin.settings.hierarchy[hierarchyKey] as string[]);
     if (key === "excludeFilepathsCsv") return csv(this.ebPlugin.settings.excludeFilepaths);
     if (key === "backgroundColorHex") return this.ebPlugin.settings.backgroundColor.slice(0, 7).toLowerCase();
+    if (key === "baseLinkStyle.startArrowHead") return this.ebPlugin.settings.baseLinkStyle.startArrowHead ?? "none";
+    if (key === "baseLinkStyle.endArrowHead") return this.ebPlugin.settings.baseLinkStyle.endArrowHead ?? "none";
+    if (key === "baseLinkStyle.showLabel") return this.ebPlugin.settings.baseLinkStyle.showLabel ?? false;
+    if (key === "baseNodeStyle.gateRadius") return this.ebPlugin.settings.baseNodeStyle.gateRadius ?? DEFAULT_NODE_STYLE.gateRadius ?? 5;
     return this.ebPlugin.settings[key as keyof ExcaliBrainSettings];
   }
 
@@ -453,6 +754,27 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
     if (key === "backgroundColorHex") {
       const hex = String(value).slice(0, 7).toLowerCase();
       this.ebPlugin.settings.backgroundColor = `${hex}ff`;
+      await this.ebPlugin.saveSettings(false);
+      return;
+    }
+
+    if (key === "baseLinkStyle.startArrowHead") {
+      this.ebPlugin.settings.baseLinkStyle.startArrowHead = String(value) as Arrowhead;
+      await this.ebPlugin.saveSettings(false);
+      return;
+    }
+    if (key === "baseLinkStyle.endArrowHead") {
+      this.ebPlugin.settings.baseLinkStyle.endArrowHead = String(value) as Arrowhead;
+      await this.ebPlugin.saveSettings(false);
+      return;
+    }
+    if (key === "baseLinkStyle.showLabel") {
+      this.ebPlugin.settings.baseLinkStyle.showLabel = Boolean(value);
+      await this.ebPlugin.saveSettings(false);
+      return;
+    }
+    if (key === "baseNodeStyle.gateRadius") {
+      this.ebPlugin.settings.baseNodeStyle.gateRadius = Number(value);
       await this.ebPlugin.saveSettings(false);
       return;
     }

@@ -31,6 +31,14 @@ function tagStyle(page: GraphPage, settings: ExcaliBrainSettings): NodeStyle {
   return prefixes.size ? { ...primary, prefix: [...prefixes].join("") } : primary;
 }
 
+function noteTypeStyle(page: GraphPage, settings: ExcaliBrainSettings): NodeStyle {
+  if (!page.noteType) return {};
+  const direct = settings.noteTypeStyles[page.noteType];
+  if (direct) return direct;
+  const key = Object.keys(settings.noteTypeStyles).find((name) => name.toLowerCase() === page.noteType?.toLowerCase());
+  return key ? settings.noteTypeStyles[key] ?? {} : {};
+}
+
 export function resolveNodeStyle(page: GraphPage, relation: Neighbour | null, role: Role | "center", settings: ExcaliBrainSettings): NodeStyle {
   const central = role === "center" ? settings.centralNodeStyle : {};
   const sibling = role === "sibling" ? settings.siblingNodeStyle : {};
@@ -45,10 +53,11 @@ export function resolveNodeStyle(page: GraphPage, relation: Neighbour | null, ro
     ...(relation?.relationType === RelationType.INFERRED ? settings.inferredNodeStyle : {}),
     ...(page.url ? settings.urlNodeStyle : {}),
     ...(!page.file && !page.url ? settings.virtualNodeStyle : {}),
-    ...central,
-    ...sibling,
     ...(page.file && page.file.extension !== "md" ? settings.attachmentNodeStyle : {}),
     ...tagStyle(page, settings),
+    ...noteTypeStyle(page, settings),
+    ...central,
+    ...sibling,
     embedHeight: settings.centerEmbedHeight,
     embedWidth: settings.centerEmbedWidth
   };
