@@ -193,6 +193,7 @@ function fitVerticalStrip(
   index: GraphIndex,
   settings: ExcaliBrainSettings,
   centerPath: string,
+  alignment: "top" | "center" | "bottom" = "center",
 ): void {
   if (!nodes.length) return;
   const occupiedTop = Math.min(...nodes.map((node) => node.y - node.height / 2));
@@ -201,9 +202,13 @@ function fitVerticalStrip(
   ));
   const occupiedHeight = occupiedBottom - occupiedTop;
   const availableHeight = Math.max(1, bottomLimit - topLimit);
-  const targetTop = occupiedHeight <= availableHeight
-    ? topLimit + (availableHeight - occupiedHeight) / 2
-    : topLimit;
+  const targetTop = occupiedHeight > availableHeight
+    ? topLimit
+    : alignment === "bottom"
+      ? bottomLimit - occupiedHeight
+      : alignment === "top"
+        ? topLimit
+        : topLimit + (availableHeight - occupiedHeight) / 2;
   const shift = targetTop - occupiedTop;
   for (const node of nodes) node.y += shift;
 }
@@ -312,8 +317,11 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   const sideToChildrenGap = Math.max(30, 36 * compactFactor * legacySpacing);
   const sideBottom = childSectionTop - sideToChildrenGap;
   const sideTop = sideBottom - Math.max(120, settings.friendMaxHeight);
-  fitVerticalStrip(left, sideTop, sideBottom, index, settings, neighborhood.center.path);
-  fitVerticalStrip(right, sideTop, sideBottom, index, settings, neighborhood.center.path);
+  // Lateral relationship lists grow upward from their lower boundary. This keeps sparse
+  // Friends/Previous and Challengers/Next groups close to the center/children instead of
+  // marooning a single node near the top of a tall lateral band.
+  fitVerticalStrip(left, sideTop, sideBottom, index, settings, neighborhood.center.path, "bottom");
+  fitVerticalStrip(right, sideTop, sideBottom, index, settings, neighborhood.center.path, "bottom");
 
   const siblingLift = Math.max(58, 72 * compactFactor * legacySpacing);
   const siblingBottom = sideBottom - siblingLift;

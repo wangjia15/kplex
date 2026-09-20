@@ -265,7 +265,15 @@ function buildZoneDisplayLayout(
   }
 
   const gap = 20;
-  let y = topPadding;
+  const occupiedHeight = filtered.reduce((sum, node, nodeIndex) => (
+    sum
+    + node.height
+    + expandedChildReserve(node.page, index, settings, centerPath)
+    + (nodeIndex > 0 ? gap : 0)
+  ), 0);
+  const availableHeight = Math.max(0, panel.height - topPadding - bottomPadding);
+  const bottomAlign = zone === "left" || zone === "right";
+  let y = topPadding + (bottomAlign && occupiedHeight < availableHeight ? availableHeight - occupiedHeight : 0);
   for (const node of filtered) {
     localPositions.set(node.page.path, { x: node.x - panel.left, y: y + node.height / 2 });
     y += node.height + expandedChildReserve(node.page, index, settings, centerPath) + gap;
