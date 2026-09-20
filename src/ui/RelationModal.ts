@@ -99,7 +99,7 @@ export class RelationModal extends Modal {
         attr: { type: "button", title: file.path },
       });
       addIcon(button, "file-text");
-      button.createEl("span", { cls: "kplex-relation-file-name", text: file.basename });
+      button.createSpan({ cls: "kplex-relation-file-name", text: file.basename });
       button.createEl("small", { text: file.path });
       button.addEventListener("click", () => {
         const wasSelected = this.selectedPath === file.path && this.activeIndex === index;
@@ -175,12 +175,12 @@ export class RelationModal extends Modal {
 
     if (this.options.fixedTarget) {
       const summary = this.contentEl.createDiv({ cls: "kplex-relation-summary" });
-      summary.createEl("span", { cls: "kplex-relation-direction", text: roleName });
-      summary.createEl("span", { text: this.plugin.index.titleFor(this.options.fixedTarget), attr: { title: this.options.fixedTarget.path } });
+      summary.createSpan({ cls: "kplex-relation-direction", text: roleName });
+      summary.createSpan({ text: this.plugin.index.titleFor(this.options.fixedTarget), attr: { title: this.options.fixedTarget.path } });
     } else {
       this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Markdown note", attr: { for: "kplex-relation-modal-search" } });
       const searchWrap = this.contentEl.createDiv({ cls: "kplex-relation-search-wrap" });
-      const searchIcon = searchWrap.createEl("span", { cls: "kplex-icon" });
+      const searchIcon = searchWrap.createSpan({ cls: "kplex-icon" });
       addIcon(searchIcon, "search");
       this.searchInput = searchWrap.createEl("input", {
         attr: { id: "kplex-relation-modal-search", type: "text", placeholder: "Search notes…", autocomplete: "off" },

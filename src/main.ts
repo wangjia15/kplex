@@ -17,7 +17,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly hoverParent: HoverParent = { hoverPopover: null };
   private reactiveIndexListenersRegistered = false;
 
-  private runningExcaliBrainSettings(): unknown | null {
+  private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
     // legacy ExcaliBrain plugin does expose its loaded settings on the plugin instance, so keep
     // this guarded bridge isolated here. K-Plex has its own manifest id (k-plex), allowing both
@@ -31,7 +31,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async onload(): Promise<void> {
-    const ownData = await this.loadData();
+    const ownData: unknown = await this.loadData();
     const ownRecord = ownData && typeof ownData === "object" ? ownData as Record<string, unknown> : null;
     const alreadyKplex = Boolean(
       ownRecord?.kplexInitialized ||
@@ -514,7 +514,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     const reference = this.referenceForPage(target, storageFile);
 
     const metadataWait = this.waitForMetadataChange(storageFile);
-    await this.app.fileManager.processFrontMatter(storageFile, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(storageFile, (frontmatter: Record<string, unknown>) => {
       let desiredKey = field;
       for (const key of Object.keys(frontmatter)) {
         const normalizedKey = normalizeFieldName(key);

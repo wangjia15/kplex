@@ -246,7 +246,7 @@ export class GraphIndex {
       isFolder: params.isFolder ?? false,
       isTag: params.isTag ?? false,
       mtime: params.mtime ?? params.file?.stat.mtime ?? null,
-      neighbours: params.neighbours ?? new Map(),
+      neighbours: params.neighbours ?? new Map<string, Relation>(),
       aliases: params.aliases ?? [],
       tags: params.tags ?? [],
       noteType: params.noteType ?? null,
@@ -313,7 +313,7 @@ export class GraphIndex {
   }
 
   private addResolvedLinks(): void {
-    const resolved = this.app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+    const resolved = this.app.metadataCache.resolvedLinks;
     for (const [parentPath, children] of Object.entries(resolved)) {
       const parent = this.get(parentPath);
       if (!parent) continue;
@@ -325,7 +325,7 @@ export class GraphIndex {
   }
 
   private addUnresolvedLinks(): void {
-    const unresolved = this.app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
+    const unresolved = this.app.metadataCache.unresolvedLinks;
     for (const [parentPath, children] of Object.entries(unresolved)) {
       const parent = this.get(parentPath);
       if (!parent || parentPath === this.plugin.settings.excalibrainFilepath) continue;
@@ -381,7 +381,7 @@ export class GraphIndex {
     const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
     const noteTypeValue = getNormalizedFrontmatterValues(meta, noteTypeField)[0];
     const unwrapNoteType = (value: unknown): string | null => {
-      const first = Array.isArray(value) ? value[0] : value;
+      const first: unknown = Array.isArray(value) ? (value as unknown[])[0] : value;
       if (typeof first !== "string" && typeof first !== "number") return null;
       let text = String(first).trim();
       const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/);

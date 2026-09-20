@@ -519,7 +519,9 @@ type DeclarativeSettingKey =
   | "baseLinkStyle.showLabel"
   | "baseNodeStyle.gateRadius";
 
-const HIERARCHY_KEY_MAP: Record<string, keyof Hierarchy> = {
+type EditableHierarchyKey = Exclude<keyof Hierarchy, "friends" | "exclusions">;
+
+const HIERARCHY_KEY_MAP: Record<string, EditableHierarchyKey> = {
   "hierarchy.parents": "parents",
   "hierarchy.children": "children",
   "hierarchy.leftFriends": "leftFriends",
@@ -757,7 +759,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
 
   getControlValue(key: string): unknown {
     const hierarchyKey = HIERARCHY_KEY_MAP[key];
-    if (hierarchyKey) return csv(this.ebPlugin.settings.hierarchy[hierarchyKey] as string[]);
+    if (hierarchyKey) return csv(this.ebPlugin.settings.hierarchy[hierarchyKey]);
     if (key === "excludeFilepathsCsv") return csv(this.ebPlugin.settings.excludeFilepaths);
     if (key === "backgroundColorHex") return this.ebPlugin.settings.backgroundColor.slice(0, 7).toLowerCase();
     if (key === "baseLinkStyle.startArrowHead") return this.ebPlugin.settings.baseLinkStyle.startArrowHead ?? "none";
@@ -770,7 +772,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
   async setControlValue(key: string, value: unknown): Promise<void> {
     const hierarchyKey = HIERARCHY_KEY_MAP[key];
     if (hierarchyKey) {
-      this.ebPlugin.settings.hierarchy[hierarchyKey] = fromCsv(String(value)) as never;
+      this.ebPlugin.settings.hierarchy[hierarchyKey] = fromCsv(String(value));
       await this.ebPlugin.saveSettings(true);
       return;
     }
