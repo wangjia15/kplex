@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { Profiler, useCallback, useEffect, useState, type ProfilerOnRenderCallback } from "react";
 import type { TFile } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { perfLog } from "../util/perf";
+
+
+const profileRender: ProfilerOnRenderCallback = (id, phase, actualDuration, baseDuration, startTime, commitTime) => {
+  perfLog("react.profiler", { id, phase, actualDuration, baseDuration, startTime, commitTime });
+};
 
 type BooleanToolbarSetting =
   | "showAttachments"
@@ -42,7 +48,10 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
   });
   const [historyCursor, setHistoryCursor] = useState(() => Math.max(0, plugin.settings.navigationHistory.length - 1));
 
-  useEffect(() => plugin.index.subscribe(() => forceRender((x) => x + 1)), [plugin]);
+  useEffect(() => plugin.index.subscribe(() => {
+    perfLog("ui.index-notify", { indexSize: plugin.index.size });
+    forceRender((x) => x + 1);
+  }), [plugin]);
 
   useEffect(() => {
     const followFile = (file: TFile | null) => {
@@ -69,7 +78,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
       const next = [...plugin.settings.navigationHistory.filter((p) => p !== target.path), target.path].slice(-40);
       plugin.settings.navigationHistory = next;
       setHistoryCursor(next.length - 1);
-      void plugin.saveSettings(false);
+      void plugin.saveSettings(false, false);
     }
     void plugin.syncPageToDocumentLeaf(target);
   }, [plugin]);
@@ -87,7 +96,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
 
   const toggleToolbarSetting = async (key: BooleanToolbarSetting) => {
     plugin.settings[key] = !plugin.settings[key];
-    await plugin.saveSettings(false);
+    await plugin.saveSettings(false, false);
     forceRender((x) => x + 1);
   };
 
@@ -101,19 +110,19 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
     plugin.settings.autoOpenCentralDocument = enabled;
     plugin.settings.followActiveFile = enabled;
     if (!enabled && plugin.isDocumentLeafLinked()) await plugin.setDocumentLeafLinked(false);
-    await plugin.saveSettings(false);
+    await plugin.saveSettings(false, false);
     forceRender((x) => x + 1);
   };
 
   const toggleExpandedView = async () => {
     plugin.settings.graphDepth = plugin.settings.graphDepth === 2 ? 1 : 2;
-    await plugin.saveSettings(false);
+    await plugin.saveSettings(false, false);
     forceRender((x) => x + 1);
   };
 
   const toggleConnectorStyle = async () => {
     plugin.settings.connectorStyle = plugin.settings.connectorStyle === "straight" ? "bezier" : "straight";
-    await plugin.saveSettings(false);
+    await plugin.saveSettings(false, false);
     forceRender((x) => x + 1);
   };
 
@@ -129,7 +138,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
         <div className="excalibrain-brand"><ObsidianIcon name="brain-circuit" size={20} className="excalibrain-brand-mark" /><strong>K-Plex</strong></div>
         <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
         <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
-        <SearchBox index={plugin.index} onActivate={activate} />
+        <Profiler id="SearchBox" onRender={profileRender}><SearchBox index={plugin.index} onActivate={activate} /></Profiler>
         <div className="excalibrain-top-actions">
           <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
           <ToolButton
@@ -178,7 +187,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={plugin.settings} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <Profiler id="PlexGraph" onRender={profileRender}><PlexGraph plugin={plugin} index={plugin.index} settings={plugin.settings} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} /></Profiler>
         </section>
       </main>
 

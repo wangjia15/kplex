@@ -6,6 +6,7 @@ import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
 import { LinkDirection, type GateRole, type GraphPage } from "./types";
 import { OntologySuggester } from "./editor/OntologySuggester";
 import { extractLinksFromValue, normalizeFieldName } from "./index/fieldParser";
+import { perfLog, perfMemoryDetails } from "./util/perf";
 
 export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
@@ -15,6 +16,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   private linkedDocumentLeaf: WorkspaceLeaf | null = null;
   private lastDocumentLeaf: WorkspaceLeaf | null = null;
   private readonly hoverParent: HoverParent = { hoverPopover: null };
+  private rebuildTriggerCounts = new Map<string, number>();
+  private rebuildRequestSerial = 0;
+  private reactiveIndexListenersRegistered = false;
 
   private runningExcaliBrainSettings(): unknown | null {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -30,7 +34,11 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async onload(): Promise<void> {
+    const onloadStarted = performance.now();
+    perfLog("plugin.onload.start", { id: this.manifest.id, version: this.manifest.version, ...perfMemoryDetails() });
+    const loadDataStarted = performance.now();
     const ownData = await this.loadData();
+    perfLog("plugin.loadData", { ms: performance.now() - loadDataStarted, hasData: Boolean(ownData) });
     const ownRecord = ownData && typeof ownData === "object" ? ownData as Record<string, unknown> : null;
     const alreadyKplex = Boolean(
       ownRecord?.kplexInitialized ||
@@ -41,6 +49,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       ownRecord?.noteTypeField
     );
     this.settings = migrateAndMergeSettings(ownData);
+    perfLog("plugin.settings.ready", { alreadyKplex, indexUpdateInterval: this.settings.indexUpdateInterval, maxItemCount: this.settings.maxItemCount });
     if (alreadyKplex && !ownRecord?.kplexInitialized) {
       this.settings.kplexInitialized = true;
       await this.saveData(this.settings);
@@ -69,23 +78,21 @@ export default class ExcaliBrainPlugin extends Plugin {
       }
     });
 
-    const schedule = () => this.scheduleRebuild();
-    this.registerEvent(this.app.vault.on("create", schedule));
-    this.registerEvent(this.app.vault.on("delete", schedule));
-    this.registerEvent(this.app.vault.on("rename", schedule));
-    this.registerEvent(this.app.metadataCache.on("changed", schedule));
-    this.registerEvent(this.app.metadataCache.on("resolved", schedule));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       this.rememberDocumentLeaf(leaf);
       this.validateLinkedDocumentLeaf();
     }));
 
     if (this.settings.indexUpdateInterval > 0) {
-      this.registerInterval(window.setInterval(() => void this.rebuildIndex(false), Math.max(5000, this.settings.indexUpdateInterval)));
+      const interval = Math.max(5000, this.settings.indexUpdateInterval);
+      perfLog("plugin.index.interval", { intervalMs: interval });
+      this.registerInterval(window.setInterval(() => void this.rebuildIndex(false, false, "interval"), interval));
     }
 
     this.app.workspace.onLayoutReady(() => {
+      perfLog("plugin.layout-ready", { sinceOnloadMs: performance.now() - onloadStarted, ...perfMemoryDetails() });
       void (async () => {
+        const readyStarted = performance.now();
         this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
 
         // Delay the one-time migration until layout-ready. Community plugins have normally all
@@ -101,40 +108,130 @@ export default class ExcaliBrainPlugin extends Plugin {
           await this.saveData(this.settings);
         }
 
-        await this.rebuildIndex(false, true);
+        // Obsidian emits `vault:create` once for every file while opening a vault. The official
+        // plugin performance guidance explicitly recommends waiting until layout-ready before
+        // reacting to those events. In large vaults, the metadata cache can still be resolving
+        // links for a short period after layout-ready, so also wait for it to become stable before
+        // doing K-Plex's one expensive initial build. This prevents building the same 100k-node
+        // graph two or three times during startup.
+        const stableResolvedSources = await this.waitForMetadataCacheStability();
+        await this.rebuildIndex(false, true, "layout-ready-stable");
+        const resolvedSourcesAfterBuild = Object.keys(this.app.metadataCache.resolvedLinks).length;
+        if (resolvedSourcesAfterBuild !== stableResolvedSources) {
+          perfLog("plugin.metadata-catchup", { beforeBuild: stableResolvedSources, afterBuild: resolvedSourcesAfterBuild });
+          this.indexDirty = true;
+          await this.rebuildIndex(false, false, "layout-ready-metadata-catchup");
+        }
+        this.registerReactiveIndexListeners();
+        perfLog("plugin.layout-ready.done", { ms: performance.now() - readyStarted, indexSize: this.index.size, ...perfMemoryDetails() });
       })();
     });
+    perfLog("plugin.onload.registered", { ms: performance.now() - onloadStarted });
   }
 
   onunload(): void {
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
+    this.index?.destroy();
   }
 
-  private scheduleRebuild(): void {
-    // Metadata-cache events can arrive in bursts while editing. Mark the index dirty immediately,
-    // but rebuild only after the burst settles. Periodic checks then become effectively free when
-    // nothing changed instead of rebuilding a 20k-file vault every minute.
+  private registerReactiveIndexListeners(): void {
+    if (this.reactiveIndexListenersRegistered) return;
+    this.reactiveIndexListenersRegistered = true;
+
+    this.registerEvent(this.app.vault.on("create", () => this.scheduleRebuild("vault:create")));
+    this.registerEvent(this.app.vault.on("delete", () => this.scheduleRebuild("vault:delete")));
+    this.registerEvent(this.app.vault.on("rename", () => this.scheduleRebuild("vault:rename")));
+    this.registerEvent(this.app.metadataCache.on("changed", () => this.scheduleRebuild("metadata:changed")));
+    this.registerEvent(this.app.metadataCache.on("resolved", () => this.scheduleRebuild("metadata:resolved")));
+    perfLog("plugin.rebuild-listeners.ready", { layoutReady: true });
+  }
+
+  private async waitForMetadataCacheStability(): Promise<number> {
+    const started = performance.now();
+    const markdownFiles = this.app.vault.getMarkdownFiles().length;
+    if (markdownFiles === 0) {
+      perfLog("plugin.metadata-stability", { waitedMs: 0, markdownFiles: 0, resolvedSources: 0, coverage: 1, reason: "empty-vault" });
+      return 0;
+    }
+
+    // `resolvedLinks` is public API and, after the initial metadata pass, normally contains an
+    // entry for essentially every Markdown source. Do not require exactly 100% because plugins,
+    // ignored files, and timing differences can make the counts differ slightly. We additionally
+    // require the count to stay unchanged for a short quiet window.
+    const maxWaitMs = 4000;
+    const quietWindowMs = 350;
+    const pollMs = 100;
+    const minimumCoverage = 0.95;
+    let lastCount = Object.keys(this.app.metadataCache.resolvedLinks).length;
+    let stableSince = performance.now();
+    let reason = "timeout";
+
+    while (performance.now() - started < maxWaitMs) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, pollMs));
+      const now = performance.now();
+      const count = Object.keys(this.app.metadataCache.resolvedLinks).length;
+      if (count !== lastCount) {
+        lastCount = count;
+        stableSince = now;
+      }
+      const coverage = markdownFiles > 0 ? count / markdownFiles : 1;
+      if (coverage >= minimumCoverage && now - stableSince >= quietWindowMs) {
+        reason = "stable";
+        break;
+      }
+    }
+
+    perfLog("plugin.metadata-stability", {
+      waitedMs: performance.now() - started,
+      markdownFiles,
+      resolvedSources: lastCount,
+      coverage: markdownFiles > 0 ? lastCount / markdownFiles : 1,
+      reason,
+    });
+    return lastCount;
+  }
+
+  private scheduleRebuild(reason = "unknown"): void {
+    // Do not print one line per metadata event: large vault startup can generate thousands. Keep
+    // counters and print string summaries when the debounce fires (plus periodic burst milestones).
     this.indexDirty = true;
+    const count = (this.rebuildTriggerCounts.get(reason) ?? 0) + 1;
+    this.rebuildTriggerCounts.set(reason, count);
+    const total = [...this.rebuildTriggerCounts.values()].reduce((sum, value) => sum + value, 0);
+    if (total === 1 || total % 250 === 0) {
+      perfLog("plugin.rebuild-trigger.burst", { total, reason, reasonCount: count, timerAlreadyPending: this.rebuildTimer !== null });
+    }
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     this.rebuildTimer = window.setTimeout(() => {
       this.rebuildTimer = null;
-      void this.rebuildIndex(false);
+      const summary = [...this.rebuildTriggerCounts.entries()].map(([key, value]) => `${key}=${value}`).join(",");
+      this.rebuildTriggerCounts.clear();
+      perfLog("plugin.rebuild-trigger.flush", { total, reasons: summary });
+      void this.rebuildIndex(false, false, `debounce:${summary}`);
     }, 900);
   }
 
-  async rebuildIndex(showNotice = false, force = false): Promise<void> {
-    if (!force && !showNotice && !this.indexDirty && this.index.size > 0) return;
+  async rebuildIndex(showNotice = false, force = false, reason = "direct"): Promise<void> {
+    const request = ++this.rebuildRequestSerial;
+    const shouldSkip = !force && !showNotice && !this.indexDirty && this.index.size > 0;
+    perfLog("plugin.rebuildIndex.request", { request, reason, showNotice, force, dirty: this.indexDirty, indexSize: this.index.size, skip: shouldSkip });
+    if (shouldSkip) return;
     this.indexDirty = false;
+    const started = performance.now();
     if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
     await this.index.rebuild();
+    perfLog("plugin.rebuildIndex.done", { request, reason, ms: performance.now() - started, indexSize: this.index.size, dirtyAfter: this.indexDirty, ...perfMemoryDetails() });
     if (showNotice) new Notice(`K-Plex indexed ${this.index.size} thoughts.`, 1800);
   }
 
-  async saveSettings(reindex = false): Promise<void> {
+  async saveSettings(reindex = false, notifyIndex = true): Promise<void> {
+    const started = performance.now();
     this.settings.primaryTagFieldLowerCase = this.settings.primaryTagField.toLowerCase().replaceAll(" ", "-");
     await this.saveData(this.settings);
+    const saveMs = performance.now() - started;
     if (reindex) await this.index.rebuild();
-    else this.index.notify();
+    else if (notifyIndex) this.index.notify();
+    perfLog("plugin.saveSettings", { reindex, notifyIndex, saveMs, totalMs: performance.now() - started });
   }
 
   private isDocumentLeafCandidate(leaf: WorkspaceLeaf | null): leaf is WorkspaceLeaf {
@@ -267,7 +364,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (!this.index.get(path)) return;
     const history = [...this.settings.navigationHistory.filter((p) => p !== path), path].slice(-40);
     this.settings.navigationHistory = history;
-    await this.saveSettings(false);
+    await this.saveSettings(false, false);
     await this.activateView();
   }
 

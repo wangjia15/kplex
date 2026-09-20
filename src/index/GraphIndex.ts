@@ -1,5 +1,6 @@
 import { getAllTags, TFile, TFolder, type App } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
+import { perfLog, perfMemoryDetails, startLagMonitor } from "../util/perf";
 import type { ExcaliBrainSettings } from "../settings";
 import {
   LinkDirection,
@@ -18,9 +19,11 @@ import {
   getNormalizedFrontmatterValues,
   getNormalizedInlineFieldValues,
   normalizeFieldName,
-  parseFileMetadata,
+  mergeFileMetadata,
+  type ParsedBodyMetadata,
   type ParsedFileMetadata
 } from "./fieldParser";
+import { MetadataParseWorker } from "./MetadataParseWorker";
 
 const DEFAULT_RELATION = (): Omit<Relation, "target"> => ({
   direction: null,
@@ -33,7 +36,21 @@ const DEFAULT_RELATION = (): Omit<Relation, "target"> => ({
   isPreviousFriend: false
 });
 
-type FieldCacheEntry = { mtime: number; meta: ParsedFileMetadata; content: string };
+type FieldCacheEntry = { mtime: number; body: ParsedBodyMetadata };
+
+type CachedRelationView = {
+  signature: string;
+  roles: Record<Exclude<Role, "sibling">, Neighbour[]>;
+  gateStats: GateStats;
+  neighbourCount: number;
+};
+
+type PersistedBodyCache = {
+  version: 1;
+  entries: Record<string, { mtime: number; body: ParsedBodyMetadata }>;
+};
+
+const BODY_CACHE_KEY = "k-plex:index-body-cache:v1";
 type SearchEntry = {
   page: GraphPage;
   name: string;
@@ -45,6 +62,20 @@ type RelationVector = {
   pi: boolean; pd: boolean; ci: boolean; cd: boolean;
   lfd: boolean; rfd: boolean; pfd: boolean; nfd: boolean;
 };
+
+type RuntimePerfStats = {
+  neighboursCalls: number;
+  neighboursMs: number;
+  gateStatsCalls: number;
+  gateStatsMs: number;
+  neighbourCountCalls: number;
+  neighbourCountMs: number;
+  titleCalls: number;
+  titleCacheHits: number;
+  titleCacheMisses: number;
+};
+
+type SlowFileStat = { path: string; ms: number; size: number };
 
 const concatDefinition = (newDef?: string, current?: string): string | undefined => {
   if (!newDef) return current;
@@ -65,7 +96,8 @@ const relationTypeToSet = (current: RelationType | undefined, incoming: Relation
   return incoming;
 };
 
-const naturalCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const naturalCompare = (a: string, b: string) => naturalCollator.compare(a, b);
 
 function subsequenceScore(text: string, query: string): number | null {
   if (!query) return 0;
@@ -114,11 +146,45 @@ export class GraphIndex {
   private building = false;
   private rebuildQueued = false;
   private searchEntries: SearchEntry[] = [];
+  private searchCandidateCache = new Map<string, SearchEntry[]>();
   private titleCache = new Map<string, { signature: string; title: string }>();
   private titleScriptSource = "";
   private titleScriptFn: ((dvPage: unknown, defaultName: string) => unknown) | null = null;
+  private runtimePerf: RuntimePerfStats = this.emptyRuntimePerf();
+  private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+  private metadataWorker = new MetadataParseWorker();
+  private cachePersistTimer: number | null = null;
+  private bodyCacheDirty = false;
 
-  constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {}
+  constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {
+    this.restoreBodyCache();
+  }
+
+  private emptyRuntimePerf(): RuntimePerfStats {
+    return {
+      neighboursCalls: 0, neighboursMs: 0,
+      gateStatsCalls: 0, gateStatsMs: 0,
+      neighbourCountCalls: 0, neighbourCountMs: 0,
+      titleCalls: 0, titleCacheHits: 0, titleCacheMisses: 0,
+    };
+  }
+
+  reportRuntimePerf(label: string): void {
+    const stats = this.runtimePerf;
+    perfLog("index.runtime", {
+      label,
+      neighboursCalls: stats.neighboursCalls,
+      neighboursMs: stats.neighboursMs,
+      gateStatsCalls: stats.gateStatsCalls,
+      gateStatsMs: stats.gateStatsMs,
+      neighbourCountCalls: stats.neighbourCountCalls,
+      neighbourCountMs: stats.neighbourCountMs,
+      titleCalls: stats.titleCalls,
+      titleCacheHits: stats.titleCacheHits,
+      titleCacheMisses: stats.titleCacheMisses,
+    });
+    this.runtimePerf = this.emptyRuntimePerf();
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -132,29 +198,132 @@ export class GraphIndex {
   get(path: string): GraphPage | undefined { return this.pages.get(path) ?? this.pages.get(this.lowercasePathMap.get(path.toLowerCase()) ?? ""); }
   allPages(): GraphPage[] { return [...this.pages.values()]; }
 
+  destroy(): void {
+    if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
+    this.metadataWorker.destroy();
+  }
+
+  private restoreBodyCache(): void {
+    const started = performance.now();
+    try {
+      const raw = this.app.loadLocalStorage(BODY_CACHE_KEY) as PersistedBodyCache | null;
+      if (!raw || raw.version !== 1 || !raw.entries || typeof raw.entries !== "object") {
+        perfLog("index.body-cache.restore", { hit: false, entries: 0, ms: performance.now() - started });
+        return;
+      }
+      let restored = 0;
+      for (const [path, value] of Object.entries(raw.entries)) {
+        if (!value || typeof value.mtime !== "number" || !value.body) continue;
+        this.fieldCache.set(path, { mtime: value.mtime, body: value.body });
+        restored += 1;
+      }
+      perfLog("index.body-cache.restore", { hit: true, entries: restored, ms: performance.now() - started });
+    } catch (error) {
+      perfLog("index.body-cache.restore", { hit: false, entries: 0, ms: performance.now() - started, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private scheduleBodyCachePersist(): void {
+    if (!this.bodyCacheDirty) return;
+    if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
+    this.cachePersistTimer = window.setTimeout(() => {
+      this.cachePersistTimer = null;
+      const started = performance.now();
+      try {
+        const entries: PersistedBodyCache["entries"] = {};
+        for (const [path, entry] of this.fieldCache) entries[path] = { mtime: entry.mtime, body: entry.body };
+        this.app.saveLocalStorage(BODY_CACHE_KEY, { version: 1, entries } satisfies PersistedBodyCache);
+        this.bodyCacheDirty = false;
+        perfLog("index.body-cache.persist", { entries: this.fieldCache.size, ms: performance.now() - started });
+      } catch (error) {
+        perfLog("index.body-cache.persist", { entries: this.fieldCache.size, ms: performance.now() - started, error: error instanceof Error ? error.message : String(error) });
+      }
+    }, 5000);
+  }
+
   async rebuild(): Promise<void> {
     if (this.building) {
       this.rebuildQueued = true;
+      perfLog("index.rebuild.queued", { generation: this.generation, pages: this.pages.size, fieldCache: this.fieldCache.size });
       return;
     }
     this.building = true;
     const run = ++this.generation;
+    const started = performance.now();
+    const lag = startLagMonitor(100);
+    let lagStopped = false;
+    const markdownCount = this.app.vault.getMarkdownFiles().length;
+    perfLog("index.rebuild.start", {
+      run,
+      markdownFiles: markdownCount,
+      fieldCacheEntries: this.fieldCache.size,
+      previousPages: this.pages.size,
+      ...perfMemoryDetails(),
+    });
     try {
       this.pages.clear();
       this.lowercasePathMap.clear();
       this.titleCache.clear();
+      this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+
+      let phase = performance.now();
       this.addVaultTree();
+      perfLog("index.phase", { run, phase: "vault-tree", ms: performance.now() - phase, pages: this.pages.size });
+
+      phase = performance.now();
       this.addTagTree();
+      perfLog("index.phase", { run, phase: "tag-tree", ms: performance.now() - phase, pages: this.pages.size });
+
+      phase = performance.now();
       this.addResolvedLinks();
+      perfLog("index.phase", { run, phase: "resolved-links", ms: performance.now() - phase, pages: this.pages.size });
+
+      phase = performance.now();
       this.addUnresolvedLinks();
+      perfLog("index.phase", { run, phase: "unresolved-links", ms: performance.now() - phase, pages: this.pages.size });
+
+      phase = performance.now();
       await this.enrichMarkdownPages(run);
-      if (run !== this.generation) return;
+      perfLog("index.phase", { run, phase: "enrich-markdown", ms: performance.now() - phase, pages: this.pages.size, fieldCacheEntries: this.fieldCache.size });
+      if (run !== this.generation) {
+        perfLog("index.rebuild.aborted", { run, currentGeneration: this.generation, ms: performance.now() - started });
+        return;
+      }
+
+      phase = performance.now();
       this.rebuildSearchIndex();
+      perfLog("index.phase", { run, phase: "search-index", ms: performance.now() - phase, searchEntries: this.searchEntries.length });
+
+      phase = performance.now();
       this.emit();
+      perfLog("index.phase", { run, phase: "emit", ms: performance.now() - phase, listeners: this.listeners.size });
+
+      let relationEntries = 0;
+      for (const page of this.pages.values()) relationEntries += page.neighbours.size;
+      const lagStats = lag.stop();
+      lagStopped = true;
+      this.scheduleBodyCachePersist();
+      perfLog("index.rebuild.end", {
+        run,
+        ms: performance.now() - started,
+        pages: this.pages.size,
+        relationEntries,
+        markdownFiles: markdownCount,
+        searchEntries: this.searchEntries.length,
+        lagSamples: lagStats.samples,
+        lagOver50ms: lagStats.over50ms,
+        lagOver100ms: lagStats.over100ms,
+        maxLagMs: lagStats.maxLagMs,
+        avgLagMs: lagStats.avgLagMs,
+        queuedAgain: this.rebuildQueued,
+        ...perfMemoryDetails(),
+      });
     } finally {
+      if (!lagStopped) lag.stop();
       this.building = false;
       if (this.rebuildQueued) {
         this.rebuildQueued = false;
+        perfLog("index.rebuild.dequeue", { afterRun: run });
         void this.rebuild();
       }
     }
@@ -162,14 +331,17 @@ export class GraphIndex {
 
 
   private rebuildSearchIndex(): void {
-    // Search must stay responsive in very large vaults. Pre-normalize the inexpensive fields
-    // once per index rebuild instead of calling titleFor() and sorting 20k+ pages per keystroke.
+    this.searchCandidateCache.clear();
+    // Do not globally locale-sort 100k+ graph thoughts here. In the instrumented large vault,
+    // that sort alone took ~5.8 seconds. Ranked search already orders matches, and the empty
+    // query only needs a small initial sample, so insertion order is sufficient and effectively
+    // free to build.
     this.searchEntries = [...this.pages.values()].map((page) => ({
       page,
       name: page.name.toLowerCase(),
       aliases: page.aliases.map((alias) => alias.toLowerCase()),
       path: page.path.toLowerCase(),
-    })).sort((a, b) => naturalCompare(a.page.name, b.page.name) || naturalCompare(a.page.path, b.page.path));
+    }));
   }
 
   private createPage(params: Partial<GraphPage> & Pick<GraphPage, "path" | "name">): GraphPage {
@@ -199,16 +371,23 @@ export class GraphIndex {
   }
 
   private addVaultTree(): void {
+    const started = performance.now();
+    let folders = 0;
+    let files = 0;
+    let markdownFiles = 0;
     const root = this.createPage({ path: "folder:/", name: "/", isFolder: true });
     this.addPage(root);
     const visit = (folder: TFolder, parent: GraphPage): void => {
       for (const item of folder.children) {
         if (item instanceof TFolder) {
+          folders += 1;
           const node = this.createPage({ path: `folder:${item.path}`, name: item.name, isFolder: true });
           this.addPage(node);
           this.addPair(parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, "file-tree");
           visit(item, node);
         } else if (item instanceof TFile) {
+          files += 1;
+          if (item.extension === "md") markdownFiles += 1;
           const node = this.createPage({ path: item.path, name: item.extension === "md" ? item.basename : item.name, file: item });
           this.addPage(node);
           this.addPair(parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, "file-tree");
@@ -216,16 +395,22 @@ export class GraphIndex {
       }
     };
     visit(this.app.vault.getRoot(), root);
+    perfLog("index.vault-tree.details", { ms: performance.now() - started, folders, files, markdownFiles });
   }
 
   private addTagTree(): void {
+    const started = performance.now();
     const tagNames = new Set<string>();
+    let filesScanned = 0;
+    let filesWithoutCache = 0;
     for (const file of this.app.vault.getMarkdownFiles()) {
+      filesScanned += 1;
       const cache = this.app.metadataCache.getFileCache(file);
-      if (!cache) continue;
+      if (!cache) { filesWithoutCache += 1; continue; }
       for (const tag of getAllTags(cache) ?? []) tagNames.add(tag);
     }
 
+    const pageCountBefore = this.pages.size;
     for (const rawTag of tagNames) {
       const parts = rawTag.slice(1).split("/").filter(Boolean);
       let parent: GraphPage | null = null;
@@ -245,62 +430,184 @@ export class GraphIndex {
         parent = page;
       });
     }
+    perfLog("index.tag-tree.details", {
+      ms: performance.now() - started,
+      filesScanned,
+      filesWithoutCache,
+      uniqueTags: tagNames.size,
+      tagPagesAdded: this.pages.size - pageCountBefore,
+    });
   }
 
   private addResolvedLinks(): void {
+    const started = performance.now();
     const resolved = this.app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+    let sourceFiles = 0;
+    let linksSeen = 0;
+    let linksAdded = 0;
     for (const [parentPath, children] of Object.entries(resolved)) {
+      sourceFiles += 1;
       const parent = this.get(parentPath);
       if (!parent) continue;
       for (const childPath of Object.keys(children)) {
+        linksSeen += 1;
         const child = this.get(childPath);
-        if (child) this.addInferredParentChild(parent, child);
+        if (child) { this.addInferredParentChild(parent, child); linksAdded += 1; }
       }
     }
+    perfLog("index.resolved-links.details", { ms: performance.now() - started, sourceFiles, linksSeen, linksAdded });
   }
 
   private addUnresolvedLinks(): void {
+    const started = performance.now();
     const unresolved = this.app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
+    let sourceFiles = 0;
+    let linksSeen = 0;
+    let virtualCreated = 0;
     for (const [parentPath, children] of Object.entries(unresolved)) {
+      sourceFiles += 1;
       const parent = this.get(parentPath);
       if (!parent || parentPath === this.plugin.settings.excalibrainFilepath) continue;
       for (const childPath of Object.keys(children)) {
+        linksSeen += 1;
+        const existed = Boolean(this.get(childPath));
         const child = this.ensureVirtual(childPath);
+        if (!existed) virtualCreated += 1;
         this.addInferredParentChild(parent, child);
       }
     }
+    perfLog("index.unresolved-links.details", { ms: performance.now() - started, sourceFiles, linksSeen, virtualCreated });
   }
 
   private async enrichMarkdownPages(run: number): Promise<void> {
+    const started = performance.now();
     const files = this.app.vault.getMarkdownFiles() as TFile[];
     const alive = new Set(files.map((f) => f.path));
-    for (const cachedPath of this.fieldCache.keys()) if (!alive.has(cachedPath)) this.fieldCache.delete(cachedPath);
+    let staleCacheRemoved = 0;
+    for (const cachedPath of this.fieldCache.keys()) {
+      if (!alive.has(cachedPath)) { this.fieldCache.delete(cachedPath); staleCacheRemoved += 1; this.bodyCacheDirty = true; }
+    }
 
     let processed = 0;
+    let missingPage = 0;
+    let cacheHits = 0;
+    let cacheMisses = 0;
+    let bytesRead = 0;
+    let readMs = 0;
+    let parseMs = 0;
+    let applyMs = 0;
+    let yieldMs = 0;
+    let lastProgressAt = started;
+    let lastProgressProcessed = 0;
+    const slowReads: SlowFileStat[] = [];
+    const slowParses: SlowFileStat[] = [];
+    const slowApplies: SlowFileStat[] = [];
+    const pushSlow = (list: SlowFileStat[], stat: SlowFileStat): void => {
+      if (stat.ms < 2 && list.length >= 12) return;
+      list.push(stat);
+      list.sort((a, b) => b.ms - a.ms);
+      if (list.length > 12) list.length = 12;
+    };
+
+    perfLog("index.enrich.start", { run, files: files.length, fieldCacheEntries: this.fieldCache.size, staleCacheRemoved });
+
     for (const file of files) {
       if (run !== this.generation) return;
+      const fileStarted = performance.now();
       const page = this.get(file.path);
-      if (!page) continue;
+      if (!page) { missingPage += 1; continue; }
       let entry = this.fieldCache.get(file.path);
+      let bodySize = 0;
       if (!entry || entry.mtime !== file.stat.mtime) {
+        cacheMisses += 1;
+        const readStarted = performance.now();
         const content = await this.app.vault.cachedRead(file);
-        entry = {
-          mtime: file.stat.mtime,
-          content,
-          meta: parseFileMetadata(this.app.metadataCache.getFileCache(file), content)
-        };
-        this.fieldCache.set(file.path, entry);
-      }
-      this.applyMetadata(page, file, entry.meta, entry.content);
+        const currentReadMs = performance.now() - readStarted;
+        readMs += currentReadMs;
+        bytesRead += content.length;
+        bodySize = content.length;
+        pushSlow(slowReads, { path: file.path, ms: currentReadMs, size: content.length });
 
-      // Cached rebuilds can otherwise execute tens of thousands of synchronous iterations in one
-      // event-loop turn. Yield in small batches so search, hover and navigation remain responsive.
+        // Parsing is pure string processing, so keep it off the Obsidian renderer thread.
+        const parseStarted = performance.now();
+        const body = await this.metadataWorker.parse(content);
+        const currentParseMs = performance.now() - parseStarted;
+        parseMs += currentParseMs;
+        pushSlow(slowParses, { path: file.path, ms: currentParseMs, size: content.length });
+
+        entry = { mtime: file.stat.mtime, body };
+        this.fieldCache.set(file.path, entry);
+        this.bodyCacheDirty = true;
+      } else {
+        cacheHits += 1;
+      }
+
+      const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
+      const applyStarted = performance.now();
+      this.applyMetadata(page, file, meta);
+      const currentApplyMs = performance.now() - applyStarted;
+      applyMs += currentApplyMs;
+      pushSlow(slowApplies, { path: file.path, ms: currentApplyMs, size: bodySize });
+
       processed += 1;
-      if (processed % 250 === 0) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      // Yield often enough to keep Obsidian responsive, but not so often that timer scheduling
+      // dominates a warm-cache rebuild. At ~0.1-0.2ms of apply work per cached file, batches of
+      // 250 stay comfortably below a frame-scale long task on typical hardware.
+      if (processed % 250 === 0) {
+        const yieldStarted = performance.now();
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        yieldMs += performance.now() - yieldStarted;
+      }
+      if (processed % 1000 === 0 || performance.now() - lastProgressAt >= 2500) {
+        const now = performance.now();
+        const batchCount = processed - lastProgressProcessed;
+        const batchMs = now - lastProgressAt;
+        perfLog("index.enrich.progress", {
+          run,
+          processed,
+          total: files.length,
+          percent: files.length ? processed / files.length * 100 : 100,
+          elapsedMs: now - started,
+          batchFiles: batchCount,
+          batchMs,
+          filesPerSecond: batchMs > 0 ? batchCount * 1000 / batchMs : 0,
+          cacheHits,
+          cacheMisses,
+          readMs,
+          parseMs,
+          applyMs,
+          yieldMs,
+          lastFileMs: now - fileStarted,
+          ...perfMemoryDetails(),
+        });
+        lastProgressAt = now;
+        lastProgressProcessed = processed;
+      }
     }
+
+    const slowList = (items: SlowFileStat[]): string => items.map((item) => `${item.ms.toFixed(1)}ms:${item.size}:${item.path}`).join(" || ");
+    perfLog("index.enrich.end", {
+      run,
+      files: files.length,
+      processed,
+      missingPage,
+      cacheHits,
+      cacheMisses,
+      cacheHitPercent: processed ? cacheHits / processed * 100 : 0,
+      bytesRead,
+      readMs,
+      parseMs,
+      applyMs,
+      yieldMs,
+      totalMs: performance.now() - started,
+      slowReads: slowList(slowReads),
+      slowParses: slowList(slowParses),
+      slowApplies: slowList(slowApplies),
+      ...perfMemoryDetails(),
+    });
   }
 
-  private applyMetadata(page: GraphPage, file: TFile, meta: ParsedFileMetadata, content: string): void {
+  private applyMetadata(page: GraphPage, file: TFile, meta: ParsedFileMetadata): void {
     page.aliases = meta.aliases;
     page.tags = meta.tags;
     page.frontmatter = meta.frontmatter;
@@ -373,20 +680,11 @@ export class GraphIndex {
       }
     }
 
-    // URL nodes are inferred children, plus an origin/domain parent hierarchy. Markdown labels become the URL thought title.
-    const urlRegex = /\bhttps?:\/\/[^\s<>()\[\]{}"']+/gi;
-    const markdownUrlRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi;
-    const aliases = new Map<string, string>();
-    for (const match of content.matchAll(markdownUrlRegex)) {
-      const raw = match[2].trim().replace(/[.,;:!?]+$/, "");
-      if (raw) aliases.set(raw, match[1].trim());
-    }
-    const seen = new Set<string>();
-    for (const match of content.matchAll(urlRegex)) {
-      const raw = match[0].replace(/[.,;:!?]+$/, "");
-      if (seen.has(raw)) continue;
-      seen.add(raw);
-      const urlPage = this.ensureUrl(raw, aliases.get(raw) || raw);
+    // URL nodes are inferred children, plus an origin/domain parent hierarchy. Body URL
+    // extraction is cached/worker-parsed; applying the graph relationships stays on the main thread.
+    for (const reference of meta.urls) {
+      const raw = reference.url;
+      const urlPage = this.ensureUrl(raw, reference.label || raw);
       this.addInferredParentChild(page, urlPage);
       try {
         const origin = new URL(raw).origin;
@@ -567,31 +865,123 @@ export class GraphIndex {
     return true;
   }
 
-  neighbours(page: GraphPage, role: Role): Neighbour[] {
+  private relationViewSignature(): string {
     const settings = this.plugin.settings;
-    const output: Neighbour[] = [];
-    for (const relation of page.neighbours.values()) {
-      if (relation.isHidden || !this.visibleTarget(relation.target, settings)) continue;
-      let relationType = this.classify(relation, role);
-      if (role === "left" && relationType && !relation.leftFriendType) {
-        relationType = relation.parentType === RelationType.DEFINED && relation.childType === RelationType.DEFINED
-          ? RelationType.DEFINED
-          : RelationType.INFERRED;
-      }
-      if (!relationType || (relationType === RelationType.INFERRED && !settings.showInferredNodes)) continue;
-      let typeDefinition: string | undefined;
+    return [
+      settings.showInferredNodes ? "1" : "0",
+      settings.showVirtualNodes ? "1" : "0",
+      settings.showAttachments ? "1" : "0",
+      settings.showFolderNodes ? "1" : "0",
+      settings.showTagNodes ? "1" : "0",
+      settings.showPageNodes ? "1" : "0",
+      settings.showURLNodes ? "1" : "0",
+      settings.renderAlias ? "1" : "0",
+      settings.nodeTitleScript,
+      settings.excludeFilepaths.join("\u0002"),
+    ].join("\u0001");
+  }
+
+  private relationView(page: GraphPage): CachedRelationView {
+    const signature = this.relationViewSignature();
+    const cached = this.relationViewCache.get(page);
+    if (cached?.signature === signature) return cached;
+
+    const settings = this.plugin.settings;
+    const roles: CachedRelationView["roles"] = {
+      parent: [],
+      child: [],
+      left: [],
+      right: [],
+      previous: [],
+      next: [],
+    };
+    const gateStats: GateStats = {
+      top: { visibleCount: 0, hasAny: false },
+      bottom: { visibleCount: 0, hasAny: false },
+      left: { visibleCount: 0, hasAny: false },
+      right: { visibleCount: 0, hasAny: false },
+    };
+    const visibleGatePaths: Record<GateSide, Set<string>> = {
+      top: new Set<string>(),
+      bottom: new Set<string>(),
+      left: new Set<string>(),
+      right: new Set<string>(),
+    };
+    const uniqueVisible = new Set<string>();
+
+    const roleGate = (role: Exclude<Role, "sibling">): GateSide => {
+      if (role === "parent") return "top";
+      if (role === "child") return "bottom";
+      if (role === "left" || role === "previous") return "left";
+      return "right";
+    };
+    const typeDefinitionFor = (relation: Relation, role: Exclude<Role, "sibling">): string | undefined => {
       switch (role) {
-        case "parent": typeDefinition = relation.parentTypeDefinition; break;
-        case "child": typeDefinition = relation.childTypeDefinition; break;
-        case "left": typeDefinition = relation.leftFriendTypeDefinition; break;
-        case "right": typeDefinition = relation.rightFriendTypeDefinition; break;
-        case "previous": typeDefinition = relation.previousFriendTypeDefinition; break;
-        case "next": typeDefinition = relation.nextFriendTypeDefinition; break;
-        case "sibling": break;
+        case "parent": return relation.parentTypeDefinition;
+        case "child": return relation.childTypeDefinition;
+        case "left": return relation.leftFriendTypeDefinition;
+        case "right": return relation.rightFriendTypeDefinition;
+        case "previous": return relation.previousFriendTypeDefinition;
+        case "next": return relation.nextFriendTypeDefinition;
       }
-      output.push({ page: relation.target, relationType, typeDefinition, linkDirection: relation.direction, role });
+    };
+
+    const concreteRoles: Array<Exclude<Role, "sibling">> = ["parent", "child", "left", "right", "previous", "next"];
+    for (const relation of page.neighbours.values()) {
+      if (relation.isHidden) continue;
+
+      // A filled gate represents semantic relationships even when the target is currently hidden.
+      for (const role of concreteRoles) {
+        if (this.classify(relation, role) !== null) gateStats[roleGate(role)].hasAny = true;
+      }
+
+      if (!this.visibleTarget(relation.target, settings)) continue;
+      for (const role of concreteRoles) {
+        let relationType = this.classify(relation, role);
+        if (role === "left" && relationType && !relation.leftFriendType) {
+          relationType = relation.parentType === RelationType.DEFINED && relation.childType === RelationType.DEFINED
+            ? RelationType.DEFINED
+            : RelationType.INFERRED;
+        }
+        if (!relationType || (relationType === RelationType.INFERRED && !settings.showInferredNodes)) continue;
+        roles[role].push({
+          page: relation.target,
+          relationType,
+          typeDefinition: typeDefinitionFor(relation, role),
+          linkDirection: relation.direction,
+          role,
+        });
+        visibleGatePaths[roleGate(role)].add(relation.target.path);
+        uniqueVisible.add(relation.target.path);
+      }
     }
-    return output.sort((a, b) => naturalCompare(this.titleFor(a.page), this.titleFor(b.page)));
+
+    for (const role of concreteRoles) {
+      const list = roles[role];
+      if (list.length < 2) continue;
+      // Compute each title once. Calling titleFor() from Array.sort's comparator made a single
+      // neighborhood calculation invoke it tens or hundreds of thousands of times on large
+      // sibling sets, even when every call was a cache hit.
+      const keyed = list.map((item, index) => ({ item, index, title: this.titleFor(item.page) }));
+      keyed.sort((a, b) => naturalCompare(a.title, b.title) || a.index - b.index);
+      roles[role] = keyed.map((entry) => entry.item);
+    }
+    gateStats.top.visibleCount = visibleGatePaths.top.size;
+    gateStats.bottom.visibleCount = visibleGatePaths.bottom.size;
+    gateStats.left.visibleCount = visibleGatePaths.left.size;
+    gateStats.right.visibleCount = visibleGatePaths.right.size;
+
+    const result: CachedRelationView = { signature, roles, gateStats, neighbourCount: uniqueVisible.size };
+    this.relationViewCache.set(page, result);
+    return result;
+  }
+
+  neighbours(page: GraphPage, role: Role): Neighbour[] {
+    const started = performance.now();
+    this.runtimePerf.neighboursCalls += 1;
+    const result = role === "sibling" ? [] : this.relationView(page).roles[role];
+    this.runtimePerf.neighboursMs += performance.now() - started;
+    return result;
   }
 
   isConnected(source: GraphPage, targetPath: string): boolean {
@@ -601,36 +991,10 @@ export class GraphIndex {
   }
 
   gateStats(page: GraphPage): GateStats {
-    const roleSets: Record<GateSide, Role[]> = {
-      top: ["parent"],
-      bottom: ["child"],
-      left: ["left", "previous"],
-      right: ["right", "next"],
-    };
-
-    const result: GateStats = {
-      top: { visibleCount: 0, hasAny: false },
-      bottom: { visibleCount: 0, hasAny: false },
-      left: { visibleCount: 0, hasAny: false },
-      right: { visibleCount: 0, hasAny: false },
-    };
-
-    for (const [gate, roles] of Object.entries(roleSets) as Array<[GateSide, Role[]]>) {
-      const visible = new Set<string>();
-      for (const role of roles) {
-        for (const neighbour of this.neighbours(page, role)) visible.add(neighbour.page.path);
-      }
-      result[gate].visibleCount = visible.size;
-
-      for (const relation of page.neighbours.values()) {
-        if (relation.isHidden) continue;
-        if (roles.some((role) => this.classify(relation, role) !== null)) {
-          result[gate].hasAny = true;
-          break;
-        }
-      }
-    }
-
+    const started = performance.now();
+    this.runtimePerf.gateStatsCalls += 1;
+    const result = this.relationView(page).gateStats;
+    this.runtimePerf.gateStatsMs += performance.now() - started;
     return result;
   }
 
@@ -654,8 +1018,12 @@ export class GraphIndex {
   }
 
   getNeighborhood(path: string): Neighborhood | null {
+    const started = performance.now();
     const center = this.get(path);
-    if (!center) return null;
+    if (!center) {
+      perfLog("index.neighborhood", { path, found: false, ms: performance.now() - started });
+      return null;
+    }
     const max = this.plugin.settings.maxItemCount;
     const parents = this.neighbours(center, "parent").slice(0, max);
     const children = this.neighbours(center, "child").slice(0, max);
@@ -678,11 +1046,27 @@ export class GraphIndex {
         }
       }
     }
-    const siblings = [...siblingsMap.values()].sort((a, b) => naturalCompare(this.titleFor(a.page), this.titleFor(b.page))).slice(0, max);
-    return { center, parents, children, leftFriends, rightFriends, siblings };
+    const siblingList = [...siblingsMap.values()];
+    const siblingKeys = siblingList.map((item, index) => ({ item, index, title: this.titleFor(item.page) }));
+    siblingKeys.sort((a, b) => naturalCompare(a.title, b.title) || a.index - b.index);
+    const siblings = siblingKeys.slice(0, max).map((entry) => entry.item);
+    const result = { center, parents, children, leftFriends, rightFriends, siblings };
+    perfLog("index.neighborhood", {
+      path,
+      found: true,
+      ms: performance.now() - started,
+      directRelations: center.neighbours.size,
+      parents: parents.length,
+      children: children.length,
+      leftFriends: leftFriends.length,
+      rightFriends: rightFriends.length,
+      siblings: siblings.length,
+    });
+    return result;
   }
 
   titleFor(page: GraphPage): string {
+    this.runtimePerf.titleCalls += 1;
     const settings = this.plugin.settings;
     const signature = [
       page.mtime ?? 0,
@@ -692,7 +1076,11 @@ export class GraphIndex {
       page.name,
     ].join("\u0001");
     const cached = this.titleCache.get(page.path);
-    if (cached?.signature === signature) return cached.title;
+    if (cached?.signature === signature) {
+      this.runtimePerf.titleCacheHits += 1;
+      return cached.title;
+    }
+    this.runtimePerf.titleCacheMisses += 1;
 
     let title = settings.renderAlias && page.aliases.length ? page.aliases[0] : page.name;
     if (settings.nodeTitleScript && page.file) {
@@ -729,35 +1117,60 @@ export class GraphIndex {
   }
 
   neighbourCount(page: GraphPage): number {
-    const roles: Role[] = ["parent", "child", "left", "right", "previous", "next"];
-    const unique = new Set<string>();
-    for (const role of roles) for (const n of this.neighbours(page, role)) unique.add(n.page.path);
-    return unique.size;
+    const started = performance.now();
+    this.runtimePerf.neighbourCountCalls += 1;
+    const result = this.relationView(page).neighbourCount;
+    this.runtimePerf.neighbourCountMs += performance.now() - started;
+    return result;
   }
 
   search(query: string, limit = 40): GraphPage[] {
+    const started = performance.now();
     const q = query.trim().toLowerCase();
     const settings = this.plugin.settings;
     const max = Math.max(1, limit);
+    let scanned = 0;
+    let visible = 0;
+    let matched = 0;
 
     if (!q) {
       const output: GraphPage[] = [];
       for (const entry of this.searchEntries) {
+        scanned += 1;
         if (!this.visibleTarget(entry.page, settings)) continue;
+        visible += 1;
         output.push(entry.page);
         if (output.length >= max) break;
       }
+      perfLog("search.query", { query: "", ms: performance.now() - started, scanned, visible, matched: output.length, returned: output.length, indexSize: this.searchEntries.length, candidateSource: "sample" });
       return output;
     }
 
-    // Keep only the best N matches while scanning the pre-normalized table. This avoids sorting
-    // the entire vault on every keystroke and supports subsequence fuzzy matching (e.g.
-    // "mmpb" -> "Mindmap Builder") while exact/prefix/full-substring matches rank first.
+    // A match for a longer query must also match every prefix of that query. Reuse the longest
+    // cached prefix so normal typing progressively searches a much smaller candidate set instead
+    // of rescanning 100k+ thoughts on every keypress. Cache textual matches independently from
+    // visibility so toggling graph filters cannot make the cache incorrect.
+    let candidates = this.searchEntries;
+    let candidateSource = "full";
+    for (let length = q.length - 1; length >= 1; length -= 1) {
+      const prefix = q.slice(0, length);
+      const cached = this.searchCandidateCache.get(prefix);
+      if (!cached) continue;
+      candidates = cached;
+      candidateSource = prefix;
+      break;
+    }
+
+    const textualMatches: SearchEntry[] = [];
     const best: Array<{ page: GraphPage; score: number }> = [];
-    for (const entry of this.searchEntries) {
-      if (!this.visibleTarget(entry.page, settings)) continue;
+    for (const entry of candidates) {
+      scanned += 1;
       const score = searchEntryScore(entry, q);
       if (score === null) continue;
+      textualMatches.push(entry);
+      matched += 1;
+      if (!this.visibleTarget(entry.page, settings)) continue;
+      visible += 1;
       if (best.length >= max && score >= best[best.length - 1].score) continue;
 
       let at = best.length;
@@ -765,6 +1178,19 @@ export class GraphIndex {
       best.splice(at, 0, { page: entry.page, score });
       if (best.length > max) best.pop();
     }
-    return best.map((item) => item.page);
+
+    this.searchCandidateCache.set(q, textualMatches);
+    // Keep a small LRU-ish working set. SearchBox queries are generally a single prefix chain;
+    // retaining the most recent dozen prefixes gives fast typing and backspacing without keeping
+    // large candidate arrays forever.
+    while (this.searchCandidateCache.size > 12) {
+      const oldest = this.searchCandidateCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.searchCandidateCache.delete(oldest);
+    }
+
+    const result = best.map((item) => item.page);
+    perfLog("search.query", { query: q, ms: performance.now() - started, scanned, visible, matched, returned: result.length, indexSize: this.searchEntries.length, candidateSource });
+    return result;
   }
 }

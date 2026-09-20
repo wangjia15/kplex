@@ -5,12 +5,24 @@ export const normalizeFieldName = (name: string): string => name.toLowerCase().r
 const WIKI_LINK_RE = /\[\[([^\]#|]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
 const URL_RE = /\bhttps?:\/\/[^\s<>()\[\]{}"']+/gi;
+const MARKDOWN_URL_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi;
+
+export type ExternalUrlReference = {
+  url: string;
+  label?: string;
+};
+
+export type ParsedBodyMetadata = {
+  inlineFields: Record<string, unknown[]>;
+  urls: ExternalUrlReference[];
+};
 
 export type ParsedFileMetadata = {
   frontmatter: Record<string, unknown>;
   inlineFields: Record<string, unknown[]>;
   aliases: string[];
   tags: string[];
+  urls: ExternalUrlReference[];
 };
 
 function flattenValue(value: unknown): unknown[] {
@@ -28,10 +40,7 @@ function stringifyTag(value: unknown): string[] {
     .map((v) => v.startsWith("#") ? v : `#${v}`);
 }
 
-export function parseFileMetadata(cache: CachedMetadata | null, content: string): ParsedFileMetadata {
-  const frontmatter = { ...(cache?.frontmatter ?? {}) } as Record<string, unknown>;
-  delete frontmatter.position;
-
+export function parseBodyMetadata(content: string): ParsedBodyMetadata {
   const inlineFields: Record<string, unknown[]> = {};
   // Dataview inline fields. This intentionally supports the common full-line and inline forms.
   for (const line of content.split(/\r?\n/)) {
@@ -43,6 +52,34 @@ export function parseFileMetadata(cache: CachedMetadata | null, content: string)
     inlineFields[key].push(match[2].trim());
   }
 
+  // External URLs are body-derived and expensive to rediscover on every startup. Keep their
+  // markdown labels with the parsed body metadata so this portion can be cached independently
+  // of Obsidian's frontmatter/tag metadata cache.
+  const aliases = new Map<string, string>();
+  MARKDOWN_URL_RE.lastIndex = 0;
+  for (const match of content.matchAll(MARKDOWN_URL_RE)) {
+    const raw = match[2].trim().replace(/[.,;:!?]+$/, "");
+    if (raw) aliases.set(raw, match[1].trim());
+  }
+
+  const urls: ExternalUrlReference[] = [];
+  const seen = new Set<string>();
+  URL_RE.lastIndex = 0;
+  for (const match of content.matchAll(URL_RE)) {
+    const raw = match[0].replace(/[.,;:!?]+$/, "");
+    if (!raw || seen.has(raw)) continue;
+    seen.add(raw);
+    const label = aliases.get(raw);
+    urls.push(label ? { url: raw, label } : { url: raw });
+  }
+
+  return { inlineFields, urls };
+}
+
+export function mergeFileMetadata(cache: CachedMetadata | null, body: ParsedBodyMetadata): ParsedFileMetadata {
+  const frontmatter = { ...(cache?.frontmatter ?? {}) } as Record<string, unknown>;
+  delete frontmatter.position;
+
   const aliases = flattenValue(frontmatter.aliases ?? frontmatter.alias)
     .filter((v): v is string => typeof v === "string")
     .map((v) => v.trim())
@@ -52,7 +89,17 @@ export function parseFileMetadata(cache: CachedMetadata | null, content: string)
   for (const tag of stringifyTag(frontmatter.tags ?? frontmatter.tag)) tags.add(tag);
   for (const item of cache?.tags ?? []) tags.add(item.tag);
 
-  return { frontmatter, inlineFields, aliases, tags: [...tags] };
+  return {
+    frontmatter,
+    inlineFields: body.inlineFields,
+    aliases,
+    tags: [...tags],
+    urls: body.urls,
+  };
+}
+
+export function parseFileMetadata(cache: CachedMetadata | null, content: string): ParsedFileMetadata {
+  return mergeFileMetadata(cache, parseBodyMetadata(content));
 }
 
 function resolveLink(app: App, raw: string, hostPath: string): string {

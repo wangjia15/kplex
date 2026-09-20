@@ -1,7 +1,8 @@
-import { useState, type ChangeEvent, type MouseEvent } from "react";
+import { useState, type ChangeEvent, type FocusEvent, type MouseEvent } from "react";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { GraphPage } from "../types";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { perfLog } from "../util/perf";
 
 export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate: (page: GraphPage) => void }) {
   const [query, setQuery] = useState("");
@@ -15,8 +16,15 @@ export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate
     <input
       className="excalibrain-search"
       value={query}
-      onChange={(e: ChangeEvent<HTMLInputElement>) => setQuery(e.currentTarget.value)}
-      onFocus={() => setFocused(true)}
+      onChange={(e: ChangeEvent<HTMLInputElement>) => {
+        const value = e.currentTarget.value;
+        perfLog("search.input", { query: value, eventLagMs: Math.max(0, performance.now() - e.timeStamp) });
+        setQuery(value);
+      }}
+      onFocus={(e: FocusEvent<HTMLInputElement>) => {
+        perfLog("search.focus", { eventLagMs: Math.max(0, performance.now() - e.timeStamp), indexSize: index.size });
+        setFocused(true);
+      }}
       onBlur={() => window.setTimeout(() => setFocused(false), 120)}
       placeholder="Search thoughts…"
       aria-label="Search thoughts"

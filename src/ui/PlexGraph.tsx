@@ -8,6 +8,7 @@ import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/styl
 import { buildScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { perfLog } from "../util/perf";
 
 type Point = { x: number; y: number };
 type HoverState =
@@ -372,12 +373,29 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
   // getNeighborhood() performs relationship classification/filtering. Keep it stable during local
   // pointer/camera/hover state updates; only rebuild it when navigation, settings, or the index
   // actually changes. This removes the largest source of wasted work in dense Plex scenes.
-  const neighborhood = useMemo(() => index.getNeighborhood(activePath), [index, activePath, renderRevision]);
+  const neighborhood = useMemo(() => {
+    const started = performance.now();
+    const result = index.getNeighborhood(activePath);
+    perfLog("ui.neighborhood.memo", { activePath, ms: performance.now() - started, renderRevision, found: Boolean(result) });
+    return result;
+  }, [index, activePath, renderRevision]);
   const [layoutRevision, setLayoutRevision] = useState(0);
-  const scene = useMemo(
-    () => neighborhood ? buildScene(neighborhood, index, settings) : { nodes: [], edges: [], zoneViewports: {} },
-    [neighborhood, index, settings, layoutRevision],
-  );
+  const scene = useMemo(() => {
+    const started = performance.now();
+    const result = neighborhood ? buildScene(neighborhood, index, settings) : { nodes: [], edges: [], zoneViewports: {} };
+    perfLog("ui.scene.build", {
+      activePath,
+      ms: performance.now() - started,
+      nodes: result.nodes.length,
+      edges: result.edges.length,
+      scrollZones: Object.keys(result.zoneViewports).length,
+      graphDepth: settings.graphDepth,
+      compactingFactor: settings.compactingFactor,
+      layoutRevision,
+    });
+    index.reportRuntimePerf("ui.scene.build");
+    return result;
+  }, [neighborhood, index, settings, layoutRevision]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
   const zoneScrollRefs = useRef<Partial<Record<ScrollZone, HTMLDivElement>>>({});
@@ -560,22 +578,33 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
     if (layoutSaveTimer.current !== null) window.clearTimeout(layoutSaveTimer.current);
     layoutSaveTimer.current = window.setTimeout(() => {
       layoutSaveTimer.current = null;
-      void plugin.saveSettings(false);
+      void plugin.saveSettings(false, false);
     }, 180);
   };
 
   const zoneDisplayLayouts = useMemo(() => {
+    const started = performance.now();
     const layouts: Partial<Record<ScrollZone, ZoneDisplayLayout>> = {};
+    let inputNodes = 0;
+    let outputNodes = 0;
+    let filteredZones = 0;
     for (const zone of ZONES) {
       const panel = scene.zoneViewports[zone];
       if (!panel) continue;
       const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone);
-      layouts[zone] = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings, index, neighborhood?.center.path ?? activePath);
+      inputNodes += nodes.length;
+      const layout = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings, index, neighborhood?.center.path ?? activePath);
+      layouts[zone] = layout;
+      outputNodes += layout.nodes.length;
+      if (layout.filtering) filteredZones += 1;
     }
+    perfLog("ui.zone-layouts", { ms: performance.now() - started, inputNodes, outputNodes, filteredZones, layoutRevision });
+    index.reportRuntimePerf("ui.zone-layouts");
     return layouts;
   }, [scene.nodes, scene.zoneViewports, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision]);
 
   const renderedNodeMap = useMemo(() => {
+    const started = performance.now();
     const map = new Map<string, PositionedNode>();
     for (const node of scene.nodes) {
       const zone = zoneForRole(node.role);
@@ -587,10 +616,12 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
       if (nodeDrag?.path === node.page.path) rendered = { ...rendered, x: nodeDrag.x, y: nodeDrag.y };
       map.set(node.page.path, rendered);
     }
+    perfLog("ui.rendered-node-map", { ms: performance.now() - started, nodes: map.size, dragging: Boolean(nodeDrag) });
     return map;
   }, [scene.nodes, scene.zoneViewports, zoneDisplayLayouts, zoneScrollTop, nodeDrag]);
 
   const visibleNodePaths = useMemo(() => {
+    const started = performance.now();
     const paths = new Set<string>();
     for (const node of scene.nodes) {
       if (nodeDrag?.path === node.page.path) {
@@ -612,11 +643,16 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
         paths.add(node.page.path);
       }
     }
+    perfLog("ui.visible-node-paths", { ms: performance.now() - started, visibleNodes: paths.size, sceneNodes: scene.nodes.length });
     return paths;
   }, [scene.nodes, scene.zoneViewports, zoneDisplayLayouts, renderedNodeMap, nodeDrag]);
 
   const expandedClusters = useMemo<ExpandedCluster[]>(() => {
-    if (settings.graphDepth !== 2 || !neighborhood) return [];
+    const started = performance.now();
+    if (settings.graphDepth !== 2 || !neighborhood) {
+      perfLog("ui.expanded-clusters", { ms: performance.now() - started, enabled: false, clusters: 0, children: 0 });
+      return [];
+    }
     const clusters: ExpandedCluster[] = [];
 
     for (const baseNode of scene.nodes) {
@@ -671,6 +707,13 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
       });
     }
 
+    perfLog("ui.expanded-clusters", {
+      ms: performance.now() - started,
+      enabled: true,
+      clusters: clusters.length,
+      children: clusters.reduce((sum, cluster) => sum + cluster.children.length, 0),
+    });
+    index.reportRuntimePerf("ui.expanded-clusters");
     return clusters;
   }, [settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision]);
 
@@ -702,12 +745,15 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
     return connectors;
   }, [expandedClusters, settings.graphDepth, settings.connectorStyle, settings.inverseArrowDirection, settings.baseLinkStyle, settings.hierarchyLinkStyles]);
 
-  const visibleEdges = useMemo(
-    () => scene.edges.filter((edge) => visibleNodePaths.has(edge.sourcePath) && visibleNodePaths.has(edge.targetPath)),
-    [scene.edges, visibleNodePaths],
-  );
+  const visibleEdges = useMemo(() => {
+    const started = performance.now();
+    const result = scene.edges.filter((edge) => visibleNodePaths.has(edge.sourcePath) && visibleNodePaths.has(edge.targetPath));
+    perfLog("ui.visible-edges", { ms: performance.now() - started, visibleEdges: result.length, sceneEdges: scene.edges.length });
+    return result;
+  }, [scene.edges, visibleNodePaths]);
 
   const interaction = useMemo(() => {
+    const started = performance.now();
     const edgeIds = new Set<string>();
     const nodePaths = new Set<string>();
     const gates = new Set<string>();
@@ -734,6 +780,7 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
       gates.add(gateKey(edge.sourcePath, edgeGates.source));
       gates.add(gateKey(edge.targetPath, edgeGates.target));
     }
+    perfLog("ui.interaction-highlight", { ms: performance.now() - started, hoverKind: hover.kind, edges: edgeIds.size, nodes: nodePaths.size, gates: gates.size });
     return { edgeIds, nodePaths, gates };
   }, [hover, visibleEdges]);
 
