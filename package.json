@@ -1,0 +1,36 @@
+{
+  "name": "excalibrain",
+  "version": "1.0.0",
+  "description": "A TheBrain-inspired visual knowledge navigator for Obsidian, rebuilt in React.",
+  "main": "build/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "repo:export": "node scripts/generate-repository-zip.mjs",
+    "repo:update": "node scripts/update-repository.mjs"
+  },
+  "engines": {
+    "node": ">=22.22.2 <23"
+  },
+  "keywords": [
+    "obsidian",
+    "knowledge-graph",
+    "pkm",
+    "react"
+  ],
+  "author": "Zsolt Viczian",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "esbuild": "0.25.5",
+    "obsidian": "latest",
+    "typescript": "^5.8.3"
+  }
+}

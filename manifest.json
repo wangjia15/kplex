@@ -1,0 +1,10 @@
+{
+  "id": "excalibrain",
+  "name": "K-Plex",
+  "version": "1.0.0",
+  "minAppVersion": "1.13.0",
+  "description": "Knowledge Plex: a structured visual navigator for your Obsidian vault.",
+  "author": "Zsolt Viczian",
+  "authorUrl": "https://zsolt.blog",
+  "isDesktopOnly": false
+}
