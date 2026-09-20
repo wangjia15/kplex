@@ -2,7 +2,7 @@ import { useEffect, useRef, type CSSProperties, type MouseEvent, type PointerEve
 import type { GateSide, PositionedNode } from "../types";
 import { alphaHexToCss } from "../index/style";
 import type { ExcaliBrainSettings } from "../settings";
-import { gateDiameter } from "./layout";
+import { effectiveLabelLimit, gateDiameter } from "./layout";
 import { ObsidianIcon } from "./ObsidianIcon";
 
 const GATES: GateSide[] = ["top", "bottom", "left", "right"];
@@ -48,7 +48,7 @@ export function ThoughtNode({
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
   const prefix = style.prefix ?? "";
   const label = `${prefix}${node.label}`;
-  const max = style.maxLabelLength ?? 30;
+  const max = effectiveLabelLimit(settings, style.maxLabelLength ?? 30, node.role === "center");
   const display = label.length > max ? `${label.slice(0, Math.max(1, max - 1))}…` : label;
   const click = (e: MouseEvent) => { e.stopPropagation(); onActivate(node); };
   const fill = alphaHexToCss(style.backgroundColor, "rgba(0,0,0,.42)");

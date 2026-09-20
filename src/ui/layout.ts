@@ -28,19 +28,22 @@ export function gateDiameter(style: NodeStyle): number {
   return Math.max(5, (style.gateRadius ?? 5) * 1.05);
 }
 
-function nodeSize(label: string, fontSize: number, settings: ExcaliBrainSettings, center = false): { width: number; height: number } {
-  // 1.5 is the historical K-Plex default. Higher values make the Plex denser, lower values
-  // give long labels more room. The toolbar compactness slider writes this same setting.
-  const compactness = clamp(settings.compactingFactor / 1.5, 0.5, 2);
-  const legacyCompactMultiplier = settings.compactView ? 0.88 : 1;
-  const widthScale = clamp((1 / Math.sqrt(compactness)) * legacyCompactMultiplier, 0.68, 1.32);
-  const baseMax = center ? 350 : 286;
-  const maxWidth = Math.round(baseMax * widthScale);
-  const minWidth = center ? 180 : 126;
-  const width = clamp(78 + label.length * Math.max(5.0, fontSize * 0.30), minWidth, maxWidth);
+export function effectiveLabelLimit(settings: ExcaliBrainSettings, configured = 30, center = false): number {
+  // Compactness changes only how much text is shown and how tightly thoughts are spaced.
+  // Node interior padding remains constant in every view.
+  const density = clamp(settings.compactingFactor / 1.5, 0.5, 2);
+  const base = Math.max(8, configured);
+  const scaled = Math.round(base / density);
+  return clamp(scaled + (center ? 8 : 0), center ? 18 : 8, center ? 72 : 52);
+}
 
-  // Use the compact-view vertical padding in both modes. Width/spacing, not excess vertical
-  // padding, should carry the visual distinction between thoughts.
+function nodeSize(label: string, fontSize: number, settings: ExcaliBrainSettings, center = false, configuredMax = 30): { width: number; height: number } {
+  const visibleLength = Math.min(label.length, effectiveLabelLimit(settings, configuredMax, center));
+  const minWidth = center ? 180 : 112;
+  const maxWidth = center ? 370 : 286;
+  const width = clamp(70 + visibleLength * Math.max(4.8, fontSize * 0.29), minWidth, maxWidth);
+
+  // These are the tight/compact paddings, now used everywhere.
   return { width, height: center ? 54 : 30 };
 }
 
@@ -52,7 +55,7 @@ function makeNode(
 ): PositionedNode {
   const style = resolveNodeStyle(n.page, n, role, settings);
   const label = index.titleFor(n.page);
-  const size = nodeSize(`${style.prefix ?? ""}${label}`, style.fontSize ?? 18, settings, false);
+  const size = nodeSize(`${style.prefix ?? ""}${label}`, style.fontSize ?? 18, settings, false, style.maxLabelLength ?? 30);
   return {
     page: n.page,
     role,
@@ -177,7 +180,7 @@ function viewportFor(
 export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settings: ExcaliBrainSettings): PlexScene {
   const centerStyle = resolveNodeStyle(neighborhood.center, null, "center", settings);
   const centerLabel = index.titleFor(neighborhood.center);
-  const centerSize = nodeSize(`${centerStyle.prefix ?? ""}${centerLabel}`, centerStyle.fontSize ?? 30, settings, true);
+  const centerSize = nodeSize(`${centerStyle.prefix ?? ""}${centerLabel}`, centerStyle.fontSize ?? 30, settings, true, centerStyle.maxLabelLength ?? 30);
   const center: PositionedNode = {
     page: neighborhood.center,
     role: "center",
@@ -190,14 +193,15 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
     gateStats: index.gateStats(neighborhood.center),
   };
 
-  // compactingFactor is continuous and applies in both legacy compact and normal mode.
-  // At the default 1.5 the layout is unchanged; moving the slider right packs the Plex.
-  const compactFactor = clamp((1.5 / settings.compactingFactor) * (settings.compactView ? 0.88 : 1), 0.58, 1.45);
+  // Compactness only controls inter-node spacing and label length. Expanded mode reserves
+  // additional vertical room for each thought's second-level child strip.
+  const compactFactor = clamp(1.5 / settings.compactingFactor, 0.58, 1.45);
   const legacySpacing = clamp(settings.minLinkLength / 18, 0.72, 1.7);
-  const columnGap = 54 * compactFactor * legacySpacing;
-  const rowGap = 44 * compactFactor * legacySpacing;
-  const centerGap = 72 * compactFactor * legacySpacing;
-  const sideGap = 24 * compactFactor * legacySpacing;
+  const expanded = settings.graphDepth === 2;
+  const columnGap = 54 * compactFactor * legacySpacing + (expanded ? 54 : 0);
+  const rowGap = 44 * compactFactor * legacySpacing + (expanded ? 92 : 0);
+  const centerGap = 72 * compactFactor * legacySpacing + (expanded ? 74 : 0);
+  const sideGap = 24 * compactFactor * legacySpacing + (expanded ? 84 : 0);
 
   const typicalHeight = 30;
   const parentBaseY = -(center.height / 2 + typicalHeight / 2 + centerGap);

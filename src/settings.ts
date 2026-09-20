@@ -286,6 +286,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     excludeFilepaths: old.excludeFilepaths ?? [],
     primaryTagFieldLowerCase: norm(old.primaryTagField ?? DEFAULT_SETTINGS.primaryTagField),
     connectorStyle: old.connectorStyle === "straight" ? "straight" : "bezier",
+    graphDepth: old.graphDepth === 2 ? 2 : 1,
     parentColumns: Math.max(1, Math.min(4, Number(old.parentColumns ?? DEFAULT_SETTINGS.parentColumns))),
     childColumns: Math.max(1, Math.min(7, Number(old.childColumns ?? DEFAULT_SETTINGS.childColumns))),
     siblingMaxHeight: Math.max(120, Math.min(900, Number(old.siblingMaxHeight ?? DEFAULT_SETTINGS.siblingMaxHeight))),

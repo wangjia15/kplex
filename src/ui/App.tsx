@@ -105,6 +105,12 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
     forceRender((x) => x + 1);
   };
 
+  const toggleExpandedView = async () => {
+    plugin.settings.graphDepth = plugin.settings.graphDepth === 2 ? 1 : 2;
+    await plugin.saveSettings(false);
+    forceRender((x) => x + 1);
+  };
+
   if (!page) return <div className="excalibrain-app excalibrain-empty">Building K-Plex index…</div>;
 
   const linked = plugin.isDocumentLeafLinked();
@@ -143,6 +149,12 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
           <ToolButton icon="tag" title="Show or hide tag thoughts" on={plugin.settings.showTagNodes} onClick={() => void toggleToolbarSetting("showTagNodes")} />
           <ToolButton icon="globe" title="Show or hide web link thoughts" on={plugin.settings.showURLNodes} onClick={() => void toggleToolbarSetting("showURLNodes")} />
           <ToolButton icon="grip" title="Show or hide siblings" on={plugin.settings.renderSiblings} onClick={() => void toggleToolbarSetting("renderSiblings")} />
+          <ToolButton
+            icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"}
+            title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each thought’s children"}
+            on={plugin.settings.graphDepth === 2}
+            onClick={() => void toggleExpandedView()}
+          />
           <span className="excalibrain-toolbar-divider" />
           <ToolButton icon="settings" title="Open K-Plex settings" onClick={() => plugin.openSettings()} />
         </div>

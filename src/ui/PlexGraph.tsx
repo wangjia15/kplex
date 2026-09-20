@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings } from "../settings";
-import type { GateRole, GateSide, GraphPage, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import type { GateRole, GateSide, GraphPage, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
 import { LinkDirection } from "../types";
-import { alphaHexToCss } from "../index/style";
-import { buildScene, gateDiameter, type ZoneViewport } from "./layout";
+import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
+import { buildScene, effectiveLabelLimit, gateDiameter, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
 
@@ -63,6 +63,28 @@ type ZoneDisplayLayout = {
   contentHeight: number;
   count: number;
   filtering: boolean;
+};
+
+type ExpandedMiniThought = {
+  key: string;
+  relation: Neighbour;
+  label: string;
+  style: NodeStyle;
+  localX: number;
+  localY: number;
+  width: number;
+  height: number;
+};
+
+type ExpandedCluster = {
+  parent: PositionedNode;
+  left: number;
+  top: number;
+  width: number;
+  viewportHeight: number;
+  contentHeight: number;
+  scrollTop: number;
+  children: ExpandedMiniThought[];
 };
 
 function gatesForEdge(edge: PositionedEdge): EdgeGates {
@@ -356,6 +378,8 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
   const [zoneScrollTop, setZoneScrollTop] = useState<ScrollValues>({ ...EMPTY_SCROLLS });
   const [zoneFilterOpen, setZoneFilterOpen] = useState<ZoneBooleanMap>({});
   const [zoneFilters, setZoneFilters] = useState<ZoneStringMap>({});
+  const [expandedScrollTop, setExpandedScrollTop] = useState<Record<string, number>>({});
+  const expandedPreviewTimer = useRef<number | null>(null);
   const [connectDrag, setConnectDrag] = useState<ConnectDrag | null>(null);
   const [nodeDrag, setNodeDrag] = useState<NodeDrag | null>(null);
   const panDrag = useRef<{ pointerId: number; button: number; x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
@@ -433,6 +457,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     setZoneScrollTop(nextScrolls);
     setZoneFilterOpen({});
     setZoneFilters({});
+    setExpandedScrollTop({});
     setHover(null);
     setConnectDrag(null);
     setNodeDrag(null);
@@ -466,7 +491,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       const target = e.target as Element | null;
-      if (target?.closest?.(".kplex-zone-scroll, .modal-container")) return;
+      if (target?.closest?.(".kplex-zone-scroll, .kplex-expanded-scroll, .modal-container")) return;
       const rect = el.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
@@ -484,6 +509,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
 
   useEffect(() => () => {
     if (layoutSaveTimer.current !== null) window.clearTimeout(layoutSaveTimer.current);
+    if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
   }, []);
 
   const scheduleLayoutSave = () => {
@@ -544,6 +570,93 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     }
     return paths;
   }, [scene.nodes, scene.zoneViewports, zoneDisplayLayouts, renderedNodeMap, nodeDrag]);
+
+  const expandedClusters = useMemo<ExpandedCluster[]>(() => {
+    if (settings.graphDepth !== 2 || !neighborhood) return [];
+    const clusters: ExpandedCluster[] = [];
+
+    for (const baseNode of scene.nodes) {
+      if (baseNode.role === "center" || !visibleNodePaths.has(baseNode.page.path)) continue;
+      const parent = renderedNodeMap.get(baseNode.page.path);
+      if (!parent) continue;
+
+      const relations = index.neighbours(baseNode.page, "child")
+        .filter((child) => child.page.path !== neighborhood.center.path)
+        .slice(0, settings.maxItemCount);
+      if (!relations.length) continue;
+
+      const width = Math.max(220, Math.min(330, parent.width * 1.7));
+      const columns = Math.min(3, relations.length);
+      const cellWidth = width / Math.max(1, columns);
+      const rowHeight = 28;
+      const visibleRows = 2;
+      const rows = Math.ceil(relations.length / 3);
+      const contentHeight = Math.max(rowHeight, rows * rowHeight);
+      const viewportHeight = Math.min(contentHeight, visibleRows * rowHeight);
+      const scrollTop = Math.max(0, Math.min(expandedScrollTop[parent.page.path] ?? 0, Math.max(0, contentHeight - viewportHeight)));
+
+      const children: ExpandedMiniThought[] = relations.map((relation, indexValue) => {
+        const col = indexValue % 3;
+        const row = Math.floor(indexValue / 3);
+        const style = resolveNodeStyle(relation.page, relation, "child", settings);
+        const label = index.titleFor(relation.page);
+        const maxChars = Math.min(22, effectiveLabelLimit(settings, style.maxLabelLength ?? 30));
+        const shownChars = Math.min(label.length, maxChars);
+        const nodeWidth = Math.max(64, Math.min(cellWidth - 8, 34 + shownChars * 3.8));
+        return {
+          key: `${parent.page.path}::${relation.page.path}::${indexValue}`,
+          relation,
+          label,
+          style,
+          localX: (col + 0.5) * (width / 3),
+          localY: row * rowHeight + rowHeight / 2,
+          width: nodeWidth,
+          height: 16,
+        };
+      });
+
+      clusters.push({
+        parent,
+        left: parent.x - width / 2,
+        top: parent.y + parent.height / 2 + 14,
+        width,
+        viewportHeight,
+        contentHeight,
+        scrollTop,
+        children,
+      });
+    }
+
+    return clusters;
+  }, [settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision]);
+
+  const expandedConnectors = useMemo(() => {
+    if (settings.graphDepth !== 2) return [] as Array<{ key: string; d: string; stroke: string; width: number; dash?: string; markerStart?: string; markerEnd?: string }>;
+    const connectors: Array<{ key: string; d: string; stroke: string; width: number; dash?: string; markerStart?: string; markerEnd?: string }> = [];
+    for (const cluster of expandedClusters) {
+      const source = gatePoint(cluster.parent, "bottom");
+      for (const child of cluster.children) {
+        const childY = cluster.top + child.localY - cluster.scrollTop;
+        const childTop = childY - child.height / 2;
+        const childBottom = childY + child.height / 2;
+        if (childTop < cluster.top || childBottom > cluster.top + cluster.viewportHeight) continue;
+        const target = { x: cluster.left + child.localX, y: childTop - 2 };
+        const geometry = edgeGeometry(source, target, "bottom", "top", settings.connectorStyle);
+        const style = resolveLinkStyle(child.relation, settings);
+        const reverse = child.relation.linkDirection === (settings.inverseArrowDirection ? LinkDirection.TO : LinkDirection.FROM);
+        connectors.push({
+          key: child.key,
+          d: geometry.d,
+          stroke: alphaHexToCss(style.strokeColor, "rgba(190,210,235,.52)"),
+          width: Math.max(0.65, (style.strokeWidth ?? 1.2) * 0.75),
+          dash: style.strokeStyle === "dashed" ? "5 5" : style.strokeStyle === "dotted" ? "1.5 5" : undefined,
+          markerStart: markerFor(reverse ? style.endArrowHead : style.startArrowHead),
+          markerEnd: markerFor(reverse ? style.startArrowHead : style.endArrowHead),
+        });
+      }
+    }
+    return connectors;
+  }, [expandedClusters, settings.graphDepth, settings.connectorStyle, settings.inverseArrowDirection, settings.baseLinkStyle, settings.hierarchyLinkStyles]);
 
   const visibleEdges = useMemo(
     () => scene.edges.filter((edge) => visibleNodePaths.has(edge.sourcePath) && visibleNodePaths.has(edge.targetPath)),
@@ -853,6 +966,64 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     </div>;
   };
 
+  const renderExpandedCluster = (cluster: ExpandedCluster) => {
+    const scrollable = cluster.contentHeight > cluster.viewportHeight + 0.5;
+    return <div
+      key={`expanded:${cluster.parent.page.path}`}
+      className="kplex-expanded-cluster"
+      style={{ left: cluster.left, top: cluster.top, width: cluster.width, height: cluster.viewportHeight }}
+      onPointerDown={(event: PointerEvent<HTMLDivElement>) => event.stopPropagation()}
+    >
+      <div
+        className={`kplex-expanded-scroll${scrollable ? " is-scrollable" : ""}`}
+        onScroll={(event: { currentTarget: HTMLDivElement }) => {
+          const scrollTop = event.currentTarget.scrollTop;
+          setExpandedScrollTop((current) => ({ ...current, [cluster.parent.page.path]: scrollTop }));
+        }}
+      >
+        <div className="kplex-expanded-content" style={{ height: cluster.contentHeight }}>
+          {cluster.children.map((child) => {
+            const maxChars = Math.min(22, effectiveLabelLimit(settings, child.style.maxLabelLength ?? 30));
+            const text = child.label.length > maxChars ? `${child.label.slice(0, Math.max(1, maxChars - 1))}…` : child.label;
+            return <div
+              key={child.key}
+              className="kplex-expanded-mini-thought"
+              style={{
+                left: child.localX - child.width / 2,
+                top: child.localY - child.height / 2,
+                width: child.width,
+                height: child.height,
+                background: alphaHexToCss(child.style.backgroundColor, "rgba(0,0,0,.42)"),
+                color: alphaHexToCss(child.style.textColor, "white"),
+                borderColor: alphaHexToCss(child.style.borderColor, "rgba(255,255,255,.18)"),
+              }}
+              title={`${child.label} — ${child.relation.page.path}`}
+              onClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onActivate(child.relation.page); }}
+              onDoubleClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onOpen(child.relation.page); }}
+              onPointerEnter={(event: PointerEvent<HTMLDivElement>) => {
+                if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
+                const target = event.currentTarget;
+                const nativeEvent = event.nativeEvent;
+                expandedPreviewTimer.current = window.setTimeout(() => {
+                  expandedPreviewTimer.current = null;
+                  plugin.triggerHoverPreview(child.relation.page, target, nativeEvent, neighborhood?.center.file?.path ?? "");
+                }, 1000);
+              }}
+              onPointerLeave={() => {
+                if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
+                expandedPreviewTimer.current = null;
+              }}
+            >
+              <span className="kplex-expanded-mini-gate" />
+              {child.style.icon && <ObsidianIcon name={child.style.icon} size={8} className="kplex-expanded-mini-icon" />}
+              <span className="kplex-expanded-mini-label">{text}</span>
+            </div>;
+          })}
+        </div>
+      </div>
+    </div>;
+  };
+
   const columnPresetIndex = COLUMN_PRESETS.reduce((best, pair, indexValue) => {
     const bestPair = COLUMN_PRESETS[best];
     const score = Math.abs(pair[0] - settings.parentColumns) + Math.abs(pair[1] - settings.childColumns);
@@ -890,6 +1061,18 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
           onHover={() => { if (!connectDrag && !nodeDrag) setHover({ kind: "edge", id: edge.id }); }}
           onLeave={() => { if (!connectDrag && !nodeDrag) setHover(null); }}
         />)}
+        {expandedConnectors.map((connector) => <path
+          key={`expanded-edge:${connector.key}`}
+          className="kplex-expanded-edge"
+          d={connector.d}
+          fill="none"
+          stroke={connector.stroke}
+          strokeWidth={connector.width}
+          strokeDasharray={connector.dash}
+          markerStart={connector.markerStart}
+          markerEnd={connector.markerEnd}
+          vectorEffect="non-scaling-stroke"
+        />)}
         {dragPath && <path className="kplex-drag-connector" d={dragPath} fill="none" vectorEffect="non-scaling-stroke" />}
       </svg>
 
@@ -899,6 +1082,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
           const panel = scene.zoneViewports[zone];
           return panel ? renderScrollZone(zone, panel) : null;
         })}
+        {settings.graphDepth === 2 && expandedClusters.map(renderExpandedCluster)}
         {draggedBaseNode && renderNode(draggedBaseNode, renderedNodeMap.get(draggedBaseNode.page.path) ?? draggedBaseNode)}
       </div>
     </div>

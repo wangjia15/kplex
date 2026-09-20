@@ -695,3 +695,110 @@
   .kplex-mini-slider { width: 82px; }
   .kplex-mini-slider input[type="range"] { width: 78px; }
 }
+
+/* Compactness is visual density only: keep the tight node interior padding at every setting. */
+.excalibrain-thought { padding: 3px 8px; }
+.excalibrain-role-center { padding: 7px 11px; }
+
+/* Small, unobtrusive graph-layout sliders. */
+.kplex-mini-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100px;
+  height: 10px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+.kplex-mini-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(232,242,252,.40);
+}
+.kplex-mini-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  margin-top: -3.5px;
+  border: 1px solid rgba(255,255,255,.82);
+  border-radius: 50%;
+  background: rgba(247,251,255,.96);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.22);
+}
+.kplex-mini-slider input[type="range"]::-moz-range-track {
+  height: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(232,242,252,.40);
+}
+.kplex-mini-slider input[type="range"]::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(255,255,255,.82);
+  border-radius: 50%;
+  background: rgba(247,251,255,.96);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.22);
+}
+
+/* Expanded view: each first-level thought can expose a lightweight, scrollable 3x2 child strip. */
+.kplex-expanded-cluster {
+  position: absolute;
+  z-index: 19;
+  overflow: visible;
+  pointer-events: auto;
+}
+.kplex-expanded-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(170,205,235,.28) transparent;
+}
+.kplex-expanded-scroll.is-scrollable { overflow-y: auto; overflow-x: hidden; }
+.kplex-expanded-scroll::-webkit-scrollbar { width: 5px; }
+.kplex-expanded-scroll::-webkit-scrollbar-track { background: transparent; }
+.kplex-expanded-scroll::-webkit-scrollbar-thumb { background: rgba(170,205,235,.26); border-radius: 8px; }
+.kplex-expanded-content { position: relative; width: 100%; }
+.kplex-expanded-mini-thought {
+  position: absolute;
+  z-index: 20;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 1px 4px;
+  overflow: visible;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 6px;
+  color: rgba(235,244,255,.76);
+  font-size: 8px;
+  line-height: 1;
+  opacity: .70;
+  box-shadow: 0 2px 7px rgba(0,0,0,.22);
+  cursor: pointer;
+  transition: opacity .1s ease, filter .1s ease;
+}
+.kplex-expanded-mini-thought:hover { opacity: .92; filter: brightness(1.12); }
+.kplex-expanded-mini-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kplex-expanded-mini-icon { flex: 0 0 auto; opacity: .82; }
+.kplex-expanded-mini-gate {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(226,239,255,.64);
+  border-radius: 50%;
+  background: rgba(226,239,255,.52);
+  pointer-events: none;
+}
+.kplex-expanded-edge {
+  pointer-events: none;
+  opacity: .52;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.38));
+}
