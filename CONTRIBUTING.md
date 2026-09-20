@@ -262,7 +262,7 @@ Settings should be grouped into pages (Graph, Ontology, Compatibility, Appearanc
 
 The root K-Plex settings page begins with a compact centered link row:
 
-[Buy me a coffee](https://ko-fi.com/zsolt) | [Read Sketch Your Mind](https://community.sketch-your-mind.com/book) | [Join SYM Community](https://community.sketch-your-mind.com)
+[Buy me a coffee](https://ko-fi.com/zsolt) | [Read Sketch Your Mind](https://community.sketch-your-mind.com/sym) | [Join SYM Community](https://community.sketch-your-mind.com)
 
 Keep that row concise; do not add extra explanatory text around it.
 

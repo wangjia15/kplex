@@ -587,7 +587,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
         cls: "kplex-resource-links",
         items: [
           { name: "Buy me a coffee", action: () => { window.open("https://ko-fi.com/zsolt", "_blank", "noopener,noreferrer"); } },
-          { name: "Read Sketch Your Mind", action: () => { window.open("https://community.sketch-your-mind.com/book", "_blank", "noopener,noreferrer"); } },
+          { name: "Read Sketch Your Mind", action: () => { window.open("https://community.sketch-your-mind.com/sym", "_blank", "noopener,noreferrer"); } },
           { name: "Join SYM Community", action: () => { window.open("https://community.sketch-your-mind.com", "_blank", "noopener,noreferrer"); } },
         ],
       },

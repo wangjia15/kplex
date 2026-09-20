@@ -334,7 +334,7 @@ The root K-Plex settings page begins with a compact centered row:
 with links:
 
 - https://ko-fi.com/zsolt
-- https://community.sketch-your-mind.com/book
+- https://community.sketch-your-mind.com/sym
 - https://community.sketch-your-mind.com
 
 Do not place these links inside the Graph page and do not add explanatory marketing copy around them.

@@ -1,5 +1,7 @@
 # K-Plex
 
+![KPLEX Screenshot](docs/KPlex-Screenshot-3.png)
+
 **K-Plex (Knowledge Plex)** is a spatial knowledge navigator for Obsidian. It gives you a focused view around one active node and places related nodes in predictable directions, so the position of a node carries meaning.
 
 K-Plex is the successor architecture to ExcaliBrain. It preserves the relationship model and much of the ontology/settings compatibility of classic ExcaliBrain, but it has its own React-based interface and does **not** require Excalidraw or Dataview at runtime.
@@ -7,6 +9,8 @@ K-Plex is the successor architecture to ExcaliBrain. It preserves the relationsh
 K-Plex is inspired by spatial knowledge interfaces such as TheBrain, but it is an independent implementation.
 
 > Warning: K-Plex is a new plugin and is still undergoing real-world testing. Bugs and unexpected behavior are possible. Before using K-Plex to create or modify relationships between important notes, I strongly recommend trying it first on a small set of test notes. As with any plugin that can modify your vault, keep a current backup of your data.
+
+![KPlex overview](./docs/KPlex-Screenshot-1.png)
 
 ## The Plex at a glance
 
@@ -29,6 +33,8 @@ Friends and challengers grow **upward from the bottom of their lateral area**. T
 - Desktop for Obsidian pop-out windows
 
 Excalidraw and Dataview are not required.
+
+![KPLEX Screenshot](docs/KPlex-Screenshot-2.png)
 
 ## Opening K-Plex
 
@@ -276,6 +282,6 @@ If graph data appears stale, use the toolbar refresh button or the **Rebuild K-P
 
 ## Project links
 
-[Buy me a coffee](https://ko-fi.com/zsolt) · [Read Sketch Your Mind](https://community.sketch-your-mind.com/book) · [Join SYM Community](https://community.sketch-your-mind.com)
+[Buy me a coffee](https://ko-fi.com/zsolt) · [Read Sketch Your Mind](https://community.sketch-your-mind.com/sym) · [Join SYM Community](https://community.sketch-your-mind.com)
 
 For source development and contribution guidelines, see `CONTRIBUTING.md`.
