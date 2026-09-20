@@ -347,34 +347,34 @@ class NoteTypeStyleModal extends Modal {
       row.appendChild(input);
     };
 
-    const nameInput = document.createElement("input");
+    const nameInput = form.createEl("input");
     nameInput.type = "text";
     nameInput.value = this.initialName ?? "";
     nameInput.placeholder = "Project";
     field("Note type value", nameInput);
 
-    const iconInput = document.createElement("input");
+    const iconInput = form.createEl("input");
     iconInput.type = "text";
     iconInput.value = this.initialStyle.icon ?? "";
     iconInput.placeholder = "Lucide icon name, e.g. book-open";
     field("Lucide icon", iconInput);
 
-    const background = document.createElement("input");
+    const background = form.createEl("input");
     background.type = "color";
     background.value = sixHex(this.initialStyle.backgroundColor, "#182433");
     field("Background", background);
 
-    const text = document.createElement("input");
+    const text = form.createEl("input");
     text.type = "color";
     text.value = sixHex(this.initialStyle.textColor, "#ffffff");
     field("Text", text);
 
-    const border = document.createElement("input");
+    const border = form.createEl("input");
     border.type = "color";
     border.value = sixHex(this.initialStyle.borderColor, "#6f849a");
     field("Border", border);
 
-    const fontSize = document.createElement("input");
+    const fontSize = form.createEl("input");
     fontSize.type = "number";
     fontSize.min = "8";
     fontSize.max = "40";
@@ -727,7 +727,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Show full tag names", control: { type: "toggle", key: "showFullTagName" } },
               { name: "Gate radius", desc: "Legacy node gate radius, in pixels.", control: { type: "slider", key: "baseNodeStyle.gateRadius", min: 2, max: 8, step: 0.5 } },
               { name: "Primary tag field", desc: "Legacy primaryTagField used for tag-specific styles.", control: { type: "text", key: "primaryTagField" } },
-              { name: "Custom node title script", desc: "Legacy expression evaluated with dvPage and defaultName variables.", control: { type: "textarea", key: "nodeTitleScript", rows: 5 } },
+              { name: "Custom node title script", desc: "Legacy setting retained for migration only. JavaScript expressions are not executed by K-Plex.", control: { type: "textarea", key: "nodeTitleScript", rows: 5 } },
               { name: "Excluded path prefixes", desc: "Comma separated; matches legacy excludeFilepaths behavior.", control: { type: "textarea", key: "excludeFilepathsCsv", rows: 4 } },
             ]
           },

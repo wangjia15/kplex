@@ -56,13 +56,13 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.addRibbonIcon("brain-circuit", "Open K-Plex", () => void this.activateView());
 
     // Keep legacy command IDs so existing hotkeys continue to work.
-    this.addCommand({ id: "excalibrain-start", name: "Open K-Plex", callback: () => void this.activateView() });
-    this.addCommand({ id: "excalibrain-rebuild-index", name: "Rebuild K-Plex index", callback: () => void this.rebuildIndex(true) });
-    this.addCommand({ id: "kplex-open-settings", name: "Open K-Plex settings", callback: () => this.openSettings() });
-    this.addCommand({ id: "kplex-open-popout", name: "Open K-Plex in pop-out window", callback: () => void this.activateViewInPopout() });
+    this.addCommand({ id: "excalibrain-start", name: "Open graph", callback: () => void this.activateView() });
+    this.addCommand({ id: "excalibrain-rebuild-index", name: "Rebuild index", callback: () => void this.rebuildIndex(true) });
+    this.addCommand({ id: "kplex-open-settings", name: "Open settings", callback: () => this.openSettings() });
+    this.addCommand({ id: "kplex-open-popout", name: "Open in pop-out window", callback: () => void this.activateViewInPopout() });
     this.addCommand({
       id: "excalibrain-focus-active-note",
-      name: "Focus active note in K-Plex",
+      name: "Focus active note",
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
         if (!file) return false;

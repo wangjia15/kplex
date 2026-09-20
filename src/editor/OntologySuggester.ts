@@ -73,7 +73,7 @@ export class OntologySuggester extends EditorSuggest<string> {
   }
 
   renderSuggestion(suggestion: string, el: HTMLElement): void {
-    const bold = document.createElement("b");
+    const bold = el.createEl("b");
     bold.textContent = suggestion;
     el.appendChild(bold);
   }

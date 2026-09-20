@@ -4,7 +4,7 @@ export const normalizeFieldName = (name: string): string => name.toLowerCase().r
 
 const WIKI_LINK_RE = /\[\[([^\]#|]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
-const URL_RE = /\bhttps?:\/\/[^\s<>()\[\]{}"']+/gi;
+const URL_RE = /\bhttps?:\/\/[^\s<>()\u005B\u005D{}"']+/gi;
 const MARKDOWN_URL_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi;
 
 export type ExternalUrlReference = {

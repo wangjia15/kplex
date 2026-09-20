@@ -1,4 +1,4 @@
-import { type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { GateSide, PositionedNode } from "../types";
 import { alphaHexToCss } from "../index/style";
 import type { ExcaliBrainSettings } from "../settings";
@@ -39,9 +39,9 @@ export function ThoughtNode({
   onHoverNode: (node: PositionedNode) => void;
   onHoverGate: (node: PositionedNode, gate: GateSide) => void;
   onHoverEnd: () => void;
-  onHoverPreview: (node: PositionedNode, target: HTMLElement, event: globalThis.PointerEvent) => void;
-  onGatePointerDown: (node: PositionedNode, gate: GateSide, event: PointerEvent<HTMLSpanElement>) => void;
-  onNodePointerDown: (node: PositionedNode, event: PointerEvent<HTMLDivElement>) => void;
+  onHoverPreview: (node: PositionedNode, target: HTMLElement, event: PointerEvent) => void;
+  onGatePointerDown: (node: PositionedNode, gate: GateSide, event: ReactPointerEvent<HTMLSpanElement>) => void;
+  onNodePointerDown: (node: PositionedNode, event: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
   const style = node.style;
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
@@ -89,8 +89,8 @@ export function ThoughtNode({
     className={classes}
     style={nodeCss}
     data-kplex-path={node.page.path}
-    onPointerDown={(e: PointerEvent<HTMLDivElement>) => { onNodePointerDown(node, e); }}
-    onPointerEnter={(e: PointerEvent<HTMLDivElement>) => {
+    onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => { onNodePointerDown(node, e); }}
+    onPointerEnter={(e: ReactPointerEvent<HTMLDivElement>) => {
       onHoverNode(node);
       // Obsidian-style page preview is intentionally explicit: hold Ctrl/Cmd while entering
       // a thought. Without the modifier no preview is scheduled at all, which avoids timer
@@ -112,9 +112,9 @@ export function ThoughtNode({
         <span
           className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}${node.page.isFolder || node.page.isTag ? " is-link-disabled" : ""}`}
           data-kplex-gate={gate}
-          onPointerEnter={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
-          onPointerLeave={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
-          onPointerDown={(e: PointerEvent<HTMLSpanElement>) => { onGatePointerDown(node, gate, e); }}
+          onPointerEnter={(e: ReactPointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
+          onPointerLeave={(e: ReactPointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
+          onPointerDown={(e: ReactPointerEvent<HTMLSpanElement>) => { onGatePointerDown(node, gate, e); }}
           onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
           title={node.page.isFolder || node.page.isTag
             ? `${gate} gate · drag linking is disabled for folder and tag thoughts`

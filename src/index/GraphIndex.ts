@@ -134,8 +134,6 @@ export class GraphIndex {
   private searchEntries: SearchEntry[] = [];
   private searchCandidateCache = new Map<string, SearchEntry[]>();
   private titleCache = new Map<string, { signature: string; title: string }>();
-  private titleScriptSource = "";
-  private titleScriptFn: ((dvPage: unknown, defaultName: string) => unknown) | null = null;
   private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
   private metadataWorker = new MetadataParseWorker();
   private cachePersistTimer: number | null = null;
@@ -339,7 +337,7 @@ export class GraphIndex {
   }
 
   private async enrichMarkdownPages(run: number): Promise<void> {
-    const files = this.app.vault.getMarkdownFiles() as TFile[];
+    const files = this.app.vault.getMarkdownFiles();
     const alive = new Set(files.map((file) => file.path));
     for (const cachedPath of this.fieldCache.keys()) {
       if (alive.has(cachedPath)) continue;
@@ -820,36 +818,9 @@ export class GraphIndex {
       return cached.title;
     }
 
-    let title = settings.renderAlias && page.aliases.length ? page.aliases[0] : page.name;
-    if (settings.nodeTitleScript && page.file) {
-      try {
-        if (this.titleScriptSource !== settings.nodeTitleScript) {
-          this.titleScriptSource = settings.nodeTitleScript;
-          // Compatibility with the legacy custom label setting. Compile once per script change
-          // rather than once per node/render.
-          this.titleScriptFn = new Function("dvPage", "defaultName", `return ${settings.nodeTitleScript}`) as (dvPage: unknown, defaultName: string) => unknown;
-        }
-        const normalizedFields: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(page.frontmatter)) normalizedFields[normalizeFieldName(key)] = value;
-        const dvPage = {
-          ...normalizedFields,
-          file: {
-            path: page.file.path,
-            name: page.file.name,
-            basename: page.file.basename,
-            ext: page.file.extension,
-            aliases: page.aliases,
-            tags: page.tags,
-            etags: page.tags
-          }
-        };
-        const result = this.titleScriptFn?.(dvPage, title);
-        if (typeof result === "string" && result.trim()) title = result;
-      } catch {
-        this.titleScriptFn = null;
-        /* fall back to the standard title */
-      }
-    }
+    // Custom JavaScript title expressions from legacy ExcaliBrain settings are intentionally not
+    // executed. Community plugins must remain statically analyzable and must not execute user-provided JavaScript.
+    const title = settings.renderAlias && page.aliases.length ? page.aliases[0] : page.name;
     this.titleCache.set(page.path, { signature, title });
     return title;
   }
@@ -906,7 +877,7 @@ export class GraphIndex {
     // retaining the most recent dozen prefixes gives fast typing and backspacing without keeping
     // large candidate arrays forever.
     while (this.searchCandidateCache.size > 12) {
-      const oldest = this.searchCandidateCache.keys().next().value as string | undefined;
+      const oldest: string | undefined = this.searchCandidateCache.keys().next().value;
       if (oldest === undefined) break;
       this.searchCandidateCache.delete(oldest);
     }

@@ -99,7 +99,7 @@ export class MetadataParseWorker {
         this.worker!.postMessage({ id, content });
       } catch (error) {
         this.pending.delete(id);
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
     }).catch((error) => {
       perfLog("index.worker.parse-fallback", { error: error instanceof Error ? error.message : String(error) });
