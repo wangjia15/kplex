@@ -1034,3 +1034,129 @@
   background: var(--interactive-accent) !important;
   box-shadow: 0 0 0 2px rgba(7,16,25,.85) !important;
 }
+
+/* K-Plex top stack: toolbar plus persistent quick-access pins. */
+.excalibrain-top-stack {
+  position: relative;
+  z-index: 30;
+  min-width: 0;
+  background: rgba(14, 18, 24, .98);
+  border-bottom: 1px solid var(--eb-line);
+}
+.excalibrain-top-stack .excalibrain-topbar {
+  border-bottom: 0;
+  box-shadow: none;
+}
+.kplex-pinned-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 2px 10px 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  background: rgba(12, 17, 23, .94);
+}
+.kplex-pinned-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 240px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(255,255,255,.035);
+}
+.kplex-pinned-chip.is-active {
+  border-color: rgba(116,182,255,.42);
+  background: rgba(67,132,205,.13);
+}
+.kplex-pinned-chip button {
+  height: 25px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(230,238,248,.78);
+  cursor: pointer;
+}
+.kplex-pinned-chip button:hover { background: rgba(255,255,255,.075); color: var(--eb-text); }
+.kplex-pinned-open {
+  min-width: 0;
+  max-width: 205px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  text-align: left;
+  font-size: 10px;
+}
+.kplex-pinned-open svg { flex: 0 0 auto; color: #e2a64d; }
+.kplex-pinned-open span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kplex-pinned-remove {
+  width: 25px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid rgba(255,255,255,.06) !important;
+  color: rgba(230,238,248,.50) !important;
+}
+
+/* Keyboard search selection mirrors pointer hover and remains visible while arrowing. */
+.excalibrain-search-result.is-selected {
+  color: #eef7ff;
+  background: rgba(116,182,255,.15);
+  box-shadow: inset 2px 0 0 rgba(116,182,255,.70);
+}
+
+/* Sibling nodes and their expanded descendants deliberately read as secondary context. */
+.kplex-expanded-mini-thought.is-sibling-descendant {
+  opacity: .60;
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
+/* Compact resource links on the opening declarative settings page. */
+.kplex-settings .kplex-resource-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  padding: 2px 0 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.kplex-settings .kplex-resource-links .setting-item {
+  position: relative;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0 10px;
+  border: 0;
+}
+.kplex-settings .kplex-resource-links .setting-item + .setting-item::before {
+  content: "|";
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+}
+.kplex-settings .kplex-resource-links .setting-item-info {
+  margin: 0;
+}
+.kplex-settings .kplex-resource-links .setting-item-name {
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+.kplex-settings .kplex-resource-links .setting-item-description { display: none; }
+.kplex-settings .kplex-resource-links .setting-item-control { margin-left: 5px; }
+.kplex-settings .kplex-resource-links button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  font-size: var(--font-ui-smaller);
+}

@@ -1,6 +1,5 @@
 import { getAllTags, TFile, TFolder, type App } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
-import { perfLog, perfMemoryDetails, startLagMonitor } from "../util/perf";
 import type { ExcaliBrainSettings } from "../settings";
 import {
   LinkDirection,
@@ -63,19 +62,6 @@ type RelationVector = {
   lfd: boolean; rfd: boolean; pfd: boolean; nfd: boolean;
 };
 
-type RuntimePerfStats = {
-  neighboursCalls: number;
-  neighboursMs: number;
-  gateStatsCalls: number;
-  gateStatsMs: number;
-  neighbourCountCalls: number;
-  neighbourCountMs: number;
-  titleCalls: number;
-  titleCacheHits: number;
-  titleCacheMisses: number;
-};
-
-type SlowFileStat = { path: string; ms: number; size: number };
 
 const concatDefinition = (newDef?: string, current?: string): string | undefined => {
   if (!newDef) return current;
@@ -150,7 +136,6 @@ export class GraphIndex {
   private titleCache = new Map<string, { signature: string; title: string }>();
   private titleScriptSource = "";
   private titleScriptFn: ((dvPage: unknown, defaultName: string) => unknown) | null = null;
-  private runtimePerf: RuntimePerfStats = this.emptyRuntimePerf();
   private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
   private metadataWorker = new MetadataParseWorker();
   private cachePersistTimer: number | null = null;
@@ -160,31 +145,6 @@ export class GraphIndex {
     this.restoreBodyCache();
   }
 
-  private emptyRuntimePerf(): RuntimePerfStats {
-    return {
-      neighboursCalls: 0, neighboursMs: 0,
-      gateStatsCalls: 0, gateStatsMs: 0,
-      neighbourCountCalls: 0, neighbourCountMs: 0,
-      titleCalls: 0, titleCacheHits: 0, titleCacheMisses: 0,
-    };
-  }
-
-  reportRuntimePerf(label: string): void {
-    const stats = this.runtimePerf;
-    perfLog("index.runtime", {
-      label,
-      neighboursCalls: stats.neighboursCalls,
-      neighboursMs: stats.neighboursMs,
-      gateStatsCalls: stats.gateStatsCalls,
-      gateStatsMs: stats.gateStatsMs,
-      neighbourCountCalls: stats.neighbourCountCalls,
-      neighbourCountMs: stats.neighbourCountMs,
-      titleCalls: stats.titleCalls,
-      titleCacheHits: stats.titleCacheHits,
-      titleCacheMisses: stats.titleCacheMisses,
-    });
-    this.runtimePerf = this.emptyRuntimePerf();
-  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -204,22 +164,15 @@ export class GraphIndex {
   }
 
   private restoreBodyCache(): void {
-    const started = performance.now();
     try {
       const raw = this.app.loadLocalStorage(BODY_CACHE_KEY) as PersistedBodyCache | null;
-      if (!raw || raw.version !== 1 || !raw.entries || typeof raw.entries !== "object") {
-        perfLog("index.body-cache.restore", { hit: false, entries: 0, ms: performance.now() - started });
-        return;
-      }
-      let restored = 0;
+      if (!raw || raw.version !== 1 || !raw.entries || typeof raw.entries !== "object") return;
       for (const [path, value] of Object.entries(raw.entries)) {
         if (!value || typeof value.mtime !== "number" || !value.body) continue;
         this.fieldCache.set(path, { mtime: value.mtime, body: value.body });
-        restored += 1;
       }
-      perfLog("index.body-cache.restore", { hit: true, entries: restored, ms: performance.now() - started });
-    } catch (error) {
-      perfLog("index.body-cache.restore", { hit: false, entries: 0, ms: performance.now() - started, error: error instanceof Error ? error.message : String(error) });
+    } catch {
+      // Cache is an optimization only; rebuild from the vault when it cannot be restored.
     }
   }
 
@@ -228,15 +181,13 @@ export class GraphIndex {
     if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
     this.cachePersistTimer = window.setTimeout(() => {
       this.cachePersistTimer = null;
-      const started = performance.now();
       try {
         const entries: PersistedBodyCache["entries"] = {};
         for (const [path, entry] of this.fieldCache) entries[path] = { mtime: entry.mtime, body: entry.body };
         this.app.saveLocalStorage(BODY_CACHE_KEY, { version: 1, entries } satisfies PersistedBodyCache);
         this.bodyCacheDirty = false;
-        perfLog("index.body-cache.persist", { entries: this.fieldCache.size, ms: performance.now() - started });
-      } catch (error) {
-        perfLog("index.body-cache.persist", { entries: this.fieldCache.size, ms: performance.now() - started, error: error instanceof Error ? error.message : String(error) });
+      } catch {
+        // Cache persistence failure must never affect graph behavior.
       }
     }, 5000);
   }
@@ -244,86 +195,30 @@ export class GraphIndex {
   async rebuild(): Promise<void> {
     if (this.building) {
       this.rebuildQueued = true;
-      perfLog("index.rebuild.queued", { generation: this.generation, pages: this.pages.size, fieldCache: this.fieldCache.size });
       return;
     }
     this.building = true;
     const run = ++this.generation;
-    const started = performance.now();
-    const lag = startLagMonitor(100);
-    let lagStopped = false;
-    const markdownCount = this.app.vault.getMarkdownFiles().length;
-    perfLog("index.rebuild.start", {
-      run,
-      markdownFiles: markdownCount,
-      fieldCacheEntries: this.fieldCache.size,
-      previousPages: this.pages.size,
-      ...perfMemoryDetails(),
-    });
     try {
       this.pages.clear();
       this.lowercasePathMap.clear();
       this.titleCache.clear();
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
 
-      let phase = performance.now();
       this.addVaultTree();
-      perfLog("index.phase", { run, phase: "vault-tree", ms: performance.now() - phase, pages: this.pages.size });
-
-      phase = performance.now();
       this.addTagTree();
-      perfLog("index.phase", { run, phase: "tag-tree", ms: performance.now() - phase, pages: this.pages.size });
-
-      phase = performance.now();
       this.addResolvedLinks();
-      perfLog("index.phase", { run, phase: "resolved-links", ms: performance.now() - phase, pages: this.pages.size });
-
-      phase = performance.now();
       this.addUnresolvedLinks();
-      perfLog("index.phase", { run, phase: "unresolved-links", ms: performance.now() - phase, pages: this.pages.size });
-
-      phase = performance.now();
       await this.enrichMarkdownPages(run);
-      perfLog("index.phase", { run, phase: "enrich-markdown", ms: performance.now() - phase, pages: this.pages.size, fieldCacheEntries: this.fieldCache.size });
-      if (run !== this.generation) {
-        perfLog("index.rebuild.aborted", { run, currentGeneration: this.generation, ms: performance.now() - started });
-        return;
-      }
+      if (run !== this.generation) return;
 
-      phase = performance.now();
       this.rebuildSearchIndex();
-      perfLog("index.phase", { run, phase: "search-index", ms: performance.now() - phase, searchEntries: this.searchEntries.length });
-
-      phase = performance.now();
       this.emit();
-      perfLog("index.phase", { run, phase: "emit", ms: performance.now() - phase, listeners: this.listeners.size });
-
-      let relationEntries = 0;
-      for (const page of this.pages.values()) relationEntries += page.neighbours.size;
-      const lagStats = lag.stop();
-      lagStopped = true;
       this.scheduleBodyCachePersist();
-      perfLog("index.rebuild.end", {
-        run,
-        ms: performance.now() - started,
-        pages: this.pages.size,
-        relationEntries,
-        markdownFiles: markdownCount,
-        searchEntries: this.searchEntries.length,
-        lagSamples: lagStats.samples,
-        lagOver50ms: lagStats.over50ms,
-        lagOver100ms: lagStats.over100ms,
-        maxLagMs: lagStats.maxLagMs,
-        avgLagMs: lagStats.avgLagMs,
-        queuedAgain: this.rebuildQueued,
-        ...perfMemoryDetails(),
-      });
     } finally {
-      if (!lagStopped) lag.stop();
       this.building = false;
       if (this.rebuildQueued) {
         this.rebuildQueued = false;
-        perfLog("index.rebuild.dequeue", { afterRun: run });
         void this.rebuild();
       }
     }
@@ -371,23 +266,16 @@ export class GraphIndex {
   }
 
   private addVaultTree(): void {
-    const started = performance.now();
-    let folders = 0;
-    let files = 0;
-    let markdownFiles = 0;
     const root = this.createPage({ path: "folder:/", name: "/", isFolder: true });
     this.addPage(root);
     const visit = (folder: TFolder, parent: GraphPage): void => {
       for (const item of folder.children) {
         if (item instanceof TFolder) {
-          folders += 1;
           const node = this.createPage({ path: `folder:${item.path}`, name: item.name, isFolder: true });
           this.addPage(node);
           this.addPair(parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, "file-tree");
           visit(item, node);
         } else if (item instanceof TFile) {
-          files += 1;
-          if (item.extension === "md") markdownFiles += 1;
           const node = this.createPage({ path: item.path, name: item.extension === "md" ? item.basename : item.name, file: item });
           this.addPage(node);
           this.addPair(parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, "file-tree");
@@ -395,22 +283,16 @@ export class GraphIndex {
       }
     };
     visit(this.app.vault.getRoot(), root);
-    perfLog("index.vault-tree.details", { ms: performance.now() - started, folders, files, markdownFiles });
   }
 
   private addTagTree(): void {
-    const started = performance.now();
     const tagNames = new Set<string>();
-    let filesScanned = 0;
-    let filesWithoutCache = 0;
     for (const file of this.app.vault.getMarkdownFiles()) {
-      filesScanned += 1;
       const cache = this.app.metadataCache.getFileCache(file);
-      if (!cache) { filesWithoutCache += 1; continue; }
+      if (!cache) continue;
       for (const tag of getAllTags(cache) ?? []) tagNames.add(tag);
     }
 
-    const pageCountBefore = this.pages.size;
     for (const rawTag of tagNames) {
       const parts = rawTag.slice(1).split("/").filter(Boolean);
       let parent: GraphPage | null = null;
@@ -430,181 +312,64 @@ export class GraphIndex {
         parent = page;
       });
     }
-    perfLog("index.tag-tree.details", {
-      ms: performance.now() - started,
-      filesScanned,
-      filesWithoutCache,
-      uniqueTags: tagNames.size,
-      tagPagesAdded: this.pages.size - pageCountBefore,
-    });
   }
 
   private addResolvedLinks(): void {
-    const started = performance.now();
     const resolved = this.app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
-    let sourceFiles = 0;
-    let linksSeen = 0;
-    let linksAdded = 0;
     for (const [parentPath, children] of Object.entries(resolved)) {
-      sourceFiles += 1;
       const parent = this.get(parentPath);
       if (!parent) continue;
       for (const childPath of Object.keys(children)) {
-        linksSeen += 1;
         const child = this.get(childPath);
-        if (child) { this.addInferredParentChild(parent, child); linksAdded += 1; }
+        if (child) this.addInferredParentChild(parent, child);
       }
     }
-    perfLog("index.resolved-links.details", { ms: performance.now() - started, sourceFiles, linksSeen, linksAdded });
   }
 
   private addUnresolvedLinks(): void {
-    const started = performance.now();
     const unresolved = this.app.metadataCache.unresolvedLinks as Record<string, Record<string, number>>;
-    let sourceFiles = 0;
-    let linksSeen = 0;
-    let virtualCreated = 0;
     for (const [parentPath, children] of Object.entries(unresolved)) {
-      sourceFiles += 1;
       const parent = this.get(parentPath);
       if (!parent || parentPath === this.plugin.settings.excalibrainFilepath) continue;
       for (const childPath of Object.keys(children)) {
-        linksSeen += 1;
-        const existed = Boolean(this.get(childPath));
         const child = this.ensureVirtual(childPath);
-        if (!existed) virtualCreated += 1;
         this.addInferredParentChild(parent, child);
       }
     }
-    perfLog("index.unresolved-links.details", { ms: performance.now() - started, sourceFiles, linksSeen, virtualCreated });
   }
 
   private async enrichMarkdownPages(run: number): Promise<void> {
-    const started = performance.now();
     const files = this.app.vault.getMarkdownFiles() as TFile[];
-    const alive = new Set(files.map((f) => f.path));
-    let staleCacheRemoved = 0;
+    const alive = new Set(files.map((file) => file.path));
     for (const cachedPath of this.fieldCache.keys()) {
-      if (!alive.has(cachedPath)) { this.fieldCache.delete(cachedPath); staleCacheRemoved += 1; this.bodyCacheDirty = true; }
+      if (alive.has(cachedPath)) continue;
+      this.fieldCache.delete(cachedPath);
+      this.bodyCacheDirty = true;
     }
 
     let processed = 0;
-    let missingPage = 0;
-    let cacheHits = 0;
-    let cacheMisses = 0;
-    let bytesRead = 0;
-    let readMs = 0;
-    let parseMs = 0;
-    let applyMs = 0;
-    let yieldMs = 0;
-    let lastProgressAt = started;
-    let lastProgressProcessed = 0;
-    const slowReads: SlowFileStat[] = [];
-    const slowParses: SlowFileStat[] = [];
-    const slowApplies: SlowFileStat[] = [];
-    const pushSlow = (list: SlowFileStat[], stat: SlowFileStat): void => {
-      if (stat.ms < 2 && list.length >= 12) return;
-      list.push(stat);
-      list.sort((a, b) => b.ms - a.ms);
-      if (list.length > 12) list.length = 12;
-    };
-
-    perfLog("index.enrich.start", { run, files: files.length, fieldCacheEntries: this.fieldCache.size, staleCacheRemoved });
-
     for (const file of files) {
       if (run !== this.generation) return;
-      const fileStarted = performance.now();
       const page = this.get(file.path);
-      if (!page) { missingPage += 1; continue; }
+      if (!page) continue;
+
       let entry = this.fieldCache.get(file.path);
-      let bodySize = 0;
       if (!entry || entry.mtime !== file.stat.mtime) {
-        cacheMisses += 1;
-        const readStarted = performance.now();
         const content = await this.app.vault.cachedRead(file);
-        const currentReadMs = performance.now() - readStarted;
-        readMs += currentReadMs;
-        bytesRead += content.length;
-        bodySize = content.length;
-        pushSlow(slowReads, { path: file.path, ms: currentReadMs, size: content.length });
-
-        // Parsing is pure string processing, so keep it off the Obsidian renderer thread.
-        const parseStarted = performance.now();
         const body = await this.metadataWorker.parse(content);
-        const currentParseMs = performance.now() - parseStarted;
-        parseMs += currentParseMs;
-        pushSlow(slowParses, { path: file.path, ms: currentParseMs, size: content.length });
-
         entry = { mtime: file.stat.mtime, body };
         this.fieldCache.set(file.path, entry);
         this.bodyCacheDirty = true;
-      } else {
-        cacheHits += 1;
       }
 
       const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
-      const applyStarted = performance.now();
       this.applyMetadata(page, file, meta);
-      const currentApplyMs = performance.now() - applyStarted;
-      applyMs += currentApplyMs;
-      pushSlow(slowApplies, { path: file.path, ms: currentApplyMs, size: bodySize });
 
       processed += 1;
-      // Yield often enough to keep Obsidian responsive, but not so often that timer scheduling
-      // dominates a warm-cache rebuild. At ~0.1-0.2ms of apply work per cached file, batches of
-      // 250 stay comfortably below a frame-scale long task on typical hardware.
-      if (processed % 250 === 0) {
-        const yieldStarted = performance.now();
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-        yieldMs += performance.now() - yieldStarted;
-      }
-      if (processed % 1000 === 0 || performance.now() - lastProgressAt >= 2500) {
-        const now = performance.now();
-        const batchCount = processed - lastProgressProcessed;
-        const batchMs = now - lastProgressAt;
-        perfLog("index.enrich.progress", {
-          run,
-          processed,
-          total: files.length,
-          percent: files.length ? processed / files.length * 100 : 100,
-          elapsedMs: now - started,
-          batchFiles: batchCount,
-          batchMs,
-          filesPerSecond: batchMs > 0 ? batchCount * 1000 / batchMs : 0,
-          cacheHits,
-          cacheMisses,
-          readMs,
-          parseMs,
-          applyMs,
-          yieldMs,
-          lastFileMs: now - fileStarted,
-          ...perfMemoryDetails(),
-        });
-        lastProgressAt = now;
-        lastProgressProcessed = processed;
-      }
+      // Keep the renderer responsive during a warm-cache rebuild without paying the overhead
+      // of yielding after every handful of files.
+      if (processed % 250 === 0) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
-
-    const slowList = (items: SlowFileStat[]): string => items.map((item) => `${item.ms.toFixed(1)}ms:${item.size}:${item.path}`).join(" || ");
-    perfLog("index.enrich.end", {
-      run,
-      files: files.length,
-      processed,
-      missingPage,
-      cacheHits,
-      cacheMisses,
-      cacheHitPercent: processed ? cacheHits / processed * 100 : 0,
-      bytesRead,
-      readMs,
-      parseMs,
-      applyMs,
-      yieldMs,
-      totalMs: performance.now() - started,
-      slowReads: slowList(slowReads),
-      slowParses: slowList(slowParses),
-      slowApplies: slowList(slowApplies),
-      ...perfMemoryDetails(),
-    });
   }
 
   private applyMetadata(page: GraphPage, file: TFile, meta: ParsedFileMetadata): void {
@@ -977,11 +742,7 @@ export class GraphIndex {
   }
 
   neighbours(page: GraphPage, role: Role): Neighbour[] {
-    const started = performance.now();
-    this.runtimePerf.neighboursCalls += 1;
-    const result = role === "sibling" ? [] : this.relationView(page).roles[role];
-    this.runtimePerf.neighboursMs += performance.now() - started;
-    return result;
+    return role === "sibling" ? [] : this.relationView(page).roles[role];
   }
 
   isConnected(source: GraphPage, targetPath: string): boolean {
@@ -991,11 +752,7 @@ export class GraphIndex {
   }
 
   gateStats(page: GraphPage): GateStats {
-    const started = performance.now();
-    this.runtimePerf.gateStatsCalls += 1;
-    const result = this.relationView(page).gateStats;
-    this.runtimePerf.gateStatsMs += performance.now() - started;
-    return result;
+    return this.relationView(page).gateStats;
   }
 
   gateNeighbourPaths(page: GraphPage, gate: GateSide): Set<string> {
@@ -1018,12 +775,8 @@ export class GraphIndex {
   }
 
   getNeighborhood(path: string): Neighborhood | null {
-    const started = performance.now();
     const center = this.get(path);
-    if (!center) {
-      perfLog("index.neighborhood", { path, found: false, ms: performance.now() - started });
-      return null;
-    }
+    if (!center) return null;
     const max = this.plugin.settings.maxItemCount;
     const parents = this.neighbours(center, "parent").slice(0, max);
     const children = this.neighbours(center, "child").slice(0, max);
@@ -1050,23 +803,10 @@ export class GraphIndex {
     const siblingKeys = siblingList.map((item, index) => ({ item, index, title: this.titleFor(item.page) }));
     siblingKeys.sort((a, b) => naturalCompare(a.title, b.title) || a.index - b.index);
     const siblings = siblingKeys.slice(0, max).map((entry) => entry.item);
-    const result = { center, parents, children, leftFriends, rightFriends, siblings };
-    perfLog("index.neighborhood", {
-      path,
-      found: true,
-      ms: performance.now() - started,
-      directRelations: center.neighbours.size,
-      parents: parents.length,
-      children: children.length,
-      leftFriends: leftFriends.length,
-      rightFriends: rightFriends.length,
-      siblings: siblings.length,
-    });
-    return result;
+    return { center, parents, children, leftFriends, rightFriends, siblings };
   }
 
   titleFor(page: GraphPage): string {
-    this.runtimePerf.titleCalls += 1;
     const settings = this.plugin.settings;
     const signature = [
       page.mtime ?? 0,
@@ -1077,10 +817,8 @@ export class GraphIndex {
     ].join("\u0001");
     const cached = this.titleCache.get(page.path);
     if (cached?.signature === signature) {
-      this.runtimePerf.titleCacheHits += 1;
       return cached.title;
     }
-    this.runtimePerf.titleCacheMisses += 1;
 
     let title = settings.renderAlias && page.aliases.length ? page.aliases[0] : page.name;
     if (settings.nodeTitleScript && page.file) {
@@ -1117,32 +855,21 @@ export class GraphIndex {
   }
 
   neighbourCount(page: GraphPage): number {
-    const started = performance.now();
-    this.runtimePerf.neighbourCountCalls += 1;
-    const result = this.relationView(page).neighbourCount;
-    this.runtimePerf.neighbourCountMs += performance.now() - started;
-    return result;
+    return this.relationView(page).neighbourCount;
   }
 
   search(query: string, limit = 40): GraphPage[] {
-    const started = performance.now();
     const q = query.trim().toLowerCase();
     const settings = this.plugin.settings;
     const max = Math.max(1, limit);
-    let scanned = 0;
-    let visible = 0;
-    let matched = 0;
 
     if (!q) {
       const output: GraphPage[] = [];
       for (const entry of this.searchEntries) {
-        scanned += 1;
         if (!this.visibleTarget(entry.page, settings)) continue;
-        visible += 1;
         output.push(entry.page);
         if (output.length >= max) break;
       }
-      perfLog("search.query", { query: "", ms: performance.now() - started, scanned, visible, matched: output.length, returned: output.length, indexSize: this.searchEntries.length, candidateSource: "sample" });
       return output;
     }
 
@@ -1151,26 +878,21 @@ export class GraphIndex {
     // of rescanning 100k+ thoughts on every keypress. Cache textual matches independently from
     // visibility so toggling graph filters cannot make the cache incorrect.
     let candidates = this.searchEntries;
-    let candidateSource = "full";
     for (let length = q.length - 1; length >= 1; length -= 1) {
       const prefix = q.slice(0, length);
       const cached = this.searchCandidateCache.get(prefix);
       if (!cached) continue;
       candidates = cached;
-      candidateSource = prefix;
       break;
     }
 
     const textualMatches: SearchEntry[] = [];
     const best: Array<{ page: GraphPage; score: number }> = [];
     for (const entry of candidates) {
-      scanned += 1;
       const score = searchEntryScore(entry, q);
       if (score === null) continue;
       textualMatches.push(entry);
-      matched += 1;
       if (!this.visibleTarget(entry.page, settings)) continue;
-      visible += 1;
       if (best.length >= max && score >= best[best.length - 1].score) continue;
 
       let at = best.length;
@@ -1189,8 +911,6 @@ export class GraphIndex {
       this.searchCandidateCache.delete(oldest);
     }
 
-    const result = best.map((item) => item.page);
-    perfLog("search.query", { query: q, ms: performance.now() - started, scanned, visible, matched, returned: result.length, indexSize: this.searchEntries.length, candidateSource });
-    return result;
+    return best.map((item) => item.page);
   }
 }

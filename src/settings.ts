@@ -124,6 +124,7 @@ export interface ExcaliBrainSettings {
   connectorStyle: "bezier" | "straight";
   parentColumns: number;
   childColumns: number;
+  friendMaxHeight: number;
   siblingMaxHeight: number;
   parentMaxHeight: number;
   childMaxHeight: number;
@@ -131,11 +132,13 @@ export interface ExcaliBrainSettings {
   noteTypeStyles: Record<string, NodeStyle>;
   kplexInitialized: boolean;
   startInPopout: boolean;
+  lastActivePath: string;
+  pinnedNodes: string[];
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   compactView: false,
-  compactingFactor: 1.5,
+  compactingFactor: 2,
   minLinkLength: 18,
   excalibrainFilepath: "excalibrain.md",
   indexUpdateInterval: 60000,
@@ -158,7 +161,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   showPageNodes: true,
   showNeighborCount: true,
   showFullTagName: false,
-  maxItemCount: 30,
+  maxItemCount: 100,
   renderSiblings: false,
   applyPowerFilter: false,
   baseNodeStyle: DEFAULT_NODE_STYLE,
@@ -204,13 +207,16 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   connectorStyle: "bezier",
   parentColumns: 2,
   childColumns: 5,
-  siblingMaxHeight: 340,
-  parentMaxHeight: 320,
-  childMaxHeight: 320,
+  friendMaxHeight: 350,
+  siblingMaxHeight: 250,
+  parentMaxHeight: 300,
+  childMaxHeight: 400,
   noteTypeField: "Note type",
   noteTypeStyles: {},
   kplexInitialized: false,
-  startInPopout: false
+  startInPopout: false,
+  lastActivePath: "",
+  pinnedNodes: []
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -293,12 +299,17 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     graphDepth: old.graphDepth === 2 ? 2 : 1,
     parentColumns: Math.max(1, Math.min(2, Number(old.parentColumns ?? DEFAULT_SETTINGS.parentColumns))),
     childColumns: Math.max(1, Math.min(7, Number(old.childColumns ?? DEFAULT_SETTINGS.childColumns))),
+    maxItemCount: Math.max(10, Math.min(300, Number(old.maxItemCount ?? DEFAULT_SETTINGS.maxItemCount))),
+    compactingFactor: Math.max(0.75, Math.min(3, Number(old.compactingFactor ?? DEFAULT_SETTINGS.compactingFactor))),
+    friendMaxHeight: Math.max(120, Math.min(900, Number(old.friendMaxHeight ?? old.siblingMaxHeight ?? DEFAULT_SETTINGS.friendMaxHeight))),
     siblingMaxHeight: Math.max(120, Math.min(900, Number(old.siblingMaxHeight ?? DEFAULT_SETTINGS.siblingMaxHeight))),
     parentMaxHeight: Math.max(120, Math.min(900, Number(old.parentMaxHeight ?? DEFAULT_SETTINGS.parentMaxHeight))),
     childMaxHeight: Math.max(120, Math.min(900, Number(old.childMaxHeight ?? DEFAULT_SETTINGS.childMaxHeight))),
     noteTypeField: String(old.noteTypeField ?? DEFAULT_SETTINGS.noteTypeField),
     kplexInitialized: Boolean(old.kplexInitialized),
     startInPopout: Boolean(old.startInPopout),
+    lastActivePath: String(old.lastActivePath ?? ""),
+    pinnedNodes: Array.isArray(old.pinnedNodes) ? old.pinnedNodes.filter((value): value is string => typeof value === "string") : [],
   };
 }
 
@@ -569,19 +580,20 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
     const noteTypes = Object.keys(this.ebPlugin.settings.noteTypeStyles).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
     return [
       {
+        type: "group",
+        heading: "",
+        cls: "kplex-resource-links",
+        items: [
+          { name: "Buy me a coffee", action: () => { window.open("https://ko-fi.com/zsolt", "_blank", "noopener,noreferrer"); } },
+          { name: "Read Sketch Your Mind", action: () => { window.open("https://community.sketch-your-mind.com/book", "_blank", "noopener,noreferrer"); } },
+          { name: "Join SYM Community", action: () => { window.open("https://community.sketch-your-mind.com", "_blank", "noopener,noreferrer"); } },
+        ],
+      },
+      {
         type: "page",
         name: "Graph",
         desc: "Navigation, layout, visibility and connector behavior.",
         items: [
-          {
-            type: "group",
-            heading: "Resources",
-            items: [
-              { name: "Buy me a coffee", desc: "Support K-Plex and Sketch Your Mind on Ko-fi.", action: () => { window.open("https://ko-fi.com/zsolt", "_blank", "noopener,noreferrer"); } },
-              { name: "Read Sketch Your Mind", desc: "Read the Sketch Your Mind book.", action: () => { window.open("https://community.sketch-your-mind.com/book", "_blank", "noopener,noreferrer"); } },
-              { name: "Join SYM Community", desc: "Open the Sketch Your Mind community.", action: () => { window.open("https://community.sketch-your-mind.com", "_blank", "noopener,noreferrer"); } },
-            ],
-          },
           {
             type: "group",
             heading: "Navigation",
@@ -592,8 +604,8 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
                 control: { type: "toggle", key: "followActiveFile" }
               },
               {
-                name: "Open selected thought in document leaf",
-                desc: "Legacy autoOpenCentralDocument behavior. When enabled, navigating K-Plex opens the central thought in the active or linked document leaf.",
+                name: "Open selected node in document leaf",
+                desc: "Legacy autoOpenCentralDocument behavior. When enabled, navigating K-Plex opens the central node in the active or linked document leaf.",
                 control: { type: "toggle", key: "autoOpenCentralDocument" }
               },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
@@ -607,11 +619,12 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Parent columns", desc: "Maximum number of parent nodes in each row. Two columns leaves dedicated vertical space for friends and challengers.", control: { type: "slider", key: "parentColumns", min: 1, max: 2, step: 1 } },
               { name: "Child columns", desc: "Maximum number of child nodes in each row.", control: { type: "slider", key: "childColumns", min: 1, max: 7, step: 1 } },
               { name: "Parent maximum height", desc: "Parent rows become vertically scrollable above this height.", control: { type: "slider", key: "parentMaxHeight", min: 140, max: 800, step: 20 } },
-              { name: "Child maximum height", desc: "Child rows become vertically scrollable above this height.", control: { type: "slider", key: "childMaxHeight", min: 140, max: 800, step: 20 } },
-              { name: "Friend & sibling maximum height", desc: "Friend and sibling lists become vertically scrollable above this height.", control: { type: "slider", key: "siblingMaxHeight", min: 140, max: 800, step: 20 } },
-              { name: "Maximum thoughts per zone", control: { type: "slider", key: "maxItemCount", min: 5, max: 100, step: 5 } },
+              { name: "Friend / challenger maximum height", desc: "Friend and challenger lists become vertically scrollable above this height.", control: { type: "slider", key: "friendMaxHeight", min: 140, max: 800, step: 20 } },
+              { name: "Sibling maximum height", desc: "Sibling lists become vertically scrollable above this height.", control: { type: "slider", key: "siblingMaxHeight", min: 120, max: 700, step: 10 } },
+              { name: "Child maximum height", desc: "Child rows become vertically scrollable above this height.", control: { type: "slider", key: "childMaxHeight", min: 160, max: 900, step: 20 } },
+              { name: "Maximum nodes per zone", control: { type: "slider", key: "maxItemCount", min: 10, max: 300, step: 10 } },
               { name: "Compact view", control: { type: "toggle", key: "compactView" } },
-              { name: "Compacting factor", control: { type: "slider", key: "compactingFactor", min: 0.75, max: 3, step: 0.05 } },
+              { name: "Density", control: { type: "slider", key: "compactingFactor", min: 0.75, max: 3, step: 0.05 } },
               { name: "Minimum link length", desc: "Legacy spacing control translated to Plex spacing.", control: { type: "slider", key: "minLinkLength", min: 6, max: 40, step: 1 } },
             ]
           },
@@ -621,7 +634,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
             items: [
               { name: "Show siblings", control: { type: "toggle", key: "renderSiblings" } },
               { name: "Show inferred relationships", control: { type: "toggle", key: "showInferredNodes" } },
-              { name: "Ghost / unresolved thoughts", control: { type: "toggle", key: "showVirtualNodes" } },
+              { name: "Ghost / unresolved nodes", control: { type: "toggle", key: "showVirtualNodes" } },
               { name: "Web links", control: { type: "toggle", key: "showURLNodes" } },
               { name: "Attachments", control: { type: "toggle", key: "showAttachments" } },
               { name: "Folders", control: { type: "toggle", key: "showFolderNodes" } },

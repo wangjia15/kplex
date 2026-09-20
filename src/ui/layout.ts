@@ -4,6 +4,7 @@ import { resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import type { GraphIndex } from "../index/GraphIndex";
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const SIBLING_SCALE = 0.85;
 
 export type ZoneViewport = {
   key: ScrollZone;
@@ -53,9 +54,16 @@ function makeNode(
   index: GraphIndex,
   settings: ExcaliBrainSettings,
 ): PositionedNode {
-  const style = resolveNodeStyle(n.page, n, role, settings);
+  const resolved = resolveNodeStyle(n.page, n, role, settings);
+  const scale = role === "sibling" ? SIBLING_SCALE : 1;
+  const style: NodeStyle = scale === 1 ? resolved : {
+    ...resolved,
+    fontSize: (resolved.fontSize ?? 18) * scale,
+    gateRadius: (resolved.gateRadius ?? settings.baseNodeStyle.gateRadius ?? 5) * scale,
+  };
   const label = index.titleFor(n.page);
-  const size = nodeSize(`${style.prefix ?? ""}${label}`, style.fontSize ?? 18, settings, false, style.maxLabelLength ?? 30);
+  const baseSize = nodeSize(`${resolved.prefix ?? ""}${label}`, resolved.fontSize ?? 18, settings, false, resolved.maxLabelLength ?? 30);
+  const size = scale === 1 ? baseSize : { width: baseSize.width * scale, height: baseSize.height * scale };
   return {
     page: n.page,
     role,
@@ -158,7 +166,8 @@ function distributeVertical(
   const nodes = items.map((n) => makeNode(n, role, index, settings));
   if (!nodes.length) return nodes;
 
-  const reserves = nodes.map((node) => expandedChildReserve(node.page, index, settings, centerPath));
+  const reserveScale = role === "sibling" ? SIBLING_SCALE : 1;
+  const reserves = nodes.map((node) => expandedChildReserve(node.page, index, settings, centerPath) * reserveScale);
   nodes[0].x = x;
   nodes[0].y = 0;
   for (let i = 1; i < nodes.length; i += 1) {
@@ -278,7 +287,8 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
 
   const typicalHeight = 26;
   const parentBaseY = -(center.height / 2 + typicalHeight / 2 + centerGap);
-  const childBaseY = center.height / 2 + typicalHeight / 2 + centerGap;
+  const childExtraGap = Math.max(42, 52 * compactFactor * legacySpacing);
+  const childBaseY = center.height / 2 + typicalHeight / 2 + centerGap + childExtraGap;
 
   const parents = distributeGrid(neighborhood.parents, parentBaseY, -1, Math.max(1, Math.min(2, Math.round(settings.parentColumns))), columnGap, rowGap, index, settings, "parent", neighborhood.center.path);
   const children = distributeGrid(neighborhood.children, childBaseY, 1, Math.max(1, Math.min(7, Math.round(settings.childColumns))), columnGap, rowGap, index, settings, "child", neighborhood.center.path);
@@ -289,36 +299,33 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   const right = distributeVertical(neighborhood.rightFriends, sideX, sideGap, index, settings, "right", neighborhood.center.path);
 
   const rightExtent = right.length ? Math.max(...right.map((n) => n.x + n.width / 2)) : maxCenterHalfWidth;
-  const siblingCenterX = Math.max(sideX + 300 * compactFactor, rightExtent + 205 * compactFactor);
+  const siblingCenterX = Math.max(sideX + 340 * compactFactor * legacySpacing, rightExtent + 235 * compactFactor * legacySpacing);
   const siblings = distributeVertical(neighborhood.siblings, siblingCenterX, sideGap, index, settings, "sibling", neighborhood.center.path);
 
-  // Give the lateral zones their own vertical band between the parent and child sections.
-  // Dense friend/challenger/sibling lists become scrollable inside that band instead of flowing
-  // into parent/child nodes. Limiting parents to two columns keeps this band usable in wide Plexes.
-  const parentSectionBottom = parents.length
-    ? Math.max(...parents.map((node) => node.y + node.height / 2 + expandedChildReserve(node.page, index, settings, neighborhood.center.path)))
-    : -(center.height / 2 + Math.max(16, centerGap * 0.45));
+  // Lateral zones are independent of the parent zone. Friends and challengers form a
+  // symmetrical pair around the Plex and may extend upward into the same vertical range as
+  // parents. Their lower edge stays slightly above the children. Siblings occupy a separate,
+  // slightly higher band farther to the right.
   const childSectionTop = children.length
     ? Math.min(...children.map((node) => node.y - node.height / 2))
-    : center.height / 2 + centerGap + 12;
-  const lateralMargin = Math.max(10, 18 * compactFactor);
-  let sideTop = parentSectionBottom + lateralMargin;
-  let sideBottom = childSectionTop - lateralMargin;
-  if (sideBottom - sideTop < 84) {
-    const mid = (sideTop + sideBottom) / 2;
-    sideTop = mid - 42;
-    sideBottom = mid + 42;
-  }
+    : center.height / 2 + centerGap + childExtraGap + 12;
+  const sideToChildrenGap = Math.max(30, 36 * compactFactor * legacySpacing);
+  const sideBottom = childSectionTop - sideToChildrenGap;
+  const sideTop = sideBottom - Math.max(120, settings.friendMaxHeight);
   fitVerticalStrip(left, sideTop, sideBottom, index, settings, neighborhood.center.path);
   fitVerticalStrip(right, sideTop, sideBottom, index, settings, neighborhood.center.path);
-  fitVerticalStrip(siblings, sideTop, sideBottom, index, settings, neighborhood.center.path);
+
+  const siblingLift = Math.max(58, 72 * compactFactor * legacySpacing);
+  const siblingBottom = sideBottom - siblingLift;
+  const siblingTop = siblingBottom - Math.max(120, settings.siblingMaxHeight);
+  fitVerticalStrip(siblings, siblingTop, siblingBottom, index, settings, neighborhood.center.path);
 
   const zoneViewports: Partial<Record<ScrollZone, ZoneViewport>> = {};
   const parentViewport = viewportFor("parent", parents, settings.parentMaxHeight, "bottom");
   const childViewport = viewportFor("child", children, settings.childMaxHeight, "top");
-  const leftViewport = viewportFor("left", left, Math.min(settings.siblingMaxHeight, sideBottom - sideTop), "top", sideBottom, sideTop);
-  const rightViewport = viewportFor("right", right, Math.min(settings.siblingMaxHeight, sideBottom - sideTop), "top", sideBottom, sideTop);
-  const siblingViewport = viewportFor("sibling", siblings, Math.min(settings.siblingMaxHeight, sideBottom - sideTop), "top", sideBottom, sideTop);
+  const leftViewport = viewportFor("left", left, settings.friendMaxHeight, "top", sideBottom, sideTop);
+  const rightViewport = viewportFor("right", right, settings.friendMaxHeight, "top", sideBottom, sideTop);
+  const siblingViewport = viewportFor("sibling", siblings, settings.siblingMaxHeight, "top", siblingBottom, siblingTop);
   if (parentViewport) zoneViewports.parent = parentViewport;
   if (childViewport) zoneViewports.child = childViewport;
   if (leftViewport) zoneViewports.left = leftViewport;

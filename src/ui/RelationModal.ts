@@ -1,7 +1,6 @@
 import { Modal, Notice, TFile, getIcon } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GateRole, GateSide, GraphPage, LinkDirection } from "../types";
-import { perfError } from "../util/perf";
 
 export type RelationModalOptions = {
   mode: "create" | "relink";
@@ -161,7 +160,6 @@ export class RelationModal extends Modal {
       this.options.onCommitted?.();
       this.close();
     } catch (error) {
-      perfError("relation.update.failed", error);
       new Notice(`Could not update relationship: ${error instanceof Error ? error.message : String(error)}`, 5000);
     } finally {
       this.busy = false;
