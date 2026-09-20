@@ -6,10 +6,10 @@ import { copyFile, mkdir } from "node:fs/promises";
 const prod = process.argv[2] === "production";
 
 const copyArtifacts = async () => {
-  await mkdir("build", { recursive: true });
+  await mkdir("dist", { recursive: true });
   await Promise.all([
-    copyFile("manifest.json", "build/manifest.json"),
-    copyFile("styles.css", "build/styles.css")
+    copyFile("manifest.json", "dist/manifest.json"),
+    copyFile("styles.css", "dist/styles.css")
   ]);
 };
 
@@ -38,7 +38,7 @@ const context = await esbuild.context({
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
-  outfile: "build/main.js",
+  outfile: "dist/main.js",
   minify: prod,
   plugins: [{
     name: "copy-plugin-artifacts",

@@ -12,7 +12,7 @@ Develop ExcaliBrain as a dedicated React application inside Obsidian while prese
 4. Preserve node visibility semantics for Markdown pages, attachments, folders, tags, URLs and virtual/ghost nodes.
 5. Preserve classic style inheritance: folder/tag nodes use base → central/sibling → type style; regular nodes use base → inferred → URL → virtual → central → sibling → attachment → tag-specific style.
 6. Keep the plugin ID `excalibrain` so existing Obsidian plugin data can be reused.
-7. Build installable artifacts into `./build/`.
+7. Build installable artifacts into `./dist/`.
 
 ## Architecture boundaries
 

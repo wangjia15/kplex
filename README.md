@@ -15,11 +15,11 @@ npm i
 npm run build
 ```
 
-The installable plugin artifacts are written to `./build/`:
+The installable plugin artifacts are written to `./dist/`:
 
-- `build/main.js`
-- `build/manifest.json`
-- `build/styles.css`
+- `dist/main.js`
+- `dist/manifest.json`
+- `dist/styles.css`
 
 Copy those three files to `.obsidian/plugins/k-plex/` in a test vault and enable **K-Plex** in Obsidian. K-Plex uses its own plugin id so it can run beside legacy ExcaliBrain for one-time settings migration.
 
@@ -29,7 +29,7 @@ Copy those three files to `.obsidian/plugins/k-plex/` in a test vault and enable
 npm run dev
 ```
 
-The development bundle is also written to `./build/` and rebuilt on source changes.
+The development bundle is also written to `./dist/` and rebuilt on source changes.
 
 ## Architecture
 

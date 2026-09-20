@@ -32,7 +32,7 @@ const IGNORE_DIRS = new Set([
   ".vscode",
   ".tools",
   "coverage",
-  "build",
+  "dist",
   "out",
   "output",
   "secrets",

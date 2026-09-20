@@ -11,7 +11,7 @@ npm i
 npm run build
 ```
 
-Build output must appear in `build/` and contain `main.js`, `manifest.json`, and `styles.css`.
+Build output must appear in `dist/` and contain `main.js`, `manifest.json`, and `styles.css`.
 
 ## Design principles
 
