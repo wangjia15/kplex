@@ -6,6 +6,8 @@ K-Plex is the successor architecture to ExcaliBrain. It preserves the relationsh
 
 K-Plex is inspired by spatial knowledge interfaces such as TheBrain, but it is an independent implementation.
 
+> Warning: K-Plex is a new plugin and is still undergoing real-world testing. Bugs and unexpected behavior are possible. Before using K-Plex to create or modify relationships between important notes, I strongly recommend trying it first on a small set of test notes. As with any plugin that can modify your vault, keep a current backup of your data.
+
 ## The Plex at a glance
 
 K-Plex is deliberately **not** a force-directed graph. Relationships are arranged deterministically around the current node:
