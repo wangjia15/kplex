@@ -531,7 +531,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         return;
       }
       if (this.valueContainsTarget(current, storageFile, target)) return;
-      if (Array.isArray(current)) frontmatter[desiredKey] = [...current, reference];
+      if (Array.isArray(current)) frontmatter[desiredKey] = [...(current as unknown[]), reference];
       else frontmatter[desiredKey] = [current, reference];
     });
     await metadataWait;
