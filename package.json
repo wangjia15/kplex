@@ -30,7 +30,7 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "esbuild": "0.25.5",
-    "obsidian": "latest",
+    "obsidian": "1.13.0",
     "typescript": "^5.8.3"
   }
 }
