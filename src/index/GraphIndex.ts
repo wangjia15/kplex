@@ -67,6 +67,44 @@ const relationTypeToSet = (current: RelationType | undefined, incoming: Relation
 
 const naturalCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 
+function subsequenceScore(text: string, query: string): number | null {
+  if (!query) return 0;
+  if (text === query) return 0;
+  if (text.startsWith(query)) return 20 + Math.min(80, text.length - query.length);
+  const containedAt = text.indexOf(query);
+  if (containedAt >= 0) return 120 + containedAt * 4 + Math.min(120, text.length - query.length);
+
+  let qi = 0;
+  let first = -1;
+  let last = -1;
+  let gapPenalty = 0;
+  let boundaryBonus = 0;
+  for (let i = 0; i < text.length && qi < query.length; i += 1) {
+    if (text[i] !== query[qi]) continue;
+    if (first < 0) first = i;
+    if (last >= 0) gapPenalty += Math.max(0, i - last - 1);
+    if (i === 0 || /[\s_\-/.]/.test(text[i - 1])) boundaryBonus += 8;
+    last = i;
+    qi += 1;
+  }
+  if (qi !== query.length) return null;
+
+  // Subsequence matches rank below exact/prefix/substring matches. Tight runs and word-boundary
+  // hits rank higher, matching the way Obsidian-style fuzzy search feels in practice.
+  return 1000 + first * 5 + gapPenalty * 12 + Math.max(0, text.length - query.length) - boundaryBonus;
+}
+
+function searchEntryScore(entry: SearchEntry, query: string): number | null {
+  let best = subsequenceScore(entry.name, query);
+  for (const alias of entry.aliases) {
+    const score = subsequenceScore(alias, query);
+    if (score !== null && (best === null || score + 8 < best)) best = score + 8;
+  }
+  const pathScore = subsequenceScore(entry.path, query);
+  if (pathScore !== null && (best === null || pathScore + 240 < best)) best = pathScore + 240;
+  return best;
+}
+
 export class GraphIndex {
   readonly pages = new Map<string, GraphPage>();
   readonly lowercasePathMap = new Map<string, string>();
@@ -76,6 +114,9 @@ export class GraphIndex {
   private building = false;
   private rebuildQueued = false;
   private searchEntries: SearchEntry[] = [];
+  private titleCache = new Map<string, { signature: string; title: string }>();
+  private titleScriptSource = "";
+  private titleScriptFn: ((dvPage: unknown, defaultName: string) => unknown) | null = null;
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {}
 
@@ -101,6 +142,7 @@ export class GraphIndex {
     try {
       this.pages.clear();
       this.lowercasePathMap.clear();
+      this.titleCache.clear();
       this.addVaultTree();
       this.addTagTree();
       this.addResolvedLinks();
@@ -234,6 +276,7 @@ export class GraphIndex {
     const alive = new Set(files.map((f) => f.path));
     for (const cachedPath of this.fieldCache.keys()) if (!alive.has(cachedPath)) this.fieldCache.delete(cachedPath);
 
+    let processed = 0;
     for (const file of files) {
       if (run !== this.generation) return;
       const page = this.get(file.path);
@@ -249,6 +292,11 @@ export class GraphIndex {
         this.fieldCache.set(file.path, entry);
       }
       this.applyMetadata(page, file, entry.meta, entry.content);
+
+      // Cached rebuilds can otherwise execute tens of thousands of synchronous iterations in one
+      // event-loop turn. Yield in small batches so search, hover and navigation remain responsive.
+      processed += 1;
+      if (processed % 250 === 0) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
   }
 
@@ -636,9 +684,25 @@ export class GraphIndex {
 
   titleFor(page: GraphPage): string {
     const settings = this.plugin.settings;
+    const signature = [
+      page.mtime ?? 0,
+      settings.renderAlias ? "1" : "0",
+      settings.nodeTitleScript,
+      page.aliases[0] ?? "",
+      page.name,
+    ].join("\u0001");
+    const cached = this.titleCache.get(page.path);
+    if (cached?.signature === signature) return cached.title;
+
     let title = settings.renderAlias && page.aliases.length ? page.aliases[0] : page.name;
     if (settings.nodeTitleScript && page.file) {
       try {
+        if (this.titleScriptSource !== settings.nodeTitleScript) {
+          this.titleScriptSource = settings.nodeTitleScript;
+          // Compatibility with the legacy custom label setting. Compile once per script change
+          // rather than once per node/render.
+          this.titleScriptFn = new Function("dvPage", "defaultName", `return ${settings.nodeTitleScript}`) as (dvPage: unknown, defaultName: string) => unknown;
+        }
         const normalizedFields: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(page.frontmatter)) normalizedFields[normalizeFieldName(key)] = value;
         const dvPage = {
@@ -653,12 +717,14 @@ export class GraphIndex {
             etags: page.tags
           }
         };
-        // Compatibility with the legacy custom label setting. The user supplied this script in their own vault settings.
-        const fn = new Function("dvPage", "defaultName", `return ${settings.nodeTitleScript}`) as (dvPage: unknown, defaultName: string) => unknown;
-        const result = fn(dvPage, title);
+        const result = this.titleScriptFn?.(dvPage, title);
         if (typeof result === "string" && result.trim()) title = result;
-      } catch { /* fall back to the standard title */ }
+      } catch {
+        this.titleScriptFn = null;
+        /* fall back to the standard title */
+      }
     }
+    this.titleCache.set(page.path, { signature, title });
     return title;
   }
 
@@ -684,25 +750,21 @@ export class GraphIndex {
       return output;
     }
 
-    // Keep four stable priority buckets instead of allocating and sorting the full vault for
-    // every keypress. This makes 20k-100k file vaults behave like a small list search.
-    const exact: GraphPage[] = [];
-    const prefix: GraphPage[] = [];
-    const contains: GraphPage[] = [];
-    const pathMatches: GraphPage[] = [];
-    const add = (bucket: GraphPage[], page: GraphPage) => { if (bucket.length < max) bucket.push(page); };
-
+    // Keep only the best N matches while scanning the pre-normalized table. This avoids sorting
+    // the entire vault on every keystroke and supports subsequence fuzzy matching (e.g.
+    // "mmpb" -> "Mindmap Builder") while exact/prefix/full-substring matches rank first.
+    const best: Array<{ page: GraphPage; score: number }> = [];
     for (const entry of this.searchEntries) {
       if (!this.visibleTarget(entry.page, settings)) continue;
-      const aliasExact = entry.aliases.some((alias) => alias === q);
-      const aliasPrefix = entry.aliases.some((alias) => alias.startsWith(q));
-      const aliasContains = entry.aliases.some((alias) => alias.includes(q));
-      if (entry.name === q || aliasExact) add(exact, entry.page);
-      else if (entry.name.startsWith(q) || aliasPrefix) add(prefix, entry.page);
-      else if (entry.name.includes(q) || aliasContains) add(contains, entry.page);
-      else if (entry.path.includes(q)) add(pathMatches, entry.page);
-    }
+      const score = searchEntryScore(entry, q);
+      if (score === null) continue;
+      if (best.length >= max && score >= best[best.length - 1].score) continue;
 
-    return [...exact, ...prefix, ...contains, ...pathMatches].slice(0, max);
+      let at = best.length;
+      while (at > 0 && score < best[at - 1].score) at -= 1;
+      best.splice(at, 0, { page: entry.page, score });
+      if (best.length > max) best.pop();
+    }
+    return best.map((item) => item.page);
   }
 }

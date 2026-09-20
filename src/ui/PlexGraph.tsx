@@ -44,7 +44,7 @@ const EMPTY_SCROLLS: ScrollValues = { parent: 0, child: 0, left: 0, right: 0, si
 const GATE_GAP = 3;
 const MAX_ZOOM = 3;
 const COLUMN_PRESETS: ReadonlyArray<readonly [number, number]> = [
-  [1, 1], [1, 2], [2, 3], [2, 4], [3, 4], [3, 5], [4, 5], [4, 6], [4, 7],
+  [1, 1], [1, 2], [1, 3], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7],
 ];
 const GENERIC_RELATION_LABELS = new Set([
   "parent", "parents", "child", "children", "friend", "friends", "challenger", "jump", "jumps",
@@ -205,8 +205,8 @@ function markerFor(head?: string): string | undefined {
 function zoneTitle(zone: ScrollZone): string {
   if (zone === "parent") return "Parents";
   if (zone === "child") return "Children";
-  if (zone === "left") return "Friends / jumps";
-  if (zone === "right") return "Related / challengers";
+  if (zone === "left") return "Friends / Previous";
+  if (zone === "right") return "Challengers / Next";
   return "Siblings";
 }
 
@@ -242,7 +242,7 @@ function buildZoneDisplayLayout(
   const bottomPadding = 16;
   if (zone === "parent" || zone === "child") {
     const columns = zone === "parent"
-      ? Math.max(1, Math.min(4, Math.round(settings.parentColumns)))
+      ? Math.max(1, Math.min(2, Math.round(settings.parentColumns)))
       : Math.max(1, Math.min(7, Math.round(settings.childColumns)));
     const columnGap = 26;
     const rowGap = 20;
@@ -360,30 +360,34 @@ function Edge({
   </g>;
 }
 
-export function PlexGraph({ plugin, index, settings, activePath, onActivate, onOpen }: {
+export function PlexGraph({ plugin, index, settings, activePath, renderRevision, onActivate, onOpen }: {
   plugin: ExcaliBrainPlugin;
   index: GraphIndex;
   settings: ExcaliBrainSettings;
   activePath: string;
+  renderRevision: number;
   onActivate: (page: GraphPage) => void;
   onOpen: (page: GraphPage) => void;
 }) {
-  const neighborhood = index.getNeighborhood(activePath);
+  // getNeighborhood() performs relationship classification/filtering. Keep it stable during local
+  // pointer/camera/hover state updates; only rebuild it when navigation, settings, or the index
+  // actually changes. This removes the largest source of wasted work in dense Plex scenes.
+  const neighborhood = useMemo(() => index.getNeighborhood(activePath), [index, activePath, renderRevision]);
   const [layoutRevision, setLayoutRevision] = useState(0);
   const scene = useMemo(
     () => neighborhood ? buildScene(neighborhood, index, settings) : { nodes: [], edges: [], zoneViewports: {} },
     [neighborhood, index, settings, layoutRevision],
   );
   const viewport = useRef<HTMLDivElement | null>(null);
+  const cameraElement = useRef<HTMLDivElement | null>(null);
   const zoneScrollRefs = useRef<Partial<Record<ScrollZone, HTMLDivElement>>>({});
-  const [camera, setCamera] = useState({ x: 0, y: 0, scale: 1 });
+  const camera = useRef({ x: 0, y: 0, scale: 1 });
   const [hover, setHover] = useState<HoverState>(null);
   const hoverIntentTimer = useRef<number | null>(null);
   const [zoneScrollTop, setZoneScrollTop] = useState<ScrollValues>({ ...EMPTY_SCROLLS });
   const [zoneFilterOpen, setZoneFilterOpen] = useState<ZoneBooleanMap>({});
   const [zoneFilters, setZoneFilters] = useState<ZoneStringMap>({});
   const [expandedScrollTop, setExpandedScrollTop] = useState<Record<string, number>>({});
-  const expandedPreviewTimer = useRef<number | null>(null);
   const [connectDrag, setConnectDrag] = useState<ConnectDrag | null>(null);
   const [nodeDrag, setNodeDrag] = useState<NodeDrag | null>(null);
   const panDrag = useRef<{ pointerId: number; button: number; x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
@@ -401,8 +405,17 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     hoverIntentTimer.current = window.setTimeout(() => {
       hoverIntentTimer.current = null;
       setHover(next);
-    }, 2000);
+    }, 1000);
   };
+  const applyCamera = (nextOrUpdater: { x: number; y: number; scale: number } | ((current: { x: number; y: number; scale: number }) => { x: number; y: number; scale: number })) => {
+    const next = typeof nextOrUpdater === "function" ? nextOrUpdater(camera.current) : nextOrUpdater;
+    camera.current = next;
+    if (cameraElement.current) {
+      cameraElement.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
+    }
+    return next;
+  };
+
   const sceneLayoutKey = [
     activePath,
     scene.nodes.map((node) => `${node.role}:${node.page.path}`).join("|"),
@@ -439,7 +452,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     }
 
     if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-      setCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
+      applyCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
       return;
     }
 
@@ -452,7 +465,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     const scale = Math.max(0.18, Math.min(maxScale, availableWidth / graphWidth, availableHeight / graphHeight));
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    setCamera({
+    applyCamera({
       scale,
       x: el.clientWidth / 2 - centerX * scale,
       y: el.clientHeight / 2 - centerY * scale,
@@ -464,8 +477,8 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     if (!el) return { x: 0, y: 0 };
     const rect = el.getBoundingClientRect();
     return {
-      x: (clientX - rect.left - camera.x) / camera.scale,
-      y: (clientY - rect.top - camera.y) / camera.scale,
+      x: (clientX - rect.left - camera.current.x) / camera.current.scale,
+      y: (clientY - rect.top - camera.current.y) / camera.current.scale,
     };
   };
 
@@ -489,7 +502,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
       if (settings.allowAutozoom) fit();
       else {
         const el = viewport.current;
-        if (el) setCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
+        if (el) applyCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
       }
     }, 0);
   }, [sceneLayoutKey, settings.allowAutozoom]);
@@ -517,7 +530,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
       const factor = Math.exp(-e.deltaY * 0.0015);
-      setCamera((c) => {
+      applyCamera((c) => {
         const nextScale = Math.max(0.3, Math.min(MAX_ZOOM, c.scale * factor));
         const worldX = (px - c.x) / c.scale;
         const worldY = (py - c.y) / c.scale;
@@ -540,7 +553,6 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
 
   useEffect(() => () => {
     if (layoutSaveTimer.current !== null) window.clearTimeout(layoutSaveTimer.current);
-    if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
     if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
   }, []);
 
@@ -797,7 +809,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
       if (rect.right - e.clientX <= 12) return; // leave the native scrollbar draggable
     }
     e.preventDefault();
-    panDrag.current = { pointerId: e.pointerId, button: e.button, x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, moved: false };
+    panDrag.current = { pointerId: e.pointerId, button: e.button, x: e.clientX, y: e.clientY, cx: camera.current.x, cy: camera.current.y, moved: false };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
@@ -821,7 +833,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     const x = drag.cx + e.clientX - drag.x;
     const y = drag.cy + e.clientY - drag.y;
     drag.moved = drag.moved || Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 2;
-    setCamera((current) => ({ ...current, x, y }));
+    applyCamera((current) => ({ ...current, x, y }));
   };
 
   const up = (e: PointerEvent<HTMLDivElement>) => {
@@ -1047,17 +1059,9 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
               onClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onActivate(child.relation.page); }}
               onDoubleClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onOpen(child.relation.page); }}
               onPointerEnter={(event: PointerEvent<HTMLDivElement>) => {
-                if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
-                const target = event.currentTarget;
-                const nativeEvent = event.nativeEvent;
-                expandedPreviewTimer.current = window.setTimeout(() => {
-                  expandedPreviewTimer.current = null;
-                  plugin.triggerHoverPreview(child.relation.page, target, nativeEvent, neighborhood?.center.file?.path ?? "");
-                }, 3000);
-              }}
-              onPointerLeave={() => {
-                if (expandedPreviewTimer.current !== null) window.clearTimeout(expandedPreviewTimer.current);
-                expandedPreviewTimer.current = null;
+                if (event.nativeEvent.ctrlKey || event.nativeEvent.metaKey) {
+                  plugin.triggerHoverPreview(child.relation.page, event.currentTarget, event.nativeEvent, neighborhood?.center.file?.path ?? "");
+                }
               }}
             >
               <span className="kplex-expanded-mini-gate" />
@@ -1076,6 +1080,8 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     const bestScore = Math.abs(bestPair[0] - settings.parentColumns) + Math.abs(bestPair[1] - settings.childColumns);
     return score < bestScore ? indexValue : best;
   }, 0);
+  const compactPercent = ((settings.compactingFactor - 0.75) / (3 - 0.75)) * 100;
+  const columnsPercent = COLUMN_PRESETS.length <= 1 ? 0 : (columnPresetIndex / (COLUMN_PRESETS.length - 1)) * 100;
 
   return <div
     ref={viewport}
@@ -1087,7 +1093,7 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     onPointerCancel={cancel}
     onContextMenu={(event: MouseEvent<HTMLDivElement>) => event.preventDefault()}
   >
-    <div className="excalibrain-camera" style={{ transform: `translate3d(${camera.x}px, ${camera.y}px, 0) scale(${camera.scale})` }}>
+    <div ref={cameraElement} className="excalibrain-camera" style={{ transform: `translate3d(${camera.current.x}px, ${camera.current.y}px, 0) scale(${camera.current.scale})` }}>
       <svg className="excalibrain-links" width="3200" height="2400" viewBox="-1600 -1200 3200 2400">
         <defs>
           <marker id="excalibrain-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M1,1 L8,4.5 L1,8" fill="none" stroke="context-stroke" strokeWidth="1.4" /></marker>
@@ -1134,45 +1140,51 @@ export function PlexGraph({ plugin, index, settings, activePath, onActivate, onO
     </div>
 
     <div className="kplex-layout-controls" onPointerDown={(event: PointerEvent<HTMLDivElement>) => event.stopPropagation()}>
-      <label className="kplex-mini-slider" title={`Compactness ${settings.compactingFactor.toFixed(2)}`}>
-        <input
-          type="range"
-          min="0.75"
-          max="3"
-          step="0.05"
-          value={settings.compactingFactor}
-          aria-label="Compactness"
-          onChange={(event: ChangeEvent<HTMLInputElement>) => {
-            settings.compactingFactor = Number(event.currentTarget.value);
-            setLayoutRevision((value) => value + 1);
-            scheduleLayoutSave();
-          }}
-        />
-        <span>compact</span>
+      <label className="kplex-density-control" title={`Compactness ${settings.compactingFactor.toFixed(2)}`}>
+        <span className="kplex-density-heading"><ObsidianIcon name="minimize-2" size={11} /><span>Density</span><output>{settings.compactingFactor.toFixed(2)}</output></span>
+        <span className="kplex-density-rail">
+          <span className="kplex-density-fill" style={{ width: `${compactPercent}%` }} />
+          <input
+            type="range"
+            min="0.75"
+            max="3"
+            step="0.05"
+            value={settings.compactingFactor}
+            aria-label="Compactness"
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              settings.compactingFactor = Number(event.currentTarget.value);
+              setLayoutRevision((value) => value + 1);
+              scheduleLayoutSave();
+            }}
+          />
+        </span>
       </label>
-      <label className="kplex-mini-slider" title={`${COLUMN_PRESETS[columnPresetIndex][0]} parent / ${COLUMN_PRESETS[columnPresetIndex][1]} child columns`}>
-        <input
-          type="range"
-          min="0"
-          max={String(COLUMN_PRESETS.length - 1)}
-          step="1"
-          value={columnPresetIndex}
-          aria-label="Parent and child columns"
-          onChange={(event: ChangeEvent<HTMLInputElement>) => {
-            const preset = COLUMN_PRESETS[Math.max(0, Math.min(COLUMN_PRESETS.length - 1, Number(event.currentTarget.value)))] ?? COLUMN_PRESETS[0];
-            settings.parentColumns = preset[0];
-            settings.childColumns = preset[1];
-            setLayoutRevision((value) => value + 1);
-            scheduleLayoutSave();
-          }}
-        />
-        <span>columns</span>
+      <label className="kplex-density-control" title={`${COLUMN_PRESETS[columnPresetIndex][0]} parent / ${COLUMN_PRESETS[columnPresetIndex][1]} child columns`}>
+        <span className="kplex-density-heading"><ObsidianIcon name="columns-3" size={11} /><span>Columns</span><output>{COLUMN_PRESETS[columnPresetIndex][0]}/{COLUMN_PRESETS[columnPresetIndex][1]}</output></span>
+        <span className="kplex-density-rail is-stepped">
+          <span className="kplex-density-fill" style={{ width: `${columnsPercent}%` }} />
+          <input
+            type="range"
+            min="0"
+            max={String(COLUMN_PRESETS.length - 1)}
+            step="1"
+            value={columnPresetIndex}
+            aria-label="Parent and child columns"
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              const preset = COLUMN_PRESETS[Math.max(0, Math.min(COLUMN_PRESETS.length - 1, Number(event.currentTarget.value)))] ?? COLUMN_PRESETS[0];
+              settings.parentColumns = preset[0];
+              settings.childColumns = preset[1];
+              setLayoutRevision((value) => value + 1);
+              scheduleLayoutSave();
+            }}
+          />
+        </span>
       </label>
     </div>
 
     <div className="excalibrain-zoom-controls">
-      <button title="Zoom in" aria-label="Zoom in" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); setCamera((c) => ({ ...c, scale: Math.min(MAX_ZOOM, c.scale * 1.15) })); }}><ObsidianIcon name="zoom-in" size={16} /></button>
-      <button title="Zoom out" aria-label="Zoom out" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); setCamera((c) => ({ ...c, scale: Math.max(.3, c.scale / 1.15) })); }}><ObsidianIcon name="zoom-out" size={16} /></button>
+      <button title="Zoom in" aria-label="Zoom in" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.min(MAX_ZOOM, c.scale * 1.15) })); }}><ObsidianIcon name="zoom-in" size={16} /></button>
+      <button title="Zoom out" aria-label="Zoom out" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.max(.3, c.scale / 1.15) })); }}><ObsidianIcon name="zoom-out" size={16} /></button>
       <button title="Fit graph" aria-label="Fit graph" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); fit(); }}><ObsidianIcon name="focus" size={16} /></button>
     </div>
   </div>;

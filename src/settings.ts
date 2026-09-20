@@ -202,7 +202,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   contentPaneWidth: 38,
   graphDepth: 1,
   connectorStyle: "bezier",
-  parentColumns: 3,
+  parentColumns: 2,
   childColumns: 5,
   siblingMaxHeight: 340,
   parentMaxHeight: 320,
@@ -291,7 +291,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     primaryTagFieldLowerCase: norm(old.primaryTagField ?? DEFAULT_SETTINGS.primaryTagField),
     connectorStyle: old.connectorStyle === "straight" ? "straight" : "bezier",
     graphDepth: old.graphDepth === 2 ? 2 : 1,
-    parentColumns: Math.max(1, Math.min(4, Number(old.parentColumns ?? DEFAULT_SETTINGS.parentColumns))),
+    parentColumns: Math.max(1, Math.min(2, Number(old.parentColumns ?? DEFAULT_SETTINGS.parentColumns))),
     childColumns: Math.max(1, Math.min(7, Number(old.childColumns ?? DEFAULT_SETTINGS.childColumns))),
     siblingMaxHeight: Math.max(120, Math.min(900, Number(old.siblingMaxHeight ?? DEFAULT_SETTINGS.siblingMaxHeight))),
     parentMaxHeight: Math.max(120, Math.min(900, Number(old.parentMaxHeight ?? DEFAULT_SETTINGS.parentMaxHeight))),
@@ -575,6 +575,15 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
         items: [
           {
             type: "group",
+            heading: "Resources",
+            items: [
+              { name: "Buy me a coffee", desc: "Support K-Plex and Sketch Your Mind on Ko-fi.", action: () => { window.open("https://ko-fi.com/zsolt", "_blank", "noopener,noreferrer"); } },
+              { name: "Read Sketch Your Mind", desc: "Read the Sketch Your Mind book.", action: () => { window.open("https://community.sketch-your-mind.com/book", "_blank", "noopener,noreferrer"); } },
+              { name: "Join SYM Community", desc: "Open the Sketch Your Mind community.", action: () => { window.open("https://community.sketch-your-mind.com", "_blank", "noopener,noreferrer"); } },
+            ],
+          },
+          {
+            type: "group",
             heading: "Navigation",
             items: [
               {
@@ -595,7 +604,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
             type: "group",
             heading: "Layout",
             items: [
-              { name: "Parent columns", desc: "Maximum number of parent nodes in each row.", control: { type: "slider", key: "parentColumns", min: 1, max: 4, step: 1 } },
+              { name: "Parent columns", desc: "Maximum number of parent nodes in each row. Two columns leaves dedicated vertical space for friends and challengers.", control: { type: "slider", key: "parentColumns", min: 1, max: 2, step: 1 } },
               { name: "Child columns", desc: "Maximum number of child nodes in each row.", control: { type: "slider", key: "childColumns", min: 1, max: 7, step: 1 } },
               { name: "Parent maximum height", desc: "Parent rows become vertically scrollable above this height.", control: { type: "slider", key: "parentMaxHeight", min: 140, max: 800, step: 20 } },
               { name: "Child maximum height", desc: "Child rows become vertically scrollable above this height.", control: { type: "slider", key: "childMaxHeight", min: 140, max: 800, step: 20 } },

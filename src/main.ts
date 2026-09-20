@@ -11,6 +11,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
   index!: GraphIndex;
   private rebuildTimer: number | null = null;
+  private indexDirty = true;
   private linkedDocumentLeaf: WorkspaceLeaf | null = null;
   private lastDocumentLeaf: WorkspaceLeaf | null = null;
   private readonly hoverParent: HoverParent = { hoverPopover: null };
@@ -100,7 +101,7 @@ export default class ExcaliBrainPlugin extends Plugin {
           await this.saveData(this.settings);
         }
 
-        await this.rebuildIndex(false);
+        await this.rebuildIndex(false, true);
       })();
     });
   }
@@ -110,14 +111,20 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private scheduleRebuild(): void {
+    // Metadata-cache events can arrive in bursts while editing. Mark the index dirty immediately,
+    // but rebuild only after the burst settles. Periodic checks then become effectively free when
+    // nothing changed instead of rebuilding a 20k-file vault every minute.
+    this.indexDirty = true;
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     this.rebuildTimer = window.setTimeout(() => {
       this.rebuildTimer = null;
       void this.rebuildIndex(false);
-    }, 450);
+    }, 900);
   }
 
-  async rebuildIndex(showNotice = false): Promise<void> {
+  async rebuildIndex(showNotice = false, force = false): Promise<void> {
+    if (!force && !showNotice && !this.indexDirty && this.index.size > 0) return;
+    this.indexDirty = false;
     if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
     await this.index.rebuild();
     if (showNotice) new Notice(`K-Plex indexed ${this.index.size} thoughts.`, 1800);
@@ -494,7 +501,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       new Notice("When the drag origin is not a Markdown note, the target must be a Markdown note.", 2800);
       return;
     }
-    await this.rebuildIndex(false);
+    await this.rebuildIndex(false, true);
   }
 
   async relinkCentralNeighbour(
@@ -526,7 +533,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     } else if (neighbourFile) {
       await this.writeRelationship(neighbourFile, center, inverseField);
     }
-    await this.rebuildIndex(false);
+    await this.rebuildIndex(false, true);
   }
 
   async createGhostNote(rawPath: string): Promise<void> {
@@ -549,7 +556,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
     const leafName = parts.length ? parts[parts.length - 1] : "New thought";
     const file = await this.app.vault.create(path, `# ${leafName.replace(/\.md$/i, "")}\n`);
-    await this.rebuildIndex(false);
+    await this.rebuildIndex(false, true);
     await this.openInDocumentLeaf(file);
   }
 }

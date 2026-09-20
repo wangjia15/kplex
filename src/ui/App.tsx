@@ -34,7 +34,7 @@ function ToolButton({ icon, title, on, disabled, onClick }: {
 }
 
 export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
-  const [, forceRender] = useState(0);
+  const [renderRevision, forceRender] = useState(0);
   const [activePath, setActivePath] = useState(() => {
     const active = plugin.app.workspace.getActiveFile();
     const history = plugin.settings.navigationHistory;
@@ -175,10 +175,10 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
       <main className="excalibrain-workspace">
         <section className="excalibrain-graph-area">
           <div className="excalibrain-zone-label zone-parent">PARENTS</div>
-          <div className="excalibrain-zone-label zone-left">JUMPS / FRIENDS</div>
-          <div className="excalibrain-zone-label zone-right">NEXT / RELATED</div>
+          <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
+          <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={plugin.settings} activePath={page.path} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={plugin.settings} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

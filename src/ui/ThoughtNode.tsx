@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import type { GateSide, PositionedNode } from "../types";
 import { alphaHexToCss } from "../index/style";
 import type { ExcaliBrainSettings } from "../settings";
@@ -43,7 +43,6 @@ export function ThoughtNode({
   onGatePointerDown: (node: PositionedNode, gate: GateSide, event: PointerEvent<HTMLSpanElement>) => void;
   onNodePointerDown: (node: PositionedNode, event: PointerEvent<HTMLDivElement>) => void;
 }) {
-  const previewTimer = useRef<number | null>(null);
   const style = node.style;
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
   const prefix = style.prefix ?? "";
@@ -86,29 +85,19 @@ export function ThoughtNode({
     node.page.isFolder || node.page.isTag ? "is-structural-thought" : "",
   ].filter(Boolean).join(" ");
 
-  const clearPreview = () => {
-    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
-    previewTimer.current = null;
-  };
-
-  useEffect(() => () => clearPreview(), []);
-
   return <div
     className={classes}
     style={nodeCss}
     data-kplex-path={node.page.path}
-    onPointerDown={(e: PointerEvent<HTMLDivElement>) => { clearPreview(); onNodePointerDown(node, e); }}
+    onPointerDown={(e: PointerEvent<HTMLDivElement>) => { onNodePointerDown(node, e); }}
     onPointerEnter={(e: PointerEvent<HTMLDivElement>) => {
       onHoverNode(node);
-      clearPreview();
-      const target = e.currentTarget;
-      const nativeEvent = e.nativeEvent;
-      previewTimer.current = window.setTimeout(() => {
-        previewTimer.current = null;
-        onHoverPreview(node, target, nativeEvent);
-      }, 3000);
+      // Obsidian-style page preview is intentionally explicit: hold Ctrl/Cmd while entering
+      // a thought. Without the modifier no preview is scheduled at all, which avoids timer
+      // churn while moving across a dense Plex.
+      if (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) onHoverPreview(node, e.currentTarget, e.nativeEvent);
     }}
-    onPointerLeave={() => { clearPreview(); onHoverEnd(); }}
+    onPointerLeave={() => { onHoverEnd(); }}
     onClick={click}
     onDoubleClick={(e: MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onOpen(node); }}
     aria-label={`${node.label} — ${node.page.path}`}
@@ -125,7 +114,7 @@ export function ThoughtNode({
           data-kplex-gate={gate}
           onPointerEnter={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
           onPointerLeave={(e: PointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
-          onPointerDown={(e: PointerEvent<HTMLSpanElement>) => { clearPreview(); onGatePointerDown(node, gate, e); }}
+          onPointerDown={(e: PointerEvent<HTMLSpanElement>) => { onGatePointerDown(node, gate, e); }}
           onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
           title={node.page.isFolder || node.page.isTag
             ? `${gate} gate · drag linking is disabled for folder and tag thoughts`
