@@ -272,8 +272,14 @@ function buildZoneDisplayLayout(
     + (nodeIndex > 0 ? gap : 0)
   ), 0);
   const availableHeight = Math.max(0, panel.height - topPadding - bottomPadding);
-  const bottomAlign = zone === "left" || zone === "right";
-  let y = topPadding + (bottomAlign && occupiedHeight < availableHeight ? availableHeight - occupiedHeight : 0);
+  let y = topPadding;
+  if ((zone === "left" || zone === "right") && occupiedHeight < availableHeight) {
+    // panel.top is in world coordinates. The active node lives at world y = 0, so -panel.top
+    // is its panel-local midline. Keep filtered sparse lateral lists centered on that same line.
+    const midlineY = -panel.top;
+    const maxTop = Math.max(topPadding, panel.height - bottomPadding - occupiedHeight);
+    y = Math.max(topPadding, Math.min(maxTop, midlineY - occupiedHeight / 2));
+  }
   for (const node of filtered) {
     localPositions.set(node.page.path, { x: node.x - panel.left, y: y + node.height / 2 });
     y += node.height + expandedChildReserve(node.page, index, settings, centerPath) + gap;
@@ -398,6 +404,7 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
   const panDrag = useRef<{ pointerId: number; button: number; x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
   const suppressActivateUntil = useRef(0);
   const layoutSaveTimer = useRef<number | null>(null);
+  const preserveCameraOnNextLayout = useRef(false);
 
   const clearHoverIntent = (clearActive = false) => {
     if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
@@ -499,17 +506,23 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
     setNodeDrag(null);
     panDrag.current = null;
 
-    window.setTimeout(() => {
+    const preserveCamera = preserveCameraOnNextLayout.current;
+    preserveCameraOnNextLayout.current = false;
+    const resetTimer = window.setTimeout(() => {
       for (const zone of ZONES) {
         const scrollEl = zoneScrollRefs.current[zone];
         if (scrollEl) scrollEl.scrollTop = nextScrolls[zone];
       }
+      // Density is an in-place layout refinement. Rebuilding node positions must not trigger
+      // Fit/autozoom and make the graph jump away from the user's current camera position.
+      if (preserveCamera) return;
       if (settings.allowAutozoom) fit();
       else {
         const el = viewport.current;
         if (el) applyCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
       }
     }, 0);
+    return () => window.clearTimeout(resetTimer);
   }, [sceneLayoutKey, settings.allowAutozoom]);
 
   useEffect(() => {
@@ -1158,6 +1171,7 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
             aria-label="Compactness"
             onChange={(event: ChangeEvent<HTMLInputElement>) => {
               settings.compactingFactor = Number(event.currentTarget.value);
+              preserveCameraOnNextLayout.current = true;
               setLayoutRevision((value) => value + 1);
               scheduleLayoutSave();
             }}

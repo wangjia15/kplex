@@ -239,7 +239,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
       <footer className="excalibrain-history-bar">
         <span className="excalibrain-history-label">PAST NODES</span>
         <div className="excalibrain-history-list">
-          {plugin.settings.navigationHistory.slice(-14).map((path, indexValue) => {
+          {plugin.settings.navigationHistory.slice(-14).reverse().map((path, indexValue) => {
             const item = plugin.index.get(path);
             if (!item) return null;
             const title = plugin.index.titleFor(item);

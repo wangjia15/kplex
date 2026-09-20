@@ -193,7 +193,7 @@ function fitVerticalStrip(
   index: GraphIndex,
   settings: ExcaliBrainSettings,
   centerPath: string,
-  alignment: "top" | "center" | "bottom" = "center",
+  alignment: "top" | "center" | "bottom" | "midline" = "center",
 ): void {
   if (!nodes.length) return;
   const occupiedTop = Math.min(...nodes.map((node) => node.y - node.height / 2));
@@ -204,11 +204,16 @@ function fitVerticalStrip(
   const availableHeight = Math.max(1, bottomLimit - topLimit);
   const targetTop = occupiedHeight > availableHeight
     ? topLimit
-    : alignment === "bottom"
-      ? bottomLimit - occupiedHeight
-      : alignment === "top"
-        ? topLimit
-        : topLimit + (availableHeight - occupiedHeight) / 2;
+    : alignment === "midline"
+      // distributeVertical() is already centered around the active node (y = 0). Preserve
+      // that semantic midline whenever the strip fits, shifting only as much as necessary
+      // to keep the occupied strip inside its configured lateral bounds.
+      ? clamp(occupiedTop, topLimit, bottomLimit - occupiedHeight)
+      : alignment === "bottom"
+        ? bottomLimit - occupiedHeight
+        : alignment === "top"
+          ? topLimit
+          : topLimit + (availableHeight - occupiedHeight) / 2;
   const shift = targetTop - occupiedTop;
   for (const node of nodes) node.y += shift;
 }
@@ -317,11 +322,11 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   const sideToChildrenGap = Math.max(30, 36 * compactFactor * legacySpacing);
   const sideBottom = childSectionTop - sideToChildrenGap;
   const sideTop = sideBottom - Math.max(120, settings.friendMaxHeight);
-  // Lateral relationship lists grow upward from their lower boundary. This keeps sparse
-  // Friends/Previous and Challengers/Next groups close to the center/children instead of
-  // marooning a single node near the top of a tall lateral band.
-  fitVerticalStrip(left, sideTop, sideBottom, index, settings, neighborhood.center.path, "bottom");
-  fitVerticalStrip(right, sideTop, sideBottom, index, settings, neighborhood.center.path, "bottom");
+  // Sparse lateral relationship lists are centered on the active node's horizontal midline:
+  // one node sits level with the center, two straddle it evenly, and larger lists grow
+  // outward in both directions. Only shift the strip when it reaches the zone bounds.
+  fitVerticalStrip(left, sideTop, sideBottom, index, settings, neighborhood.center.path, "midline");
+  fitVerticalStrip(right, sideTop, sideBottom, index, settings, neighborhood.center.path, "midline");
 
   const siblingLift = Math.max(58, 72 * compactFactor * legacySpacing);
   const siblingBottom = sideBottom - siblingLift;
