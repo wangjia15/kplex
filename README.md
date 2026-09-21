@@ -163,6 +163,12 @@ Connectors originate from the relevant gates rather than from node centers. They
 
 Generic labels such as Parent, Child, Friend, Challenger and structural file/tag-tree labels are suppressed. Custom ontology labels can be shown on connectors when relationship labels are enabled.
 
+### Explain relationships
+
+Right-click a visible connector and choose **Explain relationship** to see why K-Plex placed that relationship where it did. The explanation shows the resolved role plus the underlying evidence, such as frontmatter ontology, body ontology, ordinary Obsidian links, folder/tag structure, URLs or Date-property links.
+
+When frontmatter deliberately overrides conflicting body ontology, the body evidence is retained and shown as **OVERRIDDEN** rather than discarded. This makes the visible result deterministic while keeping the source conflict inspectable.
+
 ## Hover and preview
 
 Relationship highlighting is intentionally delayed so the Plex does not flash while you move the pointer across a dense graph.
@@ -199,7 +205,7 @@ Folder and tag relationships are structural, so drag-link creation involving fol
 
 A node directly connected to the center can be dragged to another side of the Plex. Moving it between the top, bottom, left and right regions proposes changing the relationship class and opens the relationship dialog before committing the change.
 
-The resulting YAML relationship takes precedence over an equivalent relationship discovered in body text. This keeps future layout deterministic without rewriting the body of the note.
+When the same note contains conflicting ontology for the same target, a YAML/frontmatter ontology written by K-Plex takes precedence over the body ontology. The body declaration is not deleted from the index; it remains available to **Explain relationship** as overridden evidence. This keeps future layout deterministic without silently losing provenance or rewriting arbitrary prose.
 
 ## Ontology
 
@@ -224,7 +230,7 @@ Friend: "[[Related idea]]"
 Challenger: "[[Counterargument]]"
 ```
 
-The exact field names are configurable in **Settings → K-Plex → Ontology**. K-Plex also understands common Dataview-style inline fields such as `Field:: [[Link]]` without requiring the Dataview plugin.
+The exact field names are configurable in **Settings → K-Plex → Ontology**. K-Plex also understands legacy Dataview-style body fields without requiring the Dataview plugin, including full-line fields, parenthesized inline fields, square-bracket inline fields, Markdown emphasis around field names, list items and multiple inline fields on one physical line. Examples include `Field:: [[Link]]`, `(Friend:: [[A]], [[B]])`, `[Challenger:: [[C]]]` and `**Parent**:: [[D]]`. YAML/frontmatter, fenced code, inline code and HTML comments are excluded from body-field parsing.
 
 ## Supported node types
 
@@ -276,7 +282,7 @@ Compatibility includes the classic hierarchy/ontology model, relationship reconc
 
 ## Large vaults
 
-K-Plex is designed for large Obsidian vaults. Indexing, search and rendering use caching and incremental behavior so normal navigation does not require rebuilding or rescanning the entire vault.
+K-Plex is designed for large Obsidian vaults. Markdown body parsing is cached per file/mtime, parsing can run in a worker, search and relationship views are cached, and graph rebuilds are assembled off to the side and published atomically. Normal navigation does not rescan the vault; metadata changes may trigger a full graph rebuild, but unchanged Markdown bodies are reused from cache.
 
 If graph data appears stale, use the toolbar refresh button or the **Rebuild K-Plex index** command.
 

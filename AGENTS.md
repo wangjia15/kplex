@@ -42,6 +42,7 @@ Rules:
 5. Use `workspace.getLeaf("window")` for pop-out workflows when supported by the installed API.
 6. Use the Obsidian declarative settings API for settings UI.
 7. All plugin UI icons must be Lucide icons obtained through Obsidian `getIcon()` (or a thin React wrapper around it). Do not ship hand-coded icon SVGs or unrelated icon libraries.
+8. Moment is host-provided by Obsidian. Do not runtime-import `moment` or call the `moment` export from `obsidian`; production code should use Obsidian's `window.moment` through narrow local typing. Tests may install a Moment test double on `window`.
 
 ## Non-negotiable compatibility rules
 
@@ -351,10 +352,11 @@ Use **nodes**, not "thoughts", in user-facing terminology. Legacy internal names
 
 Before returning a patch:
 
-1. build against the actual repository and Obsidian typings
-2. test startup with an existing K-Plex data file
-3. test a large-vault path if the change affects indexing/search/rendering
-4. verify Markdown, folder, tag, attachment, URL and virtual-node navigation as relevant
-5. verify linked/unlinked leaf behavior for navigation changes
-6. verify no new high-volume console logging
-7. package only requested modified/new files when the user asks for a patch ZIP
+1. run `npm test` when indexing, ontology, provenance, folders, tags, URLs, Date properties or relationship classification changed
+2. build against the actual repository and Obsidian typings
+3. test startup with an existing K-Plex data file
+4. test a large-vault path if the change affects indexing/search/rendering
+5. verify Markdown, folder, tag, attachment, URL and virtual-node navigation as relevant
+6. verify linked/unlinked leaf behavior for navigation changes
+7. verify no new high-volume console logging
+8. package only requested modified/new files when the user asks for a patch ZIP

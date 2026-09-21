@@ -1,8 +1,7 @@
-import { getAllTags, TFile, TFolder, type App } from "obsidian";
+import type { App } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { ExcaliBrainSettings } from "../settings";
 import {
-  LinkDirection,
   RelationType,
   type GraphPage,
   type GateSide,
@@ -10,32 +9,18 @@ import {
   type Neighbour,
   type Neighborhood,
   type Relation,
-  type Role
+  type Role,
 } from "../types";
+import type { ParsedBodyMetadata } from "./fieldParser";
+import { GraphBuilder, type FieldCacheEntry } from "./GraphBuilder";
+import { createGraphState, getGraphPage } from "./GraphState";
+import { MetadataParser } from "./MetadataParser";
 import {
-  extractLinksFromValue,
-  getNormalizedFieldValues,
-  getNormalizedFrontmatterValues,
-  getNormalizedInlineFieldValues,
-  normalizeFieldName,
-  mergeFileMetadata,
-  type ParsedBodyMetadata,
-  type ParsedFileMetadata
-} from "./fieldParser";
-import { MetadataParseWorker } from "./MetadataParseWorker";
+  classifyRelation,
+  explainResolvedRelationship,
+  type RelationshipExplanation,
+} from "./RelationResolver";
 
-const DEFAULT_RELATION = (): Omit<Relation, "target"> => ({
-  direction: null,
-  isHidden: false,
-  isParent: false,
-  isChild: false,
-  isLeftFriend: false,
-  isRightFriend: false,
-  isNextFriend: false,
-  isPreviousFriend: false
-});
-
-type FieldCacheEntry = { mtime: number; body: ParsedBodyMetadata };
 
 type CachedRelationView = {
   signature: string;
@@ -45,41 +30,17 @@ type CachedRelationView = {
 };
 
 type PersistedBodyCache = {
-  version: 1;
+  version: 2;
   entries: Record<string, { mtime: number; body: ParsedBodyMetadata }>;
 };
 
-const BODY_CACHE_KEY = "k-plex:index-body-cache:v1";
+const BODY_CACHE_KEY = "k-plex:index-body-cache:v2";
+
 type SearchEntry = {
   page: GraphPage;
   name: string;
   aliases: string[];
   path: string;
-};
-
-type RelationVector = {
-  pi: boolean; pd: boolean; ci: boolean; cd: boolean;
-  lfd: boolean; rfd: boolean; pfd: boolean; nfd: boolean;
-};
-
-
-const concatDefinition = (newDef?: string, current?: string): string | undefined => {
-  if (!newDef) return current;
-  if (!current) return newDef;
-  const values = new Set(current.split(",").map((x) => x.trim()).filter(Boolean));
-  values.add(newDef);
-  return [...values].join(", ");
-};
-
-const directionToSet = (current: LinkDirection | null, incoming: LinkDirection): LinkDirection => {
-  if (!current) return incoming;
-  if (current === LinkDirection.BOTH || current === incoming) return current;
-  return LinkDirection.BOTH;
-};
-
-const relationTypeToSet = (current: RelationType | undefined, incoming: RelationType): RelationType => {
-  if (current === RelationType.DEFINED || incoming === RelationType.DEFINED) return RelationType.DEFINED;
-  return incoming;
 };
 
 const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -106,9 +67,6 @@ function subsequenceScore(text: string, query: string): number | null {
     qi += 1;
   }
   if (qi !== query.length) return null;
-
-  // Subsequence matches rank below exact/prefix/substring matches. Tight runs and word-boundary
-  // hits rank higher, matching the way Obsidian-style fuzzy search feels in practice.
   return 1000 + first * 5 + gapPenalty * 12 + Math.max(0, text.length - query.length) - boundaryBonus;
 }
 
@@ -124,8 +82,7 @@ function searchEntryScore(entry: SearchEntry, query: string): number | null {
 }
 
 export class GraphIndex {
-  readonly pages = new Map<string, GraphPage>();
-  readonly lowercasePathMap = new Map<string, string>();
+  private state = createGraphState();
   private listeners = new Set<() => void>();
   private fieldCache = new Map<string, FieldCacheEntry>();
   private generation = 0;
@@ -135,7 +92,7 @@ export class GraphIndex {
   private searchCandidateCache = new Map<string, SearchEntry[]>();
   private titleCache = new Map<string, { signature: string; title: string }>();
   private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
-  private metadataWorker = new MetadataParseWorker();
+  private metadataParser = new MetadataParser();
   private cachePersistTimer: number | null = null;
   private bodyCacheDirty = false;
 
@@ -143,6 +100,8 @@ export class GraphIndex {
     this.restoreBodyCache();
   }
 
+  get pages(): Map<string, GraphPage> { return this.state.pages; }
+  get lowercasePathMap(): Map<string, string> { return this.state.lowercasePathMap; }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -152,21 +111,21 @@ export class GraphIndex {
   private emit(): void { for (const listener of this.listeners) listener(); }
   notify(): void { this.emit(); }
 
-  get size(): number { return this.pages.size; }
-  get(path: string): GraphPage | undefined { return this.pages.get(path) ?? this.pages.get(this.lowercasePathMap.get(path.toLowerCase()) ?? ""); }
-  allPages(): GraphPage[] { return [...this.pages.values()]; }
+  get size(): number { return this.state.pages.size; }
+  get(path: string): GraphPage | undefined { return getGraphPage(this.state, path); }
+  allPages(): GraphPage[] { return [...this.state.pages.values()]; }
 
   destroy(): void {
     if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
-    this.metadataWorker.destroy();
+    this.metadataParser.destroy();
   }
 
   private restoreBodyCache(): void {
     try {
       const raw = this.app.loadLocalStorage(BODY_CACHE_KEY) as PersistedBodyCache | null;
-      if (!raw || raw.version !== 1 || !raw.entries || typeof raw.entries !== "object") return;
+      if (!raw || raw.version !== 2 || !raw.entries || typeof raw.entries !== "object") return;
       for (const [path, value] of Object.entries(raw.entries)) {
-        if (!value || typeof value.mtime !== "number" || !value.body) continue;
+        if (!value || typeof value.mtime !== "number" || !value.body || !Array.isArray(value.body.inlineFieldOccurrences)) continue;
         this.fieldCache.set(path, { mtime: value.mtime, body: value.body });
       }
     } catch {
@@ -182,7 +141,7 @@ export class GraphIndex {
       try {
         const entries: PersistedBodyCache["entries"] = {};
         for (const [path, entry] of this.fieldCache) entries[path] = { mtime: entry.mtime, body: entry.body };
-        this.app.saveLocalStorage(BODY_CACHE_KEY, { version: 1, entries } satisfies PersistedBodyCache);
+        this.app.saveLocalStorage(BODY_CACHE_KEY, { version: 2, entries } satisfies PersistedBodyCache);
         this.bodyCacheDirty = false;
       } catch {
         // Cache persistence failure must never affect graph behavior.
@@ -190,26 +149,33 @@ export class GraphIndex {
     }, 5000);
   }
 
+  /** Build a complete graph off to the side, then atomically publish it. */
   async rebuild(): Promise<void> {
     if (this.building) {
       this.rebuildQueued = true;
+      // Invalidate the in-flight snapshot immediately. The queued rebuild will
+      // start from the newest vault state, so stale work must never publish.
+      this.generation += 1;
       return;
     }
     this.building = true;
     const run = ++this.generation;
     try {
-      this.pages.clear();
-      this.lowercasePathMap.clear();
+      const builder = new GraphBuilder(
+        this.plugin,
+        this.app,
+        this.fieldCache,
+        this.metadataParser,
+        () => { this.bodyCacheDirty = true; },
+        () => run === this.generation,
+      );
+      const next = await builder.build();
+      if (!next || run !== this.generation) return;
+
+      // Atomic graph-state swap: readers never observe a half-built graph.
+      this.state = next;
       this.titleCache.clear();
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
-
-      this.addVaultTree();
-      this.addTagTree();
-      this.addResolvedLinks();
-      this.addUnresolvedLinks();
-      await this.enrichMarkdownPages(run);
-      if (run !== this.generation) return;
-
       this.rebuildSearchIndex();
       this.emit();
       this.scheduleBodyCachePersist();
@@ -222,14 +188,9 @@ export class GraphIndex {
     }
   }
 
-
   private rebuildSearchIndex(): void {
     this.searchCandidateCache.clear();
-    // Do not globally locale-sort 100k+ graph thoughts here. In the instrumented large vault,
-    // that sort alone took ~5.8 seconds. Ranked search already orders matches, and the empty
-    // query only needs a small initial sample, so insertion order is sufficient and effectively
-    // free to build.
-    this.searchEntries = [...this.pages.values()].map((page) => ({
+    this.searchEntries = [...this.state.pages.values()].map((page) => ({
       page,
       name: page.name.toLowerCase(),
       aliases: page.aliases.map((alias) => alias.toLowerCase()),
@@ -237,382 +198,16 @@ export class GraphIndex {
     }));
   }
 
-  private createPage(params: Partial<GraphPage> & Pick<GraphPage, "path" | "name">): GraphPage {
-    return {
-      path: params.path,
-      file: params.file ?? null,
-      name: params.name,
-      url: params.url ?? null,
-      isFolder: params.isFolder ?? false,
-      isTag: params.isTag ?? false,
-      mtime: params.mtime ?? params.file?.stat.mtime ?? null,
-      neighbours: params.neighbours ?? new Map<string, Relation>(),
-      aliases: params.aliases ?? [],
-      tags: params.tags ?? [],
-      noteType: params.noteType ?? null,
-      primaryStyleTag: params.primaryStyleTag ?? null,
-      styleTags: params.styleTags ?? [],
-      frontmatter: params.frontmatter ?? {},
-      inlineFields: params.inlineFields ?? {},
-      maxLabelLength: params.maxLabelLength ?? this.plugin.settings.baseNodeStyle.maxLabelLength ?? 30
-    };
-  }
-
-  private addPage(page: GraphPage): void {
-    this.pages.set(page.path, page);
-    this.lowercasePathMap.set(page.path.toLowerCase(), page.path);
-  }
-
-  private addVaultTree(): void {
-    const root = this.createPage({ path: "folder:/", name: "/", isFolder: true });
-    this.addPage(root);
-    const visit = (folder: TFolder, parent: GraphPage): void => {
-      for (const item of folder.children) {
-        if (item instanceof TFolder) {
-          const node = this.createPage({ path: `folder:${item.path}`, name: item.name, isFolder: true });
-          this.addPage(node);
-          this.addPair(parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, "file-tree");
-          visit(item, node);
-        } else if (item instanceof TFile) {
-          const node = this.createPage({ path: item.path, name: item.extension === "md" ? item.basename : item.name, file: item });
-          this.addPage(node);
-          this.addPair(parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, "file-tree");
-        }
-      }
-    };
-    visit(this.app.vault.getRoot(), root);
-  }
-
-  private addTagTree(): void {
-    const tagNames = new Set<string>();
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      if (!cache) continue;
-      for (const tag of getAllTags(cache) ?? []) tagNames.add(tag);
-    }
-
-    for (const rawTag of tagNames) {
-      const parts = rawTag.slice(1).split("/").filter(Boolean);
-      let parent: GraphPage | null = null;
-      parts.forEach((part, index) => {
-        const tagPath = parts.slice(0, index + 1).join("/");
-        const path = `tag:${tagPath}`;
-        let page = this.pages.get(path);
-        if (!page) {
-          page = this.createPage({
-            path,
-            name: this.plugin.settings.showFullTagName ? tagPath : part,
-            isTag: true
-          });
-          this.addPage(page);
-        }
-        if (parent) this.addPair(parent, page, "child", RelationType.DEFINED, LinkDirection.FROM, "tag-tree");
-        parent = page;
-      });
-    }
-  }
-
-  private addResolvedLinks(): void {
-    const resolved = this.app.metadataCache.resolvedLinks;
-    for (const [parentPath, children] of Object.entries(resolved)) {
-      const parent = this.get(parentPath);
-      if (!parent) continue;
-      for (const childPath of Object.keys(children)) {
-        const child = this.get(childPath);
-        if (child) this.addInferredParentChild(parent, child);
-      }
-    }
-  }
-
-  private addUnresolvedLinks(): void {
-    const unresolved = this.app.metadataCache.unresolvedLinks;
-    for (const [parentPath, children] of Object.entries(unresolved)) {
-      const parent = this.get(parentPath);
-      if (!parent || parentPath === this.plugin.settings.excalibrainFilepath) continue;
-      for (const childPath of Object.keys(children)) {
-        const child = this.ensureVirtual(childPath);
-        this.addInferredParentChild(parent, child);
-      }
-    }
-  }
-
-  private async enrichMarkdownPages(run: number): Promise<void> {
-    const files = this.app.vault.getMarkdownFiles();
-    const alive = new Set(files.map((file) => file.path));
-    for (const cachedPath of this.fieldCache.keys()) {
-      if (alive.has(cachedPath)) continue;
-      this.fieldCache.delete(cachedPath);
-      this.bodyCacheDirty = true;
-    }
-
-    let processed = 0;
-    for (const file of files) {
-      if (run !== this.generation) return;
-      const page = this.get(file.path);
-      if (!page) continue;
-
-      let entry = this.fieldCache.get(file.path);
-      if (!entry || entry.mtime !== file.stat.mtime) {
-        const content = await this.app.vault.cachedRead(file);
-        const body = await this.metadataWorker.parse(content);
-        entry = { mtime: file.stat.mtime, body };
-        this.fieldCache.set(file.path, entry);
-        this.bodyCacheDirty = true;
-      }
-
-      const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
-      this.applyMetadata(page, file, meta);
-
-      processed += 1;
-      // Keep the renderer responsive during a warm-cache rebuild without paying the overhead
-      // of yielding after every handful of files.
-      if (processed % 250 === 0) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-    }
-  }
-
-  private applyMetadata(page: GraphPage, file: TFile, meta: ParsedFileMetadata): void {
-    page.aliases = meta.aliases;
-    page.tags = meta.tags;
-    page.frontmatter = meta.frontmatter;
-    page.inlineFields = meta.inlineFields;
-
-    // Note type is deliberately a document property (YAML frontmatter), not an inline field.
-    // It is the primary style discriminator in K-Plex.
-    const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
-    const noteTypeValue = getNormalizedFrontmatterValues(meta, noteTypeField)[0];
-    const unwrapNoteType = (value: unknown): string | null => {
-      const first: unknown = Array.isArray(value) ? (value as unknown[])[0] : value;
-      if (typeof first !== "string" && typeof first !== "number") return null;
-      let text = String(first).trim();
-      const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/);
-      if (wiki) text = wiki[1].trim();
-      return text || null;
-    };
-    page.noteType = unwrapNoteType(noteTypeValue);
-
-    const styleTags = page.tags.filter((tag) => this.plugin.settings.tagStyleList.some((prefix) => tag.startsWith(prefix)));
-    const primaryField = normalizeFieldName(this.plugin.settings.primaryTagField);
-    const primaryValues = getNormalizedFieldValues(meta, primaryField).flatMap((v) => typeof v === "string" ? v.match(/#[^\s\])$"'\\]+/g) ?? [] : []);
-    page.primaryStyleTag = primaryValues.find((tag) => styleTags.some((s) => s.startsWith(tag))) ?? styleTags[0] ?? null;
-    page.styleTags = styleTags.filter((tag) => tag !== page.primaryStyleTag);
-
-    for (const tag of page.tags) {
-      const tagPage = this.get(`tag:${tag.replace(/^#/, "")}`);
-      if (tagPage) this.addPair(tagPage, page, "child", RelationType.DEFINED, LinkDirection.TO, "tag-tree");
-    }
-
-    const hierarchy = this.plugin.settings.hierarchy;
-    const groups: Array<[string[], Role]> = [
-      [hierarchy.hidden, "parent"],
-      [hierarchy.parents, "parent"],
-      [hierarchy.children, "child"],
-      [hierarchy.leftFriends, "left"],
-      [hierarchy.rightFriends, "right"],
-      [hierarchy.previous, "previous"],
-      [hierarchy.next, "next"]
-    ];
-
-    // Frontmatter relationship fields take priority over inline Dataview fields. This is
-    // especially important for drag-relinking: adding a document property must be able to
-    // override a stale relation that still exists in the body of the note.
-    const frontmatterTargets = new Set<string>();
-    const applyValues = (values: unknown[], role: Role, groupIndex: number, field: string, inline: boolean): void => {
-      for (const value of values) {
-        for (const path of extractLinksFromValue(this.app, value, file)) {
-          if (inline && frontmatterTargets.has(path)) continue;
-          const target = this.ensureTarget(path);
-          if (!inline) frontmatterTargets.add(target.path);
-          if (groupIndex === 0) this.addHidden(page, target);
-          else this.addExplicitPair(page, target, role, field);
-        }
-      }
-    };
-
-    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
-      const [fieldNames, role] = groups[groupIndex];
-      for (const originalName of fieldNames) {
-        const field = normalizeFieldName(originalName);
-        applyValues(getNormalizedFrontmatterValues(meta, field), role, groupIndex, field, false);
-      }
-    }
-    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
-      const [fieldNames, role] = groups[groupIndex];
-      for (const originalName of fieldNames) {
-        const field = normalizeFieldName(originalName);
-        applyValues(getNormalizedInlineFieldValues(meta, field), role, groupIndex, field, true);
-      }
-    }
-
-    // URL nodes are inferred children, plus an origin/domain parent hierarchy. Body URL
-    // extraction is cached/worker-parsed; applying the graph relationships stays on the main thread.
-    for (const reference of meta.urls) {
-      const raw = reference.url;
-      const urlPage = this.ensureUrl(raw, reference.label || raw);
-      this.addInferredParentChild(page, urlPage);
-      try {
-        const origin = new URL(raw).origin;
-        const originPage = this.ensureUrl(origin, origin);
-        this.addPair(originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO);
-      } catch { /* malformed URL - keep the raw URL node */ }
-    }
-  }
-
-  private ensureVirtual(path: string): GraphPage {
-    const existing = this.get(path);
-    if (existing) return existing;
-    const name = path.split("/").pop()?.replace(/\.md$/i, "") || path;
-    const page = this.createPage({ path, name });
-    this.addPage(page);
-    return page;
-  }
-
-  private ensureUrl(url: string, alias?: string): GraphPage {
-    const existing = this.pages.get(url);
-    if (existing) {
-      if (alias && existing.name === existing.url) existing.name = alias;
-      return existing;
-    }
-    const page = this.createPage({ path: url, name: alias || url, url });
-    this.addPage(page);
-    return page;
-  }
-
-  private ensureTarget(path: string): GraphPage {
-    if (/^https?:\/\//i.test(path)) return this.ensureUrl(path);
-    return this.get(path) ?? this.ensureVirtual(path);
-  }
-
-  private addInferredParentChild(parent: GraphPage, child: GraphPage): void {
-    const settings = this.plugin.settings;
-    if (settings.inferAllLinksAsFriends) {
-      this.addPair(parent, child, "left", RelationType.INFERRED, LinkDirection.FROM);
-    } else if (settings.inverseInfer) {
-      this.addPair(parent, child, "parent", RelationType.INFERRED, LinkDirection.FROM);
-    } else {
-      this.addPair(parent, child, "child", RelationType.INFERRED, LinkDirection.FROM);
-    }
-  }
-
-  private addExplicitPair(source: GraphPage, target: GraphPage, role: Role, definition: string): void {
-    switch (role) {
-      case "parent": this.addPair(target, source, "child", RelationType.DEFINED, LinkDirection.TO, definition); break;
-      case "child": this.addPair(source, target, "child", RelationType.DEFINED, LinkDirection.FROM, definition); break;
-      case "left":
-      case "right": this.addPair(source, target, role, RelationType.DEFINED, LinkDirection.FROM, definition); break;
-      case "previous":
-        this.addOne(source, target, "previous", RelationType.DEFINED, LinkDirection.FROM, definition);
-        this.addOne(target, source, "next", RelationType.DEFINED, LinkDirection.TO, definition);
-        break;
-      case "next":
-        this.addOne(source, target, "next", RelationType.DEFINED, LinkDirection.FROM, definition);
-        this.addOne(target, source, "previous", RelationType.DEFINED, LinkDirection.TO, definition);
-        break;
-      case "sibling": break;
-    }
-  }
-
-  private addPair(parent: GraphPage, child: GraphPage, role: Role, type: RelationType, direction: LinkDirection, definition?: string): void {
-    if (role === "child") {
-      this.addOne(parent, child, "child", type, direction, definition);
-      this.addOne(child, parent, "parent", type, direction === LinkDirection.FROM ? LinkDirection.TO : direction === LinkDirection.TO ? LinkDirection.FROM : direction, definition);
-    } else if (role === "parent") {
-      this.addOne(parent, child, "parent", type, direction, definition);
-      this.addOne(child, parent, "child", type, direction === LinkDirection.FROM ? LinkDirection.TO : direction === LinkDirection.TO ? LinkDirection.FROM : direction, definition);
-    } else if (role === "left" || role === "right") {
-      this.addOne(parent, child, role, type, direction, definition);
-      this.addOne(child, parent, role, type, direction === LinkDirection.FROM ? LinkDirection.TO : direction === LinkDirection.TO ? LinkDirection.FROM : direction, definition);
-    }
-  }
-
-  private addHidden(source: GraphPage, target: GraphPage): void {
-    if (target.path === this.plugin.settings.excalibrainFilepath || target.path === source.path) return;
-    const relation = source.neighbours.get(target.path) ?? { ...DEFAULT_RELATION(), target };
-    relation.isHidden = true;
-    source.neighbours.set(target.path, relation);
-  }
-
-  private addOne(source: GraphPage, target: GraphPage, role: Role, type: RelationType, direction: LinkDirection, definition?: string): void {
-    if (source.path === target.path || target.path === this.plugin.settings.excalibrainFilepath) return;
-    const relation = source.neighbours.get(target.path) ?? { ...DEFAULT_RELATION(), target };
-    relation.direction = directionToSet(relation.direction, direction);
-    switch (role) {
-      case "parent":
-        relation.isParent = true;
-        relation.parentType = relationTypeToSet(relation.parentType, type);
-        relation.parentTypeDefinition = concatDefinition(definition, relation.parentTypeDefinition);
-        break;
-      case "child":
-        relation.isChild = true;
-        relation.childType = relationTypeToSet(relation.childType, type);
-        relation.childTypeDefinition = concatDefinition(definition, relation.childTypeDefinition);
-        break;
-      case "left":
-        relation.isLeftFriend = true;
-        relation.leftFriendType = relationTypeToSet(relation.leftFriendType, type);
-        relation.leftFriendTypeDefinition = concatDefinition(definition, relation.leftFriendTypeDefinition);
-        break;
-      case "right":
-        relation.isRightFriend = true;
-        relation.rightFriendType = relationTypeToSet(relation.rightFriendType, type);
-        relation.rightFriendTypeDefinition = concatDefinition(definition, relation.rightFriendTypeDefinition);
-        break;
-      case "previous":
-        relation.isPreviousFriend = true;
-        relation.previousFriendType = relationTypeToSet(relation.previousFriendType, type);
-        relation.previousFriendTypeDefinition = concatDefinition(definition, relation.previousFriendTypeDefinition);
-        break;
-      case "next":
-        relation.isNextFriend = true;
-        relation.nextFriendType = relationTypeToSet(relation.nextFriendType, type);
-        relation.nextFriendTypeDefinition = concatDefinition(definition, relation.nextFriendTypeDefinition);
-        break;
-      case "sibling": break;
-    }
-    source.neighbours.set(target.path, relation);
-  }
-
-  private relationVector(r: Relation): RelationVector {
-    const settings = this.plugin.settings;
-    return {
-      pi: r.isParent && r.parentType === RelationType.INFERRED,
-      pd: r.isParent && r.parentType === RelationType.DEFINED,
-      ci: r.isChild && r.childType === RelationType.INFERRED,
-      cd: r.isChild && r.childType === RelationType.DEFINED,
-      lfd: (!settings.inferAllLinksAsFriends && r.isLeftFriend) ||
-        (settings.inferAllLinksAsFriends && r.isLeftFriend && ![
-          r.parentType === RelationType.DEFINED,
-          r.childType === RelationType.DEFINED,
-          r.rightFriendType === RelationType.DEFINED,
-          r.nextFriendType === RelationType.DEFINED,
-          r.previousFriendType === RelationType.DEFINED
-        ].some(Boolean)),
-      rfd: r.isRightFriend && r.rightFriendType === RelationType.DEFINED,
-      pfd: r.isPreviousFriend && r.previousFriendType === RelationType.DEFINED,
-      nfd: r.isNextFriend && r.nextFriendType === RelationType.DEFINED
-    };
-  }
-
-  private classify(r: Relation, role: Role): RelationType | null {
-    const { pi, pd, ci, cd, lfd, rfd, nfd, pfd } = this.relationVector(r);
-    switch (role) {
-      case "child":
-        return cd && !pd && !lfd && !rfd && !nfd && !pfd
-          ? RelationType.DEFINED
-          : !pi && !pd && ci && !cd && !lfd && !rfd && !nfd && !pfd ? RelationType.INFERRED : null;
-      case "parent":
-        return !cd && pd && !lfd && !rfd && !nfd && !pfd
-          ? RelationType.DEFINED
-          : pi && !pd && !ci && !cd && !lfd && !rfd && !nfd && !pfd ? RelationType.INFERRED : null;
-      case "left":
-        return lfd
-          ? RelationType.DEFINED
-          : ((pi && !pd && ci && !cd && !lfd && !rfd && !nfd && !pfd) || [pd, cd, lfd, rfd, nfd, pfd].filter(Boolean).length >= 2)
-            ? RelationType.INFERRED : null;
-      case "right": return !pd && !cd && !lfd && rfd && !nfd && !pfd ? RelationType.DEFINED : null;
-      case "previous": return !pd && !cd && !lfd && !rfd && pfd && !nfd ? RelationType.DEFINED : null;
-      case "next": return !pd && !cd && !lfd && !rfd && !pfd && nfd ? RelationType.DEFINED : null;
-      case "sibling": return null;
-    }
+  explainRelationship(sourcePath: string, targetPath: string): RelationshipExplanation | null {
+    const source = this.get(sourcePath);
+    const target = this.get(targetPath);
+    if (!source || !target) return null;
+    return explainResolvedRelationship(
+      source,
+      target,
+      this.state.evidence.between(source.path, target.path),
+      this.plugin.settings.inferAllLinksAsFriends,
+    );
   }
 
   private visibleTarget(page: GraphPage, settings: ExcaliBrainSettings): boolean {
@@ -695,17 +290,12 @@ export class GraphIndex {
 
       // A filled gate represents semantic relationships even when the target is currently hidden.
       for (const role of concreteRoles) {
-        if (this.classify(relation, role) !== null) gateStats[roleGate(role)].hasAny = true;
+        if (classifyRelation(relation, role, settings.inferAllLinksAsFriends) !== null) gateStats[roleGate(role)].hasAny = true;
       }
 
       if (!this.visibleTarget(relation.target, settings)) continue;
       for (const role of concreteRoles) {
-        let relationType = this.classify(relation, role);
-        if (role === "left" && relationType && !relation.leftFriendType) {
-          relationType = relation.parentType === RelationType.DEFINED && relation.childType === RelationType.DEFINED
-            ? RelationType.DEFINED
-            : RelationType.INFERRED;
-        }
+        const relationType = classifyRelation(relation, role, settings.inferAllLinksAsFriends);
         if (!relationType || (relationType === RelationType.INFERRED && !settings.showInferredNodes)) continue;
         roles[role].push({
           page: relation.target,
@@ -754,7 +344,7 @@ export class GraphIndex {
   }
 
   gateNeighbourPaths(page: GraphPage, gate: GateSide): Set<string> {
-    const roleSets: Record<GateSide, Role[]> = {
+    const roleSets: Record<GateSide, Array<Exclude<Role, "sibling">>> = {
       top: ["parent"],
       bottom: ["child"],
       left: ["left", "previous"],
@@ -767,7 +357,7 @@ export class GraphIndex {
     // only the currently visible ones.
     for (const relation of page.neighbours.values()) {
       if (relation.isHidden) continue;
-      if (roleSets[gate].some((role) => this.classify(relation, role) !== null)) paths.add(relation.target.path);
+      if (roleSets[gate].some((role) => classifyRelation(relation, role, this.plugin.settings.inferAllLinksAsFriends) !== null)) paths.add(relation.target.path);
     }
     return paths;
   }

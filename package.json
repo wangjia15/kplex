@@ -8,7 +8,8 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "repo:export": "node scripts/generate-repository-zip.mjs",
-    "repo:update": "node scripts/update-repository.mjs"
+    "repo:update": "node scripts/update-repository.mjs",
+    "test": "node scripts/run-indexing-tests.mjs"
   },
   "engines": {
     "node": ">=22.22.2 <23"

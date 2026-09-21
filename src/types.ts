@@ -106,8 +106,6 @@ export type GraphPage = {
   noteType: string | null;
   primaryStyleTag: string | null;
   styleTags: string[];
-  frontmatter: Record<string, unknown>;
-  inlineFields: Record<string, unknown[]>;
   maxLabelLength: number;
 };
 

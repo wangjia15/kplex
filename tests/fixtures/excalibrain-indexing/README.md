@@ -13,7 +13,7 @@ It covers:
 - folder-tree indexing;
 - explicit ontology and inferred relationships;
 - reciprocal ordinary links;
-- conflicting ontology;
+- conflicting ontology, including K-Plex frontmatter-over-body precedence;
 - multi-value ontology fields;
 - frontmatter Date properties mapped through Daily Notes configuration;
 - resolved and unresolved/placeholder daily-note dates;
@@ -302,7 +302,7 @@ In normal/indexed mode, all body relationships in `Note A.md` belong to **Note A
 
 | Target | Source syntax | Expected relation from Note A | Source |
 | --- | --- | --- | --- |
-| **Note B** | YAML `Parent: "[[Note B\|...]]"` | **Parent — DEFINED** | frontmatter ontology |
+| **Note B** | YAML `Parent: "[[Note B\|...]]"` plus conflicting body `Child:: [[Note B]]` | **Parent — DEFINED** | frontmatter ontology wins; body conflict remains explainable |
 | **Note C** | pre-heading `Child:: [alias](Note%20C.md)` | **Child — DEFINED** | Dataview full-line ontology + Markdown link |
 | **Note H** | pre-heading ordinary `[[Note H\|...]]`, H links back | **Left Friend — INFERRED** | reciprocal ordinary links |
 | **https://source.com/ontology-full-line** | pre-heading `source:: [alias](...)` | **Parent — DEFINED** | full-line ontology |
@@ -394,39 +394,33 @@ H sees A as Left Friend — INFERRED
 
 ---
 
-# 7. Previous, Next, and Hidden
 
-`Note F` contains:
+# 7. K-Plex frontmatter precedence
+
+## X → Y: deliberate deviation from ExcaliBrain
+
+`Note X` deliberately contains both:
+
+```yaml
+Parent: "[[Note Y|Y via frontmatter precedence]]"
+```
+
+and, in the Markdown body:
 
 ```markdown
-Previous:: [[Note D|D previous from F]]
-Next:: [[Note E|E next from F]]
-Hidden:: [[Note X|X hidden from F]]
+Child:: [[Note Y|Y deliberately conflicting body child]]
 ```
 
-Expected:
+K-Plex intentionally deviates from classic ExcaliBrain here. Expected K-Plex result:
 
 ```text
-From Note F:
-  Note D = Previous — DEFINED
-  Note E = Next — DEFINED
-
-Reverse view:
-  Note D sees Note F as Next — DEFINED
-  Note E sees Note F as Previous — DEFINED
+X sees Y as Parent — DEFINED
+frontmatter Parent evidence = USED
+body Child evidence         = OVERRIDDEN (retained for explainability)
+ordinary link evidence      = retained
 ```
 
-For Hidden, separate indexing from display:
-
-```text
-Indexing:
-  F -> X evidence exists and is marked hidden for F's view.
-
-Runtime display:
-  X must not appear in F's visible relationship zones solely because of Hidden::.
-```
-
-Classic ExcaliBrain's hiding behavior is source-side. The physical `[[Note X]]` may still contribute ordinary reverse-link/inference evidence elsewhere. The compatibility assertion is therefore **hide from F's visible neighbourhood**, not global deletion of the relationship pair.
+The precedence rule applies at resolution time for the same declaring note and target. The body declaration must remain in the evidence store so **Explain relationship** can show why it lost. Body-field evidence should also retain line and source-range offsets so later source-aware editing and central-section expansion can reuse the same provenance without changing the persistent index model.
 
 ---
 
@@ -966,6 +960,11 @@ At minimum:
 14. Hidden evidence is indexed but filtered from Note F's normal visible neighbourhood.
 15. the legacy YAML Markdown-link field C → D is either supported intentionally or reported explicitly as unsupported; it must not silently change role.
 
+### K-Plex precedence assertions
+
+P1. X → Y resolves as Parent — DEFINED because conflicting frontmatter ontology takes precedence over body ontology from the same declaring note and target.
+P2. X → Y explainability retains the overridden body Child evidence, the active frontmatter Parent evidence, and the ordinary-link evidence.
+
 ## Date assertions
 
 16. `2026-09-18` resolves to `Daily/2026/09/20260918.md`.
@@ -995,7 +994,7 @@ At minimum:
 
 ## Expanded-central-note assertions
 
-These are feature-enhancement tests and may initially be marked pending.
+These are feature-enhancement tests and are intentionally **pending in the current automated baseline**. The current indexing/explainability suite covers assertions 1–33 plus P1–P2; assertions 34–42 reserve the contract for the later central-section expansion feature.
 
 34. expanding a non-Markdown or non-central node is unavailable/no-op.
 35. expanding Note A creates exactly three transient section nodes for this fixture.

@@ -1151,3 +1151,26 @@
   padding: 0 6px;
   font-size: var(--font-ui-smaller);
 }
+
+/* Relationship explainability */
+.kplex-explanation-modal { max-width: 760px; }
+.kplex-explanation-pair { margin-bottom: 8px; font-size: 1.05em; }
+.kplex-explanation-result { margin: 8px 0; font-weight: 600; }
+.kplex-explanation-summary { margin: 8px 0 16px; color: var(--text-muted); line-height: 1.45; }
+.kplex-explanation-evidence { display: flex; flex-direction: column; gap: 8px; }
+.kplex-explanation-evidence-row { border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 8px 10px; }
+.kplex-explanation-evidence-row.is-suppressed { opacity: .72; }
+.kplex-explanation-state { display: inline-block; min-width: 82px; margin-right: 8px; font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--text-accent); }
+.kplex-explanation-evidence-row.is-suppressed .kplex-explanation-state { color: var(--text-muted); }
+.kplex-explanation-description { font-size: 12px; }
+.kplex-explanation-evidence code { display: block; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kplex-explanation-reason { margin-top: 5px; color: var(--text-muted); font-size: 11px; }
+.kplex-explanation-empty { color: var(--text-muted); }
+
+.kplex-explanation-display-context {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--interactive-accent);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}

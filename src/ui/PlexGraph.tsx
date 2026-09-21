@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react";
+import { Menu } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings } from "../settings";
@@ -8,6 +9,7 @@ import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/styl
 import { buildScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 
 type Point = { x: number; y: number };
 type HoverState =
@@ -298,6 +300,7 @@ function Edge({
   dimmed,
   onHover,
   onLeave,
+  onContextMenu,
 }: {
   edge: PositionedEdge;
   nodes: Map<string, PositionedNode>;
@@ -308,6 +311,7 @@ function Edge({
   dimmed: boolean;
   onHover: () => void;
   onLeave: () => void;
+  onContextMenu: (event: MouseEvent<SVGPathElement>) => void;
 }) {
   const source = nodes.get(edge.sourcePath);
   const target = nodes.get(edge.targetPath);
@@ -351,6 +355,7 @@ function Edge({
       vectorEffect="non-scaling-stroke"
       onPointerEnter={onHover}
       onPointerLeave={onLeave}
+      onContextMenu={onContextMenu}
     />
     {label && <g className="excalibrain-edge-label-wrap" pointerEvents="none">
       <rect
@@ -1130,6 +1135,18 @@ export function PlexGraph({ plugin, index, settings, activePath, renderRevision,
           dimmed={connectDrag ? connectBlockedEdgeIds.has(edge.id) : hover !== null && !interaction.edgeIds.has(edge.id)}
           onHover={() => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "edge", id: edge.id }); }}
           onLeave={() => { if (!connectDrag && !nodeDrag) clearHoverIntent(true); }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const explanation = index.explainRelationship(edge.sourcePath, edge.targetPath);
+            if (!explanation) return;
+            const menu = new Menu();
+            menu.addItem((item) => item
+              .setTitle("Explain relationship")
+              .setIcon("circle-help")
+              .onClick(() => new RelationshipExplanationModal(plugin, explanation, { role: edge.role, centerPath: neighborhood?.center.path }).open()));
+            menu.showAtMouseEvent(event.nativeEvent);
+          }}
         />)}
         {expandedConnectors.map((connector) => <path
           key={`expanded-edge:${connector.key}`}

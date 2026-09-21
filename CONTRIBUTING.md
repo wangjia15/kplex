@@ -41,6 +41,7 @@ UI conventions:
 - use Obsidian's declarative settings API for settings pages
 - use Lucide icons through `getIcon()` for plugin UI icons
 - prefer typed workspace APIs for leaves/windows/pop-outs
+- treat Moment as an Obsidian host global: production `src/` code must not runtime-import `moment` or call `import { moment } from "obsidian"`; use `window.moment` through narrow local typing, and install a test double on `window` in Node tests
 
 ## Design principles
 
@@ -60,13 +61,13 @@ A contribution that changes where a relationship appears is a graph-contract cha
 
 Before changing settings, ontology or graph reconciliation:
 
-1. review `src/settings.ts` and `src/index/GraphIndex.ts`
+1. review `src/settings.ts`, `src/index/GraphBuilder.ts`, `src/index/RelationEvidence.ts`, `src/index/RelationResolver.ts` and `src/index/GraphIndex.ts`
 2. assume users may have legacy ExcaliBrain data/settings
 3. prefer additive settings with defaults
 4. add explicit migration logic for renamed/reshaped data
 5. preserve explicit-over-inferred relationship precedence
 6. keep old ontology field names meaningful
-7. remember that document-property links override duplicates discovered in note body text
+7. preserve K-Plex's deliberate rule that conflicting frontmatter ontology overrides body ontology for the same declaring note/target, while retaining the overridden evidence for explainability
 
 Folder and tag nodes may be central, but structural folder/tag connections are not editable with drag-linking.
 
@@ -74,6 +75,7 @@ Folder and tag nodes may be central, but structural folder/tag connections are n
 
 React components should not independently classify relationships or rescan the vault.
 
+- evidence collection belongs in `GraphBuilder`; precedence/classification belongs in `RelationResolver`; graph queries belong in `GraphIndex`
 - indexing/relationship logic belongs in `src/index/`
 - persistence/migration belongs in `src/settings.ts`
 - Obsidian lifecycle/workspace integration belongs in `src/main.ts`
@@ -91,6 +93,7 @@ Do not rebuild on every startup `vault:create`/metadata event.
 
 Changes that touch indexing should preserve:
 
+- `npm test` compatibility-fixture coverage (`tests/fixtures/excalibrain-indexing`)
 - startup metadata stabilization
 - event coalescing/debouncing
 - dirty-index checks
