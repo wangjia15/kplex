@@ -1,6 +1,6 @@
 # ExcaliBrain / K-Plex indexing compatibility fixture
 
-This folder is a deliberately small **golden-vault fixture** for testing ExcaliBrain-compatible indexing in K-Plex and for reserving test cases for a few planned K-Plex enhancements.
+This folder is a deliberately small **golden-vault fixture** for testing ExcaliBrain-compatible indexing in K-Plex plus the runtime-only central-note section-expansion layer.
 
 It covers:
 
@@ -875,18 +875,19 @@ URL aliases remain available on the section-level relationship exactly as they a
 
 ## Parsing boundary
 
-For this fixture, all section headings are at the same level (`##`), so the initial feature does not need to resolve nested heading-tree semantics to pass the tests.
+`Note A.md` keeps the original three same-level headings for the redistribution cases above. `Section Tree.md` adds a dedicated nested-heading fixture that verifies runtime outline semantics without changing the persistent index.
 
-The minimum section parser therefore needs only to identify:
+The runtime parser must preserve Markdown heading hierarchy by heading level. For example:
 
 ```text
-preamble: start of body -> first heading
-section 1: heading 1 -> heading 2
-section 2: heading 2 -> heading 3
-section 3: heading 3 -> end of document
+# Root One
+  ## Child A
+    ### Grandchild
+  ## Child B
+# Root Two
 ```
 
-A later implementation may preserve nested heading hierarchy, but that is intentionally outside this fixture's required behavior.
+The expanded view initially exposes the full outline. Folding `Root One` hides `Child A`, `Grandchild` and `Child B`; semantic relationships declared in those hidden descendants are projected onto visible `Root One` for display, while explanation provenance still identifies the original hidden section. Folding is view state only and must never create or mutate persistent graph pages.
 
 ## Suggested transient section identity
 
@@ -1005,6 +1006,17 @@ These section-expansion assertions are part of the automated K-Plex feature base
 40. inline-source/inferred-URL/YouTube move to the `External URL cases` section gates.
 41. folder and tag relationships remain attached to the real Note A file node.
 42. collapsing Note A removes transient section nodes and restores the whole-note relationship presentation without rebuilding the vault index.
+
+## Nested outline / folding assertions
+
+43. expanding `Section Tree.md` produces five transient sections and no persistent section pages.
+44. `Root One` and `Root Two` are outline roots.
+45. `Child A` and `Child B` are direct children of `Root One`.
+46. `Grandchild` is a child of `Child A`.
+47. parent/child IDs are stable within the transient expansion result and reflect Markdown heading levels.
+48. with all expandable sections unfolded, all five section nodes are visible.
+49. folding `Root One` leaves only `Root One` and `Root Two` visible in that subtree/root set.
+50. semantic relationships from hidden descendants are projected to the folded ancestor for rendering, while the edge retains the hidden section as its explainability source.
 
 ---
 

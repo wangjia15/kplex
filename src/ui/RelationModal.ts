@@ -10,6 +10,8 @@ export type RelationModalOptions = {
   fixedTarget?: GraphPage;
   existingDirection?: LinkDirection | null;
   onCommitted?: () => void;
+  onCommitStart?: (role: GateRole) => void;
+  onCommitEnd?: (success: boolean) => void;
   allowRoleSelection?: boolean;
 };
 
@@ -138,6 +140,12 @@ export class RelationModal extends Modal {
     if (this.busy || !this.canSave()) return;
     this.busy = true;
     this.updateSaveButton();
+    let success = false;
+    this.options.onCommitStart?.(this.semanticRole);
+    // Moving an existing thought should feel immediate. The graph applies an optimistic overlay
+    // and blocks accidental follow-up clicks while metadata/indexing catches up, so dismiss the
+    // chooser as soon as the relink commit starts instead of leaving a seemingly frozen modal.
+    if (this.options.mode === "relink") this.close();
     try {
       if (this.options.mode === "relink") {
         const target = this.options.fixedTarget;
@@ -161,11 +169,13 @@ export class RelationModal extends Modal {
         if (!file) return;
         await this.plugin.createRelationFromGate(this.options.origin, this.semanticRole, file, this.selectedField);
       }
+      success = true;
       this.options.onCommitted?.();
       this.close();
     } catch (error) {
       new Notice(`Could not update relationship: ${error instanceof Error ? error.message : String(error)}`, 5000);
     } finally {
+      this.options.onCommitEnd?.(success);
       this.busy = false;
       this.updateSaveButton();
     }

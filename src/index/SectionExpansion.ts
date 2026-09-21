@@ -10,6 +10,9 @@ export type ExpandedSection = {
   id: string;
   page: GraphPage;
   neighborhood: Neighborhood;
+  level: number;
+  parentId: string | null;
+  childIds: string[];
 };
 
 export type CentralSectionExpansion = {
@@ -19,7 +22,7 @@ export type CentralSectionExpansion = {
   explanations: Map<string, RelationshipExplanation>;
 };
 
-type HeadingRange = { id: string; heading: string; level: number; line: number; start: number; end: number; subpath: string };
+type HeadingRange = { id: string; heading: string; level: number; line: number; start: number; end: number; subpath: string; parentId: string | null };
 
 type CacheLink = { link: string; displayText?: string; original?: string; position?: { start: { line: number; col: number; offset: number }; end: { line: number; col: number; offset: number } } };
 
@@ -65,12 +68,22 @@ function scanHeadings(content: string): HeadingRange[] {
       if (match) {
         const heading = match[2].trim();
         const id = `section:${i + 1}:${output.length}`;
-        output.push({ id, heading, level: match[1].length, line: i + 1, start: offset, end: content.length, subpath: `#${heading}` });
+        output.push({ id, heading, level: match[1].length, line: i + 1, start: offset, end: content.length, subpath: `#${heading}`, parentId: null });
       }
     }
     offset += line.length + 1;
   }
   for (let i = 0; i < output.length - 1; i += 1) output[i].end = output[i + 1].start;
+
+  // Heading hierarchy is runtime view state only. The nearest preceding heading with a lower
+  // Markdown heading level is the structural parent. Skipped levels are valid Markdown and are
+  // intentionally attached to that nearest ancestor instead of synthesizing phantom sections.
+  const stack: HeadingRange[] = [];
+  for (const heading of output) {
+    while (stack.length && stack[stack.length - 1].level >= heading.level) stack.pop();
+    heading.parentId = stack[stack.length - 1]?.id ?? null;
+    stack.push(heading);
+  }
   return output;
 }
 
@@ -295,10 +308,17 @@ export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, in
       if (!sectionPage.neighbours.has(target.path)) continue;
       explanations.set(`${sectionPage.path}\u0000${target.path}`, explainResolvedRelationship(sectionPage, target, items, plugin.settings.inferAllLinksAsFriends));
     }
-    sections.push({ id: heading.id, page: sectionPage, neighborhood });
+    sections.push({ id: heading.id, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [] });
   }
 
-  // Section headings themselves are transient defined children of the center.
+  const byId = new Map(sections.map((section) => [section.id, section] as const));
+  for (const section of sections) {
+    if (section.parentId) byId.get(section.parentId)?.childIds.push(section.id);
+  }
+
+  // Section headings themselves remain transient defined children in the compatibility
+  // neighborhood. The renderer uses parentId/childIds to display the actual outline tree; keeping
+  // these entries here preserves the existing section-expansion contract for non-layout callers.
   for (const section of sections) {
     centerNeighborhood.children.push({ page: section.page, role: "child", relationType: RelationType.DEFINED, typeDefinition: "section", linkDirection: LinkDirection.FROM });
     explanations.set(`${center.path}\u0000${section.page.path}`, {

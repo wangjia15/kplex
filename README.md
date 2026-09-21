@@ -50,7 +50,7 @@ Other useful commands include:
 - **Open K-Plex in pop-out window**
 - **Open K-Plex in side panel**
 
-When K-Plex opens, it uses the active file when possible. Otherwise it restores the last displayed node, falling back to the vault root when needed. On mobile, the normal **Open K-Plex** command routes to the sidepanel for a more natural navigation surface.
+When K-Plex opens, it uses the active file when possible. Otherwise it restores the last displayed node, falling back to the vault root when needed. On phones, the normal **Open K-Plex** action routes to the sidepanel for a more natural navigation surface. On tablets, **Open graph** opens a normal K-Plex tab while **Open in side panel** remains available separately. Phone command palettes intentionally expose only the sidepanel opening action; pop-out windows remain desktop-only.
 
 ## Navigating
 
@@ -93,6 +93,22 @@ The toolbar lets you:
 
 When synchronization is enabled, selecting a file-backed node can open that node in the active or linked document leaf, and K-Plex can follow navigation in that leaf.
 
+
+## Companion sidecar
+
+K-Plex can manage a **companion sidecar** next to a normal K-Plex leaf. The sidecar is intentionally implemented as a real adjacent Obsidian `WorkspaceLeaf`, not as a faux leaf mounted inside React. This keeps native Obsidian resizing, view persistence and third-party plugin rendering intact.
+
+- The sidecar can be placed to the right, left, above or below K-Plex.
+- Its native Obsidian divider controls the relative size of the two areas.
+- It stays hard-linked to the current K-Plex center and updates automatically as you navigate.
+- Markdown defaults to the configured reading/preview or source mode; plugin-owned file views such as Excalidraw remain native.
+- URL centers are sent to Obsidian's built-in Web Viewer when available.
+- Edge controls beside the Plex collapse the sidecar, move it, or open an independent copy in a new tab/current document tab/adjacent split/pop-out window. The copied leaf is no longer synchronized to K-Plex.
+- If the remaining K-Plex width becomes smaller than the configured condensed breakpoint, K-Plex switches to the current device's sidepanel density/column profile.
+- The companion sidecar is unavailable when K-Plex itself is already running in an Obsidian sidepanel.
+
+This feature complements rather than replaces K-Plex's pinned nodes and linked-document-leaf behavior.
+
 ## Pins
 
 The current node can be pinned from the toolbar. Pinned nodes are persistent quick-access bookmarks shown directly below the main toolbar.
@@ -115,7 +131,7 @@ The toolbar provides quick toggles for the node types and relationship views tha
 - single-level vs expanded view
 - straight vs curved connectors
 
-The toolbar also includes refresh, navigation synchronization, pinning and settings controls.
+The toolbar also includes refresh, navigation synchronization, pinning and settings controls. The toolbar has two presentation modes: a compact mode with the core navigation/link/pin/sidecar/settings actions, and an expanded mode containing the full visibility/layout control suite. The mode is persisted.
 
 ## Layout, scrolling and filtering
 
@@ -143,7 +159,7 @@ The Friend and Challenger regions are symmetrical. They may extend upward into o
 
 Siblings occupy a separate peripheral region and are rendered slightly smaller than normal first-level nodes.
 
-The **Density** control changes spacing and label truncation. The **Columns** control changes the parent/child column combination without changing relationship semantics.
+The **Density** control changes spacing and label truncation and can be increased up to **4.0** for very compact layouts. The **Columns** control changes the parent/child column combination without changing relationship semantics.
 
 ## Expanded view
 
@@ -158,12 +174,17 @@ Expanded view shows children beneath visible first-level nodes.
 
 ## Expanding the central note into sections
 
-For a Markdown central node, right-click (or long-press on touch) and choose **Expand note to sections**. K-Plex parses the current document on demand; headings become transient child nodes and are **not** added to the persistent vault index.
+For a Markdown central node, right-click (or long-press on touch) and choose **Expand note to sections**. K-Plex parses the current document on demand; headings become transient outline nodes and are **not** added to the persistent vault index.
 
+- Section nodes use square rectangles and a separate dashed outline connector so document structure is visually distinct from semantic K-Plex relationships.
+- The outline connector attaches near the corner region rather than using the normal top/bottom relationship gates.
+- Nested headings form a foldable tree. A small square fold handle shows whether a section with descendants is expanded or folded.
+- Folding a section hides its descendant headings and projects the hidden descendants' semantic relationships onto the nearest visible folded ancestor. Explainability still identifies the exact hidden section that originally declared each projected relationship.
+- Section context menus provide one-level and recursive fold/unfold actions; the central node also offers **Fold all sections** / **Unfold all sections** while expanded.
 - YAML/frontmatter relationships and links before the first heading stay attached to the central note.
 - Body relationships below a heading attach to that section's gates.
 - Section relationship connectors retain the same explainability/provenance model as normal graph links.
-- Double-clicking a section opens the source note focused on that heading using Obsidian's subpath state.
+- Double-clicking a section on desktop opens the source note focused on that heading using Obsidian's subpath state; a stationary touch tap performs the equivalent action on mobile.
 - Collapsing the note discards the transient section scene and restores the unchanged note-level index.
 
 ## Gates and connectors
@@ -227,7 +248,7 @@ Folder and tag relationships are structural, so drag-link creation involving fol
 
 ## Reclassifying an existing relationship
 
-A node directly connected to the center can be dragged to another side of the Plex. Moving it between the top, bottom, left and right regions proposes changing the relationship class and opens the relationship dialog before committing the change.
+A node directly connected to the center can be dragged to another side of the Plex. Moving it between the top, bottom, left and right regions proposes changing the relationship class and opens the relationship dialog before committing the change. K-Plex applies the accepted move optimistically so the node changes position immediately, then briefly shows an **Updating relationship…** guard while frontmatter, Obsidian metadata and the authoritative graph index catch up. If the write fails, the optimistic state is discarded.
 
 When the same note contains conflicting ontology for the same target, a YAML/frontmatter ontology written by K-Plex takes precedence over the body ontology. The body declaration is not deleted from the index; it remains available to **Explain relationship** as overridden evidence. This keeps future layout deterministic without silently losing provenance or rewriting arbitrary prose.
 

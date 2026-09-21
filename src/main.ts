@@ -1,6 +1,6 @@
-import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, Menu, Notice, Plugin, TFile, normalizePath, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { GraphIndex } from "./index/GraphIndex";
-import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface } from "./settings";
+import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
 import { EXCALIBRAIN_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, ExcaliBrainView, KplexSidepanelView } from "./ui/ExcaliBrainView";
 import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
 import { LinkDirection, type GateRole, type GraphPage } from "./types";
@@ -24,6 +24,8 @@ export default class ExcaliBrainPlugin extends Plugin {
   private metadataStabilized = false;
   private metadataStabilityPromise: Promise<number> | null = null;
   private readonly indexBacklogReasons = new Set<string>();
+  private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
+  private readonly sidecarListeners = new Set<() => void>();
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -65,11 +67,31 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.registerEditorSuggest(new OntologySuggester(this));
     this.addRibbonIcon("brain-circuit", "Open K-Plex", () => void this.activateView());
 
-    // Keep legacy command IDs so existing hotkeys continue to work.
-    this.addCommand({ id: "excalibrain-start", name: "Open graph", callback: () => void this.activateView() });
+    // Keep legacy command IDs so existing hotkeys continue to work, but expose only actions that
+    // make sense for the current form factor. Phones use the sidepanel as their primary K-Plex
+    // surface; tablets can choose between a normal tab and the sidepanel; pop-out windows are
+    // desktop-only. Obsidian evaluates checkCallback while building the command palette, so a
+    // false result keeps unavailable actions out of the list instead of merely disabling them.
+    this.addCommand({
+      id: "excalibrain-start",
+      name: "Open graph",
+      checkCallback: (checking) => {
+        if (currentDeviceClass() === "mobile") return false;
+        if (!checking) void this.activateView();
+        return true;
+      },
+    });
     this.addCommand({ id: "excalibrain-rebuild-index", name: "Rebuild index", callback: () => void this.rebuildIndex(true) });
     this.addCommand({ id: "kplex-open-settings", name: "Open settings", callback: () => this.openSettings() });
-    this.addCommand({ id: "kplex-open-popout", name: "Open in pop-out window", callback: () => void this.activateViewInPopout() });
+    this.addCommand({
+      id: "kplex-open-popout",
+      name: "Open in pop-out window",
+      checkCallback: (checking) => {
+        if (currentDeviceClass() !== "desktop") return false;
+        if (!checking) void this.activateViewInPopout();
+        return true;
+      },
+    });
     this.addCommand({ id: "kplex-open-sidepanel", name: "Open in side panel", callback: () => void this.activateSidepanel() });
     this.registerOntologyCommands();
     this.addCommand({
@@ -86,6 +108,20 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       this.rememberDocumentLeaf(leaf);
       this.validateLinkedDocumentLeaf();
+    }));
+    this.registerEvent(this.app.workspace.on("layout-change", () => {
+      let changed = false;
+      for (const [host, sidecar] of [...this.sidecarLeaves.entries()]) {
+        if (!this.leafIsAttached(host) || !this.leafIsAttached(sidecar)) {
+          this.sidecarLeaves.delete(host);
+          changed = true;
+        }
+      }
+      if (changed) {
+        this.settings.sidecarOpen = false;
+        void this.saveSettings(false, false);
+        this.notifySidecar();
+      }
     }));
 
     if (this.settings.indexUpdateInterval > 0) {
@@ -119,6 +155,10 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   onunload(): void {
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
+    for (const leaf of this.sidecarLeaves.values()) {
+      try { leaf.detach(); } catch { /* workspace is already closing */ }
+    }
+    this.sidecarLeaves.clear();
     this.index?.destroy();
   }
 
@@ -185,7 +225,8 @@ export default class ExcaliBrainPlugin extends Plugin {
     await this.ensureIndexReady("view-open");
   }
 
-  onKplexViewClosed(): void {
+  onKplexViewClosed(hostLeaf?: WorkspaceLeaf): void {
+    if (hostLeaf) void this.closeSidecar(hostLeaf, false);
     this.openKplexViews = Math.max(0, this.openKplexViews - 1);
     if (this.openKplexViews > 0) return;
     if (this.rebuildTimer !== null) {
@@ -236,7 +277,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private isDocumentLeafCandidate(leaf: WorkspaceLeaf | null): leaf is WorkspaceLeaf {
-    if (!leaf) return false;
+    if (!leaf || this.isManagedSidecarLeaf(leaf)) return false;
     const viewState = leaf.getViewState();
     if (viewState.type === EXCALIBRAIN_VIEW_TYPE || viewState.type === KPLEX_SIDEPANEL_VIEW_TYPE) return false;
     if (viewState.type === "empty" || leaf.view instanceof FileView) return true;
@@ -340,15 +381,141 @@ export default class ExcaliBrainPlugin extends Plugin {
     await leaf.openFile(page.file, { active: false });
   }
 
+  subscribeSidecar(listener: () => void): () => void {
+    this.sidecarListeners.add(listener);
+    return () => this.sidecarListeners.delete(listener);
+  }
+
+  private notifySidecar(): void {
+    for (const listener of this.sidecarListeners) listener();
+  }
+
+  private isManagedSidecarLeaf(leaf: WorkspaceLeaf | null | undefined): boolean {
+    if (!leaf) return false;
+    for (const managed of this.sidecarLeaves.values()) if (managed === leaf) return true;
+    return false;
+  }
+
+  private validateSidecarLeaf(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
+    const leaf = this.sidecarLeaves.get(hostLeaf) ?? null;
+    if (!leaf) return null;
+    if (!this.leafIsAttached(leaf)) {
+      this.sidecarLeaves.delete(hostLeaf);
+      return null;
+    }
+    return leaf;
+  }
+
+  isSidecarOpen(hostLeaf: WorkspaceLeaf): boolean {
+    return Boolean(this.validateSidecarLeaf(hostLeaf));
+  }
+
+  private createSidecarLeaf(hostLeaf: WorkspaceLeaf, position: SidecarPosition): WorkspaceLeaf {
+    const direction = position === "left" || position === "right" ? "vertical" : "horizontal";
+    const before = position === "left" || position === "above";
+    return this.app.workspace.createLeafBySplit(hostLeaf, direction, before);
+  }
+
+  private async openPageInSidecarLeaf(leaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
+    if (page.url) {
+      try {
+        await leaf.setViewState({ type: "webviewer", state: { url: page.url, navigate: true }, active: false });
+      } catch {
+        new Notice("Obsidian's Web viewer is not available. Open the link from the node instead.", 2600);
+      }
+      return;
+    }
+    if (!page.file) {
+      await leaf.setViewState({ type: "empty", active: false });
+      return;
+    }
+    await leaf.openFile(page.file, { active: false });
+    const state = leaf.getViewState();
+    if (state.type === "markdown") {
+      await leaf.setViewState({
+        ...state,
+        active: false,
+        state: { ...state.state, mode: this.settings.sidecarMarkdownMode === "preview" ? "preview" : "source" },
+      });
+    }
+  }
+
+  async openSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
+    let leaf = this.validateSidecarLeaf(hostLeaf);
+    if (!leaf) {
+      leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
+      this.sidecarLeaves.set(hostLeaf, leaf);
+    }
+    this.settings.sidecarOpen = true;
+    await this.saveSettings(false, false);
+    await this.openPageInSidecarLeaf(leaf, page);
+    this.notifySidecar();
+  }
+
+  async closeSidecar(hostLeaf: WorkspaceLeaf, persist = true): Promise<void> {
+    const leaf = this.sidecarLeaves.get(hostLeaf);
+    this.sidecarLeaves.delete(hostLeaf);
+    if (leaf) {
+      try { leaf.detach(); } catch { /* already detached */ }
+    }
+    if (persist) {
+      this.settings.sidecarOpen = false;
+      await this.saveSettings(false, false);
+    }
+    this.notifySidecar();
+  }
+
+  async toggleSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
+    if (this.isSidecarOpen(hostLeaf)) await this.closeSidecar(hostLeaf);
+    else await this.openSidecar(hostLeaf, page);
+  }
+
+  async moveSidecar(hostLeaf: WorkspaceLeaf, position: SidecarPosition, page: GraphPage): Promise<void> {
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
+    const wasOpen = this.isSidecarOpen(hostLeaf);
+    if (wasOpen) await this.closeSidecar(hostLeaf, false);
+    this.settings.sidecarPosition = position;
+    await this.saveSettings(false, false);
+    if (wasOpen) await this.openSidecar(hostLeaf, page);
+    this.notifySidecar();
+  }
+
+  async syncSidecarToPage(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
+    const leaf = this.validateSidecarLeaf(hostLeaf);
+    if (!leaf) return;
+    await this.openPageInSidecarLeaf(leaf, page);
+  }
+
+  async duplicateSidecar(hostLeaf: WorkspaceLeaf, destination: "tab" | "current" | "window" | "adjacent"): Promise<void> {
+    const sidecar = this.validateSidecarLeaf(hostLeaf);
+    if (!sidecar) return;
+    const viewState = sidecar.getViewState();
+    let target: WorkspaceLeaf;
+    try {
+      if (destination === "window") target = this.app.workspace.getLeaf("window");
+      else if (destination === "tab") target = this.app.workspace.getLeaf("tab");
+      else if (destination === "adjacent") target = this.app.workspace.createLeafBySplit(hostLeaf, "vertical", false);
+      else target = this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf(false);
+      await target.setViewState({ ...viewState, active: true });
+      await this.app.workspace.revealLeaf(target);
+    } catch {
+      new Notice("That workspace destination is not available on this platform.", 2200);
+    }
+  }
+
   async activateView(): Promise<void> {
-    if (Platform.isMobile) {
+    // Phones intentionally route the generic/open-ribbon action to the sidepanel. Tablets retain
+    // the normal graph tab because there is enough screen real-estate to make that useful.
+    const device = currentDeviceClass();
+    if (device === "mobile") {
       await this.activateSidepanel();
       return;
     }
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
     let leaf = this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)[0];
     if (!leaf) {
-      if (this.settings.startInPopout) {
+      if (this.settings.startInPopout && device === "desktop") {
         try { leaf = this.app.workspace.getLeaf("window"); }
         catch { leaf = this.app.workspace.getLeaf(true); }
       } else {
@@ -361,10 +528,25 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async activateSidepanel(): Promise<void> {
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
-    let leaf = this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0];
+    let leaf: WorkspaceLeaf | null = this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0] ?? null;
     if (!leaf) {
-      leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(true);
+      // Follow the same lifecycle pattern used by Excalidraw's sidepanel: sidepanel views belong
+      // in Obsidian's right sidebar, not in a fallback main workspace tab. Some mobile startup
+      // sequences create the leaf before constructing its ItemView, so set the state once more if
+      // necessary after the first transition.
+      leaf = this.app.workspace.getRightLeaf(false);
+      if (!leaf) {
+        new Notice("The Obsidian sidepanel is not available in this workspace.", 2200);
+        return;
+      }
       await leaf.setViewState({ type: KPLEX_SIDEPANEL_VIEW_TYPE, active: true });
+    }
+    if (!(leaf.view instanceof KplexSidepanelView)) {
+      await leaf.setViewState({ type: KPLEX_SIDEPANEL_VIEW_TYPE, active: true });
+      if (!(leaf.view instanceof KplexSidepanelView)) {
+        new Notice("K-Plex could not initialize its sidepanel view.", 2200);
+        return;
+      }
     }
     await this.app.workspace.revealLeaf(leaf);
   }

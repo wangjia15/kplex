@@ -20,7 +20,7 @@ abstract class BaseKplexView extends ItemView {
   protected renderReact(): void {
     this.root?.unmount();
     this.root = createRoot(this.contentEl);
-    this.root.render(<ExcaliBrainApp plugin={this.plugin} surface={this.getSurface()} />);
+    this.root.render(<ExcaliBrainApp plugin={this.plugin} surface={this.getSurface()} hostLeaf={this.leaf} />);
   }
 
   async onOpen(): Promise<void> {
@@ -40,7 +40,7 @@ abstract class BaseKplexView extends ItemView {
     this.windowMigrationCleanup = null;
     this.root?.unmount();
     this.root = null;
-    this.plugin.onKplexViewClosed();
+    this.plugin.onKplexViewClosed(this.leaf);
     await super.onClose();
   }
 }

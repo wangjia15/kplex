@@ -158,7 +158,7 @@ Default settings:
 | Friend/challenger height | 350 px | shared setting for left/right |
 | Child height | 400 px | own scroll region |
 | Sibling height | 250 px | separate region |
-| Density | 2 | changes spacing/truncation, not padding |
+| Density | 2 | changes spacing/truncation, not padding; max 4 |
 | Max nodes per zone | 100 | configurable up to 300 |
 
 Layout rules:
@@ -175,6 +175,24 @@ Layout rules:
 - density uses the same tight node interior padding at every setting
 
 When overflow requires a scroll zone, first-level zones expose a funnel/name filter. Filtering must repack matching nodes rather than hiding nonmatches in place.
+
+
+## Mobile and workspace-surface checks
+
+- Do not use undocumented `Platform.isPhone` / `Platform.isTablet`; use `Platform.isMobile` plus shortest-screen-side classification.
+- Phone command palette: only the K-Plex sidepanel opener is offered among surface-opening commands. Generic/ribbon open also routes to sidepanel.
+- Tablet: normal graph tab and sidepanel are both available; pop-out is desktop-only.
+- A touch tap is handled from the pointer stream directly because preventDefault/pan ownership can suppress synthesized click events. Verify tap navigation, one-finger pan, two-finger pinch and long-press context menus together.
+- Sidecar is a real adjacent Obsidian `WorkspaceLeaf`; never mount a faux workspace leaf inside React.
+
+## Section-outline checks
+
+- central Markdown expansion is runtime-only; no heading may enter `GraphIndex`
+- nested heading levels create parent/child outline structure
+- section nodes and outline connectors are visually distinct from semantic graph relations
+- fold/unfold is view state only
+- folded descendants' semantic relations project upward to the visible folded ancestor
+- explanation provenance still identifies the actual hidden declaring section
 
 ## Expanded view
 

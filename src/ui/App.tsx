@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import type { TFile } from "obsidian";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { Menu, type TFile, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
-import type { KplexViewSurface } from "../settings";
+import type { KplexViewSurface, SidecarPosition } from "../settings";
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
@@ -35,9 +35,12 @@ function ToolButton({ icon, title, on, disabled, onClick }: {
   ><ObsidianIcon name={icon} size={17} /></button>;
 }
 
-export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin; surface: KplexViewSurface }) {
+export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBrainPlugin; surface: KplexViewSurface; hostLeaf: WorkspaceLeaf }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [renderRevision, forceRender] = useState(0);
   const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
+  const [hostWidth, setHostWidth] = useState(0);
+  const [sidecarRevision, setSidecarRevision] = useState(0);
   const [activePath, setActivePath] = useState(() => {
     const active = plugin.app.workspace.getActiveFile();
     const history = plugin.settings.navigationHistory;
@@ -60,9 +63,21 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
     }
     void plugin.saveSettings(false, false);
     void plugin.syncPageToDocumentLeaf(target);
-  }, [plugin]);
+    void plugin.syncSidecarToPage(hostLeaf, target);
+  }, [plugin, hostLeaf]);
 
   useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
+  useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const update = () => setHostWidth(el.getBoundingClientRect().width);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const followFile = (file: TFile | null) => {
@@ -91,6 +106,11 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
     plugin.settings.lastActivePath = page.path;
     void plugin.saveSettings(false, false);
   }, [page?.path, plugin]);
+
+  useEffect(() => {
+    if (!page || surface === "sidepanel" || !plugin.settings.sidecarOpen || plugin.isSidecarOpen(hostLeaf)) return;
+    void plugin.openSidecar(hostLeaf, page);
+  }, [page?.path, surface, hostLeaf, plugin]);
 
   const open = useCallback((target: GraphPage) => { void plugin.openPage(target); }, [plugin]);
 
@@ -135,6 +155,12 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
     forceRender((value) => value + 1);
   };
 
+  const toggleToolbar = async () => {
+    plugin.settings.toolbarExpanded = !plugin.settings.toolbarExpanded;
+    await plugin.saveSettings(false, false);
+    forceRender((value) => value + 1);
+  };
+
   if (!page) return <div className="excalibrain-app excalibrain-empty">Building K-Plex index…</div>;
 
   const linked = plugin.isDocumentLeafLinked();
@@ -144,13 +170,38 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
   const pinnedPages = plugin.settings.pinnedNodes
     .map((path) => plugin.index.get(path))
     .filter((item): item is GraphPage => Boolean(item));
+  const sidecarAvailable = surface !== "sidepanel";
+  const sidecarOpen = sidecarAvailable && plugin.isSidecarOpen(hostLeaf);
+  const condensedBySidecar = sidecarAvailable && sidecarOpen && hostWidth > 0 && hostWidth <= plugin.settings.sidecarCondensedBreakpoint;
+  const profileSurface: KplexViewSurface = condensedBySidecar ? "sidepanel" : surface;
+  const viewSettings = plugin.getViewSettings(profileSurface);
 
   const togglePinned = async () => { await plugin.togglePinned(page.path); forceRender((value) => value + 1); };
-
   const unpin = async (path: string) => { if (plugin.isPinned(path)) await plugin.togglePinned(path); forceRender((value) => value + 1); };
 
-  const viewSettings = plugin.getViewSettings(surface);
-  return <div className={`excalibrain-app kplex-surface-${surface}`}>
+  const showSidecarMoveMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    const menu = new Menu();
+    const options: Array<[SidecarPosition, string, string]> = [
+      ["right", "Right", "panel-right"], ["left", "Left", "panel-left"], ["above", "Above", "panel-top"], ["below", "Below", "panel-bottom"],
+    ];
+    for (const [position, label, icon] of options) menu.addItem((item) => item
+      .setTitle(label).setIcon(icon).setChecked(plugin.settings.sidecarPosition === position)
+      .onClick(() => void plugin.moveSidecar(hostLeaf, position, page)));
+    menu.showAtMouseEvent(event.nativeEvent);
+  };
+
+  const showSidecarPopoutMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle("Open copy in new tab").setIcon("file-plus-2").onClick(() => void plugin.duplicateSidecar(hostLeaf, "tab")));
+    menu.addItem((item) => item.setTitle("Open copy in current document tab").setIcon("replace").onClick(() => void plugin.duplicateSidecar(hostLeaf, "current")));
+    menu.addItem((item) => item.setTitle("Open copy in adjacent split").setIcon("columns-2").onClick(() => void plugin.duplicateSidecar(hostLeaf, "adjacent")));
+    menu.addItem((item) => item.setTitle("Open copy in pop-out window").setIcon("picture-in-picture-2").onClick(() => void plugin.duplicateSidecar(hostLeaf, "window")));
+    menu.showAtMouseEvent(event.nativeEvent);
+  };
+
+  void sidecarRevision; // subscription is a render trigger; all state is owned by the plugin.
+
+  return <div ref={rootRef} className={`excalibrain-app kplex-surface-${surface}${condensedBySidecar ? " is-sidecar-condensed" : ""}`}>
     <div className="excalibrain-main-column">
       <div className="excalibrain-top-stack">
         <header className="excalibrain-topbar">
@@ -159,8 +210,7 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
           <SearchBox index={plugin.index} onActivate={activate} />
           <PlexFilter index={plugin.index} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} />
-          <div className="excalibrain-top-actions">
-            <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
+          <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
             <ToolButton
               icon={linked ? "pin" : "pin-off"}
               title={linked ? `Unlink K-Plex from ${linkedLabel ?? "the document leaf"}` : "Link K-Plex to the most recent document leaf"}
@@ -168,41 +218,25 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
               disabled={!plugin.settings.autoOpenCentralDocument}
               onClick={() => void toggleDocumentLink()}
             />
-            <ToolButton
-              icon={syncOn ? "link" : "unlink"}
-              title="Synchronize K-Plex navigation with the active or linked document leaf"
-              on={syncOn}
-              onClick={() => void toggleNavigationSync()}
-            />
-            <span className="excalibrain-toolbar-divider" />
-            <ToolButton icon="paperclip" title="Show or hide attachments" on={plugin.settings.showAttachments} onClick={() => void toggleToolbarSetting("showAttachments")} />
-            <ToolButton icon="circle-minus" title="Show or hide virtual nodes" on={plugin.settings.showVirtualNodes} onClick={() => void toggleToolbarSetting("showVirtualNodes")} />
-            <ToolButton icon="git-pull-request-draft" title="Show or hide inferred relationships" on={plugin.settings.showInferredNodes} onClick={() => void toggleToolbarSetting("showInferredNodes")} />
-            <ToolButton icon="file-text" title="Show or hide Markdown page nodes" on={plugin.settings.showPageNodes} onClick={() => void toggleToolbarSetting("showPageNodes")} />
-            <ToolButton icon="venetian-mask" title="Show aliases instead of file names" on={plugin.settings.renderAlias} onClick={() => void toggleToolbarSetting("renderAlias")} />
-            <ToolButton icon="folder" title="Show or hide folder nodes" on={plugin.settings.showFolderNodes} onClick={() => void toggleToolbarSetting("showFolderNodes")} />
-            <ToolButton icon="tag" title="Show or hide tag nodes" on={plugin.settings.showTagNodes} onClick={() => void toggleToolbarSetting("showTagNodes")} />
-            <ToolButton icon="globe" title="Show or hide web link nodes" on={plugin.settings.showURLNodes} onClick={() => void toggleToolbarSetting("showURLNodes")} />
-            <ToolButton icon="grip" title="Show or hide siblings" on={plugin.settings.renderSiblings} onClick={() => void toggleToolbarSetting("renderSiblings")} />
-            <ToolButton
-              icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"}
-              title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each node’s children"}
-              on={plugin.settings.graphDepth === 2}
-              onClick={() => void toggleExpandedView()}
-            />
-            <ToolButton
-              icon="spline"
-              title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"}
-              on={plugin.settings.connectorStyle === "bezier"}
-              onClick={() => void toggleConnectorStyle()}
-            />
-            <ToolButton
-              icon={isPinned ? "bookmark-check" : "bookmark"}
-              title={isPinned ? "Unpin current node" : "Pin current node"}
-              on={isPinned}
-              onClick={() => void togglePinned()}
-            />
-            <span className="excalibrain-toolbar-divider" />
+            <ToolButton icon={syncOn ? "link" : "unlink"} title="Synchronize K-Plex navigation with the active or linked document leaf" on={syncOn} onClick={() => void toggleNavigationSync()} />
+            <ToolButton icon={isPinned ? "bookmark-check" : "bookmark"} title={isPinned ? "Unpin current node" : "Pin current node"} on={isPinned} onClick={() => void togglePinned()} />
+            {sidecarAvailable && <ToolButton icon={sidecarOpen ? "panel-right-close" : "panel-right-open"} title={sidecarOpen ? "Close companion sidecar" : "Open companion sidecar"} on={sidecarOpen} onClick={() => void plugin.toggleSidecar(hostLeaf, page)} />}
+            {plugin.settings.toolbarExpanded && <>
+              <span className="excalibrain-toolbar-divider" />
+              <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
+              <ToolButton icon="paperclip" title="Show or hide attachments" on={plugin.settings.showAttachments} onClick={() => void toggleToolbarSetting("showAttachments")} />
+              <ToolButton icon="circle-minus" title="Show or hide virtual nodes" on={plugin.settings.showVirtualNodes} onClick={() => void toggleToolbarSetting("showVirtualNodes")} />
+              <ToolButton icon="git-pull-request-draft" title="Show or hide inferred relationships" on={plugin.settings.showInferredNodes} onClick={() => void toggleToolbarSetting("showInferredNodes")} />
+              <ToolButton icon="file-text" title="Show or hide Markdown page nodes" on={plugin.settings.showPageNodes} onClick={() => void toggleToolbarSetting("showPageNodes")} />
+              <ToolButton icon="venetian-mask" title="Show aliases instead of file names" on={plugin.settings.renderAlias} onClick={() => void toggleToolbarSetting("renderAlias")} />
+              <ToolButton icon="folder" title="Show or hide folder nodes" on={plugin.settings.showFolderNodes} onClick={() => void toggleToolbarSetting("showFolderNodes")} />
+              <ToolButton icon="tag" title="Show or hide tag nodes" on={plugin.settings.showTagNodes} onClick={() => void toggleToolbarSetting("showTagNodes")} />
+              <ToolButton icon="globe" title="Show or hide web link nodes" on={plugin.settings.showURLNodes} onClick={() => void toggleToolbarSetting("showURLNodes")} />
+              <ToolButton icon="grip" title="Show or hide siblings" on={plugin.settings.renderSiblings} onClick={() => void toggleToolbarSetting("renderSiblings")} />
+              <ToolButton icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"} title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each node’s children"} on={plugin.settings.graphDepth === 2} onClick={() => void toggleExpandedView()} />
+              <ToolButton icon="spline" title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"} on={plugin.settings.connectorStyle === "bezier"} onClick={() => void toggleConnectorStyle()} />
+            </>}
+            <ToolButton icon={plugin.settings.toolbarExpanded ? "chevrons-right" : "ellipsis"} title={plugin.settings.toolbarExpanded ? "Use compact toolbar" : "Show full toolbar"} on={plugin.settings.toolbarExpanded} onClick={() => void toggleToolbar()} />
             <ToolButton icon="settings" title="Open K-Plex settings" onClick={() => plugin.openSettings()} />
           </div>
         </header>
@@ -211,12 +245,8 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
           {pinnedPages.map((pinned) => {
             const title = plugin.index.titleFor(pinned);
             return <div key={pinned.path} className={`kplex-pinned-chip${pinned.path === page.path ? " is-active" : ""}`}>
-              <button className="kplex-pinned-open" title={`${title}\n${pinned.path}`} onClick={() => activate(pinned)}>
-                <ObsidianIcon name="pin" size={12} /><span>{title}</span>
-              </button>
-              <button className="kplex-pinned-remove" title={`Unpin ${title}`} aria-label={`Unpin ${title}`} onClick={() => void unpin(pinned.path)}>
-                <ObsidianIcon name="x" size={11} />
-              </button>
+              <button className="kplex-pinned-open" title={`${title}\n${pinned.path}`} onClick={() => activate(pinned)}><ObsidianIcon name="pin" size={12} /><span>{title}</span></button>
+              <button className="kplex-pinned-remove" title={`Unpin ${title}`} aria-label={`Unpin ${title}`} onClick={() => void unpin(pinned.path)}><ObsidianIcon name="x" size={11} /></button>
             </div>;
           })}
         </div>}
@@ -228,7 +258,12 @@ export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin;
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={surface} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          {sidecarOpen && <div className={`kplex-sidecar-controls is-${plugin.settings.sidecarPosition}`} aria-label="Sidecar controls">
+            <button title="Collapse sidecar" onClick={() => void plugin.closeSidecar(hostLeaf)}><ObsidianIcon name="panel-right-close" size={15} /></button>
+            <button title="Move sidecar" onClick={showSidecarMoveMenu}><ObsidianIcon name="move" size={15} /></button>
+            <button title="Open an independent copy" onClick={showSidecarPopoutMenu}><ObsidianIcon name="picture-in-picture-2" size={15} /></button>
+          </div>}
         </section>
       </main>
 

@@ -167,6 +167,9 @@ export type PositionedEdge = {
   id: string;
   sourcePath: string;
   targetPath: string;
+  /** Optional provenance pair when a visible edge projects/aggregates evidence from another transient source. */
+  explanationSourcePath?: string;
+  explanationTargetPath?: string;
   role: Role;
   relationType: RelationType;
   typeDefinition?: string;

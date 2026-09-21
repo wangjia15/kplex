@@ -3,11 +3,14 @@ import type { ExcaliBrainSettings, KplexDeviceClass, KplexLayoutProfile, KplexVi
 
 export function currentDeviceClass(): KplexDeviceClass {
   if (!Platform.isMobile) return "desktop";
-  // Obsidian's public Platform API distinguishes desktop/mobile, not phone/tablet. On the
-  // mobile runtime use the device screen's shortest CSS dimension: 600dp is the conventional
-  // Android/iPad breakpoint and, unlike the sidepanel leaf width, remains stable as panes move.
-  const screen = window.screen;
-  const shortestSide = Math.min(screen?.width ?? window.innerWidth, screen?.height ?? window.innerHeight);
+  // Obsidian exposes the stable public `Platform.isMobile` flag, but phone/tablet-specific
+  // flags are not part of the supported API surface. Split mobile form factors by the
+  // shortest CSS-pixel side instead. 600px is the conventional tablet breakpoint and keeps
+  // foldables / small tablets on the more spacious tablet profile when appropriate.
+  const screenRef = typeof window !== "undefined" ? window.screen : undefined;
+  const width = screenRef?.width || (typeof window !== "undefined" ? window.innerWidth : 0);
+  const height = screenRef?.height || (typeof window !== "undefined" ? window.innerHeight : 0);
+  const shortestSide = Math.min(width || Number.POSITIVE_INFINITY, height || Number.POSITIVE_INFINITY);
   return shortestSide >= 600 ? "tablet" : "mobile";
 }
 

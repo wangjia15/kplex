@@ -26,6 +26,7 @@ export function ThoughtNode({
   onGatePointerDown,
   onNodePointerDown,
   onContextMenu,
+  sectionFold,
 }: {
   node: PositionedNode;
   settings: ExcaliBrainSettings;
@@ -44,6 +45,7 @@ export function ThoughtNode({
   onGatePointerDown: (node: PositionedNode, gate: GateSide, event: ReactPointerEvent<HTMLSpanElement>) => void;
   onNodePointerDown: (node: PositionedNode, event: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (node: PositionedNode, event: MouseEvent<HTMLDivElement>) => void;
+  sectionFold?: { hasChildren: boolean; expanded: boolean; hiddenDescendantCount: number; onToggle: () => void };
 }) {
   const style = node.style;
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
@@ -85,6 +87,7 @@ export function ThoughtNode({
     dragging ? "is-dragging" : "",
     connectionState !== "normal" ? `is-connect-${connectionState}` : "",
     node.page.isFolder || node.page.isTag ? "is-structural-thought" : "",
+    node.page.transient?.kind === "section" ? "is-kplex-section" : "",
   ].filter(Boolean).join(" ");
 
   return <div
@@ -109,6 +112,16 @@ export function ThoughtNode({
       {style.icon && <ObsidianIcon name={style.icon} size={node.role === "center" ? 18 : 13} className="excalibrain-node-icon" />}
       <span>{display}</span>
     </span>
+    {sectionFold?.hasChildren && <button
+      type="button"
+      className={`kplex-section-fold-handle${sectionFold.expanded ? " is-expanded" : " is-folded"}`}
+      aria-label={sectionFold.expanded ? "Fold section children" : "Unfold section children"}
+      title={sectionFold.expanded
+        ? "Fold section children"
+        : `Unfold section children${sectionFold.hiddenDescendantCount ? ` · ${sectionFold.hiddenDescendantCount} hidden` : ""}`}
+      onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); }}
+      onClick={(e: MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); sectionFold.onToggle(); }}
+    />}
     {GATES.map((gate) => {
       const stat = node.gateStats[gate];
       return <span key={gate} className={`excalibrain-gate-wrap gate-wrap-${gate}`}>

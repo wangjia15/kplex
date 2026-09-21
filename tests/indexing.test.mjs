@@ -45,6 +45,8 @@ for (const file of [
   "src/index/GraphBuilder.ts",
   "src/index/GraphIndex.ts",
   "src/index/SectionExpansion.ts",
+  "src/index/style.ts",
+  "src/ui/layout.ts",
 ]) compile(file);
 
 const obsidianModuleDir = join(temp, "node_modules/obsidian");
@@ -117,6 +119,7 @@ const { GraphIndex } = require(join(temp, "src/index/GraphIndex.js"));
 const { buildCentralSectionExpansion, canExpandCentralSections } = require(join(temp, "src/index/SectionExpansion.js"));
 const { parseBodyMetadata, parseBodyMetadataCore } = require(join(temp, "src/index/fieldParser.js"));
 const { RelationType } = require(join(temp, "src/types.js"));
+const { buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
 
 function walk(dir) {
   const result = [];
@@ -313,7 +316,34 @@ const settings = {
   noteTypeField: "Note type",
   primaryTagField: "Note type",
   tagStyleList: ["#project", "#person"],
-  baseNodeStyle: { maxLabelLength: 30 },
+  tagNodeStyles: {},
+  noteTypeStyles: {},
+  displayAllStylePrefixes: true,
+  baseNodeStyle: { maxLabelLength: 30, fontSize: 20, padding: 10, gateRadius: 5 },
+  centralNodeStyle: { fontSize: 30 },
+  siblingNodeStyle: {},
+  inferredNodeStyle: {},
+  urlNodeStyle: {},
+  virtualNodeStyle: {},
+  attachmentNodeStyle: {},
+  folderNodeStyle: {},
+  tagNodeStyle: {},
+  baseLinkStyle: {},
+  inferredLinkStyle: {},
+  folderLinkStyle: {},
+  tagLinkStyle: {},
+  hierarchyLinkStyles: {},
+  centerEmbedHeight: 700,
+  centerEmbedWidth: 550,
+  compactingFactor: 2,
+  minLinkLength: 18,
+  parentColumns: 2,
+  childColumns: 5,
+  friendMaxHeight: 350,
+  siblingMaxHeight: 250,
+  parentMaxHeight: 300,
+  childMaxHeight: 400,
+  graphDepth: 1,
   inferAllLinksAsFriends: false,
   inverseInfer: false,
   showFullTagName: true,
@@ -606,8 +636,44 @@ try {
   expectRole("Note A.md", "child", "Note F.md", RelationType.INFERRED);
   assert.equal(index.get(friends.page.path), undefined);
 
+  // Assertions 43–47: nested headings form a runtime outline tree. This is the structural input
+  // used by the fold/unfold renderer; it must not create persistent section identities.
+  const sectionTree = await buildCentralSectionExpansion(plugin, index, index.get("Section Tree.md"));
+  assert(sectionTree);
+  assert.equal(sectionTree.sections.length, 5);
+  const rootOne = sectionTree.sections.find((section) => section.page.name === "Root One");
+  const childA = sectionTree.sections.find((section) => section.page.name === "Child A");
+  const grandchild = sectionTree.sections.find((section) => section.page.name === "Grandchild");
+  const childB = sectionTree.sections.find((section) => section.page.name === "Child B");
+  const rootTwo = sectionTree.sections.find((section) => section.page.name === "Root Two");
+  assert(rootOne && childA && grandchild && childB && rootTwo);
+  assert.equal(rootOne.parentId, null);
+  assert.deepEqual(rootOne.childIds, [childA.id, childB.id]);
+  assert.equal(childA.parentId, rootOne.id);
+  assert.deepEqual(childA.childIds, [grandchild.id]);
+  assert.equal(grandchild.parentId, childA.id);
+  assert.equal(rootTwo.parentId, null);
+  for (const section of sectionTree.sections) assert.equal(index.get(section.page.path), undefined);
+
+  // Assertions 48–50: folding is layout/view state only. A folded outline parent becomes the
+  // visible projection source for all hidden-descendant relations, while provenance still points
+  // back to the exact hidden section that declared each relation.
+  const allExpandedIds = new Set(sectionTree.sections.filter((section) => section.childIds.length).map((section) => section.id));
+  const fullTreeScene = buildSectionExpandedScene(sectionTree, index, settings, allExpandedIds);
+  const fullSectionNodes = fullTreeScene.nodes.filter((node) => node.page.transient?.kind === "section");
+  assert.equal(fullSectionNodes.length, 5);
+  const foldedIds = new Set([...allExpandedIds].filter((id) => id !== rootOne.id));
+  const foldedTreeScene = buildSectionExpandedScene(sectionTree, index, settings, foldedIds);
+  const foldedSectionNodes = foldedTreeScene.nodes.filter((node) => node.page.transient?.kind === "section");
+  assert.deepEqual(foldedSectionNodes.map((node) => node.page.name).sort(), ["Root One", "Root Two"]);
+  const projectedGrandchild = foldedTreeScene.edges.find((edge) =>
+    edge.sourcePath === rootOne.page.path && edge.explanationSourcePath === grandchild.page.path
+  );
+  assert(projectedGrandchild, "Folded Root One must project Grandchild relationship evidence upward");
+  assert.equal(index.get(rootOne.page.path), undefined);
+
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
-  console.log("Central section expansion fixture: assertions 34–42 PASS");
+  console.log("Central section expansion fixture: assertions 34–50 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

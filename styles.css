@@ -1284,14 +1284,14 @@
   to { opacity: 1; }
 }
 .excalibrain-thought {
-  animation: kplex-node-arrive 150ms ease-out both;
+  animation: kplex-node-arrive 300ms ease-out both;
 }
 .excalibrain-edge,
 .kplex-expanded-edge {
-  animation: kplex-edge-arrive 170ms ease-out both;
+  animation: kplex-edge-arrive 330ms ease-out both;
 }
 .excalibrain-plex.is-scene-transitioning .excalibrain-thought:not(.is-dragging) {
-  transition: left 220ms cubic-bezier(.2,.8,.2,1), top 220ms cubic-bezier(.2,.8,.2,1), opacity 150ms ease;
+  transition: left 440ms cubic-bezier(.2,.8,.2,1), top 440ms cubic-bezier(.2,.8,.2,1), opacity 300ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
   .excalibrain-thought,
@@ -1300,13 +1300,6 @@
   .excalibrain-plex.is-scene-transitioning .excalibrain-thought { transition: none !important; }
 }
 
-/* Runtime section thoughts are structural children of the central Markdown
-   document, visually distinct without competing with normal note types. */
-.excalibrain-thought[data-kplex-path^="kplex-section:"] {
-  border-style: dashed;
-  border-color: rgba(159,205,255,.54) !important;
-  background-image: linear-gradient(135deg, rgba(88,151,215,.10), rgba(255,255,255,.025));
-}
 .excalibrain-plex.is-section-expanded .excalibrain-thought.is-selected {
   box-shadow: 0 0 0 2px rgba(255,255,255,.48), 0 0 28px rgba(112,184,255,.22), 0 8px 24px rgba(0,0,0,.42);
 }
@@ -1361,8 +1354,121 @@
   100% { opacity: 1; }
 }
 .excalibrain-plex.is-scene-transitioning .excalibrain-camera {
-  animation: kplex-scene-arrive 240ms ease-out both;
+  animation: kplex-scene-arrive 480ms ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
   .excalibrain-plex.is-scene-transitioning .excalibrain-camera { animation: none !important; }
 }
+
+/* Section outline tree ----------------------------------------------------
+   Structural heading connectors are deliberately distinct from semantic K-Plex
+   relationships. The 10% edge position is 4/5 of the way from node center
+   toward the left corner (50% -> 10%). */
+.kplex-section-tree-edge {
+  stroke: var(--interactive-accent);
+  stroke-width: 1.6;
+  stroke-dasharray: 4 6;
+  opacity: .82;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.38));
+}
+.excalibrain-thought.is-kplex-section {
+  border-radius: 3px !important;
+  border: 1.5px solid var(--interactive-accent) !important;
+  background: color-mix(in srgb, var(--background-primary) 92%, var(--interactive-accent)) !important;
+}
+.excalibrain-thought.is-kplex-section .excalibrain-thought-label {
+  font-weight: 600;
+}
+.kplex-section-fold-handle {
+  position: absolute;
+  left: 10%;
+  bottom: -7px;
+  width: 11px;
+  height: 11px;
+  min-width: 11px;
+  min-height: 11px;
+  padding: 0;
+  margin: 0;
+  transform: translateX(-50%);
+  border: 1.5px solid var(--interactive-accent);
+  border-radius: 1px;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--background-primary) 82%, transparent);
+  z-index: 8;
+  cursor: pointer;
+}
+.kplex-section-fold-handle.is-folded {
+  background: var(--interactive-accent);
+}
+.kplex-section-fold-handle:hover {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 24%, transparent), 0 0 8px color-mix(in srgb, var(--interactive-accent) 48%, transparent);
+}
+
+/* Relationship edits are optimistic, but briefly block accidental follow-up clicks until the
+   metadata cache + authoritative index have caught up. */
+.kplex-relationship-updating {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 56px;
+  background: color-mix(in srgb, var(--background-primary) 5%, transparent);
+  cursor: wait;
+  pointer-events: auto;
+}
+.kplex-relationship-updating > span,
+.kplex-relationship-updating > svg { pointer-events: none; }
+.kplex-relationship-updating {
+  gap: 7px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+.kplex-relationship-updating::before {
+  content: "";
+  position: absolute;
+  top: 47px;
+  width: 190px;
+  height: 34px;
+  border-radius: 17px;
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
+  z-index: -1;
+}
+.kplex-relationship-updating svg { animation: kplex-spin 1s linear infinite; }
+@keyframes kplex-spin { to { transform: rotate(360deg); } }
+
+/* Companion sidecar controls live on the K-Plex edge. The actual sidecar is a native adjacent
+   WorkspaceLeaf, so its divider/resizing remains entirely Obsidian-owned. */
+.kplex-sidecar-controls {
+  position: absolute;
+  z-index: 82;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary-alt);
+  box-shadow: var(--shadow-s);
+}
+.kplex-sidecar-controls.is-right { right: 4px; top: 50%; transform: translateY(-50%); flex-direction: column; }
+.kplex-sidecar-controls.is-left { left: 4px; top: 50%; transform: translateY(-50%); flex-direction: column; }
+.kplex-sidecar-controls.is-above { top: 4px; left: 50%; transform: translateX(-50%); }
+.kplex-sidecar-controls.is-below { bottom: 4px; left: 50%; transform: translateX(-50%); }
+.kplex-sidecar-controls button {
+  width: 25px;
+  height: 25px;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+.kplex-sidecar-controls button:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+
+.excalibrain-top-actions.is-compact { flex-wrap: nowrap; }
+.excalibrain-app.is-sidecar-condensed .excalibrain-brand strong { display: none; }

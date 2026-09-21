@@ -1,5 +1,6 @@
 import type { ExcaliBrainSettings } from "../settings";
 import type { GraphPage, Neighborhood, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import { RelationType } from "../types";
 import { resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import type { GraphIndex } from "../index/GraphIndex";
 
@@ -17,10 +18,17 @@ export type ZoneViewport = {
   initialScrollTop: number;
 };
 
+export type SectionTreeEdge = {
+  id: string;
+  sourcePath: string;
+  targetPath: string;
+};
+
 export type PlexScene = {
   nodes: PositionedNode[];
   edges: PositionedEdge[];
   zoneViewports: Partial<Record<ScrollZone, ZoneViewport>>;
+  sectionTreeEdges?: SectionTreeEdge[];
 };
 
 export function gateDiameter(style: NodeStyle): number {
@@ -391,68 +399,168 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   return { nodes, edges, zoneViewports };
 }
 
-/** Runtime layout for central-note heading expansion. Sections are ordinary-looking child thoughts,
- * while each section's relationships form a small local Plex around that section. Nothing here is
- * persisted in GraphIndex. */
+/** Runtime layout for central-note heading expansion. Section headings form an outline tree
+ * below the normal Plex. Each visible section still owns a local four-gate relationship cluster.
+ * Hidden descendants of a folded section project their relationships upward into the nearest
+ * visible folded ancestor. Nothing here is persisted in GraphIndex. */
 export function buildSectionExpandedScene(
   expansion: import("../index/SectionExpansion").CentralSectionExpansion,
   index: GraphIndex,
   settings: ExcaliBrainSettings,
+  expandedSectionIds: ReadonlySet<string> = new Set(expansion.sections.filter((section) => section.childIds.length).map((section) => section.id)),
 ): PlexScene {
-  const scene = buildScene(expansion.centerNeighborhood, index, settings);
-  // Section clusters need to remain spatially attached to their heading thought, so a single
-  // child-zone scroller would be misleading. The complete expanded document participates in fit.
-  delete scene.zoneViewports.child;
+  const sectionPaths = new Set(expansion.sections.map((section) => section.page.path));
+  const baseNeighborhood: Neighborhood = {
+    ...expansion.centerNeighborhood,
+    children: expansion.centerNeighborhood.children.filter((item) => !sectionPaths.has(item.page.path)),
+  };
+  const scene = buildScene(baseNeighborhood, index, settings);
+  const byId = new Map(expansion.sections.map((section) => [section.id, section] as const));
+  const roots = expansion.sections.filter((section) => !section.parentId);
+  const visible: Array<{ section: import("../index/SectionExpansion").ExpandedSection; depth: number }> = [];
+  const visit = (section: import("../index/SectionExpansion").ExpandedSection, depth: number) => {
+    visible.push({ section, depth });
+    if (!expandedSectionIds.has(section.id)) return;
+    for (const childId of section.childIds) {
+      const child = byId.get(childId);
+      if (child) visit(child, depth + 1);
+    }
+  };
+  for (const root of roots) visit(root, 0);
 
-  const sectionNodes = scene.nodes.filter((node) => node.page.transient?.kind === "section");
-  const ordinaryChildren = scene.nodes.filter((node) => node.role === "child" && node.page.transient?.kind !== "section");
-  const startY = ordinaryChildren.length
-    ? Math.max(...ordinaryChildren.map((node) => node.y + node.height / 2)) + 150
-    : 150;
-  const clusterSpacing = Math.max(210, 255 * clamp(1.35 / settings.compactingFactor, 0.45, 1.25));
-  sectionNodes.forEach((node, index) => {
-    node.x = 0;
-    node.y = startY + index * clusterSpacing;
+  type SourcedNeighbour = { relation: Neighbour; sourceSectionPath: string };
+  const collectOwn = (section: import("../index/SectionExpansion").ExpandedSection): Record<"parent" | "child" | "left" | "right", SourcedNeighbour[]> => ({
+    parent: section.neighborhood.parents.map((relation) => ({ relation, sourceSectionPath: section.page.path })),
+    child: section.neighborhood.children.map((relation) => ({ relation, sourceSectionPath: section.page.path })),
+    left: section.neighborhood.leftFriends.map((relation) => ({ relation, sourceSectionPath: section.page.path })),
+    right: section.neighborhood.rightFriends.map((relation) => ({ relation, sourceSectionPath: section.page.path })),
   });
+  const mergeRelations = (groups: Array<Record<"parent" | "child" | "left" | "right", SourcedNeighbour[]>>) => {
+    const out: Record<"parent" | "child" | "left" | "right", SourcedNeighbour[]> = { parent: [], child: [], left: [], right: [] };
+    for (const role of ["parent", "child", "left", "right"] as const) {
+      const seen = new Map<string, SourcedNeighbour>();
+      for (const group of groups) {
+        for (const item of group[role]) {
+          const actual = item.relation.page.transient?.actualPath ?? item.relation.page.path;
+          const key = `${role}:${actual}`;
+          const previous = seen.get(key);
+          if (!previous || (previous.relation.relationType === RelationType.INFERRED && item.relation.relationType === RelationType.DEFINED)) seen.set(key, item);
+        }
+      }
+      out[role] = [...seen.values()];
+    }
+    return out;
+  };
+  const collectForVisibleSection = (section: import("../index/SectionExpansion").ExpandedSection) => {
+    const groups = [collectOwn(section)];
+    if (!expandedSectionIds.has(section.id)) {
+      const addDescendants = (parent: import("../index/SectionExpansion").ExpandedSection) => {
+        for (const childId of parent.childIds) {
+          const child = byId.get(childId);
+          if (!child) continue;
+          groups.push(collectOwn(child));
+          addDescendants(child);
+        }
+      };
+      addDescendants(section);
+    }
+    return mergeRelations(groups);
+  };
 
-  const addGroup = (sectionNode: PositionedNode, items: Neighbour[], role: Exclude<Role, "sibling">) => {
-    const nodes = items.map((item) => makeNode(item, role, index, settings));
+  const ordinaryChildren = scene.nodes.filter((node) => node.role === "child");
+  const childViewport = scene.zoneViewports.child;
+  const normalBottom = childViewport
+    ? childViewport.top + childViewport.height
+    : ordinaryChildren.length
+      ? Math.max(...ordinaryChildren.map((node) => node.y + node.height / 2))
+      : 90;
+  const startY = normalBottom + Math.max(110, 135 * clamp(1.35 / settings.compactingFactor, 0.55, 1.3));
+  const depthIndent = Math.max(120, 150 * clamp(1.35 / settings.compactingFactor, 0.62, 1.25));
+  const verticalGap = Math.max(72, 92 * clamp(1.35 / settings.compactingFactor, 0.62, 1.25));
+  const sectionTreeEdges: SectionTreeEdge[] = [];
+  const sectionNodeById = new Map<string, PositionedNode>();
+  let cursorY = startY;
+
+  const makeSectionNode = (section: import("../index/SectionExpansion").ExpandedSection, depth: number, relations: ReturnType<typeof collectForVisibleSection>): PositionedNode => {
+    const pseudo: Neighbour = { page: section.page, role: "child", relationType: RelationType.DEFINED, typeDefinition: "section", linkDirection: null };
+    const node = makeNode(pseudo, "child", index, settings);
+    node.width = Math.max(190, Math.min(330, node.width + 36));
+    node.height = Math.max(38, node.height + 10);
+    node.x = depth * depthIndent + 32;
+    node.gateStats = {
+      top: { visibleCount: relations.parent.length, hasAny: relations.parent.length > 0 },
+      bottom: { visibleCount: relations.child.length, hasAny: relations.child.length > 0 },
+      left: { visibleCount: relations.left.length, hasAny: relations.left.length > 0 },
+      right: { visibleCount: relations.right.length, hasAny: relations.right.length > 0 },
+    };
+    return node;
+  };
+
+  const addRelationGroup = (sectionNode: PositionedNode, items: SourcedNeighbour[], role: Exclude<Role, "sibling">) => {
+    const nodes = items.map((item) => makeNode(item.relation, role, index, settings));
     const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
     const direction = role === "left" || role === "previous" ? -1 : role === "right" || role === "next" ? 1 : 0;
     nodes.forEach((node, itemIndex) => {
       if (horizontal) {
-        node.x = sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + 95);
+        node.x = sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + 92);
         node.y = sectionNode.y + (itemIndex - (nodes.length - 1) / 2) * 42;
       } else {
         const columns = Math.min(3, Math.max(1, nodes.length));
         const row = Math.floor(itemIndex / columns);
         const col = itemIndex % columns;
         const rowCount = Math.min(columns, nodes.length - row * columns);
-        node.x = sectionNode.x + (col - (rowCount - 1) / 2) * 155;
-        node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (78 + row * 44);
+        node.x = sectionNode.x + (col - (rowCount - 1) / 2) * 150;
+        node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (82 + row * 44);
       }
       scene.nodes.push(node);
-      const relation = items[itemIndex];
+      const sourced = items[itemIndex];
       scene.edges.push({
         id: `section-edge:${sectionNode.page.path}:${node.page.path}:${role}:${itemIndex}`,
         sourcePath: sectionNode.page.path,
         targetPath: node.page.path,
+        explanationSourcePath: sourced.sourceSectionPath,
+        explanationTargetPath: sourced.relation.page.path,
         role,
-        relationType: relation.relationType,
-        typeDefinition: relation.typeDefinition,
-        direction: relation.linkDirection,
-        style: resolveLinkStyle(relation, settings),
+        relationType: sourced.relation.relationType,
+        typeDefinition: sourced.relation.typeDefinition,
+        direction: sourced.relation.linkDirection,
+        style: resolveLinkStyle(sourced.relation, settings),
       });
     });
   };
 
-  for (const section of expansion.sections) {
-    const sectionNode = sectionNodes.find((node) => node.page.path === section.page.path);
-    if (!sectionNode) continue;
-    addGroup(sectionNode, section.neighborhood.parents, "parent");
-    addGroup(sectionNode, section.neighborhood.children, "child");
-    addGroup(sectionNode, section.neighborhood.leftFriends, "left");
-    addGroup(sectionNode, section.neighborhood.rightFriends, "right");
+  for (const { section, depth } of visible) {
+    const relations = collectForVisibleSection(section);
+    const lateralCount = Math.max(relations.left.length, relations.right.length);
+    const topRows = Math.ceil(relations.parent.length / 3);
+    const bottomRows = Math.ceil(relations.child.length / 3);
+    const clusterAbove = Math.max(topRows * 44 + (topRows ? 74 : 0), lateralCount > 1 ? (lateralCount - 1) * 21 : 0);
+    const clusterBelow = Math.max(bottomRows * 44 + (bottomRows ? 74 : 0), lateralCount > 1 ? (lateralCount - 1) * 21 : 0);
+    const node = makeSectionNode(section, depth, relations);
+    cursorY += clusterAbove;
+    node.y = cursorY;
+    cursorY += node.height / 2 + clusterBelow + verticalGap;
+    sectionNodeById.set(section.id, node);
+    scene.nodes.push(node);
+    addRelationGroup(node, relations.parent, "parent");
+    addRelationGroup(node, relations.child, "child");
+    addRelationGroup(node, relations.left, "left");
+    addRelationGroup(node, relations.right, "right");
   }
+
+  const centerNode = scene.nodes.find((node) => node.role === "center");
+  for (const { section } of visible) {
+    const childNode = sectionNodeById.get(section.id);
+    if (!childNode) continue;
+    const parentNode = section.parentId ? sectionNodeById.get(section.parentId) : centerNode;
+    if (!parentNode) continue;
+    sectionTreeEdges.push({
+      id: `section-tree:${parentNode.page.path}:${childNode.page.path}`,
+      sourcePath: parentNode.page.path,
+      targetPath: childNode.page.path,
+    });
+  }
+
+  scene.sectionTreeEdges = sectionTreeEdges;
   return scene;
 }

@@ -3,7 +3,7 @@ import { Menu } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
-import type { GateRole, GateSide, GraphPage, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
 import { LinkDirection } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, type ZoneViewport } from "./layout";
@@ -101,6 +101,27 @@ function gatesForEdge(edge: PositionedEdge): EdgeGates {
     case "next": return { source: "right", target: "left" };
     case "sibling": return { source: "right", target: "left" };
   }
+}
+
+
+function applyOptimisticRelink(base: Neighborhood, targetPath: string, role: GateRole): Neighborhood {
+  const all = [...base.parents, ...base.children, ...base.leftFriends, ...base.rightFriends];
+  const found = all.find((item) => item.page.path === targetPath);
+  if (!found) return base;
+  const next: Neighborhood = {
+    ...base,
+    parents: base.parents.filter((item) => item.page.path !== targetPath),
+    children: base.children.filter((item) => item.page.path !== targetPath),
+    leftFriends: base.leftFriends.filter((item) => item.page.path !== targetPath),
+    rightFriends: base.rightFriends.filter((item) => item.page.path !== targetPath),
+    siblings: [...base.siblings],
+  };
+  const moved: Neighbour = { ...found, role };
+  if (role === "parent") next.parents.push(moved);
+  else if (role === "child") next.children.push(moved);
+  else if (role === "left") next.leftFriends.push(moved);
+  else next.rightFriends.push(moved);
+  return next;
 }
 
 function semanticRoleForGate(gate: GateSide): GateRole {
@@ -422,12 +443,22 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   const persistentNeighborhood = useMemo(() => index.getNeighborhood(activePath), [index, activePath, renderRevision]);
   const [sectionExpanded, setSectionExpanded] = useState(false);
   const [sectionExpansion, setSectionExpansion] = useState<CentralSectionExpansion | null>(null);
+  const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(new Set());
+  const sectionFoldCenter = useRef<string | null>(null);
   const [sceneTransitioning, setSceneTransitioning] = useState(false);
   const [layoutRevision, setLayoutRevision] = useState(0);
-  const neighborhood = sectionExpansion?.centerNeighborhood ?? persistentNeighborhood;
+  const [optimisticRelink, setOptimisticRelink] = useState<{ targetPath: string; role: GateRole } | null>(null);
+  const [relationshipUpdating, setRelationshipUpdating] = useState(false);
+  const effectivePersistentNeighborhood = useMemo(() => persistentNeighborhood && optimisticRelink
+    ? applyOptimisticRelink(persistentNeighborhood, optimisticRelink.targetPath, optimisticRelink.role)
+    : persistentNeighborhood, [persistentNeighborhood, optimisticRelink]);
+  const effectiveSectionExpansion = useMemo(() => sectionExpansion && optimisticRelink
+    ? { ...sectionExpansion, centerNeighborhood: applyOptimisticRelink(sectionExpansion.centerNeighborhood, optimisticRelink.targetPath, optimisticRelink.role) }
+    : sectionExpansion, [sectionExpansion, optimisticRelink]);
+  const neighborhood = effectiveSectionExpansion?.centerNeighborhood ?? effectivePersistentNeighborhood;
   const scene = useMemo(() => neighborhood
-    ? (sectionExpansion ? buildSectionExpandedScene(sectionExpansion, index, settings) : buildScene(neighborhood, index, settings))
-    : { nodes: [], edges: [], zoneViewports: {} }, [neighborhood, sectionExpansion, index, settings, layoutRevision]);
+    ? (effectiveSectionExpansion ? buildSectionExpandedScene(effectiveSectionExpansion, index, settings, expandedSectionIds) : buildScene(neighborhood, index, settings))
+    : { nodes: [], edges: [], zoneViewports: {} }, [neighborhood, effectiveSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
   const zoneScrollRefs = useRef<Partial<Record<ScrollZone, HTMLDivElement>>>({});
@@ -483,12 +514,14 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     transitionPath.current = activePath;
     setSectionExpanded(false);
     setSectionExpansion(null);
+    setExpandedSectionIds(new Set());
+    sectionFoldCenter.current = null;
     setSceneTransitioning(true);
     if (sceneTransitionTimer.current !== null) window.clearTimeout(sceneTransitionTimer.current);
     sceneTransitionTimer.current = window.setTimeout(() => {
       sceneTransitionTimer.current = null;
       setSceneTransitioning(false);
-    }, 260);
+    }, 520);
   }, [activePath]);
 
   useEffect(() => {
@@ -505,12 +538,20 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         return;
       }
       setSectionExpansion(expanded);
+      setExpandedSectionIds((current) => {
+        const expandable = new Set(expanded.sections.filter((section) => section.childIds.length).map((section) => section.id));
+        if (sectionFoldCenter.current !== expanded.centerPath) {
+          sectionFoldCenter.current = expanded.centerPath;
+          return expandable;
+        }
+        return new Set([...current].filter((id) => expandable.has(id)));
+      });
       setSceneTransitioning(true);
       if (sceneTransitionTimer.current !== null) window.clearTimeout(sceneTransitionTimer.current);
       sceneTransitionTimer.current = window.setTimeout(() => {
         sceneTransitionTimer.current = null;
         setSceneTransitioning(false);
-      }, 260);
+      }, 520);
     });
     return () => { cancelled = true; };
   }, [sectionExpanded, persistentNeighborhood?.center.path, renderRevision, plugin, index]);
@@ -1158,7 +1199,18 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
               fixedTarget: original.page,
               existingDirection: original.linkDirection,
               semanticRole: nextRole,
-              onCommitted: () => clearHoverIntent(true),
+              onCommitStart: (role) => {
+                setOptimisticRelink({ targetPath: original.page.path, role });
+                setRelationshipUpdating(true);
+              },
+              onCommitEnd: (success) => {
+                setRelationshipUpdating(false);
+                if (!success) setOptimisticRelink(null);
+              },
+              onCommitted: () => {
+                setOptimisticRelink(null);
+                clearHoverIntent(true);
+              },
             });
           }
         }
@@ -1172,9 +1224,33 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       return;
     }
     if (e.pointerType === "touch" && touchPointers.current.has(e.pointerId)) {
-      if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
       const activePan = panDrag.current;
       const moved = activePan && activePan.pointerId === e.pointerId ? activePan.moved : Boolean(pinchGesture.current);
+      const wasOnlyTouch = touchPointers.current.size === 1;
+      const wasSuppressed = Date.now() < suppressActivateUntil.current;
+      if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
+
+      // Mobile Chromium/Obsidian does not reliably synthesize a click after K-Plex calls
+      // preventDefault() to own pan/pinch gestures. Treat a stationary one-finger pointer-up as
+      // the activation gesture explicitly. This also avoids waiting for a browser click delay.
+      if (!moved && wasOnlyTouch && !wasSuppressed) {
+        const hit = e.currentTarget.ownerDocument.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+        const gate = hit?.closest<HTMLElement>("[data-kplex-gate]");
+        const nodeEl = !gate ? hit?.closest<HTMLElement>("[data-kplex-path]") : null;
+        const nodePath = nodeEl?.dataset.kplexPath;
+        const node = nodePath ? (renderedNodeMap.get(nodePath) ?? scene.nodes.find((candidate) => candidate.page.path === nodePath)) : undefined;
+        if (node) {
+          suppressActivateUntil.current = Date.now() + 350;
+          if (node.page.transient?.kind === "section") {
+            void plugin.openSection(node.page);
+          } else {
+            const actualPath = node.page.transient?.actualPath ?? node.page.path;
+            const target = index.get(actualPath);
+            if (target) onActivate(target);
+          }
+        }
+      }
+
       touchPointers.current.delete(e.pointerId);
       if (moved) suppressActivateUntil.current = Date.now() + 220;
       pinchGesture.current = null;
@@ -1271,13 +1347,64 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         .setTitle(sectionExpanded ? "Collapse note sections" : "Expand note to sections")
         .setIcon(sectionExpanded ? "fold-vertical" : "unfold-vertical")
         .onClick(() => setSectionExpanded((current) => !current)));
+      if (sectionExpanded && sectionExpansion) {
+        menu.addItem((item) => item
+          .setTitle("Fold all sections")
+          .setIcon("list-tree")
+          .onClick(() => setExpandedSectionIds(new Set())));
+        menu.addItem((item) => item
+          .setTitle("Unfold all sections")
+          .setIcon("list-tree")
+          .onClick(() => setExpandedSectionIds(new Set(sectionExpansion.sections.filter((section) => section.childIds.length).map((section) => section.id)))));
+      }
     }
 
     if (page.transient?.kind === "section") {
+      const section = sectionExpansion?.sections.find((candidate) => candidate.id === page.transient?.sectionId);
       menu.addItem((item) => item
         .setTitle("Open section")
         .setIcon("heading")
         .onClick(() => void plugin.openSection(page)));
+      if (section?.childIds.length) {
+        const descendants = new Set<string>();
+        const collect = (id: string) => {
+          const current = sectionExpansion?.sections.find((candidate) => candidate.id === id);
+          if (!current) return;
+          for (const childId of current.childIds) { descendants.add(childId); collect(childId); }
+        };
+        collect(section.id);
+        menu.addSeparator();
+        const expanded = expandedSectionIds.has(section.id);
+        menu.addItem((item) => item
+          .setTitle(expanded ? "Fold one level" : "Unfold one level")
+          .setIcon(expanded ? "square-minus" : "square-plus")
+          .onClick(() => setExpandedSectionIds((current) => {
+            const next = new Set(current);
+            if (expanded) next.delete(section.id); else next.add(section.id);
+            return next;
+          })));
+        menu.addItem((item) => item
+          .setTitle("Fold all descendants")
+          .setIcon("fold-vertical")
+          .onClick(() => setExpandedSectionIds((current) => {
+            const next = new Set(current);
+            next.delete(section.id);
+            for (const id of descendants) next.delete(id);
+            return next;
+          })));
+        menu.addItem((item) => item
+          .setTitle("Unfold all descendants")
+          .setIcon("unfold-vertical")
+          .onClick(() => setExpandedSectionIds((current) => {
+            const next = new Set(current);
+            next.add(section.id);
+            for (const id of descendants) {
+              const candidate = sectionExpansion?.sections.find((value) => value.id === id);
+              if (candidate?.childIds.length) next.add(id);
+            }
+            return next;
+          })));
+      }
     }
 
     const doc = viewport.current?.ownerDocument ?? document;
@@ -1290,20 +1417,24 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   };
 
   const showEdgeContextMenuAt = (edge: PositionedEdge, clientX: number, clientY: number): void => {
-    const explanation = sectionExpansion?.explanations.get(`${edge.sourcePath}\u0000${edge.targetPath}`)
-      ?? index.explainRelationship(edge.sourcePath, edge.targetPath);
+    const explanationSourcePath = edge.explanationSourcePath ?? edge.sourcePath;
+    const explanationTargetPath = edge.explanationTargetPath ?? edge.targetPath;
+    const explanation = sectionExpansion?.explanations.get(`${explanationSourcePath}\u0000${explanationTargetPath}`)
+      ?? index.explainRelationship(explanationSourcePath, explanationTargetPath);
     if (!explanation) return;
     const menu = new Menu();
     const sourceNode = renderedNodeMap.get(edge.sourcePath) ?? scene.nodes.find((node) => node.page.path === edge.sourcePath);
     const targetNode = renderedNodeMap.get(edge.targetPath) ?? scene.nodes.find((node) => node.page.path === edge.targetPath);
+    const explanationSection = sectionExpansion?.sections.find((section) => section.page.path === explanationSourcePath);
+    const explanationTargetSection = sectionExpansion?.sections.find((section) => section.page.path === explanationTargetPath);
     menu.addItem((item) => item
       .setTitle("Explain relationship")
       .setIcon("circle-help")
       .onClick(() => new RelationshipExplanationModal(plugin, explanation, {
         role: edge.role,
         centerPath: neighborhood?.center.path,
-        sourceTitle: sourceNode?.label,
-        targetTitle: targetNode?.label,
+        sourceTitle: explanationSection?.page.name ?? sourceNode?.label,
+        targetTitle: explanationTargetSection?.page.name ?? targetNode?.label,
       }).open()));
     const doc = viewport.current?.ownerDocument ?? document;
     menu.showAtPosition({ x: clientX, y: clientY }, doc);
@@ -1337,6 +1468,27 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       onGatePointerDown={(_, gate, event) => startGateDrag(baseNode, gate, event)}
       onNodePointerDown={(_, event) => startNodeDrag(baseNode, event)}
       onContextMenu={(_, event) => showNodeContextMenu(baseNode, event)}
+      sectionFold={baseNode.page.transient?.kind === "section" ? (() => {
+        const section = sectionExpansion?.sections.find((candidate) => candidate.id === baseNode.page.transient?.sectionId);
+        if (!section) return undefined;
+        const descendants = new Set<string>();
+        const collect = (id: string) => {
+          const current = sectionExpansion?.sections.find((candidate) => candidate.id === id);
+          if (!current) return;
+          for (const childId of current.childIds) { descendants.add(childId); collect(childId); }
+        };
+        collect(section.id);
+        return {
+          hasChildren: section.childIds.length > 0,
+          expanded: expandedSectionIds.has(section.id),
+          hiddenDescendantCount: expandedSectionIds.has(section.id) ? 0 : descendants.size,
+          onToggle: () => setExpandedSectionIds((current) => {
+            const next = new Set(current);
+            if (next.has(section.id)) next.delete(section.id); else next.add(section.id);
+            return next;
+          }),
+        };
+      })() : undefined}
     />;
   };
 
@@ -1474,7 +1626,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const bestScore = Math.abs(bestPair[0] - settings.parentColumns) + Math.abs(bestPair[1] - settings.childColumns);
     return score < bestScore ? indexValue : best;
   }, 0);
-  const compactPercent = ((settings.compactingFactor - 0.75) / (3 - 0.75)) * 100;
+  const compactPercent = ((settings.compactingFactor - 0.75) / (4 - 0.75)) * 100;
   const columnsPercent = COLUMN_PRESETS.length <= 1 ? 0 : (columnPresetIndex / (COLUMN_PRESETS.length - 1)) * 100;
 
   return <div
@@ -1487,6 +1639,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     onPointerCancel={cancel}
     onContextMenu={(event: MouseEvent<HTMLDivElement>) => event.preventDefault()}
   >
+    {relationshipUpdating && <div className="kplex-relationship-updating" aria-live="polite" aria-busy="true"><ObsidianIcon name="loader-circle" size={16} /><span>Updating relationship…</span></div>}
     <div ref={cameraElement} className="excalibrain-camera" style={{ transform: `translate3d(${camera.current.x}px, ${camera.current.y}px, 0) scale(${camera.current.scale})` }}>
       <svg className="excalibrain-links" width="3200" height="2400" viewBox="-1600 -1200 3200 2400">
         <defs>
@@ -1495,6 +1648,18 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
           <marker id="excalibrain-dot" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto" markerUnits="strokeWidth"><circle cx="4" cy="4" r="2.6" fill="context-stroke" /></marker>
           <marker id="excalibrain-bar" markerWidth="8" markerHeight="10" refX="4" refY="5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M4,1 L4,9" stroke="context-stroke" strokeWidth="1.8" /></marker>
         </defs>
+        {(scene.sectionTreeEdges ?? []).map((treeEdge) => {
+          const source = renderedNodeMap.get(treeEdge.sourcePath) ?? scene.nodes.find((node) => node.page.path === treeEdge.sourcePath);
+          const target = renderedNodeMap.get(treeEdge.targetPath) ?? scene.nodes.find((node) => node.page.path === treeEdge.targetPath);
+          if (!source || !target || !visibleNodePaths.has(source.page.path) || !visibleNodePaths.has(target.page.path)) return null;
+          const sourceX = source.x - source.width * 0.40;
+          const sourceY = source.y + source.height / 2 + 4;
+          const targetX = target.x - target.width * 0.40;
+          const targetY = target.y - target.height / 2 - 4;
+          const bendY = sourceY + Math.max(22, (targetY - sourceY) * 0.42);
+          const d = `M ${sourceX} ${sourceY} L ${sourceX} ${bendY} L ${targetX} ${bendY} L ${targetX} ${targetY}`;
+          return <path key={treeEdge.id} className="kplex-section-tree-edge" d={d} fill="none" vectorEffect="non-scaling-stroke" />;
+        })}
         {visibleEdges.map((edge) => <Edge
           key={edge.id}
           edge={edge}
@@ -1546,7 +1711,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
           <input
             type="range"
             min="0.75"
-            max="3"
+            max="4"
             step="0.05"
             value={settings.compactingFactor}
             aria-label="Compactness"

@@ -55,6 +55,8 @@ export const DEFAULT_HIERARCHY_DEFINITION: Hierarchy = {
 export type KplexViewSurface = "leaf" | "sidepanel" | "popout";
 export type KplexDeviceClass = "desktop" | "tablet" | "mobile";
 export type MouseInteractionMode = "smart" | "legacy" | "middle-only";
+export type SidecarPosition = "right" | "left" | "above" | "below";
+export type SidecarMarkdownMode = "preview" | "source";
 export type KplexLayoutProfile = {
   compactingFactor: number;
   parentColumns: number;
@@ -157,6 +159,11 @@ export interface ExcaliBrainSettings {
   pinnedNodes: string[];
   layoutProfiles: Record<string, KplexLayoutProfile>;
   mouseInteractionMode: MouseInteractionMode;
+  toolbarExpanded: boolean;
+  sidecarOpen: boolean;
+  sidecarPosition: SidecarPosition;
+  sidecarMarkdownMode: SidecarMarkdownMode;
+  sidecarCondensedBreakpoint: number;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -241,7 +248,12 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   lastActivePath: "",
   pinnedNodes: [],
   layoutProfiles: DEFAULT_LAYOUT_PROFILES,
-  mouseInteractionMode: "smart"
+  mouseInteractionMode: "smart",
+  toolbarExpanded: false,
+  sidecarOpen: false,
+  sidecarPosition: "right",
+  sidecarMarkdownMode: "preview",
+  sidecarCondensedBreakpoint: 560
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -301,7 +313,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     return Number.isFinite(parsed) ? parsed : fallback;
   };
   const sanitizeProfile = (candidate: Partial<KplexLayoutProfile> | undefined, fallback: KplexLayoutProfile): KplexLayoutProfile => ({
-    compactingFactor: Math.max(0.75, Math.min(3, finite(candidate?.compactingFactor, fallback.compactingFactor))),
+    compactingFactor: Math.max(0.75, Math.min(4, finite(candidate?.compactingFactor, fallback.compactingFactor))),
     parentColumns: Math.max(1, Math.min(3, Math.round(finite(candidate?.parentColumns, fallback.parentColumns)))),
     childColumns: Math.max(1, Math.min(7, Math.round(finite(candidate?.childColumns, fallback.childColumns)))),
   });
@@ -358,6 +370,11 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     pinnedNodes: Array.isArray(old.pinnedNodes) ? old.pinnedNodes.filter((value): value is string => typeof value === "string") : [],
     layoutProfiles: migratedProfiles,
     mouseInteractionMode: old.mouseInteractionMode === "legacy" || old.mouseInteractionMode === "middle-only" ? old.mouseInteractionMode : "smart",
+    toolbarExpanded: Boolean(old.toolbarExpanded),
+    sidecarOpen: Boolean(old.sidecarOpen),
+    sidecarPosition: old.sidecarPosition === "left" || old.sidecarPosition === "above" || old.sidecarPosition === "below" ? old.sidecarPosition : "right",
+    sidecarMarkdownMode: old.sidecarMarkdownMode === "source" ? "source" : "preview",
+    sidecarCondensedBreakpoint: Math.max(360, Math.min(900, finite(old.sidecarCondensedBreakpoint, 560))),
   };
 }
 
@@ -661,6 +678,10 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
               { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
+              { name: "Sidecar position", desc: "A sidecar is a real adjacent Obsidian workspace leaf managed by K-Plex and synchronized to the central node. It is not available when K-Plex itself is in a sidepanel.", control: { type: "dropdown", key: "sidecarPosition", defaultValue: "right", options: { right: "Right", left: "Left", above: "Above", below: "Below" } } },
+              { name: "Sidecar Markdown mode", desc: "Default mode for ordinary Markdown files opened in the managed sidecar. Plugin-specific views such as Excalidraw keep their own native view type.", control: { type: "dropdown", key: "sidecarMarkdownMode", defaultValue: "preview", options: { preview: "Reading / preview", source: "Editing / source" } } },
+              { name: "Condensed Plex breakpoint", desc: "When a companion sidecar makes the K-Plex leaf narrower than this width, use the active device's sidepanel density/column profile.", control: { type: "slider", key: "sidecarCondensedBreakpoint", min: 360, max: 900, step: 20 } },
+              { name: "Expanded toolbar", desc: "Show the full visibility/layout toolbar. When disabled, K-Plex keeps only the most important navigation controls visible.", control: { type: "toggle", key: "toolbarExpanded" } },
               {
                 name: "Mouse navigation",
                 desc: "Smart reserves right-click for context menus: left-drag empty canvas or middle-drag anywhere to pan. Legacy allows any mouse button to pan. Wheel zoom never requires a modifier.",

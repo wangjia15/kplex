@@ -158,7 +158,7 @@ Current target defaults:
 - friend/challenger max height: **350 px**
 - child max height: **400 px**
 - sibling max height: **250 px**
-- density: **2**
+- density: **2**, configurable up to **4**
 - max nodes per zone: **100**, configurable up to **300**
 
 Parent columns must not exceed 2. Children may be configured up to 7 columns.
@@ -197,6 +197,23 @@ Density/compactness affects:
 - overall layout density
 
 Density must **not** change node interior padding. Use the tight padding from the compact design at every density.
+
+
+### Mobile / view-surface rules
+
+- Use only the public `Platform.isMobile` flag. Distinguish phone vs tablet using the shortest CSS-pixel screen dimension; do not rely on undocumented `Platform.isPhone` / `Platform.isTablet` members.
+- Phone: the generic K-Plex open action routes to the right sidepanel; command palette should expose only **Open in side panel** among K-Plex surface-opening commands.
+- Tablet: **Open graph** opens a normal K-Plex tab and **Open in side panel** remains available; pop-out is desktop-only.
+- Touch activation must not depend on a synthesized browser click. A stationary one-finger pointer-up activates the node explicitly; movement owns pan/pinch; long-press owns context menus.
+- K-Plex canvas touch gestures stop propagation/default handling so Obsidian Mobile edge/top swipe gestures do not steal pans. Scrollable internal zones remain native scroll surfaces.
+
+### Companion sidecar
+
+The sidecar is a K-Plex-managed **native adjacent Obsidian WorkspaceLeaf**, never a fake nested leaf inside React. Obsidian owns its split/divider and plugin-specific view rendering. It follows the current center, can live right/left/above/below, can open independent copies, and switches the Plex to the sidepanel layout profile when the remaining width crosses the condensed breakpoint. Sidecar is unavailable when K-Plex itself is hosted in a sidepanel.
+
+### Runtime section outline
+
+Central-note heading expansion remains outside the persistent graph index. Nested headings form a transient foldable outline tree. Section nodes are square, structural outline edges use a distinct dashed connector near the corner region, and semantic relationships still use normal K-Plex gates. Folding hides descendants and projects their relationships to the nearest visible folded ancestor while preserving the original hidden section as explainability provenance.
 
 ## Expanded view contract
 
