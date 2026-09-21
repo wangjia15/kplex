@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import type { TFile } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
+import type { KplexViewSurface } from "../settings";
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { EMPTY_PLEX_FILTER, PlexFilter, type PlexFilterState } from "./PlexFilter";
 
 type BooleanToolbarSetting =
   | "showAttachments"
@@ -33,8 +35,9 @@ function ToolButton({ icon, title, on, disabled, onClick }: {
   ><ObsidianIcon name={icon} size={17} /></button>;
 }
 
-export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
+export function ExcaliBrainApp({ plugin, surface }: { plugin: ExcaliBrainPlugin; surface: KplexViewSurface }) {
   const [renderRevision, forceRender] = useState(0);
+  const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
   const [activePath, setActivePath] = useState(() => {
     const active = plugin.app.workspace.getActiveFile();
     const history = plugin.settings.navigationHistory;
@@ -137,25 +140,17 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
   const linked = plugin.isDocumentLeafLinked();
   const linkedLabel = plugin.getLinkedDocumentLeafLabel();
   const syncOn = plugin.settings.autoOpenCentralDocument && plugin.settings.followActiveFile;
-  const isPinned = plugin.settings.pinnedNodes.includes(page.path);
+  const isPinned = plugin.isPinned(page.path);
   const pinnedPages = plugin.settings.pinnedNodes
     .map((path) => plugin.index.get(path))
     .filter((item): item is GraphPage => Boolean(item));
 
-  const togglePinned = async () => {
-    if (isPinned) plugin.settings.pinnedNodes = plugin.settings.pinnedNodes.filter((path) => path !== page.path);
-    else plugin.settings.pinnedNodes = [...plugin.settings.pinnedNodes.filter((path) => path !== page.path), page.path];
-    await plugin.saveSettings(false, false);
-    forceRender((value) => value + 1);
-  };
+  const togglePinned = async () => { await plugin.togglePinned(page.path); forceRender((value) => value + 1); };
 
-  const unpin = async (path: string) => {
-    plugin.settings.pinnedNodes = plugin.settings.pinnedNodes.filter((item) => item !== path);
-    await plugin.saveSettings(false, false);
-    forceRender((value) => value + 1);
-  };
+  const unpin = async (path: string) => { if (plugin.isPinned(path)) await plugin.togglePinned(path); forceRender((value) => value + 1); };
 
-  return <div className="excalibrain-app">
+  const viewSettings = plugin.getViewSettings(surface);
+  return <div className={`excalibrain-app kplex-surface-${surface}`}>
     <div className="excalibrain-main-column">
       <div className="excalibrain-top-stack">
         <header className="excalibrain-topbar">
@@ -163,6 +158,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
           <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
           <SearchBox index={plugin.index} onActivate={activate} />
+          <PlexFilter index={plugin.index} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} />
           <div className="excalibrain-top-actions">
             <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
             <ToolButton
@@ -232,7 +228,7 @@ export function ExcaliBrainApp({ plugin }: { plugin: ExcaliBrainPlugin }) {
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={plugin.settings} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={surface} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

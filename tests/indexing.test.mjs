@@ -44,6 +44,7 @@ for (const file of [
   "src/index/GraphState.ts",
   "src/index/GraphBuilder.ts",
   "src/index/GraphIndex.ts",
+  "src/index/SectionExpansion.ts",
 ]) compile(file);
 
 const obsidianModuleDir = join(temp, "node_modules/obsidian");
@@ -113,6 +114,7 @@ const { TFile, TFolder } = obsidianTestApi;
 // Install the test double on the fake window instead of pretending Moment is a production import.
 globalThis.window.moment = obsidianTestApi.moment;
 const { GraphIndex } = require(join(temp, "src/index/GraphIndex.js"));
+const { buildCentralSectionExpansion, canExpandCentralSections } = require(join(temp, "src/index/SectionExpansion.js"));
 const { parseBodyMetadata, parseBodyMetadataCore } = require(join(temp, "src/index/fieldParser.js"));
 const { RelationType } = require(join(temp, "src/types.js"));
 
@@ -195,12 +197,33 @@ for (const [path, file] of files) {
   folder.children.push(file);
 }
 
+function positionAt(content, offset) {
+  const before = content.slice(0, offset);
+  const lines = before.split(/\r?\n/);
+  return { line: lines.length - 1, col: lines[lines.length - 1].length, offset };
+}
+
+function cacheLinks(content) {
+  const links = [];
+  const push = (link, start, end, original) => links.push({
+    link, original, displayText: original,
+    position: { start: positionAt(content, start), end: positionAt(content, end) },
+  });
+  for (const match of content.matchAll(/\[\[([^\]#|]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g)) {
+    push(match[1], match.index, match.index + match[0].length, match[0]);
+  }
+  for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    if (!/^https?:\/\//i.test(match[1])) push(match[1], match.index, match.index + match[0].length, match[0]);
+  }
+  return links;
+}
+
 const caches = new Map();
 for (const [path, content] of contents) {
   const { frontmatter, body } = parseFrontmatter(content);
   const bodyWithoutCode = maskInlineCode(body);
   const bodyTags = [...bodyWithoutCode.matchAll(/(^|[^\w])#([A-Za-z0-9_/-]+)/g)].map((m) => ({ tag: `#${m[2]}` }));
-  caches.set(path, { frontmatter, tags: bodyTags });
+  caches.set(path, { frontmatter, tags: bodyTags, links: cacheLinks(content) });
 }
 
 function resolveCandidate(raw) {
@@ -515,9 +538,76 @@ try {
   assert.equal(index.get("tag:taxonomy/body/leaf")?.name, "leaf");
   expectRole("tag:taxonomy/body/leaf", "child", "Note A.md", RelationType.DEFINED);
   settings.showFullTagName = true;
+  await index.rebuild();
+
+  // Assertions 34–42: central-note section expansion remains runtime-only.
+  assert.equal(canExpandCentralSections(index.get("Note B.md"), "Note A.md"), false, "Non-central Markdown note must not be expandable");
+  assert.equal(canExpandCentralSections(index.get("https://source.com/inferred"), "https://source.com/inferred"), false, "Non-Markdown nodes must not be expandable");
+  assert.equal(canExpandCentralSections(index.get("Note A.md"), "Note A.md"), true);
+
+  const expandedA = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+  assert(expandedA, "Expected Note A section expansion");
+  assert.equal(expandedA.sections.length, 3, "Note A fixture must create exactly three transient sections");
+  assert.deepEqual(expandedA.sections.map((section) => section.page.name), [
+    "Friend and challenger cases",
+    "Inference and conflict cases",
+    "External URL cases",
+  ]);
+  for (const section of expandedA.sections) {
+    assert.equal(index.get(section.page.path), undefined, `Transient section leaked into persistent index: ${section.page.path}`);
+    assert.equal(section.page.transient?.kind, "section");
+  }
+
+  function expandedHas(neighborhood, role, actualPath, type) {
+    const list = role === "parent" ? neighborhood.parents
+      : role === "child" ? neighborhood.children
+      : role === "left" ? neighborhood.leftFriends
+      : neighborhood.rightFriends;
+    const found = list.find((item) => (item.page.transient?.actualPath ?? item.page.path) === actualPath);
+    assert(found, `Expanded view missing ${role} ${actualPath}`);
+    assert.equal(found.relationType, type, `Expanded ${role} ${actualPath} type`);
+    return found;
+  }
+  function expandedLacks(neighborhood, actualPath) {
+    const all = [...neighborhood.parents, ...neighborhood.children, ...neighborhood.leftFriends, ...neighborhood.rightFriends];
+    assert(!all.some((item) => (item.page.transient?.actualPath ?? item.page.path) === actualPath), `Expanded center unexpectedly retains ${actualPath}`);
+  }
+
+  expandedHas(expandedA.centerNeighborhood, "parent", "Note B.md", RelationType.DEFINED);
+  expandedHas(expandedA.centerNeighborhood, "parent", "https://source.com/ontology-full-line", RelationType.DEFINED);
+  expandedHas(expandedA.centerNeighborhood, "child", "Note C.md", RelationType.DEFINED);
+  expandedHas(expandedA.centerNeighborhood, "left", "Note H.md", RelationType.INFERRED);
+  expandedHas(expandedA.centerNeighborhood, "parent", "folder:/", RelationType.DEFINED);
+  expandedHas(expandedA.centerNeighborhood, "parent", "tag:body-tag", RelationType.DEFINED);
+  for (const moved of ["Note D.md", "Note X.md", "Note Y.md", "Note E.md", "Note F.md", "Note G.md", "https://source.com/ontology-inline", "https://source.com/inferred", "https://youtu.be/excalibrain-fixture-video"]) expandedLacks(expandedA.centerNeighborhood, moved);
+
+  const friends = expandedA.sections.find((section) => section.page.name === "Friend and challenger cases");
+  const conflict = expandedA.sections.find((section) => section.page.name === "Inference and conflict cases");
+  const urls = expandedA.sections.find((section) => section.page.name === "External URL cases");
+  assert(friends && conflict && urls);
+  expandedHas(friends.neighborhood, "left", "Note D.md", RelationType.DEFINED);
+  expandedHas(friends.neighborhood, "left", "Note X.md", RelationType.DEFINED);
+  expandedHas(friends.neighborhood, "child", "Note Y.md", RelationType.INFERRED);
+  expandedHas(friends.neighborhood, "right", "Note E.md", RelationType.DEFINED);
+  expandedHas(conflict.neighborhood, "child", "Note F.md", RelationType.INFERRED);
+  expandedHas(conflict.neighborhood, "left", "Note G.md", RelationType.DEFINED);
+  expandedHas(urls.neighborhood, "parent", "https://source.com/ontology-inline", RelationType.DEFINED);
+  expandedHas(urls.neighborhood, "child", "https://source.com/inferred", RelationType.INFERRED);
+  expandedHas(urls.neighborhood, "child", "https://youtu.be/excalibrain-fixture-video", RelationType.INFERRED);
+
+  // Section-target explanations use transient pair identity but retain original body provenance.
+  const dTarget = friends.neighborhood.leftFriends.find((item) => item.page.transient?.actualPath === "Note D.md");
+  assert(dTarget);
+  const sectionExplanation = expandedA.explanations.get(`${friends.page.path}\u0000${dTarget.page.path}`);
+  assert(sectionExplanation?.decisions.some((decision) => decision.active && decision.evidence.sourceKind === "inline-ontology" && decision.evidence.fieldName === "Friend"));
+
+  // Collapsing is a pure view-state operation: the persistent whole-note graph was never changed.
+  expectRole("Note A.md", "left", "Note D.md", RelationType.DEFINED);
+  expectRole("Note A.md", "child", "Note F.md", RelationType.INFERRED);
+  assert.equal(index.get(friends.page.path), undefined);
 
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
-  console.log("Central section expansion fixture: assertions 34–42 PENDING by design");
+  console.log("Central section expansion fixture: assertions 34–42 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

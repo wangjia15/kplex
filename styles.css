@@ -1174,3 +1174,195 @@
   background: var(--background-secondary);
   color: var(--text-muted);
 }
+
+/* --------------------------------------------------------------------------
+ * K-Plex mobile, sidepanel, filtering and transition refinements
+ * -------------------------------------------------------------------------- */
+.excalibrain-plex {
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The graph itself owns one- and two-finger gestures. Scrollable relationship
+   lists opt back in to vertical touch scrolling below. */
+.excalibrain-plex,
+.excalibrain-camera,
+.excalibrain-nodes {
+  touch-action: none;
+}
+.kplex-zone-scroll,
+.kplex-expanded-scroll,
+.kplex-relation-results {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Global visible-Plex filter. It intentionally lives in the toolbar rather
+   than consuming graph space until opened. */
+.kplex-filter {
+  position: relative;
+  flex: 0 0 auto;
+}
+.kplex-filter > summary {
+  list-style: none;
+}
+.kplex-filter > summary::-webkit-details-marker { display: none; }
+.kplex-filter.is-active > summary {
+  color: #dcecff;
+  border-color: rgba(116,182,255,.48);
+  background: rgba(67,132,205,.18);
+}
+.kplex-filter-panel {
+  position: absolute;
+  z-index: 90;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: minmax(155px, 1fr);
+  gap: 8px;
+  width: min(290px, calc(100vw - 28px));
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary-alt, var(--background-primary));
+  box-shadow: 0 10px 30px rgba(0,0,0,.42);
+}
+.kplex-filter-panel label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .025em;
+}
+.kplex-filter-panel input,
+.kplex-filter-panel select {
+  width: 100%;
+  min-width: 0;
+  font-size: var(--font-ui-small);
+}
+.kplex-filter-panel button { justify-self: end; }
+
+/* Sidepanel views deliberately trade toolbar chrome for graph space. */
+.kplex-surface-sidepanel .excalibrain-topbar {
+  gap: 4px;
+  padding: 4px 6px;
+  flex-wrap: wrap;
+}
+.kplex-surface-sidepanel .excalibrain-brand {
+  min-width: auto;
+}
+.kplex-surface-sidepanel .excalibrain-brand strong { display: none; }
+.kplex-surface-sidepanel .excalibrain-brand-mark { width: 17px; height: 17px; }
+.kplex-surface-sidepanel .excalibrain-search { min-width: 110px; flex: 1 1 145px; }
+.kplex-surface-sidepanel .excalibrain-top-actions {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  justify-content: flex-start;
+  scrollbar-width: none;
+}
+.kplex-surface-sidepanel .excalibrain-top-actions::-webkit-scrollbar { display: none; }
+.kplex-surface-sidepanel .excalibrain-topbar button { flex: 0 0 auto; }
+.kplex-surface-sidepanel .kplex-pinned-bar { padding-left: 6px; padding-right: 6px; }
+.kplex-surface-sidepanel .excalibrain-history-label { display: none; }
+.kplex-surface-sidepanel .excalibrain-history-bar { padding-left: 5px; padding-right: 5px; }
+.kplex-surface-sidepanel .kplex-layout-controls { transform: scale(.92); transform-origin: bottom left; }
+
+/* Nodes enter softly. During an intentional scene transition shared nodes also
+   glide to their new layout position. Zone scrolling is unaffected because the
+   positional transition only exists for the short scene-transition window. */
+@keyframes kplex-node-arrive {
+  from { opacity: 0; transform: translateY(5px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes kplex-edge-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.excalibrain-thought {
+  animation: kplex-node-arrive 150ms ease-out both;
+}
+.excalibrain-edge,
+.kplex-expanded-edge {
+  animation: kplex-edge-arrive 170ms ease-out both;
+}
+.excalibrain-plex.is-scene-transitioning .excalibrain-thought:not(.is-dragging) {
+  transition: left 220ms cubic-bezier(.2,.8,.2,1), top 220ms cubic-bezier(.2,.8,.2,1), opacity 150ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .excalibrain-thought,
+  .excalibrain-edge,
+  .kplex-expanded-edge { animation: none !important; }
+  .excalibrain-plex.is-scene-transitioning .excalibrain-thought { transition: none !important; }
+}
+
+/* Runtime section thoughts are structural children of the central Markdown
+   document, visually distinct without competing with normal note types. */
+.excalibrain-thought[data-kplex-path^="kplex-section:"] {
+  border-style: dashed;
+  border-color: rgba(159,205,255,.54) !important;
+  background-image: linear-gradient(135deg, rgba(88,151,215,.10), rgba(255,255,255,.025));
+}
+.excalibrain-plex.is-section-expanded .excalibrain-thought.is-selected {
+  box-shadow: 0 0 0 2px rgba(255,255,255,.48), 0 0 28px rgba(112,184,255,.22), 0 8px 24px rgba(0,0,0,.42);
+}
+
+/* Relation/new-note modal additions. */
+.kplex-relation-new-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.kplex-relation-new-note .kplex-lucide { width: 14px; height: 14px; }
+
+/* On narrow touch devices prioritize graph navigation and large hit targets.
+   Platform-specific layout density itself is stored in settings profiles. */
+@media (max-width: 700px) {
+  .excalibrain-view-host .excalibrain-topbar {
+    gap: 4px;
+    padding: 4px 5px;
+  }
+  .excalibrain-view-host .excalibrain-brand strong { display: none; }
+  .excalibrain-view-host .excalibrain-topbar button,
+  .excalibrain-view-host .excalibrain-icon-button {
+    min-width: 30px;
+    min-height: 30px;
+  }
+  .excalibrain-view-host .excalibrain-search { flex: 1 1 130px; min-width: 100px; }
+  .excalibrain-view-host .excalibrain-top-actions {
+    flex: 1 1 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .excalibrain-view-host .excalibrain-top-actions::-webkit-scrollbar { display: none; }
+  .excalibrain-view-host .kplex-filter-panel {
+    position: fixed;
+    top: max(52px, env(safe-area-inset-top));
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+  .excalibrain-view-host .excalibrain-history-bar { min-height: 26px; }
+  .excalibrain-view-host .kplex-density-heading span:not(output) { display: none; }
+  .excalibrain-view-host .kplex-layout-controls { max-width: calc(100% - 70px); }
+}
+
+/* A navigation render gets the transition class on the first frame, before the
+   activePath effect runs, so shared keyed thoughts can glide from their old
+   coordinates rather than jumping and only then becoming animated. */
+@keyframes kplex-scene-arrive {
+  0% { opacity: .58; }
+  100% { opacity: 1; }
+}
+.excalibrain-plex.is-scene-transitioning .excalibrain-camera {
+  animation: kplex-scene-arrive 240ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .excalibrain-plex.is-scene-transitioning .excalibrain-camera { animation: none !important; }
+}

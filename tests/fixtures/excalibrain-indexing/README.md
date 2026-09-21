@@ -19,7 +19,7 @@ It covers:
 - resolved and unresolved/placeholder daily-note dates;
 - Previous / Next;
 - Hidden relationships;
-- a future **central-note section expansion** mode that reparses only the central Markdown note at runtime.
+- a **central-note section expansion** mode that reparses only the central Markdown note at runtime.
 
 The baseline/global index remains **note-level**. The section-expansion cases do **not** require section-by-section vault indexing.
 
@@ -994,7 +994,7 @@ P2. X → Y explainability retains the overridden body Child evidence, the activ
 
 ## Expanded-central-note assertions
 
-These are feature-enhancement tests and are intentionally **pending in the current automated baseline**. The current indexing/explainability suite covers assertions 1–33 plus P1–P2; assertions 34–42 reserve the contract for the later central-section expansion feature.
+These section-expansion assertions are part of the automated K-Plex feature baseline. The persistent/global index remains note-level; assertions 34–42 exercise only the runtime central-note expansion layer. The indexing/explainability suite now covers assertions 1–42 plus P1–P2.
 
 34. expanding a non-Markdown or non-central node is unavailable/no-op.
 35. expanding Note A creates exactly three transient section nodes for this fixture.

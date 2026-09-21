@@ -25,6 +25,7 @@ export function ThoughtNode({
   onHoverPreview,
   onGatePointerDown,
   onNodePointerDown,
+  onContextMenu,
 }: {
   node: PositionedNode;
   settings: ExcaliBrainSettings;
@@ -42,6 +43,7 @@ export function ThoughtNode({
   onHoverPreview: (node: PositionedNode, target: HTMLElement, event: PointerEvent) => void;
   onGatePointerDown: (node: PositionedNode, gate: GateSide, event: ReactPointerEvent<HTMLSpanElement>) => void;
   onNodePointerDown: (node: PositionedNode, event: ReactPointerEvent<HTMLDivElement>) => void;
+  onContextMenu?: (node: PositionedNode, event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const style = node.style;
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
@@ -100,6 +102,7 @@ export function ThoughtNode({
     onPointerLeave={() => { onHoverEnd(); }}
     onClick={click}
     onDoubleClick={(e: MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onOpen(node); }}
+    onContextMenu={(e: MouseEvent<HTMLDivElement>) => { if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e); } }}
     aria-label={`${node.label} — ${node.page.path}`}
   >
     <span className="excalibrain-thought-label">

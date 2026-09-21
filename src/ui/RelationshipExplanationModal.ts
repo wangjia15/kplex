@@ -45,7 +45,7 @@ export class RelationshipExplanationModal extends Modal {
   constructor(
     private plugin: ExcaliBrainPlugin,
     private explanation: RelationshipExplanation,
-    private displayContext?: { role: Role; centerPath?: string },
+    private displayContext?: { role: Role; centerPath?: string; sourceTitle?: string; targetTitle?: string },
   ) {
     super(plugin.app);
   }
@@ -53,8 +53,10 @@ export class RelationshipExplanationModal extends Modal {
   onOpen(): void {
     const source = this.plugin.index.get(this.explanation.sourcePath);
     const target = this.plugin.index.get(this.explanation.targetPath);
-    const sourceTitle = source ? this.plugin.index.titleFor(source) : this.explanation.sourcePath;
-    const targetTitle = target ? this.plugin.index.titleFor(target) : this.explanation.targetPath;
+    const sourceTitle = this.displayContext?.sourceTitle
+      ?? (source ? this.plugin.index.titleFor(source) : this.explanation.sourcePath);
+    const targetTitle = this.displayContext?.targetTitle
+      ?? (target ? this.plugin.index.titleFor(target) : this.explanation.targetPath);
 
     this.titleEl.setText("Why is this relationship here?");
     this.modalEl.addClass("kplex-explanation-modal");

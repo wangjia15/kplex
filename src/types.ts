@@ -107,6 +107,18 @@ export type GraphPage = {
   primaryStyleTag: string | null;
   styleTags: string[];
   maxLabelLength: number;
+  /** Runtime-only visual identity used by central-section expansion. Never persisted in GraphIndex. */
+  transient?: {
+    kind: "section" | "section-target";
+    sourcePath: string;
+    actualPath?: string;
+    sectionId: string;
+    heading?: string;
+    subpath?: string;
+    line?: number;
+    start?: number;
+    end?: number;
+  };
 };
 
 export type Neighbour = {

@@ -1,11 +1,14 @@
-import { FileView, Notice, Plugin, TFile, normalizePath, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { GraphIndex } from "./index/GraphIndex";
-import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type ExcaliBrainSettings } from "./settings";
-import { EXCALIBRAIN_VIEW_TYPE, ExcaliBrainView } from "./ui/ExcaliBrainView";
+import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface } from "./settings";
+import { EXCALIBRAIN_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, ExcaliBrainView, KplexSidepanelView } from "./ui/ExcaliBrainView";
 import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
 import { LinkDirection, type GateRole, type GraphPage } from "./types";
 import { OntologySuggester } from "./editor/OntologySuggester";
-import { extractLinksFromValue, normalizeFieldName } from "./index/fieldParser";
+import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./index/fieldParser";
+import { AddToOntologyModal, type OntologyAssignmentRole } from "./ui/AddToOntologyModal";
+import { NoteTypeModal } from "./ui/NoteTypeModal";
+import { activeLayoutProfile, currentDeviceClass, effectiveViewSettings, layoutProfileKey } from "./ui/viewProfile";
 
 export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
@@ -16,6 +19,11 @@ export default class ExcaliBrainPlugin extends Plugin {
   private lastDocumentLeaf: WorkspaceLeaf | null = null;
   private readonly hoverParent: HoverParent = { hoverPopover: null };
   private reactiveIndexListenersRegistered = false;
+  private openKplexViews = 0;
+  private layoutReady = false;
+  private metadataStabilized = false;
+  private metadataStabilityPromise: Promise<number> | null = null;
+  private readonly indexBacklogReasons = new Set<string>();
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -50,7 +58,9 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.index = new GraphIndex(this);
 
     this.registerView(EXCALIBRAIN_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ExcaliBrainView(leaf, this));
+    this.registerView(KPLEX_SIDEPANEL_VIEW_TYPE, (leaf: WorkspaceLeaf) => new KplexSidepanelView(leaf, this));
     this.registerHoverLinkSource(EXCALIBRAIN_VIEW_TYPE, { display: "K-Plex", defaultMod: false });
+    this.registerHoverLinkSource(KPLEX_SIDEPANEL_VIEW_TYPE, { display: "K-Plex", defaultMod: false });
     this.addSettingTab(new ExcaliBrainSettingTab(this.app, this));
     this.registerEditorSuggest(new OntologySuggester(this));
     this.addRibbonIcon("brain-circuit", "Open K-Plex", () => void this.activateView());
@@ -60,6 +70,8 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.addCommand({ id: "excalibrain-rebuild-index", name: "Rebuild index", callback: () => void this.rebuildIndex(true) });
     this.addCommand({ id: "kplex-open-settings", name: "Open settings", callback: () => this.openSettings() });
     this.addCommand({ id: "kplex-open-popout", name: "Open in pop-out window", callback: () => void this.activateViewInPopout() });
+    this.addCommand({ id: "kplex-open-sidepanel", name: "Open in side panel", callback: () => void this.activateSidepanel() });
+    this.registerOntologyCommands();
     this.addCommand({
       id: "excalibrain-focus-active-note",
       name: "Focus active note",
@@ -85,9 +97,6 @@ export default class ExcaliBrainPlugin extends Plugin {
       void (async () => {
         this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
 
-        // Delay the one-time migration until layout-ready. Community plugins have normally all
-        // completed onload by then, so an enabled legacy ExcaliBrain instance is reliably visible
-        // even when it happened to load after K-Plex. Existing K-Plex data always wins.
         if (!alreadyKplex) {
           const legacySettings = this.runningExcaliBrainSettings();
           if (legacySettings) {
@@ -98,20 +107,12 @@ export default class ExcaliBrainPlugin extends Plugin {
           await this.saveData(this.settings);
         }
 
-        // Obsidian emits `vault:create` once for every file while opening a vault. The official
-        // plugin performance guidance explicitly recommends waiting until layout-ready before
-        // reacting to those events. In large vaults, the metadata cache can still be resolving
-        // links for a short period after layout-ready, so also wait for it to become stable before
-        // doing K-Plex's one expensive initial build. This prevents building the same 100k-node
-        // graph two or three times during startup.
-        const stableResolvedSources = await this.waitForMetadataCacheStability();
-        await this.rebuildIndex(false, true, "layout-ready-stable");
-        const resolvedSourcesAfterBuild = Object.keys(this.app.metadataCache.resolvedLinks).length;
-        if (resolvedSourcesAfterBuild !== stableResolvedSources) {
-          this.indexDirty = true;
-          await this.rebuildIndex(false, false, "layout-ready-metadata-catchup");
-        }
+        this.layoutReady = true;
         this.registerReactiveIndexListeners();
+        this.registerOntologyContextMenu();
+        // Opening/restoring a K-Plex view is the demand signal for expensive indexing. Vault
+        // events while no view is open simply accumulate in indexBacklogReasons.
+        if (this.openKplexViews > 0) await this.ensureIndexReady("layout-ready-view-open");
       })();
     });
   }
@@ -167,35 +168,77 @@ export default class ExcaliBrainPlugin extends Plugin {
     return lastCount;
   }
 
-  private scheduleRebuild(_reason = "unknown"): void {
+  private scheduleRebuild(reason = "unknown"): void {
     this.indexDirty = true;
+    this.indexBacklogReasons.add(reason);
+    if (this.openKplexViews <= 0) return;
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     this.rebuildTimer = window.setTimeout(() => {
       this.rebuildTimer = null;
-      void this.rebuildIndex(false, false);
+      void this.rebuildIndex(false, false, reason);
     }, 900);
   }
 
-  async rebuildIndex(showNotice = false, force = false, _reason = "direct"): Promise<void> {
+  async onKplexViewOpened(): Promise<void> {
+    this.openKplexViews += 1;
+    if (!this.layoutReady) return;
+    await this.ensureIndexReady("view-open");
+  }
+
+  onKplexViewClosed(): void {
+    this.openKplexViews = Math.max(0, this.openKplexViews - 1);
+    if (this.openKplexViews > 0) return;
+    if (this.rebuildTimer !== null) {
+      window.clearTimeout(this.rebuildTimer);
+      this.rebuildTimer = null;
+    }
+    this.index.cancelRebuild();
+  }
+
+  async ensureIndexReady(reason = "view-open"): Promise<void> {
+    if (!this.layoutReady) return;
+    if (!this.metadataStabilized) {
+      this.metadataStabilityPromise ??= this.waitForMetadataCacheStability();
+      await this.metadataStabilityPromise;
+      this.metadataStabilized = true;
+      this.indexDirty = true;
+    }
+    await this.rebuildIndex(false, this.index.size === 0, reason);
+  }
+
+  async rebuildIndex(showNotice = false, force = false, reason = "direct"): Promise<void> {
+    const explicitlyRequested = showNotice;
+    if (this.openKplexViews <= 0 && !explicitlyRequested) {
+      this.indexDirty = true;
+      this.indexBacklogReasons.add(reason);
+      return;
+    }
     const shouldSkip = !force && !showNotice && !this.indexDirty && this.index.size > 0;
     if (shouldSkip) return;
-    this.indexDirty = false;
     if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
-    await this.index.rebuild();
+    const published = await this.index.rebuild();
+    if (!published) {
+      this.indexDirty = true;
+      this.indexBacklogReasons.add(reason);
+      return;
+    }
+    this.indexDirty = false;
+    this.indexBacklogReasons.clear();
+    await this.refreshBookmarkedEntryPoints();
     if (showNotice) new Notice(`K-Plex indexed ${this.index.size} nodes.`, 1800);
   }
 
   async saveSettings(reindex = false, notifyIndex = true): Promise<void> {
     this.settings.primaryTagFieldLowerCase = this.settings.primaryTagField.toLowerCase().replaceAll(" ", "-");
     await this.saveData(this.settings);
-    if (reindex) await this.index.rebuild();
+    if (reindex) this.scheduleRebuild("settings");
     else if (notifyIndex) this.index.notify();
   }
 
   private isDocumentLeafCandidate(leaf: WorkspaceLeaf | null): leaf is WorkspaceLeaf {
     if (!leaf) return false;
     const viewState = leaf.getViewState();
-    if (viewState.type === EXCALIBRAIN_VIEW_TYPE) return false;
+    if (viewState.type === EXCALIBRAIN_VIEW_TYPE || viewState.type === KPLEX_SIDEPANEL_VIEW_TYPE) return false;
     if (viewState.type === "empty" || leaf.view instanceof FileView) return true;
 
     // Background tabs can be DeferredView instances. Inspect serialized view state instead
@@ -298,17 +341,16 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async activateView(): Promise<void> {
+    if (Platform.isMobile) {
+      await this.activateSidepanel();
+      return;
+    }
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
     let leaf = this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)[0];
     if (!leaf) {
       if (this.settings.startInPopout) {
-        try {
-          // Public Workspace API: "window" creates a pop-out leaf on desktop.
-          leaf = this.app.workspace.getLeaf("window");
-        } catch {
-          // Graceful fallback for platforms where pop-out windows are unavailable.
-          leaf = this.app.workspace.getLeaf(true);
-        }
+        try { leaf = this.app.workspace.getLeaf("window"); }
+        catch { leaf = this.app.workspace.getLeaf(true); }
       } else {
         leaf = this.app.workspace.getLeaf(true);
       }
@@ -317,6 +359,15 @@ export default class ExcaliBrainPlugin extends Plugin {
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  async activateSidepanel(): Promise<void> {
+    this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
+    let leaf = this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(true);
+      await leaf.setViewState({ type: KPLEX_SIDEPANEL_VIEW_TYPE, active: true });
+    }
+    await this.app.workspace.revealLeaf(leaf);
+  }
 
   async activateViewInPopout(): Promise<void> {
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
@@ -330,13 +381,13 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async focusInBrain(path: string): Promise<void> {
-    if (!this.index.get(path)) await this.index.rebuild();
+    await this.activateView();
+    await this.ensureIndexReady("focus-active-note");
     if (!this.index.get(path)) return;
     const history = [...this.settings.navigationHistory.filter((p) => p !== path), path].slice(-40);
     this.settings.navigationHistory = history;
     this.settings.lastActivePath = path;
     await this.saveSettings(false, false);
-    await this.activateView();
   }
 
   async openInDocumentLeaf(file: TFile): Promise<void> {
@@ -344,6 +395,19 @@ export default class ExcaliBrainPlugin extends Plugin {
     const leaf = this.linkedDocumentLeaf ?? this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf("split");
     this.lastDocumentLeaf = leaf;
     await leaf.openFile(file, { active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openSection(page: GraphPage): Promise<void> {
+    const sourcePath = page.transient?.sourcePath;
+    const subpath = page.transient?.subpath;
+    if (!sourcePath || !subpath) return;
+    const file = this.app.vault.getAbstractFileByPath(sourcePath);
+    if (!(file instanceof TFile)) return;
+    this.validateLinkedDocumentLeaf();
+    const leaf = this.linkedDocumentLeaf ?? this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf("split");
+    this.lastDocumentLeaf = leaf;
+    await leaf.openFile(file, { active: true, eState: { subpath } });
     await this.app.workspace.revealLeaf(leaf);
   }
 
@@ -361,6 +425,172 @@ export default class ExcaliBrainPlugin extends Plugin {
       return;
     }
     await this.createGhostNote(page.path);
+  }
+
+  getViewSettings(surface: KplexViewSurface): ExcaliBrainSettings {
+    return effectiveViewSettings(this.settings, surface);
+  }
+
+  getActiveLayoutProfile(surface: KplexViewSurface): KplexLayoutProfile {
+    return activeLayoutProfile(this.settings, surface);
+  }
+
+  async updateLayoutProfile(surface: KplexViewSurface, patch: Partial<KplexLayoutProfile>): Promise<void> {
+    const key = layoutProfileKey(surface, currentDeviceClass());
+    const current = this.getActiveLayoutProfile(surface);
+    this.settings.layoutProfiles[key] = { ...current, ...patch };
+    await this.saveSettings(false, false);
+    this.index.notify();
+  }
+
+  isPinned(path: string): boolean { return this.settings.pinnedNodes.includes(path); }
+
+  async togglePinned(path: string): Promise<void> {
+    this.settings.pinnedNodes = this.isPinned(path)
+      ? this.settings.pinnedNodes.filter((item) => item !== path)
+      : [...this.settings.pinnedNodes.filter((item) => item !== path), path];
+    await this.saveSettings(false, false);
+    this.index.notify();
+  }
+
+  openNoteTypeModal(page: GraphPage): void {
+    if (!page.file || page.file.extension !== "md") return;
+    new NoteTypeModal(this, page.file, page.noteType).open();
+  }
+
+  openAddToOntologyModal(field: string): void {
+    if (!field.trim()) return;
+    new AddToOntologyModal(this, field.trim()).open();
+  }
+
+  async assignFieldToOntology(field: string, role: OntologyAssignmentRole): Promise<void> {
+    const normalized = normalizeFieldName(field);
+    const h = this.settings.hierarchy;
+    const remove = (items: string[]) => items.filter((item) => normalizeFieldName(item) !== normalized);
+    h.hidden = remove(h.hidden);
+    h.parents = remove(h.parents);
+    h.children = remove(h.children);
+    h.leftFriends = remove(h.leftFriends);
+    h.rightFriends = remove(h.rightFriends);
+    h.previous = remove(h.previous);
+    h.next = remove(h.next);
+    h.exclusions = remove(h.exclusions);
+    const target = role === "parent" ? h.parents
+      : role === "child" ? h.children
+      : role === "left" ? h.leftFriends
+      : role === "right" ? h.rightFriends
+      : role === "previous" ? h.previous
+      : role === "next" ? h.next
+      : role === "hidden" ? h.hidden : h.exclusions;
+    target.push(field.trim());
+    target.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    await this.saveSettings(true);
+  }
+
+  private fieldAtEditorCursor(editor: Editor): string | null {
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line);
+    // Match classic ExcaliBrain's supported Dataview wrappers, but prefer the actual field whose
+    // source span contains the cursor when K-Plex's parser can identify it.
+    const parsed = parseBodyMetadata(line);
+    const occurrence = parsed.inlineFieldOccurrences.find((item) => cursor.ch >= item.start && cursor.ch <= item.end)
+      ?? parsed.inlineFieldOccurrences[parsed.inlineFieldOccurrences.length - 1];
+    if (occurrence?.name) return occurrence.name;
+    const re = /(?:^|[([])(?:==|\*\*|~~|\*|_|__)?([^:\]()]*?)(?:==|\*\*|~~|\*|_|__)?::/g;
+    let match: RegExpExecArray | null;
+    let last: RegExpExecArray | null = null;
+    while ((match = re.exec(line)) !== null) last = match;
+    if (last?.[1]?.trim()) return last[1].trim();
+    // YAML property under the cursor is also eligible for ontology management.
+    const yaml = line.match(/^\s*([^:#][^:]{0,120}):(?:\s|$)/);
+    return yaml?.[1]?.trim() ?? null;
+  }
+
+  private registerOntologyContextMenu(): void {
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
+      if (!(view instanceof MarkdownView)) return;
+      const field = this.fieldAtEditorCursor(editor);
+      if (!field) return;
+      menu.addItem((item) => item
+        .setTitle(`Add/change “${field}” in K-Plex ontology`)
+        .setIcon("network")
+        .onClick(() => this.openAddToOntologyModal(field)));
+    }));
+  }
+
+  private registerOntologyCommands(): void {
+    const roles: Array<[string, string, OntologyAssignmentRole | "select"]> = [
+      ["kplex-ontology-select", "Assign field to K-Plex ontology…", "select"],
+      ["kplex-ontology-parent", "Assign field as Parent ontology", "parent"],
+      ["kplex-ontology-child", "Assign field as Child ontology", "child"],
+      ["kplex-ontology-left", "Assign field as Friend / left ontology", "left"],
+      ["kplex-ontology-right", "Assign field as Challenger / right ontology", "right"],
+      ["kplex-ontology-previous", "Assign field as Previous ontology", "previous"],
+      ["kplex-ontology-next", "Assign field as Next ontology", "next"],
+      ["kplex-ontology-hidden", "Assign field as Hidden ontology", "hidden"],
+      ["kplex-ontology-excluded", "Assign field as Excluded / metadata-only ontology", "excluded"],
+    ];
+    for (const [id, name, role] of roles) {
+      this.addCommand({
+        id,
+        name,
+        editorCheckCallback: (checking: boolean, editor: Editor) => {
+          const field = this.fieldAtEditorCursor(editor);
+          if (!field) return false;
+          if (!checking) {
+            if (role === "select") this.openAddToOntologyModal(field);
+            else void this.assignFieldToOntology(field, role);
+          }
+          return true;
+        },
+      });
+    }
+  }
+
+  private async refreshBookmarkedEntryPoints(): Promise<void> {
+    const paths: string[] = [];
+    type BookmarkItem = { type?: string; path?: string; items?: BookmarkItem[] };
+    type InternalPlugin = {
+      enabled?: boolean;
+      _loaded?: boolean;
+      instance?: { items?: BookmarkItem[] };
+      loadData?: () => Promise<{ items?: BookmarkItem[] }>;
+    };
+    type Registry = { getPluginById?: (id: string) => InternalPlugin | undefined; plugins?: Record<string, InternalPlugin> };
+    const registry = (this.app as unknown as { internalPlugins?: Registry }).internalPlugins;
+
+    const collect = (items: BookmarkItem[] | undefined): void => {
+      for (const item of items ?? []) {
+        if (item.type === "file" && item.path && item.path !== this.settings.excalibrainFilepath && this.index.get(item.path)) {
+          paths.push(item.path);
+        } else if (item.type === "folder" && item.path && this.index.get(`folder:${item.path}`)) {
+          paths.push(`folder:${item.path}`);
+        }
+        if (item.type === "group" || item.items) collect(item.items);
+      }
+    };
+
+    try {
+      const bookmarks = registry?.getPluginById?.("bookmarks") ?? registry?.plugins?.bookmarks;
+      if (bookmarks && bookmarks.enabled !== false) {
+        // Obsidian lazily loads the internal Bookmarks plugin. Match classic ExcaliBrain: load
+        // its persisted data before inspecting nested groups rather than assuming instance.items
+        // is already populated.
+        if (!bookmarks._loaded && bookmarks.loadData) await bookmarks.loadData();
+        collect(bookmarks.instance?.items);
+      } else {
+        // Older Obsidian releases used the Starred internal plugin. Its persisted format only
+        // supplied file entry points in classic ExcaliBrain, but `collect` safely accepts groups
+        // and folders too if they are present.
+        const starred = registry?.getPluginById?.("starred") ?? registry?.plugins?.starred;
+        if (starred?.loadData) collect((await starred.loadData())?.items);
+      }
+    } catch (error) {
+      console.warn("K-Plex: unable to load Obsidian bookmarks", error);
+    }
+
+    this.index.setSearchEntryPoints([...new Set(paths)]);
+    this.index.notify();
   }
 
   openSettings(): void {
@@ -411,21 +641,23 @@ export default class ExcaliBrainPlugin extends Plugin {
     return role;
   }
 
-  private ontologyGroupForField(field: string): "parent" | "child" | "left" | "right" | "previous" | "next" | null {
+  ontologyRoleForField(field: string): OntologyAssignmentRole | null {
     const normalized = normalizeFieldName(field);
     const h = this.settings.hierarchy;
     const has = (items: string[]) => items.some((item) => normalizeFieldName(item) === normalized);
+    if (has(h.hidden)) return "hidden";
     if (has(h.parents)) return "parent";
     if (has(h.children)) return "child";
     if (has(h.leftFriends)) return "left";
     if (has(h.rightFriends)) return "right";
     if (has(h.previous)) return "previous";
     if (has(h.next)) return "next";
+    if (has(h.exclusions)) return "excluded";
     return null;
   }
 
   inverseOntologyField(field: string, semanticRole: GateRole): string {
-    const group = this.ontologyGroupForField(field);
+    const group = this.ontologyRoleForField(field);
     const h = this.settings.hierarchy;
     switch (group) {
       case "parent": return this.defaultOntologyField("child");
@@ -602,6 +834,55 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.writeRelationship(neighbourFile, center, inverseField);
     }
     await this.rebuildIndex(false, true);
+  }
+
+  isExcalidrawAvailable(): boolean {
+    type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile> };
+    type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
+    const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
+    return typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
+  }
+
+  private async ensureFolderPath(folderPath: string): Promise<void> {
+    const normalized = normalizePath(folderPath);
+    if (!normalized || normalized === "/") return;
+    let current = "";
+    for (const part of normalized.split("/").filter(Boolean)) {
+      current = current ? `${current}/${part}` : part;
+      if (!this.app.vault.getAbstractFileByPath(current)) {
+        try { await this.app.vault.createFolder(current); } catch { /* concurrent creation */ }
+      }
+    }
+  }
+
+  async createNewRelatedFile(rawPath: string, kind: "markdown" | "excalidraw"): Promise<TFile | null> {
+    const normalized = normalizePath(rawPath);
+    const slash = normalized.lastIndexOf("/");
+    const folder = slash >= 0 ? normalized.slice(0, slash) : "";
+    let name = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+    if (!name) name = "New note";
+    if (kind === "excalidraw") {
+      type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile> };
+      type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
+      const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
+      const excalidraw = manager?.plugins?.["obsidian-excalidraw-plugin"];
+      if (!excalidraw?.createDrawing) {
+        new Notice("Excalidraw is not available.", 2200);
+        return null;
+      }
+      return excalidraw.createDrawing(name, folder || undefined);
+    }
+
+    await this.ensureFolderPath(folder);
+    if (!name.toLowerCase().endsWith(".md")) name += ".md";
+    let path = normalizePath(folder ? `${folder}/${name}` : name);
+    if (this.app.vault.getAbstractFileByPath(path)) {
+      const stem = path.replace(/\.md$/i, "");
+      let i = 2;
+      while (this.app.vault.getAbstractFileByPath(`${stem} ${i}.md`)) i += 1;
+      path = `${stem} ${i}.md`;
+    }
+    return this.app.vault.create(path, `# ${name.replace(/\.md$/i, "")}\n`);
   }
 
   async createGhostNote(rawPath: string): Promise<void> {

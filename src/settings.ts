@@ -52,6 +52,27 @@ export const DEFAULT_HIERARCHY_DEFINITION: Hierarchy = {
   hidden: ["hidden"]
 };
 
+export type KplexViewSurface = "leaf" | "sidepanel" | "popout";
+export type KplexDeviceClass = "desktop" | "tablet" | "mobile";
+export type MouseInteractionMode = "smart" | "legacy" | "middle-only";
+export type KplexLayoutProfile = {
+  compactingFactor: number;
+  parentColumns: number;
+  childColumns: number;
+};
+
+export const DEFAULT_LAYOUT_PROFILES: Record<string, KplexLayoutProfile> = {
+  "desktop:leaf": { compactingFactor: 2, parentColumns: 2, childColumns: 5 },
+  "desktop:popout": { compactingFactor: 2, parentColumns: 2, childColumns: 5 },
+  "desktop:sidepanel": { compactingFactor: 2.65, parentColumns: 1, childColumns: 2 },
+  "tablet:leaf": { compactingFactor: 2.25, parentColumns: 2, childColumns: 4 },
+  "tablet:popout": { compactingFactor: 2.25, parentColumns: 2, childColumns: 4 },
+  "tablet:sidepanel": { compactingFactor: 2.7, parentColumns: 1, childColumns: 2 },
+  "mobile:leaf": { compactingFactor: 2.55, parentColumns: 1, childColumns: 2 },
+  "mobile:popout": { compactingFactor: 2.55, parentColumns: 1, childColumns: 2 },
+  "mobile:sidepanel": { compactingFactor: 2.85, parentColumns: 1, childColumns: 2 },
+};
+
 export interface ExcaliBrainSettings {
   compactView: boolean;
   compactingFactor: number;
@@ -134,6 +155,8 @@ export interface ExcaliBrainSettings {
   startInPopout: boolean;
   lastActivePath: string;
   pinnedNodes: string[];
+  layoutProfiles: Record<string, KplexLayoutProfile>;
+  mouseInteractionMode: MouseInteractionMode;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -216,7 +239,9 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   kplexInitialized: false,
   startInPopout: false,
   lastActivePath: "",
-  pinnedNodes: []
+  pinnedNodes: [],
+  layoutProfiles: DEFAULT_LAYOUT_PROFILES,
+  mouseInteractionMode: "smart"
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -271,6 +296,27 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
   hierarchy.next = lowerPriority(hierarchy.next);
   hierarchy.exclusions = sortFields(hierarchy.exclusions.filter((item) => !master.includes(norm(item))));
 
+  const finite = (value: unknown, fallback: number): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const sanitizeProfile = (candidate: Partial<KplexLayoutProfile> | undefined, fallback: KplexLayoutProfile): KplexLayoutProfile => ({
+    compactingFactor: Math.max(0.75, Math.min(3, finite(candidate?.compactingFactor, fallback.compactingFactor))),
+    parentColumns: Math.max(1, Math.min(3, Math.round(finite(candidate?.parentColumns, fallback.parentColumns)))),
+    childColumns: Math.max(1, Math.min(7, Math.round(finite(candidate?.childColumns, fallback.childColumns)))),
+  });
+  const legacyProfile = sanitizeProfile({
+    compactingFactor: old.compactingFactor,
+    parentColumns: old.parentColumns,
+    childColumns: old.childColumns,
+  }, DEFAULT_LAYOUT_PROFILES["desktop:leaf"]);
+  const migratedProfiles = Object.fromEntries(
+    Object.entries(DEFAULT_LAYOUT_PROFILES).map(([key, fallback]) => [
+      key,
+      sanitizeProfile(old.layoutProfiles?.[key], key === "desktop:leaf" || key === "desktop:popout" ? legacyProfile : fallback),
+    ]),
+  ) as Record<string, KplexLayoutProfile>;
+
   return {
     ...DEFAULT_SETTINGS,
     ...old,
@@ -297,10 +343,10 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     primaryTagFieldLowerCase: norm(old.primaryTagField ?? DEFAULT_SETTINGS.primaryTagField),
     connectorStyle: old.connectorStyle === "straight" ? "straight" : "bezier",
     graphDepth: old.graphDepth === 2 ? 2 : 1,
-    parentColumns: Math.max(1, Math.min(2, Number(old.parentColumns ?? DEFAULT_SETTINGS.parentColumns))),
-    childColumns: Math.max(1, Math.min(7, Number(old.childColumns ?? DEFAULT_SETTINGS.childColumns))),
+    parentColumns: legacyProfile.parentColumns,
+    childColumns: legacyProfile.childColumns,
     maxItemCount: Math.max(10, Math.min(300, Number(old.maxItemCount ?? DEFAULT_SETTINGS.maxItemCount))),
-    compactingFactor: Math.max(0.75, Math.min(3, Number(old.compactingFactor ?? DEFAULT_SETTINGS.compactingFactor))),
+    compactingFactor: legacyProfile.compactingFactor,
     friendMaxHeight: Math.max(120, Math.min(900, Number(old.friendMaxHeight ?? old.siblingMaxHeight ?? DEFAULT_SETTINGS.friendMaxHeight))),
     siblingMaxHeight: Math.max(120, Math.min(900, Number(old.siblingMaxHeight ?? DEFAULT_SETTINGS.siblingMaxHeight))),
     parentMaxHeight: Math.max(120, Math.min(900, Number(old.parentMaxHeight ?? DEFAULT_SETTINGS.parentMaxHeight))),
@@ -310,6 +356,8 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     startInPopout: Boolean(old.startInPopout),
     lastActivePath: String(old.lastActivePath ?? ""),
     pinnedNodes: Array.isArray(old.pinnedNodes) ? old.pinnedNodes.filter((value): value is string => typeof value === "string") : [],
+    layoutProfiles: migratedProfiles,
+    mouseInteractionMode: old.mouseInteractionMode === "legacy" || old.mouseInteractionMode === "middle-only" ? old.mouseInteractionMode : "smart",
   };
 }
 
@@ -580,6 +628,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
 
   getSettingDefinitions(): SettingDefinitionItem<DeclarativeSettingKey>[] {
     const noteTypes = Object.keys(this.ebPlugin.settings.noteTypeStyles).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    const unassignedFields = this.ebPlugin.index.unassignedOntologyFields();
     return [
       {
         type: "group",
@@ -612,21 +661,24 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
               { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
+              {
+                name: "Mouse navigation",
+                desc: "Smart reserves right-click for context menus: left-drag empty canvas or middle-drag anywhere to pan. Legacy allows any mouse button to pan. Wheel zoom never requires a modifier.",
+                control: { type: "dropdown", key: "mouseInteractionMode", defaultValue: "smart", options: { smart: "Smart (recommended)", legacy: "Legacy: any button pans", "middle-only": "Middle button pans" } }
+              },
             ]
           },
           {
             type: "group",
             heading: "Layout",
             items: [
-              { name: "Parent columns", desc: "Maximum number of parent nodes in each row. Two columns leaves dedicated vertical space for friends and challengers.", control: { type: "slider", key: "parentColumns", min: 1, max: 2, step: 1 } },
-              { name: "Child columns", desc: "Maximum number of child nodes in each row.", control: { type: "slider", key: "childColumns", min: 1, max: 7, step: 1 } },
+              { name: "Per-view layout profiles", desc: "K-Plex stores density and parent/child columns separately for desktop, tablet and mobile, and separately for normal leaves, pop-outs and the sidepanel. Use the controls inside an open Plex to tune the active profile." },
               { name: "Parent maximum height", desc: "Parent rows become vertically scrollable above this height.", control: { type: "slider", key: "parentMaxHeight", min: 140, max: 800, step: 20 } },
               { name: "Friend / challenger maximum height", desc: "Friend and challenger lists become vertically scrollable above this height.", control: { type: "slider", key: "friendMaxHeight", min: 140, max: 800, step: 20 } },
               { name: "Sibling maximum height", desc: "Sibling lists become vertically scrollable above this height.", control: { type: "slider", key: "siblingMaxHeight", min: 120, max: 700, step: 10 } },
               { name: "Child maximum height", desc: "Child rows become vertically scrollable above this height.", control: { type: "slider", key: "childMaxHeight", min: 160, max: 900, step: 20 } },
               { name: "Maximum nodes per zone", control: { type: "slider", key: "maxItemCount", min: 10, max: 300, step: 10 } },
               { name: "Compact view", control: { type: "toggle", key: "compactView" } },
-              { name: "Density", control: { type: "slider", key: "compactingFactor", min: 0.75, max: 3, step: 0.05 } },
               { name: "Minimum link length", desc: "Legacy spacing control translated to Plex spacing.", control: { type: "slider", key: "minLinkLength", min: 6, max: 40, step: 1 } },
             ]
           },
@@ -693,7 +745,25 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Right friend trigger", control: { type: "text", key: "ontologySuggesterRightFriendTrigger" } },
               { name: "Previous trigger", control: { type: "text", key: "ontologySuggesterPreviousTrigger" } },
               { name: "Next trigger", control: { type: "text", key: "ontologySuggesterNextTrigger" } },
+              { name: "All ontology trigger", desc: "Trigger that suggests fields from every ontology group.", control: { type: "text", key: "ontologySuggesterTrigger" } },
+              { name: "Mid-sentence prefix", desc: "Prefix used before a trigger for Dataview-style inline fields, for example (::p → (Parent:: …).", control: { type: "text", key: "ontologySuggesterMidSentenceTrigger" } },
+              { name: "Bold inserted field names", control: { type: "toggle", key: "boldFields" } },
             ]
+          },
+          {
+            type: "group",
+            heading: `Unassigned fields (${unassignedFields.length})`,
+            cls: "kplex-unassigned-ontology",
+            items: [
+              { name: "Refresh discovered fields", desc: "Explicitly rebuild the index even when no K-Plex view is open.", action: () => void this.ebPlugin.rebuildIndex(true, true, "ontology-discovery") },
+              ...(unassignedFields.length
+                ? unassignedFields.slice(0, 120).map((field) => ({
+                    name: field.name,
+                    desc: `${field.count} occurrence${field.count === 1 ? "" : "s"} · assign this discovered property to an ontology role`,
+                    action: () => this.ebPlugin.openAddToOntologyModal(field.name),
+                  }))
+                : [{ name: "No unassigned fields", desc: "Refresh discovered fields to scan YAML and Dataview-style properties in the vault." }]),
+            ],
           },
         ]
       },

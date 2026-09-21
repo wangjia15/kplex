@@ -132,6 +132,17 @@ export class RelationEvidenceStore {
     return [...(this.byRelation.get(relationKey(sourcePath, targetPath)) ?? [])];
   }
 
+
+  from(sourcePath: string): Array<{ targetPath: string; evidence: RelationEvidence[] }> {
+    const output: Array<{ targetPath: string; evidence: RelationEvidence[] }> = [];
+    for (const [key, evidence] of this.byRelation) {
+      const splitAt = key.indexOf("\u0000");
+      if (key.slice(0, splitAt) !== sourcePath) continue;
+      output.push({ targetPath: key.slice(splitAt + 1), evidence: [...evidence] });
+    }
+    return output;
+  }
+
   *entries(): IterableIterator<[string, string, RelationEvidence[]]> {
     for (const [key, evidence] of this.byRelation) {
       const splitAt = key.indexOf("\u0000");

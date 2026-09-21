@@ -7,12 +7,14 @@ export type GraphState = {
   pages: Map<string, GraphPage>;
   lowercasePathMap: Map<string, string>;
   evidence: RelationEvidenceStore;
+  discoveredFields: Map<string, { name: string; count: number }>;
 };
 
 export const createGraphState = (): GraphState => ({
   pages: new Map<string, GraphPage>(),
   lowercasePathMap: new Map<string, string>(),
   evidence: new RelationEvidenceStore(),
+  discoveredFields: new Map<string, { name: string; count: number }>(),
 });
 
 export function getGraphPage(state: GraphState, path: string): GraphPage | undefined {

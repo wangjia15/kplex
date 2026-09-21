@@ -44,7 +44,7 @@ type ObsidianMomentFactory = (value: string, inputFormat: string, strict: boolea
  * host already provides. This mirrors the long-standing approach used by Obsidian Tasks.
  */
 function formatDailyDate(isoDate: string, format: string): string | null {
-  const obsidianMoment = (window as Window & { moment: ObsidianMomentFactory }).moment;
+  const obsidianMoment = (window as unknown as { moment: ObsidianMomentFactory }).moment;
   const parsed = obsidianMoment(isoDate, "YYYY-MM-DD", true);
   return parsed.isValid() ? parsed.format(format) : null;
 }
@@ -205,6 +205,15 @@ export class GraphBuilder {
   private applyMetadata(state: GraphState, page: GraphPage, file: TFile, meta: ParsedFileMetadata): void {
     page.aliases = meta.aliases;
     page.tags = meta.tags;
+
+    const recordField = (name: string): void => {
+      const normalized = normalizeFieldName(name);
+      if (!normalized) return;
+      const current = state.discoveredFields.get(normalized);
+      state.discoveredFields.set(normalized, { name: current?.name ?? name.trim(), count: (current?.count ?? 0) + 1 });
+    };
+    Object.keys(meta.frontmatter).forEach(recordField);
+    meta.inlineFieldOccurrences.forEach((occurrence) => recordField(occurrence.name));
 
     const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
     const frontmatterNoteType = getNormalizedFrontmatterValues(meta, noteTypeField)[0];

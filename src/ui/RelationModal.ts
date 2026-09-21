@@ -1,6 +1,7 @@
 import { Modal, Notice, TFile, getIcon } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GateRole, GateSide, GraphPage, LinkDirection } from "../types";
+import { NewRelatedNoteModal } from "./NewRelatedNoteModal";
 
 export type RelationModalOptions = {
   mode: "create" | "relink";
@@ -9,6 +10,7 @@ export type RelationModalOptions = {
   fixedTarget?: GraphPage;
   existingDirection?: LinkDirection | null;
   onCommitted?: () => void;
+  allowRoleSelection?: boolean;
 };
 
 const ROLE_LABEL: Record<GateRole, string> = {
@@ -35,6 +37,7 @@ function addIcon(el: HTMLElement, name: string): void {
 
 export class RelationModal extends Modal {
   private selectedField: string;
+  private semanticRole: GateRole;
   private selectedPath: string | null = null;
   private query = "";
   private activeIndex = 0;
@@ -45,13 +48,14 @@ export class RelationModal extends Modal {
 
   constructor(private plugin: ExcaliBrainPlugin, private options: RelationModalOptions) {
     super(plugin.app);
-    this.selectedField = plugin.defaultOntologyField(options.semanticRole);
+    this.semanticRole = options.semanticRole;
+    this.selectedField = plugin.defaultOntologyField(this.semanticRole);
   }
 
   private candidates(): TFile[] {
     if (this.options.fixedTarget) return [];
     const q = this.query.trim().toLowerCase();
-    const blocked = this.plugin.index.gateNeighbourPaths(this.options.origin, gateForRole(this.options.semanticRole));
+    const blocked = this.plugin.index.gateNeighbourPaths(this.options.origin, gateForRole(this.semanticRole));
     return this.plugin.app.vault.getMarkdownFiles()
       .filter((file) => file.path !== this.options.origin.path)
       .filter((file) => !blocked.has(file.path))
@@ -141,21 +145,21 @@ export class RelationModal extends Modal {
         await this.plugin.relinkCentralNeighbour(
           this.options.origin,
           target,
-          this.options.semanticRole,
+          this.semanticRole,
           this.selectedField,
           this.options.existingDirection ?? null,
         );
       } else if (this.options.fixedTarget) {
         await this.plugin.createRelationToPage(
           this.options.origin,
-          this.options.semanticRole,
+          this.semanticRole,
           this.options.fixedTarget,
           this.selectedField,
         );
       } else {
         const file = this.selectedFile();
         if (!file) return;
-        await this.plugin.createRelationFromGate(this.options.origin, this.options.semanticRole, file, this.selectedField);
+        await this.plugin.createRelationFromGate(this.options.origin, this.semanticRole, file, this.selectedField);
       }
       this.options.onCommitted?.();
       this.close();
@@ -168,10 +172,33 @@ export class RelationModal extends Modal {
   }
 
   onOpen(): void {
-    const roleName = ROLE_LABEL[this.options.semanticRole];
+    let roleName = ROLE_LABEL[this.semanticRole];
     this.titleEl.setText(this.options.mode === "relink" ? "Move relationship" : `Add ${roleName.toLowerCase()}`);
     this.modalEl.addClass("kplex-relation-modal");
     this.contentEl.addClass("kplex-relation-modal-content");
+
+    let fieldSelect: HTMLSelectElement | null = null;
+    const repopulateFields = () => {
+      if (!fieldSelect) return;
+      fieldSelect.empty();
+      for (const field of this.plugin.ontologyFieldsForRole(this.semanticRole)) fieldSelect.createEl("option", { text: field, attr: { value: field } });
+      this.selectedField = this.plugin.defaultOntologyField(this.semanticRole);
+      fieldSelect.value = this.selectedField;
+    };
+    if (this.options.allowRoleSelection) {
+      this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Direction / role", attr: { for: "kplex-relation-modal-role" } });
+      const roleSelect = this.contentEl.createEl("select", { attr: { id: "kplex-relation-modal-role" } });
+      for (const role of ["parent", "child", "left", "right"] as GateRole[]) roleSelect.createEl("option", { text: ROLE_LABEL[role], attr: { value: role } });
+      roleSelect.value = this.semanticRole;
+      roleSelect.addEventListener("change", () => {
+        this.semanticRole = roleSelect.value as GateRole;
+        roleName = ROLE_LABEL[this.semanticRole];
+        this.selectedPath = null;
+        this.activeIndex = 0;
+        repopulateFields();
+        this.renderResults();
+      });
+    }
 
     if (this.options.fixedTarget) {
       const summary = this.contentEl.createDiv({ cls: "kplex-relation-summary" });
@@ -182,17 +209,18 @@ export class RelationModal extends Modal {
       const searchWrap = this.contentEl.createDiv({ cls: "kplex-relation-search-wrap" });
       const searchIcon = searchWrap.createSpan({ cls: "kplex-icon" });
       addIcon(searchIcon, "search");
-      this.searchInput = searchWrap.createEl("input", {
+      const searchInput = searchWrap.createEl("input", {
         attr: { id: "kplex-relation-modal-search", type: "text", placeholder: "Search notes…", autocomplete: "off" },
       });
+      this.searchInput = searchInput;
       this.resultsEl = this.contentEl.createDiv({ cls: "kplex-relation-results" });
-      this.searchInput.addEventListener("input", () => {
-        this.query = this.searchInput?.value ?? "";
+      searchInput.addEventListener("input", () => {
+        this.query = searchInput.value;
         this.activeIndex = 0;
         this.selectedPath = null;
         this.renderResults();
       });
-      this.searchInput.addEventListener("keydown", (event) => {
+      searchInput.addEventListener("keydown", (event) => {
         const files = this.candidates();
         if (event.key === "ArrowDown") {
           event.preventDefault();
@@ -215,16 +243,14 @@ export class RelationModal extends Modal {
 
     this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Document property", attr: { for: "kplex-relation-modal-field" } });
     const select = this.contentEl.createEl("select", { attr: { id: "kplex-relation-modal-field" } });
-    for (const field of this.plugin.ontologyFieldsForRole(this.options.semanticRole)) {
-      select.createEl("option", { text: field, attr: { value: field } });
-    }
-    select.value = this.selectedField;
+    fieldSelect = select;
+    repopulateFields();
 
     const originIsMarkdown = this.options.origin.file?.extension === "md";
     const hint = !originIsMarkdown ? this.contentEl.createDiv({ cls: "kplex-relation-hint" }) : null;
     const updateInverseHint = () => {
       if (!hint) return;
-      const inverseField = this.plugin.inverseOntologyField(this.selectedField, this.options.semanticRole);
+      const inverseField = this.plugin.inverseOntologyField(this.selectedField, this.semanticRole);
       hint.setText(`The relationship is stored on the Markdown target using the inverse property ${inverseField}.`);
     };
     select.addEventListener("change", () => {
@@ -233,14 +259,25 @@ export class RelationModal extends Modal {
     });
     updateInverseHint();
 
+    if (!this.options.fixedTarget && this.options.mode === "create") {
+      const newButton = this.contentEl.createEl("button", { cls: "kplex-relation-new-note", attr: { type: "button" } });
+      addIcon(newButton, "file-plus-2");
+      newButton.createSpan({ text: "Create new note…" });
+      newButton.addEventListener("click", () => {
+        new NewRelatedNoteModal(this.plugin, this.options.origin, this.semanticRole, this.selectedField, this.options.onCommitted).open();
+        this.close();
+      });
+    }
+
     const actions = this.contentEl.createDiv({ cls: "kplex-relation-actions" });
     const cancel = actions.createEl("button", { attr: { type: "button", title: "Cancel", "aria-label": "Cancel" } });
     addIcon(cancel, "x");
     cancel.addEventListener("click", () => this.close());
 
-    this.saveButton = actions.createEl("button", { cls: "mod-cta", attr: { type: "button", title: "Save relationship", "aria-label": "Save relationship" } });
-    addIcon(this.saveButton, "check");
-    this.saveButton.addEventListener("click", () => void this.confirm());
+    const saveButton = actions.createEl("button", { cls: "mod-cta", attr: { type: "button", title: "Save relationship", "aria-label": "Save relationship" } });
+    this.saveButton = saveButton;
+    addIcon(saveButton, "check");
+    saveButton.addEventListener("click", () => void this.confirm());
     this.updateSaveButton();
 
     window.setTimeout(() => this.searchInput?.focus(), 0);

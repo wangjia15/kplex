@@ -14,6 +14,7 @@ import {
 import type { ParsedBodyMetadata } from "./fieldParser";
 import { GraphBuilder, type FieldCacheEntry } from "./GraphBuilder";
 import { createGraphState, getGraphPage } from "./GraphState";
+import type { RelationEvidence } from "./RelationEvidence";
 import { MetadataParser } from "./MetadataParser";
 import {
   classifyRelation,
@@ -95,6 +96,7 @@ export class GraphIndex {
   private metadataParser = new MetadataParser();
   private cachePersistTimer: number | null = null;
   private bodyCacheDirty = false;
+  private searchEntryPointPaths: string[] = [];
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {
     this.restoreBodyCache();
@@ -114,6 +116,39 @@ export class GraphIndex {
   get size(): number { return this.state.pages.size; }
   get(path: string): GraphPage | undefined { return getGraphPage(this.state, path); }
   allPages(): GraphPage[] { return [...this.state.pages.values()]; }
+
+  setSearchEntryPoints(paths: string[]): void {
+    this.searchEntryPointPaths = [...new Set(paths)];
+  }
+
+  evidenceFrom(sourcePath: string): Array<{ targetPath: string; evidence: RelationEvidence[] }> {
+    return this.state.evidence.from(sourcePath);
+  }
+
+  evidenceBetween(sourcePath: string, targetPath: string): RelationEvidence[] {
+    return this.state.evidence.between(sourcePath, targetPath);
+  }
+
+  discoveredFields(): Array<{ normalized: string; name: string; count: number }> {
+    return [...this.state.discoveredFields.entries()]
+      .map(([normalized, value]) => ({ normalized, ...value }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }
+
+  unassignedOntologyFields(): Array<{ normalized: string; name: string; count: number }> {
+    const h = this.plugin.settings.hierarchy;
+    const assigned = new Set([
+      ...h.hidden, ...h.parents, ...h.children, ...h.leftFriends, ...h.rightFriends, ...h.previous, ...h.next, ...h.exclusions,
+      this.plugin.settings.noteTypeField, this.plugin.settings.primaryTagField,
+    ].map((name) => name.toLowerCase().replaceAll(" ", "-").trim()));
+    return this.discoveredFields().filter((field) => !assigned.has(field.normalized));
+  }
+
+  cancelRebuild(): void {
+    if (!this.building) return;
+    this.generation += 1;
+    this.rebuildQueued = false;
+  }
 
   destroy(): void {
     if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
@@ -150,13 +185,13 @@ export class GraphIndex {
   }
 
   /** Build a complete graph off to the side, then atomically publish it. */
-  async rebuild(): Promise<void> {
+  async rebuild(): Promise<boolean> {
     if (this.building) {
       this.rebuildQueued = true;
       // Invalidate the in-flight snapshot immediately. The queued rebuild will
       // start from the newest vault state, so stale work must never publish.
       this.generation += 1;
-      return;
+      return false;
     }
     this.building = true;
     const run = ++this.generation;
@@ -170,7 +205,7 @@ export class GraphIndex {
         () => run === this.generation,
       );
       const next = await builder.build();
-      if (!next || run !== this.generation) return;
+      if (!next || run !== this.generation) return false;
 
       // Atomic graph-state swap: readers never observe a half-built graph.
       this.state = next;
@@ -179,6 +214,7 @@ export class GraphIndex {
       this.rebuildSearchIndex();
       this.emit();
       this.scheduleBodyCachePersist();
+      return true;
     } finally {
       this.building = false;
       if (this.rebuildQueued) {
@@ -210,7 +246,7 @@ export class GraphIndex {
     );
   }
 
-  private visibleTarget(page: GraphPage, settings: ExcaliBrainSettings): boolean {
+  isVisiblePage(page: GraphPage, settings: ExcaliBrainSettings = this.plugin.settings): boolean {
     if (settings.excludeFilepaths.some((prefix) => page.path.startsWith(prefix))) return false;
     const isVirtual = !page.file && !page.isFolder && !page.isTag && !page.url;
     const isAttachment = Boolean(page.file && page.file.extension !== "md");
@@ -293,7 +329,7 @@ export class GraphIndex {
         if (classifyRelation(relation, role, settings.inferAllLinksAsFriends) !== null) gateStats[roleGate(role)].hasAny = true;
       }
 
-      if (!this.visibleTarget(relation.target, settings)) continue;
+      if (!this.isVisiblePage(relation.target, settings)) continue;
       for (const role of concreteRoles) {
         const relationType = classifyRelation(relation, role, settings.inferAllLinksAsFriends);
         if (!relationType || (relationType === RelationType.INFERRED && !settings.showInferredNodes)) continue;
@@ -426,8 +462,18 @@ export class GraphIndex {
 
     if (!q) {
       const output: GraphPage[] = [];
+      const seen = new Set<string>();
+      const preferred = [...this.searchEntryPointPaths, ...this.plugin.settings.pinnedNodes];
+      for (const path of preferred) {
+        const page = this.get(path);
+        if (!page || seen.has(page.path) || !this.isVisiblePage(page, settings)) continue;
+        seen.add(page.path);
+        output.push(page);
+        if (output.length >= max) return output;
+      }
       for (const entry of this.searchEntries) {
-        if (!this.visibleTarget(entry.page, settings)) continue;
+        if (seen.has(entry.page.path) || !this.isVisiblePage(entry.page, settings)) continue;
+        seen.add(entry.page.path);
         output.push(entry.page);
         if (output.length >= max) break;
       }
@@ -453,7 +499,7 @@ export class GraphIndex {
       const score = searchEntryScore(entry, q);
       if (score === null) continue;
       textualMatches.push(entry);
-      if (!this.visibleTarget(entry.page, settings)) continue;
+      if (!this.isVisiblePage(entry.page, settings)) continue;
       if (best.length >= max && score >= best[best.length - 1].score) continue;
 
       let at = best.length;

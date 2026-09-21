@@ -309,7 +309,15 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   const right = distributeVertical(neighborhood.rightFriends, sideX, sideGap, index, settings, "right", neighborhood.center.path);
 
   const rightExtent = right.length ? Math.max(...right.map((n) => n.x + n.width / 2)) : maxCenterHalfWidth;
-  const siblingCenterX = Math.max(sideX + 340 * compactFactor * legacySpacing, rightExtent + 235 * compactFactor * legacySpacing);
+  // When there is no challenger/next strip, siblings should not reserve an empty lateral column.
+  // Compact view tightens the remaining gap a little further without changing sibling scale.
+  const siblingBase = right.length ? 285 : 205;
+  const siblingAfterRight = right.length ? 190 : 120;
+  const compactSiblingMultiplier = settings.compactView ? 0.82 : 1;
+  const siblingCenterX = Math.max(
+    sideX + siblingBase * compactFactor * legacySpacing * compactSiblingMultiplier,
+    rightExtent + siblingAfterRight * compactFactor * legacySpacing * compactSiblingMultiplier,
+  );
   const siblings = distributeVertical(neighborhood.siblings, siblingCenterX, sideGap, index, settings, "sibling", neighborhood.center.path);
 
   // Lateral zones are independent of the parent zone. Friends and challengers form a
@@ -381,4 +389,70 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   }
 
   return { nodes, edges, zoneViewports };
+}
+
+/** Runtime layout for central-note heading expansion. Sections are ordinary-looking child thoughts,
+ * while each section's relationships form a small local Plex around that section. Nothing here is
+ * persisted in GraphIndex. */
+export function buildSectionExpandedScene(
+  expansion: import("../index/SectionExpansion").CentralSectionExpansion,
+  index: GraphIndex,
+  settings: ExcaliBrainSettings,
+): PlexScene {
+  const scene = buildScene(expansion.centerNeighborhood, index, settings);
+  // Section clusters need to remain spatially attached to their heading thought, so a single
+  // child-zone scroller would be misleading. The complete expanded document participates in fit.
+  delete scene.zoneViewports.child;
+
+  const sectionNodes = scene.nodes.filter((node) => node.page.transient?.kind === "section");
+  const ordinaryChildren = scene.nodes.filter((node) => node.role === "child" && node.page.transient?.kind !== "section");
+  const startY = ordinaryChildren.length
+    ? Math.max(...ordinaryChildren.map((node) => node.y + node.height / 2)) + 150
+    : 150;
+  const clusterSpacing = Math.max(210, 255 * clamp(1.35 / settings.compactingFactor, 0.45, 1.25));
+  sectionNodes.forEach((node, index) => {
+    node.x = 0;
+    node.y = startY + index * clusterSpacing;
+  });
+
+  const addGroup = (sectionNode: PositionedNode, items: Neighbour[], role: Exclude<Role, "sibling">) => {
+    const nodes = items.map((item) => makeNode(item, role, index, settings));
+    const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
+    const direction = role === "left" || role === "previous" ? -1 : role === "right" || role === "next" ? 1 : 0;
+    nodes.forEach((node, itemIndex) => {
+      if (horizontal) {
+        node.x = sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + 95);
+        node.y = sectionNode.y + (itemIndex - (nodes.length - 1) / 2) * 42;
+      } else {
+        const columns = Math.min(3, Math.max(1, nodes.length));
+        const row = Math.floor(itemIndex / columns);
+        const col = itemIndex % columns;
+        const rowCount = Math.min(columns, nodes.length - row * columns);
+        node.x = sectionNode.x + (col - (rowCount - 1) / 2) * 155;
+        node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (78 + row * 44);
+      }
+      scene.nodes.push(node);
+      const relation = items[itemIndex];
+      scene.edges.push({
+        id: `section-edge:${sectionNode.page.path}:${node.page.path}:${role}:${itemIndex}`,
+        sourcePath: sectionNode.page.path,
+        targetPath: node.page.path,
+        role,
+        relationType: relation.relationType,
+        typeDefinition: relation.typeDefinition,
+        direction: relation.linkDirection,
+        style: resolveLinkStyle(relation, settings),
+      });
+    });
+  };
+
+  for (const section of expansion.sections) {
+    const sectionNode = sectionNodes.find((node) => node.page.path === section.page.path);
+    if (!sectionNode) continue;
+    addGroup(sectionNode, section.neighborhood.parents, "parent");
+    addGroup(sectionNode, section.neighborhood.children, "child");
+    addGroup(sectionNode, section.neighborhood.leftFriends, "left");
+    addGroup(sectionNode, section.neighborhood.rightFriends, "right");
+  }
+  return scene;
 }
