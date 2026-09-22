@@ -2,6 +2,8 @@
 
 # K-Plex
 
+> On the very first startup on a device expect to see a longer indexing period. Once the index is created K-Plex will start in 1-2 seconds. The index is cached on the device locally, so if you restart Obsidian, the index does not need to be rebuilt from scratch.
+
 ![KPLEX Screenshot](docs/KPlex-Screenshot-3.png)
 
 **K-Plex (Knowledge Plex)** is a spatial knowledge navigator for Obsidian. It gives you a focused view around one active node and places related nodes in predictable directions, so the position of a node carries meaning.
