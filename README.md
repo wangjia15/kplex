@@ -77,8 +77,11 @@ Keyboard controls:
 - **Up / Down** — move through results
 - **Enter** — activate the selected result
 - **Escape** — close the result list
+- **F4** or **Ctrl/Cmd+F** — focus search while the Plex has keyboard focus
 
 Clicking elsewhere in the Plex also closes the search results.
+
+The Command Palette also includes **Search** while a K-Plex view is open, so you can assign your own hotkey to focusing the search box.
 
 When the search field is empty, K-Plex prioritizes Obsidian **Bookmarks** (or legacy Starred entries), followed by K-Plex pins, before the normal node list.
 
@@ -208,7 +211,7 @@ Generic labels such as Parent, Child, Friend, Challenger and structural file/tag
 
 ### Explain relationships
 
-Right-click a visible connector and choose **Explain relationship** to see why K-Plex placed that relationship where it did. The explanation shows the resolved role plus the underlying evidence, such as frontmatter ontology, body ontology, ordinary Obsidian links, folder/tag structure, URLs or Date-property links. Evidence that comes from a Markdown file also exposes **Navigate** actions: K-Plex opens a new native Markdown tab and uses ephemeral line state to jump to the relevant property/link without changing the saved workspace scroll state.
+Right-click a visible connector and choose **Explain relationship** to see why K-Plex placed that relationship where it did. The explanation shows the resolved role plus the underlying evidence, such as frontmatter ontology, body ontology, ordinary Obsidian links, folder/tag structure, URLs or Date-property links. Evidence that comes from a Markdown file also exposes **Navigate** actions. If that K-Plex view has an open companion sidecar, the evidence opens there; otherwise K-Plex opens a normal Markdown tab. In both cases K-Plex uses ephemeral line state to jump to the relevant property/link without changing the saved workspace scroll state. Sidecar provenance navigation is temporary inspection and does not recenter the Plex.
 
 Connector menus also include **Unlink connection**. When exactly one editable frontmatter ontology declaration is responsible for the relationship, K-Plex removes it directly. Obsidian link-cache entries located inside that same YAML property block—including indented list items—are treated as mirrors of the property rather than separate declarations. Some Obsidian builds do not expose a source position for YAML links in the generic link cache; K-Plex verifies the property block itself in that case before allowing direct unlinking. Ambiguous cases—multiple declarations, body/inline links, links in another property, or other evidence—open the same explanation dialog instead of guessing which source should be edited.
 

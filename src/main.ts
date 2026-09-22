@@ -37,8 +37,11 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
   private readonly collapsedPlexHosts = new Map<WorkspaceLeaf, { sidecarLeaf: WorkspaceLeaf; position: SidecarPosition; hostGroup: HTMLElement; unfoldButton: HTMLButtonElement }>();
   private readonly sidecarListeners = new Set<() => void>();
+  private transientDocumentFollowSuppression: { path: string; until: number } | null = null;
   private readonly navigationListeners = new Set<(path: string) => void>();
+  private readonly searchFocusListeners = new Map<WorkspaceLeaf, () => void>();
   private readonly relationshipFlairListeners = new Set<(path: string) => void>();
+  private readonly indexStatusListeners = new Set<() => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
@@ -108,6 +111,16 @@ export default class ExcaliBrainPlugin extends Plugin {
       },
     });
     this.addCommand({ id: "kplex-open-sidepanel", name: "Open in side panel", callback: () => void this.activateSidepanel() });
+    this.addCommand({
+      id: "kplex-search",
+      name: "Search",
+      checkCallback: (checking) => {
+        const leaf = this.searchTargetLeaf();
+        if (!leaf) return false;
+        if (!checking) this.requestSearchFocus(leaf);
+        return true;
+      },
+    });
     const addRelationshipCommand = (id: string, name: string, role: GateRole) => this.addCommand({
       id,
       name,
@@ -259,6 +272,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     // close the user's note; simply release K-Plex ownership and leave workspace leaves intact.
     this.sidecarLeaves.clear();
     this.relationshipFlairListeners.clear();
+    this.indexStatusListeners.clear();
     this.linkedDocumentLeaf = null;
     this.index?.destroy();
   }
@@ -356,6 +370,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.indexDirty = true;
     this.indexDirtyRevision += 1;
     this.indexBacklogReasons.add(reason);
+    this.notifyIndexStatus();
     if (this.openKplexViews <= 0 || !this.initialIndexComplete || this.rebuildTask) return;
     if (this.rebuildTimer !== null) {
       window.clearTimeout(this.rebuildTimer);
@@ -429,6 +444,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       // reconcile. Reactive listeners will mark the snapshot dirty if a real change arrives.
       if (!this.indexDirty && this.index.size > 0 && this.index.isFullSnapshotHydrated()) {
         this.initialIndexComplete = true;
+        this.notifyIndexStatus();
         return;
       }
       if (!this.metadataStabilized) {
@@ -448,6 +464,7 @@ export default class ExcaliBrainPlugin extends Plugin {
           this.indexDirty = false;
           this.indexBacklogReasons.clear();
           this.initialIndexComplete = true;
+          this.notifyIndexStatus();
           return;
         }
       }
@@ -475,6 +492,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         await this.performRebuild(false, this.index.size === 0, "startup:initial-index", true);
       }
       this.initialIndexComplete = this.index.size > 0;
+      this.notifyIndexStatus();
 
       // Changes that arrived while the initial build was running are coalesced. Only reconcile
       // them immediately when the user currently has a Plex open; otherwise keep the backlog.
@@ -519,6 +537,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       this.indexDirty = true;
       this.indexDirtyRevision += 1;
       this.indexBacklogReasons.add(reason);
+      this.notifyIndexStatus();
     }
     const startRevision = this.indexDirtyRevision;
 
@@ -569,10 +588,12 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (showNotice) new Notice(`K-Plex indexed ${this.index.size} nodes.`, 1800);
     })();
     this.rebuildTask = task;
+    this.notifyIndexStatus();
     try {
       await task;
     } finally {
       if (this.rebuildTask === task) this.rebuildTask = null;
+      this.notifyIndexStatus();
     }
 
 
@@ -836,6 +857,10 @@ export default class ExcaliBrainPlugin extends Plugin {
   private syncLeafToKplexEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
 
   shouldFollowDocumentFile(file: TFile): boolean {
+    const suppression = this.transientDocumentFollowSuppression;
+    if (suppression && Date.now() >= suppression.until) this.transientDocumentFollowSuppression = null;
+    else if (suppression?.path === file.path) return false;
+
     if (!this.syncLeafToKplexEnabled()) return false;
     this.validateLinkedDocumentLeaf();
     const leaf = this.settings.documentSyncMode === "pinned" ? this.linkedDocumentLeaf : this.findRecentDocumentLeaf();
@@ -943,6 +968,59 @@ export default class ExcaliBrainPlugin extends Plugin {
     for (const listener of this.navigationListeners) listener(path);
   }
 
+  subscribeSearchFocus(hostLeaf: WorkspaceLeaf, listener: () => void): () => void {
+    this.searchFocusListeners.set(hostLeaf, listener);
+    return () => {
+      if (this.searchFocusListeners.get(hostLeaf) === listener) this.searchFocusListeners.delete(hostLeaf);
+    };
+  }
+
+  private isKplexLeaf(leaf: WorkspaceLeaf | null | undefined): leaf is WorkspaceLeaf {
+    if (!leaf) return false;
+    const type = leaf.getViewState().type;
+    return type === EXCALIBRAIN_VIEW_TYPE || type === KPLEX_SIDEPANEL_VIEW_TYPE;
+  }
+
+  private searchTargetLeaf(): WorkspaceLeaf | null {
+    const recent = this.app.workspace.getMostRecentLeaf();
+    if (this.isKplexLeaf(recent) && this.searchFocusListeners.has(recent)) return recent;
+
+    const mounted = [...this.searchFocusListeners.keys()].filter((leaf) => this.leafIsAttached(leaf));
+    return mounted.find((leaf) => this.leafIsVisible(leaf)) ?? mounted[0] ?? null;
+  }
+
+  requestSearchFocus(hostLeaf?: WorkspaceLeaf): boolean {
+    const target = hostLeaf && this.searchFocusListeners.has(hostLeaf) ? hostLeaf : this.searchTargetLeaf();
+    if (!target) return false;
+    const listener = this.searchFocusListeners.get(target);
+    if (!listener) return false;
+    listener();
+    return true;
+  }
+
+  getIndexStatus(): { upToDate: boolean; label: string } {
+    const upToDate = this.initialIndexComplete
+      && !this.indexDirty
+      && this.rebuildTask === null
+      && this.rebuildTimer === null
+      && !this.index.hasPendingSnapshotHydration();
+    return {
+      upToDate,
+      label: upToDate
+        ? "Index status: up to date"
+        : "Index status: updating — the graph may be temporarily incomplete",
+    };
+  }
+
+  subscribeIndexStatus(listener: () => void): () => void {
+    this.indexStatusListeners.add(listener);
+    return () => this.indexStatusListeners.delete(listener);
+  }
+
+  private notifyIndexStatus(): void {
+    for (const listener of this.indexStatusListeners) listener();
+  }
+
   subscribeRelationshipFlair(listener: (path: string) => void): () => void {
     this.relationshipFlairListeners.add(listener);
     return () => this.relationshipFlairListeners.delete(listener);
@@ -975,6 +1053,24 @@ export default class ExcaliBrainPlugin extends Plugin {
       return null;
     }
     return leaf;
+  }
+
+  private availableSidecarLeaf(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return null;
+    const collapsed = this.collapsedPlexHosts.get(hostLeaf);
+    if (collapsed && this.leafIsAttached(collapsed.sidecarLeaf)) return collapsed.sidecarLeaf;
+
+    const managed = this.validateSidecarLeaf(hostLeaf);
+    if (managed && this.adjacentPosition(hostLeaf, managed)) return managed;
+
+    this.validateLinkedDocumentLeaf();
+    if (
+      this.settings.documentSyncMode === "pinned"
+      && this.linkedDocumentLeaf
+      && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
+    ) return this.linkedDocumentLeaf;
+
+    return null;
   }
 
   getSidecarPosition(hostLeaf: WorkspaceLeaf): SidecarPosition | null {
@@ -1934,16 +2030,32 @@ export default class ExcaliBrainPlugin extends Plugin {
     return positions;
   }
 
-  async openRelationshipEvidenceLocation(location: { path: string; line: number }): Promise<void> {
+  async openRelationshipEvidenceLocation(
+    location: { path: string; line: number },
+    hostLeaf?: WorkspaceLeaf,
+  ): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(location.path);
     if (!(file instanceof TFile) || file.extension !== "md") return;
-    const leaf = this.app.workspace.getLeaf("tab");
+
+    const sidecarLeaf = hostLeaf ? this.availableSidecarLeaf(hostLeaf) : null;
+    const leaf = sidecarLeaf ?? this.app.workspace.getLeaf("tab");
     this.lastDocumentLeaf = leaf;
+
+    // Provenance navigation is a temporary inspection action. When an adjacent companion sidecar
+    // exists, reuse that pane instead of spawning an unrelated tab, but do not make the evidence
+    // note the new K-Plex center merely because the pinned sidecar emitted a file-open event.
+    if (sidecarLeaf) {
+      this.transientDocumentFollowSuppression = { path: file.path, until: Date.now() + 1500 };
+    }
+
     // Force a native Markdown view even for .excalidraw.md so the provenance location is visible
     // as editable source text. The second argument is ephemeral view state; it scrolls to the
     // evidence line without persisting that transient navigation position in the workspace state.
-    await leaf.setViewState({ type: "markdown", state: { file: file.path }, active: true }, { line: location.line });
-    await this.app.workspace.revealLeaf(leaf);
+    await leaf.setViewState(
+      { type: "markdown", state: { file: file.path }, active: !sidecarLeaf },
+      { line: location.line },
+    );
+    if (!sidecarLeaf) await this.app.workspace.revealLeaf(leaf);
   }
 
   private async ensureFolderPath(folderPath: string): Promise<void> {

@@ -48,6 +48,40 @@
   white-space: nowrap;
 }
 
+.kplex-index-status {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.28);
+}
+
+.kplex-index-status.is-ready {
+  background: #45c86f;
+  box-shadow: 0 0 7px rgba(69,200,111,.72);
+}
+
+.kplex-index-status.is-updating {
+  background: #ff4d4d;
+  box-shadow: 0 0 8px rgba(255,77,77,.78);
+  animation: kplex-index-status-blink 1s ease-in-out infinite;
+}
+
+.kplex-index-status-empty {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+}
+
+@keyframes kplex-index-status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kplex-index-status.is-updating { animation: none; }
+}
+
 .excalibrain-brand-mark {
   color: #f0aa43;
   font-size: 20px;

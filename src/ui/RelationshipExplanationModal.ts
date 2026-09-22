@@ -1,4 +1,4 @@
-import { Modal } from "obsidian";
+import { Modal, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import { RelationType, type Role } from "../types";
 import type { EvidenceDecision, EvidenceSourceKind, RelationEvidence } from "../index/RelationEvidence";
@@ -47,7 +47,7 @@ export class RelationshipExplanationModal extends Modal {
   constructor(
     private plugin: ExcaliBrainPlugin,
     private explanation: RelationshipExplanation,
-    private displayContext?: { role: Role; centerPath?: string; sourceTitle?: string; targetTitle?: string },
+    private displayContext?: { role: Role; centerPath?: string; sourceTitle?: string; targetTitle?: string; hostLeaf?: WorkspaceLeaf },
   ) {
     super(plugin.app);
   }
@@ -64,7 +64,7 @@ export class RelationshipExplanationModal extends Modal {
         attr: { type: "button", title: `${location.path}:${location.line + 1}` },
       });
       button.addEventListener("click", () => {
-        void this.plugin.openRelationshipEvidenceLocation(location).then(() => this.close());
+        void this.plugin.openRelationshipEvidenceLocation(location, this.displayContext?.hostLeaf).then(() => this.close());
       });
     }
   }

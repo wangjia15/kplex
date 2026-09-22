@@ -38,6 +38,8 @@ export type FuzzySearchInputProps<T> = {
   onCtrlEnter?: () => void;
   openResultsOnFocus?: boolean;
   onFocusChange?: (focused: boolean) => void;
+  /** Increment to imperatively focus this input and reopen its result list. */
+  focusRequest?: number;
   className?: string;
   highlightMatches?: boolean;
 };
@@ -109,18 +111,20 @@ export function FuzzySearchInput<T>({
   onCtrlEnter,
   openResultsOnFocus = true,
   onFocusChange,
+  focusRequest,
   className = "",
   highlightMatches = true,
 }: FuzzySearchInputProps<T>) {
   const [focused, setFocused] = useState(false);
   const [editedSinceFocus, setEditedSinceFocus] = useState(false);
+  const [resultsDismissed, setResultsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [overlayStyle, setOverlayStyle] = useState<CSSProperties | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const visibleResults = focused && (
+  const visibleResults = focused && !resultsDismissed && (
     openResultsOnFocus || (editedSinceFocus && value.trim().length > 0)
   ) ? results : [];
   const clampedSelectedIndex = visibleResults.length ? Math.max(0, Math.min(visibleResults.length - 1, selectedIndex)) : 0;
@@ -131,14 +135,17 @@ export function FuzzySearchInput<T>({
     : null;
 
   const dismissResults = () => {
-    setEditedSinceFocus(false);
+    setResultsDismissed(true);
     setSelectedIndex(0);
   };
 
   const close = () => {
     setFocused(false);
     setEditedSinceFocus(false);
+    setResultsDismissed(false);
     setSelectedIndex(0);
+    const input = inputRef.current;
+    if (input && input.ownerDocument.activeElement === input) input.blur();
     onFocusChange?.(false);
   };
 
@@ -154,6 +161,16 @@ export function FuzzySearchInput<T>({
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    const input = inputRef.current;
+    if (!input) return;
+    setFocused(true);
+    setEditedSinceFocus(false);
+    setResultsDismissed(false);
+    input.focus({ preventScroll: true });
+  }, [focusRequest]);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -255,9 +272,11 @@ export function FuzzySearchInput<T>({
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (visibleResults.length) dismissResults();
+      if (visibleResults.length) {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissResults();
+      }
       return;
     }
     if (event.key === "ArrowDown" && visibleResults.length) {
@@ -315,8 +334,17 @@ export function FuzzySearchInput<T>({
       className="excalibrain-search"
       value={value}
       disabled={disabled}
-      onChange={(event: ChangeEvent<HTMLInputElement>) => { setEditedSinceFocus(true); onChange(event.currentTarget.value); }}
-      onFocus={() => { setFocused(true); setEditedSinceFocus(false); onFocusChange?.(true); }}
+      onChange={(event: ChangeEvent<HTMLInputElement>) => {
+        setEditedSinceFocus(true);
+        setResultsDismissed(false);
+        onChange(event.currentTarget.value);
+      }}
+      onFocus={() => {
+        setFocused(true);
+        setEditedSinceFocus(false);
+        setResultsDismissed(false);
+        onFocusChange?.(true);
+      }}
       onKeyDown={onKeyDown}
       placeholder={placeholder}
       aria-label={ariaLabel}

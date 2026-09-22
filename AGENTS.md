@@ -414,3 +414,8 @@ Before returning a patch:
 6. verify linked/unlinked leaf behavior for navigation changes
 7. verify no new high-volume console logging
 8. package only requested modified/new files when the user asks for a patch ZIP
+
+### Relationship explanation navigation and sidecars
+- Provenance navigation from **Explain relationship** should reuse the sidecar belonging to the K-Plex view that opened the explanation when that sidecar is currently available. Do not pick an arbitrary global sidecar or unrelated recent tab.
+- Opening provenance in a pinned sidecar is a temporary inspection action; suppress the corresponding sidecar-to-Plex follow event so the graph center does not unexpectedly change.
+- Keep the provenance location ephemeral (`setViewState(..., { line })`) and force Markdown source for `.excalidraw.md` evidence.

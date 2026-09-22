@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Menu, type TFile, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
@@ -18,6 +26,14 @@ type BooleanToolbarSetting =
   | "showTagNodes"
   | "showURLNodes"
   | "renderSiblings";
+
+function IndexStatusIndicator({ upToDate, label }: { upToDate: boolean; label: string }) {
+  return <span
+    className={`kplex-index-status${upToDate ? " is-ready" : " is-updating"}`}
+    title={label}
+    aria-label={label}
+  />;
+}
 
 function ToolButton({ icon, title, on, disabled, onClick }: {
   icon: string;
@@ -41,6 +57,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
   const [hostWidth, setHostWidth] = useState(0);
   const [sidecarRevision, setSidecarRevision] = useState(0);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const sidecarRestoreAttempted = useRef(false);
   const [activePath, setActivePath] = useState(() => {
     const active = plugin.app.workspace.getActiveFile();
@@ -68,11 +85,16 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   }, [plugin, hostLeaf]);
 
   useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
+  useEffect(() => plugin.subscribeIndexStatus(() => forceRender((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeNavigation((path) => {
     const target = plugin.index.get(path);
     if (target) activate(target, true);
   }), [plugin, activate]);
+  useEffect(
+    () => plugin.subscribeSearchFocus(hostLeaf, () => setSearchFocusRequest((value) => value + 1)),
+    [plugin, hostLeaf],
+  );
 
   useEffect(() => {
     const el = rootRef.current;
@@ -196,7 +218,29 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     forceRender((value) => value + 1);
   };
 
-  if (!page) return <div className="excalibrain-app excalibrain-empty">Building K-Plex index…</div>;
+  const activateSearch = () => setSearchFocusRequest((value) => value + 1);
+
+  const handlePlexKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const isF4 = event.key === "F4";
+    const isFindShortcut = event.key.toLocaleLowerCase() === "f" && (event.ctrlKey || event.metaKey) && !event.altKey;
+    if (!isF4 && !isFindShortcut) return;
+    event.preventDefault();
+    event.stopPropagation();
+    activateSearch();
+  };
+
+  const handlePlexPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target as Element | null;
+    if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='button']")) return;
+    rootRef.current?.focus({ preventScroll: true });
+  };
+
+  const indexStatus = plugin.getIndexStatus();
+
+  if (!page) return <div className="excalibrain-app excalibrain-empty">
+    <div className="kplex-index-status-empty"><IndexStatusIndicator {...indexStatus} /></div>
+    <span>Building K-Plex index…</span>
+  </div>;
 
   const linkedLabel = plugin.getLinkedDocumentLeafLabel();
   const syncMode = plugin.getDocumentSyncMode();
@@ -241,14 +285,21 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   void sidecarRevision; // subscription is a render trigger; all state is owned by the plugin.
 
-  return <div ref={rootRef} className={`excalibrain-app kplex-surface-${surface}${condensedBySidecar ? " is-sidecar-condensed" : ""}`}>
+  return <div
+    ref={rootRef}
+    className={`excalibrain-app kplex-surface-${surface}${condensedBySidecar ? " is-sidecar-condensed" : ""}`}
+    tabIndex={-1}
+    onKeyDownCapture={handlePlexKeyDown}
+    onPointerDownCapture={handlePlexPointerDown}
+  >
     <div className="excalibrain-main-column">
       <div className="excalibrain-top-stack">
         <header className="excalibrain-topbar">
+          <IndexStatusIndicator {...indexStatus} />
           <div className="excalibrain-brand"><ObsidianIcon name="brain-circuit" size={20} className="excalibrain-brand-mark" /><strong>K-Plex</strong></div>
           <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
-          <SearchBox index={plugin.index} onActivate={activate} />
+          <SearchBox index={plugin.index} onActivate={activate} focusRequest={searchFocusRequest} />
           <PlexFilter index={plugin.index} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} />
           <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
             <button
@@ -296,7 +347,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

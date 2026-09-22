@@ -349,3 +349,6 @@ Include:
 - confirmation that `npm run build` succeeds
 
 If the requested deliverable is a patch ZIP, include **only modified/new files** in their repository-relative paths.
+
+### Explain relationship navigation
+When changing provenance navigation, preserve host-view ownership: an open sidecar for that K-Plex view is preferred over creating another tab, and using the sidecar for inspection must not implicitly recenter K-Plex.

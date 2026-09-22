@@ -3,7 +3,15 @@ import type { GraphIndex } from "../index/GraphIndex";
 import type { GraphPage } from "../types";
 import { FuzzySearchInput } from "./FuzzySearchInput";
 
-export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate: (page: GraphPage) => void }) {
+export function SearchBox({
+  index,
+  onActivate,
+  focusRequest,
+}: {
+  index: GraphIndex;
+  onActivate: (page: GraphPage) => void;
+  focusRequest?: number;
+}) {
   const [query, setQuery] = useState("");
   const results = useMemo(() => index.search(query, 24), [index, query]);
 
@@ -18,5 +26,6 @@ export function SearchBox({ index, onActivate }: { index: GraphIndex; onActivate
     placeholder="Search nodes…"
     ariaLabel="Search nodes"
     floating
+    focusRequest={focusRequest}
   />;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
-import { Menu, Platform } from "obsidian";
+import { Menu, Platform, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
@@ -436,11 +436,12 @@ function Edge({
   </g>;
 }
 
-export function PlexGraph({ plugin, index, settings, surface, filter, activePath, renderRevision, onActivate, onOpen }: {
+export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, activePath, renderRevision, onActivate, onOpen }: {
   plugin: ExcaliBrainPlugin;
   index: GraphIndex;
   settings: ExcaliBrainSettings;
   surface: KplexViewSurface;
+  hostLeaf: WorkspaceLeaf;
   filter: PlexFilterState;
   activePath: string;
   renderRevision: number;
@@ -1647,6 +1648,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       centerPath: neighborhood?.center.path,
       sourceTitle: explanationSection?.page.name ?? sourceNode?.label,
       targetTitle: explanationTargetSection?.page.name ?? targetNode?.label,
+      hostLeaf,
     }).open();
 
     menu.addItem((item) => item
