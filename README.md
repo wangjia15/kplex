@@ -1,3 +1,5 @@
+![K-PLEX Logo](docs/kplex-logo.png)
+
 # K-Plex
 
 ![KPLEX Screenshot](docs/KPlex-Screenshot-3.png)
