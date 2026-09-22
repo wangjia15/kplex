@@ -17,7 +17,7 @@ import type { KplexIndexedDbCache } from "./IndexedDbCache";
 import type { EvidenceProvenance, EvidenceRole, EvidenceSourceKind } from "./RelationEvidence";
 import { resolveEvidencePair, resolveEvidenceStoreCooperative } from "./RelationResolver";
 import { createGraphState, getGraphPage, type GraphState } from "./GraphState";
-import { perfElapsed, perfLog, perfNow } from "../util/perf";
+import { perfCount, perfDuration, perfElapsed, perfGauge, perfLog, perfNow } from "../util/perf";
 
 export type FieldCacheEntry = { mtime: number; body: ParsedBodyMetadata };
 
@@ -68,6 +68,8 @@ function formatDailyDate(isoDate: string, format: string): string | null {
 export class GraphBuilder {
   private sliceStartedAt = perfNow();
   private hostYieldCount = 0;
+  private hostYieldWaitMs = 0;
+  private hostYieldMaxMs = 0;
 
   constructor(
     private plugin: ExcaliBrainPlugin,
@@ -92,6 +94,8 @@ export class GraphBuilder {
         declarations: state.evidence.declarationCount,
         pairs: state.evidence.pairCount,
         hostYields: this.hostYieldCount,
+        hostYieldWaitMs: Math.round(this.hostYieldWaitMs * 10) / 10,
+        hostYieldMaxMs: Math.round(this.hostYieldMaxMs * 10) / 10,
       };
       this.onProgress?.(`${name}:end`, detail);
       perfLog(`build.${name}`, detail);
@@ -117,6 +121,8 @@ export class GraphBuilder {
       declarations: state.evidence.declarationCount,
       pairs: state.evidence.pairCount,
       hostYields: this.hostYieldCount,
+      hostYieldWaitMs: Math.round(this.hostYieldWaitMs * 10) / 10,
+      hostYieldMaxMs: Math.round(this.hostYieldMaxMs * 10) / 10,
     });
     return state;
   }
@@ -125,8 +131,14 @@ export class GraphBuilder {
     if (!this.isCurrent()) return false;
     const budgetMs = Platform.isIosApp ? 7 : Platform.isMobile ? 9 : 13;
     if (!force && perfNow() - this.sliceStartedAt < budgetMs) return true;
+    const yieldStartedAt = perfNow();
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    const yieldMs = perfNow() - yieldStartedAt;
     this.hostYieldCount += 1;
+    this.hostYieldWaitMs += yieldMs;
+    this.hostYieldMaxMs = Math.max(this.hostYieldMaxMs, yieldMs);
+    perfCount("builder.hostYields");
+    perfDuration("builder.hostYieldWait", yieldMs);
     this.sliceStartedAt = perfNow();
     return this.isCurrent();
   }
@@ -167,11 +179,14 @@ export class GraphBuilder {
     const indexFolders = this.plugin.settings.showFolderNodes;
     const stack: Array<{ folder: TFolder; parent: GraphPage }> = [{ folder: this.app.vault.getRoot(), parent: root }];
     let processed = 0;
+    let folders = 0;
+    let files = 0;
     while (stack.length) {
       if (!this.isCurrent()) return false;
       const { folder, parent } = stack.pop()!;
       for (const item of folder.children) {
         if (item instanceof TFolder) {
+          folders += 1;
           if (indexFolders) {
             const node = this.createPage({ path: `folder:${item.path}`, name: item.name, isFolder: true });
             this.addPage(state, node);
@@ -183,6 +198,7 @@ export class GraphBuilder {
             stack.push({ folder: item, parent: root });
           }
         } else if (item instanceof TFile) {
+          files += 1;
           const node = this.createPage({ path: item.path, name: item.extension === "md" ? item.basename : item.name, file: item });
           this.addPage(state, node);
           if (indexFolders) this.addEvidencePair(state, parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "file-tree", definition: "file-tree" });
@@ -191,6 +207,7 @@ export class GraphBuilder {
         if (!(await this.yieldToHost())) return false;
       }
     }
+    perfLog("build.vault-tree.detail", { processed, folders, files, indexFolders });
     return this.isCurrent();
   }
 
@@ -210,6 +227,7 @@ export class GraphBuilder {
       if (!(await this.yieldToHost())) return false;
     }
 
+    const scannedMarkdown = processed;
     processed = 0;
     for (const rawTag of tagNames) {
       const parts = rawTag.slice(1).split("/").filter(Boolean);
@@ -228,38 +246,48 @@ export class GraphBuilder {
       processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
+    perfLog("build.tag-tree.detail", { scannedMarkdown, uniqueTags: tagNames.size, createdTagPaths: processed });
     return this.isCurrent();
   }
 
   private async addResolvedLinks(state: GraphState): Promise<boolean> {
     let processed = 0;
+    let linkCount = 0;
     for (const [sourcePath, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
       if (!this.isCurrent()) return false;
       const source = getGraphPage(state, sourcePath);
       if (!source) continue;
       for (const targetPath of Object.keys(targets)) {
+        linkCount += 1;
         const target = getGraphPage(state, targetPath);
         if (target) this.addInferredParentChild(state, source, target, "obsidian-link");
       }
       processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
+    perfLog("build.resolved-links.detail", { sources: processed, links: linkCount });
     return this.isCurrent();
   }
 
   private async addUnresolvedLinks(state: GraphState): Promise<boolean> {
     let processed = 0;
+    let linkCount = 0;
+    let virtualCreated = 0;
     for (const [sourcePath, targets] of Object.entries(this.app.metadataCache.unresolvedLinks)) {
       if (!this.isCurrent()) return false;
       const source = getGraphPage(state, sourcePath);
       if (!source || sourcePath === this.plugin.settings.excalibrainFilepath) continue;
       for (const targetPath of Object.keys(targets)) {
+        linkCount += 1;
+        const existed = Boolean(getGraphPage(state, targetPath));
         const target = this.ensureVirtual(state, targetPath);
+        if (!existed) virtualCreated += 1;
         this.addInferredParentChild(state, source, target, "unresolved-link");
       }
       processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
+    perfLog("build.unresolved-links.detail", { sources: processed, links: linkCount, virtualCreated });
     return this.isCurrent();
   }
 
@@ -282,6 +310,8 @@ export class GraphBuilder {
     let parseMs = 0;
     let idbLookupMs = 0;
     let idbWriteMs = 0;
+    let mergeMs = 0;
+    let applyMetadataMs = 0;
     let idbWriteFailures = 0;
     // A handful of medium IDB transactions is much cheaper than one transaction per note. iOS
     // still uses conservative batches to cap temporary decoded-object retention.
@@ -353,8 +383,12 @@ export class GraphBuilder {
           }
         }
 
+        const mergeStartedAt = perfNow();
         const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
+        mergeMs += perfNow() - mergeStartedAt;
+        const applyStartedAt = perfNow();
         this.applyMetadata(state, page, file, meta);
+        applyMetadataMs += perfNow() - applyStartedAt;
 
         processed += 1;
         if (processed % 250 === 0) {
@@ -366,6 +400,7 @@ export class GraphBuilder {
             bodyReads,
             idbWriteFailures,
             elapsedMs: perfElapsed(startedAt),
+            rateFilesPerSecond: perfElapsed(startedAt) > 0 ? Math.round(processed * 10000 / perfElapsed(startedAt)) / 10 : 0,
           });
         }
         if (!(await this.yieldToHost())) return false;
@@ -383,8 +418,15 @@ export class GraphBuilder {
       parseMs: Math.round(parseMs * 10) / 10,
       idbLookupMs: Math.round(idbLookupMs * 10) / 10,
       idbWriteMs: Math.round(idbWriteMs * 10) / 10,
+      mergeMs: Math.round(mergeMs * 10) / 10,
+      applyMetadataMs: Math.round(applyMetadataMs * 10) / 10,
+      hostYieldWaitMs: Math.round(this.hostYieldWaitMs * 10) / 10,
+      hostYieldMaxMs: Math.round(this.hostYieldMaxMs * 10) / 10,
       idbWriteFailures,
+      fieldCacheSize: this.fieldCache.size,
+      rateFilesPerSecond: perfElapsed(startedAt) > 0 ? Math.round(processed * 10000 / perfElapsed(startedAt)) / 10 : 0,
     });
+    perfGauge("builder.fieldCacheSize", this.fieldCache.size);
     return this.isCurrent();
   }
 
@@ -397,7 +439,17 @@ export class GraphBuilder {
    * changes (create/delete/rename) are intentionally handled by a full rebuild instead.
    */
   async patchMarkdownFiles(state: GraphState, files: readonly TFile[]): Promise<boolean> {
+    const startedAt = perfNow();
     let processed = 0;
+    let bodyCacheHits = 0;
+    let bodyReads = 0;
+    let readMs = 0;
+    let parseMs = 0;
+    let writeMs = 0;
+    let applyMs = 0;
+    let resolveMs = 0;
+    let affectedPairs = 0;
+    perfLog("patch.builder.start", { files: files.length, nodes: state.pages.size, declarations: state.evidence.declarationCount });
     for (const file of files) {
       if (!this.isCurrent()) return false;
       const page = getGraphPage(state, file.path);
@@ -432,18 +484,28 @@ export class GraphBuilder {
 
       let body = await this.bodyCache.getBody(file.path, file.stat.mtime);
       this.markHostOpportunity();
+      if (body) bodyCacheHits += 1;
       if (!body) {
+        const readStartedAt = perfNow();
         const content = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
+        readMs += perfNow() - readStartedAt;
+        bodyReads += 1;
         this.markHostOpportunity();
         if (!this.isCurrent()) return false;
+        const parseStartedAt = perfNow();
         body = await this.metadataParser.parse(content);
+        parseMs += perfNow() - parseStartedAt;
         if (!this.isCurrent()) return false;
+        const writeStartedAt = perfNow();
         await this.bodyCache.putBody(file.path, file.stat.mtime, body);
+        writeMs += perfNow() - writeStartedAt;
         this.markHostOpportunity();
       }
       this.fieldCache.set(file.path, { mtime: file.stat.mtime, body });
       const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
+      const applyStartedAt = perfNow();
       this.applyMetadata(state, page, file, meta);
+      applyMs += perfNow() - applyStartedAt;
       page.mtime = file.stat.mtime;
 
       // Capture new targets after applying metadata and resolve just the touched relationship
@@ -452,16 +514,35 @@ export class GraphBuilder {
         affected.add(item.declaredByPath);
         affected.add(item.declaredTargetPath);
       }
+      const resolveStartedAt = perfNow();
       for (const targetPath of affected) {
         if (targetPath === file.path) continue;
+        affectedPairs += 2;
         resolveEvidencePair(state.pages, state.evidence, file.path, targetPath);
         resolveEvidencePair(state.pages, state.evidence, targetPath, file.path);
       }
+      resolveMs += perfNow() - resolveStartedAt;
 
       processed += 1;
       this.onProgress?.("patch:progress", { processed, total: files.length });
       if (!(await this.yieldToHost())) return false;
     }
+    const elapsedMs = perfElapsed(startedAt);
+    perfDuration("patch.builder", elapsedMs);
+    perfLog("patch.builder.end", {
+      files: files.length,
+      processed,
+      elapsedMs,
+      bodyCacheHits,
+      bodyReads,
+      readMs: Math.round(readMs * 10) / 10,
+      parseMs: Math.round(parseMs * 10) / 10,
+      writeMs: Math.round(writeMs * 10) / 10,
+      applyMs: Math.round(applyMs * 10) / 10,
+      resolveMs: Math.round(resolveMs * 10) / 10,
+      affectedPairs,
+      declarations: state.evidence.declarationCount,
+    });
     return this.isCurrent();
   }
 

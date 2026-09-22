@@ -1,5 +1,6 @@
 import { Platform } from "obsidian";
 import { parseBodyMetadata, parseBodyMetadataCore, type ParsedBodyMetadata } from "./fieldParser";
+import { perfCount, perfDuration, perfGauge, perfLog, perfNow, perfElapsed } from "../util/perf";
 
 type Pending = {
   resolve: (value: ParsedBodyMetadata) => void;
@@ -25,11 +26,13 @@ export class MetadataParser {
   private disabled = false;
 
   constructor() {
+    const startedAt = perfNow();
     // WebKit/WebView worker message passing clones whole Markdown strings and parsed payloads.
     // On iOS this transient duplication can be more expensive than parsing one file at a time
     // on the renderer thread with GraphBuilder's cooperative yields, so prefer the low-memory path.
     if (Platform.isIosApp || typeof Worker === "undefined" || typeof Blob === "undefined") {
       this.disabled = true;
+      perfLog("parser.init", { mode: Platform.isIosApp ? "main-thread-ios" : "main-thread-no-worker", elapsedMs: perfElapsed(startedAt) });
       return;
     }
     try {
@@ -57,27 +60,52 @@ export class MetadataParser {
         else pending.reject(new Error(message.error || "Metadata worker failed"));
       };
       this.worker.onerror = () => this.disableWorker();
-    } catch {
+      perfLog("parser.init", { mode: "web-worker", elapsedMs: perfElapsed(startedAt) });
+    } catch (error) {
       this.disabled = true;
       this.worker = null;
+      perfLog("parser.init", { mode: "main-thread-worker-init-failed", elapsedMs: perfElapsed(startedAt), error: error instanceof Error ? error.message : String(error) });
     }
   }
 
   async parse(content: string): Promise<ParsedBodyMetadata> {
-    if (this.disabled || !this.worker) return parseBodyMetadata(content);
+    const startedAt = perfNow();
+    perfCount("parser.calls");
+    perfCount("parser.characters", content.length);
+    if (this.disabled || !this.worker) {
+      const result = parseBodyMetadata(content);
+      const elapsedMs = perfElapsed(startedAt);
+      perfDuration("parser.mainThread", elapsedMs);
+      return result;
+    }
     const id = this.nextId++;
-    return new Promise<ParsedBodyMetadata>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      try {
-        this.worker!.postMessage({ id, content });
-      } catch (error) {
-        this.pending.delete(id);
-        reject(error);
-      }
-    }).catch(() => parseBodyMetadata(content));
+    perfGauge("parser.pending", this.pending.size + 1);
+    try {
+      const result = await new Promise<ParsedBodyMetadata>((resolve, reject) => {
+        this.pending.set(id, { resolve, reject });
+        try {
+          this.worker!.postMessage({ id, content });
+        } catch (error) {
+          this.pending.delete(id);
+          reject(error);
+        }
+      });
+      perfDuration("parser.workerRoundTrip", perfElapsed(startedAt));
+      return result;
+    } catch (error) {
+      perfCount("parser.workerFallbacks");
+      perfLog("parser.worker-fallback", { error: error instanceof Error ? error.message : String(error) });
+      const fallbackStartedAt = perfNow();
+      const result = parseBodyMetadata(content);
+      perfDuration("parser.fallback", perfElapsed(fallbackStartedAt));
+      return result;
+    } finally {
+      perfGauge("parser.pending", this.pending.size);
+    }
   }
 
   destroy(): void {
+    perfLog("parser.destroy", { pending: this.pending.size, worker: Boolean(this.worker), disabled: this.disabled });
     this.worker?.terminate();
     this.worker = null;
     for (const pending of this.pending.values()) pending.reject(new Error("K-Plex metadata parser stopped"));
@@ -85,6 +113,7 @@ export class MetadataParser {
   }
 
   private disableWorker(): void {
+    perfLog("parser.worker-disabled", { pending: this.pending.size });
     this.disabled = true;
     this.worker?.terminate();
     this.worker = null;

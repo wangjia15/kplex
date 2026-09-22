@@ -1,4 +1,5 @@
 import { RelationType, type GraphPage, type Relation, type Role } from "../types";
+import { perfDuration, perfElapsed, perfLog, perfNow } from "../util/perf";
 import {
   RelationEvidenceStore,
   applyEvidenceToRelation,
@@ -129,39 +130,90 @@ export async function resolveEvidenceStoreCooperative(
   isCurrent: () => boolean,
   batchSize = 300,
 ): Promise<boolean> {
+  const startedAt = perfNow();
   // batchSize is now only a cheap cancellation checkpoint. Host yielding is time-budgeted: the
   // old iOS path yielded every 12 records, creating thousands of timers during a large rebuild.
   const sliceBudgetMs = 7;
-  let sliceStartedAt = performance.now();
+  let sliceStartedAt = perfNow();
+  let yieldCount = 0;
+  let yieldWaitMs = 0;
+  let maxYieldMs = 0;
   const maybeYield = async (processed: number): Promise<boolean> => {
     if (processed % batchSize === 0 && !isCurrent()) return false;
-    if (performance.now() - sliceStartedAt < sliceBudgetMs) return true;
+    if (perfNow() - sliceStartedAt < sliceBudgetMs) return true;
+    const yieldStartedAt = perfNow();
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-    sliceStartedAt = performance.now();
+    const waited = perfNow() - yieldStartedAt;
+    yieldCount += 1;
+    yieldWaitMs += waited;
+    maxYieldMs = Math.max(maxYieldMs, waited);
+    sliceStartedAt = perfNow();
     return isCurrent();
   };
 
+  perfLog("resolver.start", { pages: pages.size, pairs: store.pairCount, declarations: store.declarationCount, batchSize });
+
   let processed = 0;
+  const clearStartedAt = perfNow();
   for (const page of pages.values()) {
     page.neighbours = new Map();
     processed += 1;
     if (!(await maybeYield(processed))) return false;
   }
+  const clearMs = perfElapsed(clearStartedAt);
+  perfLog("resolver.clear-neighbours", { pages: processed, elapsedMs: clearMs });
 
   processed = 0;
+  let materialized = 0;
+  let evidenceItems = 0;
+  let lastProgressAt = perfNow();
+  const resolveStartedAt = perfNow();
   for (const [sourcePath, targetPath, evidence] of store.entries()) {
     if (!isCurrent()) return false;
     const source = pages.get(sourcePath);
     const target = pages.get(targetPath);
+    evidenceItems += evidence.length;
     if (source && target) {
       const relation: Relation = { ...emptyRelation(), target };
       for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
       const hasRole = relation.isHidden || relation.isParent || relation.isChild || relation.isLeftFriend || relation.isRightFriend || relation.isNextFriend || relation.isPreviousFriend;
-      if (hasRole) source.neighbours.set(targetPath, relation);
+      if (hasRole) {
+        source.neighbours.set(targetPath, relation);
+        materialized += 1;
+      }
     }
     processed += 1;
+    if (processed % 50000 === 0) {
+      const now = perfNow();
+      perfLog("resolver.progress", {
+        pairs: processed,
+        totalPairs: store.pairCount,
+        recent50kMs: Math.round((now - lastProgressAt) * 10) / 10,
+        elapsedMs: perfElapsed(resolveStartedAt),
+        materialized,
+        evidenceItems,
+        yields: yieldCount,
+      });
+      lastProgressAt = now;
+    }
     if (!(await maybeYield(processed))) return false;
   }
+  const elapsedMs = perfElapsed(startedAt);
+  const resolveMs = perfElapsed(resolveStartedAt);
+  perfDuration("resolver.total", elapsedMs);
+  perfLog("resolver.end", {
+    ok: isCurrent(),
+    elapsedMs,
+    clearMs,
+    resolveMs,
+    pairs: processed,
+    evidenceItems,
+    materialized,
+    yields: yieldCount,
+    yieldWaitMs: Math.round(yieldWaitMs * 10) / 10,
+    maxYieldMs: Math.round(maxYieldMs * 10) / 10,
+    pairsPerSecond: resolveMs > 0 ? Math.round(processed * 10000 / resolveMs) / 10 : 0,
+  });
   return isCurrent();
 }
 

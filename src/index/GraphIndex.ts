@@ -14,7 +14,7 @@ import {
 } from "../types";
 import { GraphBuilder, type FieldCacheEntry } from "./GraphBuilder";
 import type { ParsedBodyMetadata } from "./fieldParser";
-import { KplexIndexedDbCache } from "./IndexedDbCache";
+import { KplexIndexedDbCache, type IndexedDbSnapshotMeta } from "./IndexedDbCache";
 import { createGraphState, getGraphPage } from "./GraphState";
 import type { EvidenceRole, RelationEvidence } from "./RelationEvidence";
 import { MetadataParser } from "./MetadataParser";
@@ -35,7 +35,7 @@ import {
   type PersistedIndexSnapshot,
   type PersistedPage,
 } from "./IndexSnapshot";
-import { perfElapsed, perfLog, perfNow } from "../util/perf";
+import { perfCount, perfDuration, perfElapsed, perfGauge, perfLog, perfNow } from "../util/perf";
 import {
   classifyRelation,
   explainResolvedRelationship,
@@ -60,6 +60,7 @@ type SearchEntry = {
 
 const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const naturalCompare = (a: string, b: string) => naturalCollator.compare(a, b);
+const SNAPSHOT_EDIT_IDLE_MS = 30000;
 
 function subsequenceScore(text: string, query: string): number | null {
   if (!query) return 0;
@@ -109,6 +110,7 @@ export class GraphIndex {
   private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
   private metadataParser = new MetadataParser();
   private snapshotPersistTimer: number | null = null;
+  private orphanCleanupTimer: number | null = null;
   private snapshotPersistGeneration = 0;
   private bodyWarmGeneration = 0;
   private readonly indexedDb: KplexIndexedDbCache;
@@ -116,12 +118,25 @@ export class GraphIndex {
   private restoredModifiedMarkdownPaths: string[] = [];
   private restoredStructuralMismatch = false;
   private restoredPatchPlanAvailable = false;
+  private snapshotHydrationTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> | null = null;
+  private snapshotHydrationRun = 0;
+  private fullSnapshotHydrated = false;
+  private fullSnapshotFresh = false;
+  private previewSnapshotPublished = false;
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {
+    const startedAt = perfNow();
     this.indexedDb = new KplexIndexedDbCache(app.vault.getName());
     // Remove the old parsed-body localStorage payload. IndexedDB is now the only durable index
     // cache; localStorage is a poor fit for large vaults because serialization duplicates memory.
     void this.indexedDb.clearLegacyLocalStorage(app);
+    perfLog("graph-index.constructed", {
+      elapsedMs: perfElapsed(startedAt),
+      markdownFiles: app.vault.getMarkdownFiles().length,
+      physicalFiles: app.vault.getFiles().length,
+      mobile: Platform.isMobile,
+      ios: Platform.isIosApp,
+    });
   }
 
   get pages(): Map<string, GraphPage> { return this.state.pages; }
@@ -132,12 +147,35 @@ export class GraphIndex {
     return () => { this.listeners.delete(listener); };
   }
 
-  private emit(): void { for (const listener of this.listeners) listener(); }
+  private emit(): void {
+    const startedAt = perfNow();
+    perfCount("index.emit.calls");
+    perfCount("index.emit.listeners", this.listeners.size);
+    for (const listener of this.listeners) listener();
+    perfDuration("index.emit", perfElapsed(startedAt));
+    perfGauge("index.listeners", this.listeners.size);
+  }
   notify(): void { this.emit(); }
 
   get size(): number { return this.state.pages.size; }
   get(path: string): GraphPage | undefined { return getGraphPage(this.state, path); }
   allPages(): GraphPage[] { return [...this.state.pages.values()]; }
+
+  instrumentationState(): Record<string, unknown> {
+    let searchCandidateRefs = 0;
+    for (const entries of this.searchCandidateCache.values()) searchCandidateRefs += entries.length;
+    return {
+      "index.cache.fieldEntries": this.fieldCache.size,
+      "index.cache.searchEntries": this.searchEntries.length,
+      "index.cache.searchCandidateKeys": this.searchCandidateCache.size,
+      "index.cache.searchCandidateRefs": searchCandidateRefs,
+      "index.cache.titleEntries": this.titleCache.size,
+      "index.listeners": this.listeners.size,
+      "index.previewPublished": this.previewSnapshotPublished,
+      "index.fullSnapshotHydrated": this.fullSnapshotHydrated,
+      "index.snapshotHydrationPending": this.snapshotHydrationTask !== null,
+    };
+  }
 
   setSearchEntryPoints(paths: string[]): void {
     this.searchEntryPointPaths = [...new Set(paths)];
@@ -206,13 +244,19 @@ export class GraphIndex {
     let bodyReads = 0;
     let bytesRead = 0;
     let writeFailures = 0;
+    let idbLookupMs = 0;
+    let readMs = 0;
+    let parseMs = 0;
+    let idbWriteMs = 0;
     let lastProgress = 0;
     let lastConsoleProgress = 0;
 
     const flush = async (): Promise<boolean> => {
       if (!pendingWrites.length) return current();
       const batch = pendingWrites.splice(0, pendingWrites.length);
+      const writeStartedAt = perfNow();
       const ok = await this.indexedDb.putBodies(batch);
+      idbWriteMs += perfNow() - writeStartedAt;
       if (!ok) writeFailures += batch.length;
       return ok && current();
     };
@@ -220,7 +264,22 @@ export class GraphIndex {
     const progress = (force = false): void => {
       if (!force && processed - lastProgress < 250) return;
       lastProgress = processed;
-      const detail = { processed, total: files.length, hotHits, durableHits, bodyReads, bytesRead, writeFailures, elapsedMs: perfElapsed(startedAt) };
+      const elapsedMs = perfElapsed(startedAt);
+      const detail = {
+        processed,
+        total: files.length,
+        hotHits,
+        durableHits,
+        bodyReads,
+        bytesRead,
+        writeFailures,
+        idbLookupMs: Math.round(idbLookupMs * 10) / 10,
+        readMs: Math.round(readMs * 10) / 10,
+        parseMs: Math.round(parseMs * 10) / 10,
+        idbWriteMs: Math.round(idbWriteMs * 10) / 10,
+        elapsedMs,
+        rateFilesPerSecond: elapsedMs > 0 ? Math.round(processed * 10000 / elapsedMs) / 10 : 0,
+      };
       if (force || processed - lastConsoleProgress >= 1000) {
         lastConsoleProgress = processed;
         perfLog("body-prewarm.progress", detail);
@@ -242,7 +301,9 @@ export class GraphIndex {
           lookupRequests.push({ path: file.path, mtime: file.stat.mtime });
         }
       }
+      const lookupStartedAt = perfNow();
       const durable = await this.indexedDb.getBodies(lookupRequests);
+      idbLookupMs += perfNow() - lookupStartedAt;
       if (!current()) return false;
       durableHits += durable.size;
       const misses: TFile[] = [];
@@ -256,10 +317,14 @@ export class GraphIndex {
         if (!current()) return false;
         const group = misses.slice(readStart, readStart + readConcurrency);
         // Parallelize only native file reads. Parsing remains sequential and low-memory on iOS.
+        const readStartedAt = perfNow();
         const contents = await Promise.all(group.map(async (file) => ({ file, content: await this.app.vault.read(file) })));
+        readMs += perfNow() - readStartedAt;
         if (!current()) return false;
         for (const { file, content } of contents) {
+          const parseStartedAt = perfNow();
           const body = await this.metadataParser.parse(content);
+          parseMs += perfNow() - parseStartedAt;
           if (!current()) return false;
           bodyReads += 1;
           bytesRead += content.length;
@@ -279,7 +344,23 @@ export class GraphIndex {
     }
     if (!(await flush())) return false;
     progress(true);
-    const finalDetail = { processed, total: files.length, hotHits, durableHits, bodyReads, bytesRead, writeFailures, elapsedMs: perfElapsed(startedAt) };
+    const elapsedMs = perfElapsed(startedAt);
+    const finalDetail = {
+      processed,
+      total: files.length,
+      hotHits,
+      durableHits,
+      bodyReads,
+      bytesRead,
+      writeFailures,
+      idbLookupMs: Math.round(idbLookupMs * 10) / 10,
+      readMs: Math.round(readMs * 10) / 10,
+      parseMs: Math.round(parseMs * 10) / 10,
+      idbWriteMs: Math.round(idbWriteMs * 10) / 10,
+      elapsedMs,
+      rateFilesPerSecond: elapsedMs > 0 ? Math.round(processed * 10000 / elapsedMs) / 10 : 0,
+    };
+    perfDuration("bodyPrewarm", elapsedMs);
     perfLog("body-prewarm.end", finalDetail);
     return current() && writeFailures === 0;
   }
@@ -296,7 +377,13 @@ export class GraphIndex {
 
   destroy(): void {
     this.bodyWarmGeneration += 1;
+    this.snapshotHydrationRun += 1;
+    this.snapshotHydrationTask = null;
     if (this.snapshotPersistTimer !== null) window.clearTimeout(this.snapshotPersistTimer);
+    if (this.orphanCleanupTimer !== null) window.clearTimeout(this.orphanCleanupTimer);
+    this.searchCandidateCache.clear();
+    this.titleCache.clear();
+    this.listeners.clear();
     this.indexedDb.close();
     this.metadataParser.destroy();
   }
@@ -322,45 +409,101 @@ export class GraphIndex {
   }
 
   private publishRestoredState(next: ReturnType<typeof createGraphState>): void {
+    const startedAt = perfNow();
     this.state = next;
     this.titleCache.clear();
     this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    const searchStartedAt = perfNow();
     this.rebuildSearchIndex();
+    const searchMs = perfElapsed(searchStartedAt);
+    const emitStartedAt = perfNow();
     this.emit();
+    const emitMs = perfElapsed(emitStartedAt);
+    perfLog("restore.publish-state.detail", { nodes: next.pages.size, searchMs, emitMs, elapsedMs: perfElapsed(startedAt) });
   }
 
-  private async restoreIndexedDbSnapshot(): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
-    const restoreStartedAt = perfNow();
-    let phaseStartedAt = restoreStartedAt;
-    const meta = await this.indexedDb.readSnapshotMeta();
-    perfLog("restore.meta", { elapsedMs: perfElapsed(phaseStartedAt), found: Boolean(meta), schema: meta?.schema ?? null });
-    if (!meta) return { restored: false, fresh: false, createdAt: null };
-    if (meta.settingsSignature !== computeIndexSettingsSignature(this.plugin.settings)) {
-      perfLog("restore.reject.settings", { elapsedMs: perfElapsed(restoreStartedAt) });
-      return { restored: false, fresh: false, createdAt: meta.createdAt };
+  private async publishSnapshotPreview(meta: IndexedDbSnapshotMeta, seedPaths: readonly string[]): Promise<boolean> {
+    if (meta.schema < 2) return false;
+    const startedAt = perfNow();
+    const seeds = [...new Set([
+      ...seedPaths,
+      this.plugin.settings.lastActivePath,
+      ...this.plugin.settings.pinnedNodes,
+    ].filter((path): path is string => typeof path === "string" && path.length > 0))];
+    if (!seeds.length) {
+      perfLog("restore.preview.skip", { reason: "no-seed-paths" });
+      return false;
     }
 
-    phaseStartedAt = perfNow();
-    const currentVaultSignature = computeVaultSignature(this.app);
-    const fresh = meta.vaultSignature === currentVaultSignature;
-    perfLog("restore.vault-signature", {
-      elapsedMs: perfElapsed(phaseStartedAt),
-      fresh,
-      physicalFiles: this.app.vault.getFiles().length,
-      markdownFiles: this.app.vault.getMarkdownFiles().length,
-    });
+    perfLog("restore.preview.start", { seeds: seeds.length, generation: meta.generation });
+    const savedByPath = new Map<string, PersistedPage>();
+    let frontier = [...(await this.indexedDb.getPages(meta.generation, seeds)).values()];
+    for (const page of frontier) savedByPath.set(page.path, page);
+    if (!frontier.length) {
+      perfLog("restore.preview.end", { published: false, reason: "seed-miss", elapsedMs: perfElapsed(startedAt) });
+      return false;
+    }
 
+    // Two relation hops are enough to make the central note, its direct neighbours, and most
+    // sibling rows immediately usable. The preview is deliberately bounded; the complete graph
+    // continues hydrating in the background without delaying first paint.
+    const maxItems = Math.max(8, this.plugin.settings.maxItemCount);
+    const previewLimit = Platform.isMobile ? Math.max(120, Math.min(480, maxItems * 10)) : Math.max(240, Math.min(900, maxItems * 16));
+    for (let depth = 0; depth < 2 && frontier.length && savedByPath.size < previewLimit; depth += 1) {
+      const wanted: string[] = [];
+      const seenWanted = new Set<string>();
+      for (const page of frontier) {
+        for (const relation of page.relations ?? []) {
+          if (savedByPath.has(relation.targetPath) || seenWanted.has(relation.targetPath)) continue;
+          seenWanted.add(relation.targetPath);
+          wanted.push(relation.targetPath);
+          if (savedByPath.size + wanted.length >= previewLimit) break;
+        }
+        if (savedByPath.size + wanted.length >= previewLimit) break;
+      }
+      if (!wanted.length) break;
+      const fetched = await this.indexedDb.getPages(meta.generation, wanted);
+      frontier = [...fetched.values()];
+      for (const page of frontier) savedByPath.set(page.path, page);
+      perfLog("restore.preview.expand", { depth: depth + 1, requested: wanted.length, fetched: frontier.length, totalPages: savedByPath.size, elapsedMs: perfElapsed(startedAt) });
+    }
+
+    const next = createGraphState();
+    for (const saved of savedByPath.values()) addPersistedPageToState(next, saved, this.app);
+    for (const saved of savedByPath.values()) hydratePersistedPageRelations(next, saved);
+    next.discoveredFields = new Map(meta.discoveredFields);
+    this.fullSnapshotHydrated = false;
+    this.previewSnapshotPublished = true;
+    this.restoredPatchPlanAvailable = false;
+    this.publishRestoredState(next);
+    const elapsedMs = perfElapsed(startedAt);
+    perfDuration("restore.preview", elapsedMs);
+    perfGauge("restore.previewPages", next.pages.size);
+    perfLog("restore.preview.end", { published: true, pages: next.pages.size, seeds: seeds.length, elapsedMs });
+    return true;
+  }
+
+  private async restoreFullIndexedDbSnapshot(
+    meta: IndexedDbSnapshotMeta,
+    fresh: boolean,
+    run: number,
+  ): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
+    const restoreStartedAt = perfNow();
+    const isCurrent = () => run === this.snapshotHydrationRun;
+    perfLog("restore.full.start", { schema: meta.schema, chunked: this.indexedDb.snapshotUsesChunks(meta), previewPages: this.state.pages.size });
     const next = createGraphState();
     const persistedPhysicalPaths = new Set<string>();
     const modifiedMarkdownPaths = new Set<string>();
     let persistedFilePages = 0;
     let reboundFilePages = 0;
     const missingFileBindings = new Set<string>();
-    // Desktop can cheaply reuse serialized page objects to hydrate cached neighbour maps and avoid
-    // a second IndexedDB cursor pass. Mobile streams twice instead to keep peak object retention low.
-    const retainedPages = Platform.isMobile ? null : [] as PersistedPage[];
-    phaseStartedAt = perfNow();
-    const pagesOk = await this.indexedDb.iteratePages(meta.generation, (page) => {
+    // Old schema-2 desktop snapshots use one slow page cursor. Retain those decoded records so we
+    // do not pay the same cursor cost twice. Chunked snapshots are cheap to stream a second time,
+    // so avoid retaining 100k+ duplicate serialized page objects in memory.
+    const retainedPages = !Platform.isMobile && !this.indexedDb.snapshotUsesChunks(meta) ? [] as PersistedPage[] : null;
+
+    let phaseStartedAt = perfNow();
+    const pagesOk = await this.indexedDb.iterateSnapshotPages(meta, (page) => {
       retainedPages?.push(page);
       addPersistedPageToState(next, page, this.app);
       if (page.filePath) {
@@ -373,21 +516,17 @@ export class GraphIndex {
         } else missingFileBindings.add(page.path);
       }
     });
-    perfLog("restore.pages", {
-      elapsedMs: perfElapsed(phaseStartedAt),
-      ok: pagesOk,
-      pages: next.pages.size,
-      physicalPages: persistedFilePages,
-      missingBindings: missingFileBindings.size,
-      modifiedMarkdown: modifiedMarkdownPaths.size,
+    perfLog("restore.full.pages", {
+      elapsedMs: perfElapsed(phaseStartedAt), ok: pagesOk, pages: next.pages.size,
+      physicalPages: persistedFilePages, missingBindings: missingFileBindings.size, modifiedMarkdown: modifiedMarkdownPaths.size,
     });
-    if (!pagesOk) return { restored: false, fresh: false, createdAt: meta.createdAt };
+    if (!pagesOk || !isCurrent()) return { restored: false, fresh: false, createdAt: meta.createdAt };
 
     if (missingFileBindings.size) {
       phaseStartedAt = perfNow();
       const delays = Platform.isMobile ? [120, 320, 700] : [80];
       for (const delay of delays) {
-        if (!missingFileBindings.size) break;
+        if (!missingFileBindings.size || !isCurrent()) break;
         await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
         for (const path of [...missingFileBindings]) {
           const page = next.pages.get(path);
@@ -399,11 +538,7 @@ export class GraphIndex {
           reboundFilePages += 1;
         }
       }
-      perfLog("restore.file-bindings", {
-        elapsedMs: perfElapsed(phaseStartedAt),
-        rebound: reboundFilePages,
-        missing: missingFileBindings.size,
-      });
+      perfLog("restore.full.file-bindings", { elapsedMs: perfElapsed(phaseStartedAt), rebound: reboundFilePages, missing: missingFileBindings.size });
     }
 
     phaseStartedAt = perfNow();
@@ -414,69 +549,189 @@ export class GraphIndex {
         if (!persistedPhysicalPaths.has(path)) { structuralMismatch = true; break; }
       }
     }
-    perfLog("restore.structure-compare", {
-      elapsedMs: perfElapsed(phaseStartedAt),
-      mismatch: structuralMismatch,
-      persistedPaths: persistedPhysicalPaths.size,
-      currentPaths: currentPhysicalPaths.size,
+    perfLog("restore.full.structure-compare", {
+      elapsedMs: perfElapsed(phaseStartedAt), mismatch: structuralMismatch,
+      persistedPaths: persistedPhysicalPaths.size, currentPaths: currentPhysicalPaths.size,
     });
 
-    if (structuralMismatch) {
-      return { restored: false, fresh: false, createdAt: meta.createdAt };
-    }
-    if (missingFileBindings.size) {
-      return { restored: false, fresh: false, createdAt: meta.createdAt };
-    }
-
-    phaseStartedAt = perfNow();
-    const evidenceOk = await this.indexedDb.iterateEvidence(meta.generation, (item) => addPersistedEvidenceToState(next, item));
-    perfLog("restore.evidence", {
-      elapsedMs: perfElapsed(phaseStartedAt),
-      ok: evidenceOk,
-      declarations: next.evidence.declarationCount,
-      pairs: next.evidence.pairCount,
-    });
-    if (!evidenceOk) return { restored: false, fresh: false, createdAt: meta.createdAt };
-    next.discoveredFields = new Map(meta.discoveredFields);
-
+    // Persisted page records already carry resolved neighbour relations. Hydrate those before the
+    // much larger evidence store so a complete navigable graph can be published as soon as the
+    // page snapshot is available. Evidence/provenance continues loading in the background.
     phaseStartedAt = perfNow();
     let relationsHydrated = meta.schema >= 2;
+    let hydratedPageCount = 0;
+    let hydratedRelationCount = 0;
     if (relationsHydrated) {
       let relationsComplete = true;
       if (retainedPages) {
-        for (const saved of retainedPages) if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
+        for (const saved of retainedPages) {
+          hydratedPageCount += 1;
+          hydratedRelationCount += saved.relations?.length ?? 0;
+          if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
+        }
       } else {
-        const relationPassOk = await this.indexedDb.iteratePages(meta.generation, (saved) => {
+        const relationPassOk = await this.indexedDb.iterateSnapshotPages(meta, (saved) => {
+          hydratedPageCount += 1;
+          hydratedRelationCount += saved.relations?.length ?? 0;
           if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
         });
         relationsHydrated = relationPassOk && relationsComplete;
       }
       if (retainedPages) relationsHydrated = relationsComplete;
     }
+    perfLog("restore.full.relations", {
+      elapsedMs: perfElapsed(phaseStartedAt), hydrated: relationsHydrated,
+      hydratedPages: hydratedPageCount, hydratedRelations: hydratedRelationCount,
+    });
+    if (!isCurrent()) return { restored: false, fresh: false, createdAt: meta.createdAt };
+
+    if (relationsHydrated) {
+      // Publish a page-only state with complete resolved relations and empty provenance. This is a
+      // deliberate progressive-hydration boundary: navigation/search can work immediately while
+      // the private `next` state continues loading evidence. Do not expose partially-loaded
+      // evidence itself.
+      next.discoveredFields = new Map(meta.discoveredFields);
+      const pagePreview = createGraphState();
+      pagePreview.pages = next.pages;
+      pagePreview.lowercasePathMap = next.lowercasePathMap;
+      pagePreview.discoveredFields = next.discoveredFields;
+      const publishStartedAt = perfNow();
+      this.fullSnapshotHydrated = false;
+      this.fullSnapshotFresh = false;
+      this.previewSnapshotPublished = true;
+      this.restoredPatchPlanAvailable = false;
+      this.publishRestoredState(pagePreview);
+      perfGauge("restore.previewPages", pagePreview.pages.size);
+      perfLog("restore.full.pages-publish", {
+        elapsedMs: perfElapsed(publishStartedAt),
+        sinceFullStartMs: perfElapsed(restoreStartedAt),
+        nodes: pagePreview.pages.size,
+        structuralMismatch,
+        missingBindings: missingFileBindings.size,
+      });
+    }
+
+    phaseStartedAt = perfNow();
+    const evidenceOk = await this.indexedDb.iterateSnapshotEvidence(meta, (item) => addPersistedEvidenceToState(next, item));
+    perfLog("restore.full.evidence", {
+      elapsedMs: perfElapsed(phaseStartedAt), ok: evidenceOk,
+      declarations: next.evidence.declarationCount, pairs: next.evidence.pairCount,
+    });
+    if (!evidenceOk || !isCurrent()) return { restored: false, fresh: false, createdAt: meta.createdAt };
+    next.discoveredFields = new Map(meta.discoveredFields);
+
+    // Schema-1/early schema-2 snapshots without cached relations still need the authoritative
+    // resolver after evidence has loaded. New schema-3 snapshots take the fast relation path above.
     if (!relationsHydrated) {
+      phaseStartedAt = perfNow();
       const resolved = await finalizeHydratedGraphStateCooperative(
         next,
-        () => true,
+        isCurrent,
         Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 400,
       );
       if (!resolved) return { restored: false, fresh: false, createdAt: meta.createdAt };
+      perfLog("restore.full.resolve-fallback", { elapsedMs: perfElapsed(phaseStartedAt), nodes: next.pages.size });
     }
-    perfLog("restore.relations", { elapsedMs: perfElapsed(phaseStartedAt), hydrated: relationsHydrated });
+    if (!isCurrent()) return { restored: false, fresh: false, createdAt: meta.createdAt };
 
+    const authoritativeFresh = fresh && !structuralMismatch && missingFileBindings.size === 0;
     phaseStartedAt = perfNow();
     this.publishRestoredState(next);
-    perfLog("restore.publish", { elapsedMs: perfElapsed(phaseStartedAt), nodes: next.pages.size });
+    this.fullSnapshotHydrated = true;
+    this.fullSnapshotFresh = authoritativeFresh;
+    this.previewSnapshotPublished = false;
     this.restoredModifiedMarkdownPaths = [...modifiedMarkdownPaths];
-    this.restoredStructuralMismatch = false;
-    this.restoredPatchPlanAvailable = true;
-    if (!relationsHydrated) this.scheduleSnapshotPersist(250);
-    perfLog("restore.end", {
-      elapsedMs: perfElapsed(restoreStartedAt),
+    this.restoredStructuralMismatch = structuralMismatch || missingFileBindings.size > 0;
+    this.restoredPatchPlanAvailable = !this.restoredStructuralMismatch;
+    perfGauge("restore.previewPages", 0);
+    perfLog("restore.full.publish", {
+      elapsedMs: perfElapsed(phaseStartedAt),
       nodes: next.pages.size,
-      fresh,
-      modifiedMarkdown: modifiedMarkdownPaths.size,
+      authoritativeFresh,
+      structuralMismatch,
+      missingBindings: missingFileBindings.size,
     });
-    return { restored: true, fresh, createdAt: meta.createdAt };
+
+    if (!relationsHydrated) this.scheduleSnapshotPersist(5000);
+    else if (!this.indexedDb.snapshotUsesChunks(meta) && !Platform.isIosApp) {
+      // One background migration turns the old 356k-record cursor restore into a few hundred
+      // chunk reads on the next launch. Delay it so first paint and Obsidian startup stay quiet.
+      perfLog("restore.chunk-migration.scheduled", { delayMs: 8000, schema: meta.schema });
+      this.scheduleSnapshotPersist(8000);
+    }
+    // Previous builds could leave incomplete generations behind when a snapshot write was
+    // cancelled by another edit. Discover/clean those only after the active graph is usable.
+    if (this.orphanCleanupTimer !== null) window.clearTimeout(this.orphanCleanupTimer);
+    this.orphanCleanupTimer = window.setTimeout(() => {
+      this.orphanCleanupTimer = null;
+      void this.indexedDb.cleanupOrphanGenerations(meta.generation);
+    }, 30000);
+
+    const elapsedMs = perfElapsed(restoreStartedAt);
+    perfDuration("restore.full", elapsedMs);
+    perfLog("restore.full.end", {
+      elapsedMs, nodes: next.pages.size, fresh: authoritativeFresh, modifiedMarkdown: modifiedMarkdownPaths.size,
+      structuralMismatch, missingBindings: missingFileBindings.size,
+      chunked: this.indexedDb.snapshotUsesChunks(meta),
+    });
+    return { restored: true, fresh: authoritativeFresh, createdAt: meta.createdAt };
+  }
+
+  private async restoreIndexedDbSnapshot(seedPaths: readonly string[] = []): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> {
+    const restoreStartedAt = perfNow();
+    perfLog("restore.start", { currentNodes: this.state.pages.size, seedPaths: seedPaths.length });
+    let phaseStartedAt = restoreStartedAt;
+    const meta = await this.indexedDb.readSnapshotMeta();
+    perfLog("restore.meta", { elapsedMs: perfElapsed(phaseStartedAt), found: Boolean(meta), schema: meta?.schema ?? null, pageChunks: meta?.pageChunkCount ?? 0, evidenceChunks: meta?.evidenceChunkCount ?? 0 });
+    if (!meta) return { restored: false, fresh: false, createdAt: null };
+    if (meta.settingsSignature !== computeIndexSettingsSignature(this.plugin.settings)) {
+      perfLog("restore.reject.settings", { elapsedMs: perfElapsed(restoreStartedAt) });
+      return { restored: false, fresh: false, createdAt: meta.createdAt };
+    }
+
+    phaseStartedAt = perfNow();
+    const currentVaultSignature = computeVaultSignature(this.app);
+    const fresh = meta.vaultSignature === currentVaultSignature;
+    perfLog("restore.vault-signature", {
+      elapsedMs: perfElapsed(phaseStartedAt), fresh,
+      physicalFiles: this.app.vault.getFiles().length, markdownFiles: this.app.vault.getMarkdownFiles().length,
+    });
+
+    const previewPublished = await this.publishSnapshotPreview(meta, seedPaths);
+    const run = ++this.snapshotHydrationRun;
+    this.fullSnapshotHydrated = false;
+    this.fullSnapshotFresh = false;
+    const task = this.restoreFullIndexedDbSnapshot(meta, fresh, run).catch((error) => {
+      perfLog("restore.full.error", { error: error instanceof Error ? error.message : String(error), elapsedMs: perfElapsed(restoreStartedAt) });
+      return { restored: false, fresh: false, createdAt: meta.createdAt };
+    });
+    this.snapshotHydrationTask = task;
+    void task.finally(() => {
+      if (run === this.snapshotHydrationRun && this.snapshotHydrationTask === task) this.snapshotHydrationTask = null;
+    }).catch(() => { /* task is normalized above; finalizer must never surface */ });
+
+    if (previewPublished) {
+      perfLog("restore.return-preview", { elapsedMs: perfElapsed(restoreStartedAt), pages: this.state.pages.size, fresh, fullHydrationPending: true });
+      return { restored: true, fresh, createdAt: meta.createdAt, partial: true };
+    }
+
+    const full = await task;
+    perfLog("restore.return-full", { elapsedMs: perfElapsed(restoreStartedAt), restored: full.restored, fresh: full.fresh, nodes: this.state.pages.size });
+    return full;
+  }
+
+  hasPendingSnapshotHydration(): boolean {
+    return this.snapshotHydrationTask !== null;
+  }
+
+  isFullSnapshotHydrated(): boolean {
+    return this.fullSnapshotHydrated;
+  }
+
+  async waitForSnapshotHydration(): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
+    const task = this.snapshotHydrationTask;
+    if (!task) return { restored: this.fullSnapshotHydrated, fresh: this.fullSnapshotFresh, createdAt: null };
+    return task;
   }
 
   hasIncrementalRestorePatch(): boolean {
@@ -485,6 +740,7 @@ export class GraphIndex {
 
   /** Patch modified Markdown sources into a restored snapshot without rebuilding the whole vault. */
   async reconcileRestoredSnapshot(): Promise<{ reconciled: boolean; patched: number }> {
+    const startedAt = perfNow();
     if (!this.restoredPatchPlanAvailable || this.restoredStructuralMismatch) return { reconciled: false, patched: 0 };
     const paths = [...this.restoredModifiedMarkdownPaths];
     if (!paths.length) return { reconciled: true, patched: 0 };
@@ -498,7 +754,9 @@ export class GraphIndex {
     }
 
     this.building = true;
+    perfGauge("index.building", true);
     const run = ++this.generation;
+    perfLog("restore.reconcile.start", { run, files: files.length, currentNodes: this.state.pages.size });
     try {
       const builder = new GraphBuilder(
         this.plugin,
@@ -516,17 +774,23 @@ export class GraphIndex {
       this.restoredModifiedMarkdownPaths = [];
       this.restoredPatchPlanAvailable = false;
       this.emit();
-      this.scheduleSnapshotPersist(5000);
+      this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+      const elapsedMs = perfElapsed(startedAt);
+      perfDuration("restore.reconcile", elapsedMs);
+      perfLog("restore.reconcile.end", { patched: files.length, elapsedMs, nodes: this.state.pages.size });
       return { reconciled: true, patched: files.length };
     } finally {
       this.building = false;
+      perfGauge("index.building", false);
     }
   }
 
   /** Incrementally replace declarations owned by already-indexed Markdown files.
    * Used for normal metadataCache.changed events so editing one note does not rebuild a large vault. */
   async patchMarkdownPaths(paths: readonly string[]): Promise<{ patched: boolean; count: number }> {
+    const startedAt = perfNow();
     if (this.building || !paths.length) return { patched: false, count: 0 };
+    perfLog("patch.index.start", { requestedPaths: paths.length, nodes: this.state.pages.size, declarations: this.state.evidence.declarationCount });
     const files: TFile[] = [];
     for (const path of [...new Set(paths)]) {
       const file = this.app.vault.getAbstractFileByPath(path);
@@ -536,6 +800,7 @@ export class GraphIndex {
     if (!files.length) return { patched: true, count: 0 };
 
     this.building = true;
+    perfGauge("index.building", true);
     const run = ++this.generation;
     try {
       const builder = new GraphBuilder(
@@ -548,10 +813,14 @@ export class GraphIndex {
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
       this.rebuildSearchIndex();
       this.emit();
-      this.scheduleSnapshotPersist(5000);
+      this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+      const elapsedMs = perfElapsed(startedAt);
+      perfDuration("patch.index", elapsedMs);
+      perfLog("patch.index.end", { files: files.length, elapsedMs, nodes: this.state.pages.size, declarations: this.state.evidence.declarationCount });
       return { patched: true, count: files.length };
     } finally {
       this.building = false;
+      perfGauge("index.building", false);
     }
   }
 
@@ -612,12 +881,17 @@ export class GraphIndex {
    * is chunked so iOS never has to parse/stringify the entire graph as one enormous temporary
    * string/object. A v1 file is still accepted once for seamless migration.
    */
-  async restorePersistedSnapshot(): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
-    // IndexedDB is the sole active graph cache. Reading the old file snapshots can require giant
-    // JSON parse/stringify spikes, exactly the startup pattern that is unsafe on large iOS vaults.
+  async restorePersistedSnapshot(seedPaths: readonly string[] = []): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> {
+    // IndexedDB is the sole active graph cache. A small neighborhood is published first from
+    // targeted page reads; full graph hydration continues independently in the background.
     const startedAt = perfNow();
-    const indexed = await this.restoreIndexedDbSnapshot();
-    perfLog("restore.complete", { elapsedMs: perfElapsed(startedAt), restored: indexed.restored, fresh: indexed.fresh });
+    const indexed = await this.restoreIndexedDbSnapshot(seedPaths);
+    const elapsedMs = perfElapsed(startedAt);
+    perfDuration("restore.total", elapsedMs);
+    perfLog("restore.complete", {
+      elapsedMs, restored: indexed.restored, fresh: indexed.fresh, partial: indexed.partial === true,
+      nodes: this.state.pages.size, fullHydrationPending: this.hasPendingSnapshotHydration(),
+    });
     void this.cleanupLegacySnapshotFiles();
     return indexed;
   }
@@ -679,28 +953,60 @@ export class GraphIndex {
     if (run !== this.snapshotPersistGeneration || this.state.pages.size === 0) return;
     const startedAt = perfNow();
     perfLog("persist.start", { nodes: this.state.pages.size, declarations: this.state.evidence.declarationCount });
+    let pageSerializeMs = 0;
+    let pageSerialized = 0;
+    let evidenceSerializeMs = 0;
+    let evidenceSerialized = 0;
     const pages = function* (state: typeof this.state): IterableIterator<PersistedPage> {
       for (const page of state.pages.values()) {
-        if (!page.transient) yield persistedPageFromGraphPage(page);
+        if (page.transient) continue;
+        const itemStartedAt = perfNow();
+        const persisted = persistedPageFromGraphPage(page);
+        pageSerializeMs += perfNow() - itemStartedAt;
+        pageSerialized += 1;
+        yield persisted;
       }
     }.call(this, this.state);
 
     const evidence = function* (state: typeof this.state): IterableIterator<PersistedEvidenceDeclaration> {
-      for (const item of state.evidence.declarations()) yield persistedDeclarationFromEvidence(item);
+      for (const item of state.evidence.declarations()) {
+        const itemStartedAt = perfNow();
+        const persisted = persistedDeclarationFromEvidence(item);
+        evidenceSerializeMs += perfNow() - itemStartedAt;
+        evidenceSerialized += 1;
+        yield persisted;
+      }
     }.call(this, this.state);
 
+    const signatureStartedAt = perfNow();
+    const vaultSignature = computeVaultSignature(this.app);
+    const settingsSignature = computeIndexSettingsSignature(this.plugin.settings);
+    const signatureMs = perfElapsed(signatureStartedAt);
     const persisted = await this.indexedDb.writeSnapshot({
       createdAt: Date.now(),
-      vaultSignature: computeVaultSignature(this.app),
-      settingsSignature: computeIndexSettingsSignature(this.plugin.settings),
+      vaultSignature,
+      settingsSignature,
       discoveredFields: [...this.state.discoveredFields.entries()],
     }, pages, evidence, () => run === this.snapshotPersistGeneration);
 
     if (!persisted || run !== this.snapshotPersistGeneration) {
-      perfLog("persist.cancelled", { elapsedMs: perfElapsed(startedAt), persisted });
+      perfLog("persist.cancelled", { elapsedMs: perfElapsed(startedAt), persisted, signatureMs, pageSerialized, pageSerializeMs: Math.round(pageSerializeMs * 10) / 10, evidenceSerialized, evidenceSerializeMs: Math.round(evidenceSerializeMs * 10) / 10 });
       return;
     }
-    perfLog("persist.end", { elapsedMs: perfElapsed(startedAt), nodes: this.state.pages.size });
+    const elapsedMs = perfElapsed(startedAt);
+    perfDuration("persist.total", elapsedMs);
+    perfDuration("persist.pageSerialize", pageSerializeMs);
+    perfDuration("persist.evidenceSerialize", evidenceSerializeMs);
+    perfLog("persist.end", {
+      elapsedMs,
+      nodes: this.state.pages.size,
+      declarations: this.state.evidence.declarationCount,
+      signatureMs,
+      pageSerialized,
+      pageSerializeMs: Math.round(pageSerializeMs * 10) / 10,
+      evidenceSerialized,
+      evidenceSerializeMs: Math.round(evidenceSerializeMs * 10) / 10,
+    });
     // Clean legacy file-based snapshots only after IndexedDB has had a chance to become
     // authoritative. Failures are harmless; they are ignored on the next startup once IDB loads.
     const legacyManifest = await this.readSnapshotManifest();
@@ -712,9 +1018,14 @@ export class GraphIndex {
   }
 
   private scheduleSnapshotPersist(delayOverride?: number): void {
-    if (this.snapshotPersistTimer !== null) window.clearTimeout(this.snapshotPersistTimer);
+    if (this.snapshotPersistTimer !== null) {
+      window.clearTimeout(this.snapshotPersistTimer);
+      perfCount("persist.timerResets");
+    }
     const run = ++this.snapshotPersistGeneration;
-    const delay = delayOverride ?? (Platform.isIosApp ? 1400 : Platform.isMobile ? 900 : 450);
+    const delay = delayOverride ?? (Platform.isIosApp ? 12000 : Platform.isMobile ? 8000 : 5000);
+    perfCount("persist.scheduled");
+    perfGauge("persist.delayMs", delay);
     this.snapshotPersistTimer = window.setTimeout(() => {
       this.snapshotPersistTimer = null;
       void this.persistIndexedDbSnapshot(run).catch(() => { /* persistence is an optimization only */ });
@@ -723,15 +1034,19 @@ export class GraphIndex {
 
   /** Build a complete graph off to the side, then atomically publish it. */
   async rebuild(): Promise<boolean> {
+    const startedAt = perfNow();
     if (this.building) {
       // Main.ts coalesces dirty events and will request one follow-up rebuild after this one.
       // Never invalidate useful work merely because MetadataCache emitted another startup event:
       // that cancellation loop was particularly harmful on slower mobile devices.
       this.rebuildQueued = true;
+      perfCount("rebuild.rejectedAlreadyBuilding");
       return false;
     }
     this.building = true;
+    perfGauge("index.building", true);
     const run = ++this.generation;
+    perfLog("rebuild.start", { run, currentNodes: this.state.pages.size, markdownFiles: this.app.vault.getMarkdownFiles().length });
     try {
       const builder = new GraphBuilder(
         this.plugin,
@@ -741,24 +1056,53 @@ export class GraphIndex {
         this.indexedDb,
         () => run === this.generation,
       );
+      const builderStartedAt = perfNow();
       const next = await builder.build();
-      if (!next || run !== this.generation) return false;
+      const builderMs = perfElapsed(builderStartedAt);
+      if (!next || run !== this.generation) {
+        perfLog("rebuild.cancelled", { run, builderMs, elapsedMs: perfElapsed(startedAt) });
+        return false;
+      }
 
       // Atomic graph-state swap: readers never observe a half-built graph.
+      const publishStartedAt = perfNow();
       this.state = next;
+      this.fullSnapshotHydrated = true;
+      this.fullSnapshotFresh = true;
+      this.previewSnapshotPublished = false;
       this.titleCache.clear();
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+      const searchStartedAt = perfNow();
       this.rebuildSearchIndex();
+      const searchMs = perfElapsed(searchStartedAt);
+      const emitStartedAt = perfNow();
       this.emit();
+      const emitMs = perfElapsed(emitStartedAt);
+      const publishMs = perfElapsed(publishStartedAt);
       this.scheduleSnapshotPersist();
+      const elapsedMs = perfElapsed(startedAt);
+      perfDuration("rebuild.total", elapsedMs);
+      perfLog("rebuild.end", {
+        run,
+        elapsedMs,
+        builderMs,
+        publishMs,
+        searchMs,
+        emitMs,
+        nodes: this.state.pages.size,
+        declarations: this.state.evidence.declarationCount,
+        pairs: this.state.evidence.pairCount,
+      });
       return true;
     } finally {
       this.building = false;
       this.rebuildQueued = false;
+      perfGauge("index.building", false);
     }
   }
 
   private rebuildSearchIndex(): void {
+    const startedAt = perfNow();
     this.searchCandidateCache.clear();
     this.searchEntries = [...this.state.pages.values()].map((page) => ({
       page,
@@ -766,6 +1110,11 @@ export class GraphIndex {
       aliases: page.aliases.map((alias) => alias.toLowerCase()),
       path: page.path.toLowerCase(),
     }));
+    const elapsedMs = perfElapsed(startedAt);
+    perfCount("searchIndex.rebuilds");
+    perfDuration("searchIndex.rebuild", elapsedMs);
+    perfGauge("searchIndex.entries", this.searchEntries.length);
+    if (elapsedMs >= 20 || this.searchEntries.length >= 50000) perfLog("search-index.rebuild", { entries: this.searchEntries.length, elapsedMs });
   }
 
   relationshipStorageCandidates(sourcePath: string, targetPath: string): string[] {
@@ -819,7 +1168,7 @@ export class GraphIndex {
     if (source.file) source.mtime = source.file.stat.mtime;
     this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
     this.emit();
-    this.scheduleSnapshotPersist(5000);
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
     return true;
   }
 
@@ -988,6 +1337,7 @@ export class GraphIndex {
   }
 
   getNeighborhood(path: string): Neighborhood | null {
+    const startedAt = perfNow();
     const center = this.get(path);
     if (!center) return null;
     const max = this.plugin.settings.maxItemCount;
@@ -1016,7 +1366,12 @@ export class GraphIndex {
     const siblingKeys = siblingList.map((item, index) => ({ item, index, title: this.titleFor(item.page) }));
     siblingKeys.sort((a, b) => naturalCompare(a.title, b.title) || a.index - b.index);
     const siblings = siblingKeys.slice(0, max).map((entry) => entry.item);
-    return { center, parents, children, leftFriends, rightFriends, siblings };
+    const result = { center, parents, children, leftFriends, rightFriends, siblings };
+    const elapsedMs = perfElapsed(startedAt);
+    perfCount("query.neighborhood.calls");
+    perfDuration("query.neighborhood", elapsedMs);
+    perfGauge("query.neighborhood.lastNodeCount", 1 + parents.length + children.length + leftFriends.length + rightFriends.length + siblings.length);
+    return result;
   }
 
   titleFor(page: GraphPage): string {

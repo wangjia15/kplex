@@ -7,6 +7,7 @@ import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { EMPTY_PLEX_FILTER, PlexFilter, type PlexFilterState } from "./PlexFilter";
+import { perfCount, perfElapsed, perfGauge, perfLog, perfNow } from "../util/perf";
 
 type BooleanToolbarSetting =
   | "showAttachments"
@@ -36,7 +37,11 @@ function ToolButton({ icon, title, on, disabled, onClick }: {
 }
 
 export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBrainPlugin; surface: KplexViewSurface; hostLeaf: WorkspaceLeaf }) {
+  perfCount("ui.app.render");
   const rootRef = useRef<HTMLDivElement>(null);
+  const mountedAt = useRef(perfNow());
+  const firstPageVisibleLogged = useRef(false);
+  const waitingForIndexLogged = useRef(false);
   const [renderRevision, forceRender] = useState(0);
   const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
   const [hostWidth, setHostWidth] = useState(0);
@@ -67,7 +72,10 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     void plugin.syncSidecarToPage(hostLeaf, target);
   }, [plugin, hostLeaf]);
 
-  useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
+  useEffect(() => plugin.index.subscribe(() => {
+    perfCount("ui.index-signal");
+    forceRender((value) => value + 1);
+  }), [plugin]);
   useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeNavigation((path) => {
     const target = plugin.index.get(path);
@@ -105,6 +113,33 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const page = plugin.index.get(activePath)
     ?? (plugin.settings.lastActivePath ? plugin.index.get(plugin.settings.lastActivePath) : undefined)
     ?? plugin.index.get("folder:/");
+
+  useEffect(() => {
+    perfGauge("ui.host-width", hostWidth);
+  }, [hostWidth]);
+
+  useEffect(() => {
+    if (page) {
+      if (firstPageVisibleLogged.current) return;
+      firstPageVisibleLogged.current = true;
+      window.requestAnimationFrame(() => {
+        perfLog("ui.first-page-visible", {
+          surface,
+          elapsedMs: perfElapsed(mountedAt.current),
+          indexNodes: plugin.index.size,
+          renderRevision,
+        });
+      });
+      return;
+    }
+    if (waitingForIndexLogged.current) return;
+    waitingForIndexLogged.current = true;
+    perfLog("ui.waiting-for-index", {
+      surface,
+      elapsedMs: perfElapsed(mountedAt.current),
+      indexNodes: plugin.index.size,
+    });
+  }, [Boolean(page), surface, plugin, renderRevision]);
 
   useEffect(() => {
     if (!page || plugin.settings.lastActivePath === page.path) return;

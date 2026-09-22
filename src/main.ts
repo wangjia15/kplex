@@ -9,6 +9,7 @@ import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./
 import { AddToOntologyModal, type OntologyAssignmentRole } from "./ui/AddToOntologyModal";
 import { NoteTypeModal } from "./ui/NoteTypeModal";
 import { activeLayoutProfile, currentDeviceClass, effectiveViewSettings, layoutProfileKey } from "./ui/viewProfile";
+import { perfCount, perfDuration, perfElapsed, perfGauge, perfLog, perfNow, perfStartWorkloadMonitor, perfStopWorkloadMonitor } from "./util/perf";
 
 type LoadAwareView = FileView & { _loaded?: boolean };
 
@@ -30,13 +31,15 @@ export default class ExcaliBrainPlugin extends Plugin {
   private rebuildTask: Promise<void> | null = null;
   private initialIndexTask: Promise<void> | null = null;
   private initialIndexComplete = false;
-  private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> | null = null;
+  private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> | null = null;
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
   private readonly sidecarListeners = new Set<() => void>();
   private readonly navigationListeners = new Set<(path: string) => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
+  private instrumentationOnloadAt = 0;
+  private oldestDirtyAt = 0;
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -52,7 +55,14 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async onload(): Promise<void> {
+    this.instrumentationOnloadAt = perfNow();
+    perfLog("plugin.onload.start", {
+      platform: Platform.isIosApp ? "ios" : Platform.isAndroidApp ? "android" : Platform.isMobile ? "mobile" : "desktop",
+      version: this.manifest.version,
+    });
+    const settingsStartedAt = perfNow();
     const ownData: unknown = await this.loadData();
+    perfLog("plugin.settings.load", { elapsedMs: perfElapsed(settingsStartedAt), hasData: Boolean(ownData) });
     const ownRecord = ownData && typeof ownData === "object" ? ownData as Record<string, unknown> : null;
     const alreadyKplex = Boolean(
       ownRecord?.kplexInitialized ||
@@ -69,6 +79,21 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
     this.index = new GraphIndex(this);
+    perfStartWorkloadMonitor(() => ({
+      active: this.openKplexViews > 0,
+      openViews: this.openKplexViews,
+      indexNodes: this.index?.size ?? 0,
+      indexFullHydrated: this.index?.isFullSnapshotHydrated?.() ?? false,
+      indexHydrationPending: this.index?.hasPendingSnapshotHydration?.() ?? false,
+      indexDirty: this.indexDirty,
+      dirtyMarkdownPaths: this.dirtyMarkdownPaths.size,
+      dirtyAgeMs: this.oldestDirtyAt > 0 ? perfElapsed(this.oldestDirtyAt) : 0,
+      rebuildInFlight: Boolean(this.rebuildTask),
+      rebuildTimerPending: this.rebuildTimer !== null,
+      initialIndexComplete: this.initialIndexComplete,
+      backlogReasons: [...this.indexBacklogReasons],
+      ...(this.index?.instrumentationState?.() ?? {}),
+    }), 10000);
 
     this.registerView(EXCALIBRAIN_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ExcaliBrainView(leaf, this));
     this.registerView(KPLEX_SIDEPANEL_VIEW_TYPE, (leaf: WorkspaceLeaf) => new KplexSidepanelView(leaf, this));
@@ -168,8 +193,17 @@ export default class ExcaliBrainPlugin extends Plugin {
       }, interval));
     }
 
+    perfLog("plugin.onload.registered", { elapsedMs: perfElapsed(this.instrumentationOnloadAt) });
+
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
+        const layoutReadyAt = perfNow();
+        perfLog("startup.layout-ready", {
+          sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt),
+          markdownFiles: this.app.vault.getMarkdownFiles().length,
+          physicalFiles: this.app.vault.getFiles().length,
+          resolvedLinkSources: Object.keys(this.app.metadataCache.resolvedLinks).length,
+        });
         this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
 
         if (!alreadyKplex) {
@@ -185,9 +219,26 @@ export default class ExcaliBrainPlugin extends Plugin {
         // Restore only after Obsidian's workspace/vault layout is ready. Restoring earlier can
         // temporarily hydrate real files as virtual nodes on mobile while the vault tree is still
         // settling, producing the misleading "ghost then real" startup scene.
-        this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot();
+        const restoreStartedAt = perfNow();
+        perfLog("startup.snapshot-restore.start", { sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt) });
+        const startupSeedPaths = this.startupGraphSeedPaths();
+        perfLog("startup.snapshot-restore.seeds", { count: startupSeedPaths.length, paths: startupSeedPaths.slice(0, 6) });
+        this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot(startupSeedPaths);
         const restored = await this.snapshotRestoreTask;
-        if (restored.restored) await this.refreshBookmarkedEntryPoints();
+        perfLog("startup.snapshot-restore.end", {
+          elapsedMs: perfElapsed(restoreStartedAt),
+          sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt),
+          restored: restored.restored,
+          fresh: restored.fresh,
+          partial: restored.partial === true,
+          fullHydrationPending: this.index.hasPendingSnapshotHydration(),
+          nodes: this.index.size,
+        });
+        if (restored.restored) {
+          const bookmarksStartedAt = perfNow();
+          await this.refreshBookmarkedEntryPoints();
+          perfLog("startup.bookmarks.refresh", { elapsedMs: perfElapsed(bookmarksStartedAt) });
+        }
         this.indexDirty = !restored.fresh;
         if (!restored.fresh) {
           this.indexDirtyRevision += 1;
@@ -195,6 +246,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         }
 
         this.layoutReady = true;
+        perfGauge("startup.layoutReady", true);
         this.registerReactiveIndexListeners();
         this.registerOntologyContextMenu();
         // Prewarm exactly once per Obsidian session when it is safe to do so. A fresh persisted
@@ -203,14 +255,37 @@ export default class ExcaliBrainPlugin extends Plugin {
         // hidden WebView was responsible for a restart loop on iPad. The per-file IndexedDB body
         // checkpoints still let an interrupted first scan resume instead of starting at file zero.
         const noteCount = this.app.vault.getMarkdownFiles().length;
-        const largeIosExpensiveRebuild = Platform.isIosApp && !restored.fresh &&
+        const largeIosExpensiveRebuild = Platform.isIosApp && !restored.fresh && !this.index.hasPendingSnapshotHydration() &&
           (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
+        perfLog("startup.initial-index-policy", {
+          noteCount,
+          largeIosExpensiveRebuild,
+          restored: restored.restored,
+          fresh: restored.fresh,
+          incrementalRestorePatch: this.index.hasIncrementalRestorePatch(),
+          sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt),
+        });
         if (!largeIosExpensiveRebuild) void this.ensureInitialIndex();
+        perfLog("startup.layout-ready-work.end", { elapsedMs: perfElapsed(layoutReadyAt), sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt) });
       })();
     });
   }
 
+  private startupGraphSeedPaths(): string[] {
+    const paths: string[] = [];
+    const active = this.app.workspace.getActiveFile();
+    if (active) paths.push(active.path);
+    const recentLeaf = this.findRecentDocumentLeaf();
+    const recentFile = this.fileForLeaf(recentLeaf);
+    if (recentFile) paths.push(recentFile.path);
+    if (this.settings.lastActivePath) paths.push(this.settings.lastActivePath);
+    paths.push(...this.settings.pinnedNodes);
+    return [...new Set(paths.filter(Boolean))];
+  }
+
   onunload(): void {
+    perfLog("plugin.unload", { sinceOnloadMs: this.instrumentationOnloadAt ? perfElapsed(this.instrumentationOnloadAt) : 0, nodes: this.index?.size ?? 0 });
+    perfStopWorkloadMonitor();
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     for (const leaf of this.sidecarLeaves.values()) {
       try { leaf.detach(); } catch { /* workspace is already closing */ }
@@ -219,18 +294,50 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.index?.destroy();
   }
 
+  private pruneManagedMetadataWrites(now = Date.now()): void {
+    let removed = 0;
+    for (const [path, until] of this.managedMetadataWrites) {
+      if (until > now) continue;
+      this.managedMetadataWrites.delete(path);
+      removed += 1;
+    }
+    if (removed) perfCount("managedMetadataWrites.expired", removed);
+    perfGauge("managedMetadataWrites.size", this.managedMetadataWrites.size);
+  }
+
   private registerReactiveIndexListeners(): void {
     if (this.reactiveIndexListenersRegistered) return;
     this.reactiveIndexListenersRegistered = true;
 
-    this.registerEvent(this.app.vault.on("create", () => this.scheduleRebuild("vault:create")));
-    this.registerEvent(this.app.vault.on("delete", () => this.scheduleRebuild("vault:delete")));
-    this.registerEvent(this.app.vault.on("rename", () => this.scheduleRebuild("vault:rename")));
+    this.registerEvent(this.app.vault.on("create", () => {
+      perfCount("event.vaultCreate");
+      if (!this.oldestDirtyAt) this.oldestDirtyAt = perfNow();
+      this.scheduleRebuild("vault:create");
+    }));
+    this.registerEvent(this.app.vault.on("delete", () => {
+      perfCount("event.vaultDelete");
+      if (!this.oldestDirtyAt) this.oldestDirtyAt = perfNow();
+      this.scheduleRebuild("vault:delete");
+    }));
+    this.registerEvent(this.app.vault.on("rename", () => {
+      perfCount("event.vaultRename");
+      if (!this.oldestDirtyAt) this.oldestDirtyAt = perfNow();
+      this.scheduleRebuild("vault:rename");
+    }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      perfCount("event.metadataChanged");
+      this.pruneManagedMetadataWrites();
       const until = this.managedMetadataWrites.get(file.path) ?? 0;
-      if (until > Date.now()) return;
+      if (until > Date.now()) {
+        perfCount("event.metadataChangedManagedIgnored");
+        return;
+      }
       this.managedMetadataWrites.delete(file.path);
-      if (file.extension === "md") this.dirtyMarkdownPaths.add(file.path);
+      if (file.extension === "md") {
+        this.dirtyMarkdownPaths.add(file.path);
+        if (!this.oldestDirtyAt) this.oldestDirtyAt = perfNow();
+      }
+      perfGauge("queue.dirtyMarkdownPaths", this.dirtyMarkdownPaths.size);
       this.scheduleRebuild("metadata:changed");
     }));
     // metadataCache.resolved fires in large waves during startup and after a single link edit.
@@ -239,8 +346,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private async waitForMetadataCacheStability(): Promise<number> {
-    const started = performance.now();
+    const started = perfNow();
     const markdownFiles = this.app.vault.getMarkdownFiles().length;
+    perfLog("startup.metadata-stability.start", { markdownFiles, resolvedLinkSources: Object.keys(this.app.metadataCache.resolvedLinks).length });
     if (markdownFiles === 0) {
       return 0;
     }
@@ -254,31 +362,52 @@ export default class ExcaliBrainPlugin extends Plugin {
     const pollMs = 100;
     const minimumCoverage = 0.95;
     let lastCount = Object.keys(this.app.metadataCache.resolvedLinks).length;
-    let stableSince = performance.now();
+    let stableSince = perfNow();
+    let lastProgressLogAt = started;
 
-    while (performance.now() - started < maxWaitMs) {
+    while (perfNow() - started < maxWaitMs) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, pollMs));
-      const now = performance.now();
+      const now = perfNow();
       const count = Object.keys(this.app.metadataCache.resolvedLinks).length;
       if (count !== lastCount) {
         lastCount = count;
         stableSince = now;
       }
       const coverage = markdownFiles > 0 ? count / markdownFiles : 1;
+      if (now - lastProgressLogAt >= 1000) {
+        perfLog("startup.metadata-stability.progress", {
+          elapsedMs: perfElapsed(started),
+          resolvedLinkSources: count,
+          coverage: Math.round(coverage * 1000) / 10,
+          quietForMs: Math.round((now - stableSince) * 10) / 10,
+        });
+        lastProgressLogAt = now;
+      }
       if (coverage >= minimumCoverage && now - stableSince >= quietWindowMs) {
         break;
       }
     }
 
+    perfLog("startup.metadata-stability.end", {
+      elapsedMs: perfElapsed(started),
+      resolvedLinkSources: lastCount,
+      coverage: markdownFiles > 0 ? Math.round(lastCount / markdownFiles * 1000) / 10 : 100,
+    });
     return lastCount;
   }
 
   private scheduleRebuild(reason = "unknown"): void {
+    perfCount(`schedule.${reason}`);
     this.indexDirty = true;
     this.indexDirtyRevision += 1;
     this.indexBacklogReasons.add(reason);
+    perfGauge("queue.dirtyRevision", this.indexDirtyRevision);
+    perfGauge("queue.dirtyMarkdownPaths", this.dirtyMarkdownPaths.size);
     if (this.openKplexViews <= 0 || !this.initialIndexComplete || this.rebuildTask) return;
-    if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
+    if (this.rebuildTimer !== null) {
+      window.clearTimeout(this.rebuildTimer);
+      perfCount("schedule.timerResets");
+    }
     this.rebuildTimer = window.setTimeout(() => {
       this.rebuildTimer = null;
       void this.rebuildIndex(false, false, reason);
@@ -286,14 +415,20 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async onKplexViewOpened(): Promise<void> {
+    const startedAt = perfNow();
     this.openKplexViews += 1;
+    perfGauge("views.open", this.openKplexViews);
+    perfLog("view.open", { openViews: this.openKplexViews, layoutReady: this.layoutReady, nodes: this.index.size, sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt) });
     if (!this.layoutReady) return;
     await this.ensureIndexReady("view-open");
+    perfLog("view.index-ready", { elapsedMs: perfElapsed(startedAt), openViews: this.openKplexViews, nodes: this.index.size, initialIndexComplete: this.initialIndexComplete });
   }
 
   onKplexViewClosed(hostLeaf?: WorkspaceLeaf): void {
     if (hostLeaf) void this.closeSidecar(hostLeaf, false);
     this.openKplexViews = Math.max(0, this.openKplexViews - 1);
+    perfGauge("views.open", this.openKplexViews);
+    perfLog("view.close", { openViews: this.openKplexViews, nodes: this.index.size, dirty: this.indexDirty, dirtyMarkdownPaths: this.dirtyMarkdownPaths.size });
     if (this.openKplexViews > 0) return;
     if (this.rebuildTimer !== null) {
       window.clearTimeout(this.rebuildTimer);
@@ -309,21 +444,70 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private async ensureInitialIndex(): Promise<void> {
-    if (this.initialIndexTask) return this.initialIndexTask;
+    if (this.initialIndexTask) {
+      perfCount("startup.initialIndex.joinExisting");
+      return this.initialIndexTask;
+    }
+    const requestedAt = perfNow();
+    perfLog("startup.initial-index.start", {
+      sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt),
+      nodes: this.index.size,
+      dirty: this.indexDirty,
+      dirtyRevision: this.indexDirtyRevision,
+      openViews: this.openKplexViews,
+    });
     this.initialIndexTask = (async () => {
-      if (!this.layoutReady) return;
+      if (!this.layoutReady) {
+        perfLog("startup.initial-index.abort", { reason: "layout-not-ready" });
+        return;
+      }
 
-      // A fresh persisted semantic snapshot is already the initial index. Do not make mobile
+      // A preview neighborhood can already be on screen while the complete persisted graph is
+      // still hydrating. Keep the UI usable, but do not declare the authoritative index ready
+      // (or allow persistence/reconciliation against the preview) until that background restore
+      // finishes. View rendering itself does not await this task.
+      if (this.index.hasPendingSnapshotHydration()) {
+        const hydrationStartedAt = perfNow();
+        perfLog("startup.initial-index.await-full-snapshot.start", { previewNodes: this.index.size });
+        const hydrated = await this.index.waitForSnapshotHydration();
+        perfLog("startup.initial-index.await-full-snapshot.end", {
+          elapsedMs: perfElapsed(hydrationStartedAt), restored: hydrated.restored, fresh: hydrated.fresh, nodes: this.index.size,
+        });
+        if (!hydrated.restored) {
+          this.indexDirty = true;
+          this.indexDirtyRevision += 1;
+          this.indexBacklogReasons.add("startup:partial-restore-incomplete");
+        } else {
+          const bookmarksStartedAt = perfNow();
+          await this.refreshBookmarkedEntryPoints();
+          perfLog("startup.bookmarks.refresh-after-full-hydration", { elapsedMs: perfElapsed(bookmarksStartedAt) });
+          if (!hydrated.fresh) {
+            this.indexDirty = true;
+            this.indexBacklogReasons.add("startup:stale-snapshot");
+          }
+        }
+      } else if (this.index.size > 0 && !this.index.isFullSnapshotHydrated()) {
+        // The preview task failed after it had already returned a usable partial scene. Fall back
+        // to a normal rebuild instead of ever treating that partial scene as the complete index.
+        this.indexDirty = true;
+        this.indexDirtyRevision += 1;
+        this.indexBacklogReasons.add("startup:partial-restore-incomplete");
+      }
+
+      // A fresh, fully hydrated semantic snapshot is already the initial index. Do not make mobile
       // users wait for MetadataCache's startup quiet window when there is literally nothing to
       // reconcile. Reactive listeners will mark the snapshot dirty if a real change arrives.
-      if (!this.indexDirty && this.index.size > 0) {
+      if (!this.indexDirty && this.index.size > 0 && this.index.isFullSnapshotHydrated()) {
         this.initialIndexComplete = true;
+        perfLog("startup.initial-index.ready-from-fresh-snapshot", { elapsedMs: perfElapsed(requestedAt), nodes: this.index.size });
         return;
       }
       if (!this.metadataStabilized) {
+        const stabilityStartedAt = perfNow();
         this.metadataStabilityPromise ??= this.waitForMetadataCacheStability();
         await this.metadataStabilityPromise;
         this.metadataStabilized = true;
+        perfLog("startup.initial-index.metadata-stable", { elapsedMs: perfElapsed(stabilityStartedAt), sinceRequestMs: perfElapsed(requestedAt) });
       }
 
       // Warm startup: a semantic IndexedDB snapshot already contains the entire graph. When the
@@ -332,17 +516,26 @@ export default class ExcaliBrainPlugin extends Plugin {
       // editing a few notes between Obsidian sessions and is especially important for 20k+ vaults.
       if (this.indexDirty && this.index.size > 0 && this.index.hasIncrementalRestorePatch()) {
         const patchRevision = this.indexDirtyRevision;
+        const reconcileStartedAt = perfNow();
+        perfLog("startup.initial-index.reconcile.start", { dirtyRevision: patchRevision, nodes: this.index.size });
         const patched = await this.index.reconcileRestoredSnapshot();
+        perfLog("startup.initial-index.reconcile.end", { elapsedMs: perfElapsed(reconcileStartedAt), reconciled: patched.reconciled, patched: patched.patched });
         if (patched.reconciled && patchRevision === this.indexDirtyRevision) {
           this.indexDirty = false;
           this.indexBacklogReasons.clear();
           this.initialIndexComplete = true;
+          this.oldestDirtyAt = 0;
+          perfLog("startup.initial-index.complete", { path: "snapshot-reconcile", elapsedMs: perfElapsed(requestedAt), nodes: this.index.size });
           return;
         }
       }
       // Give iOS one paint/GC opportunity after Obsidian's own startup metadata wave before
       // allocating a second graph snapshot. This is deliberately small; it is not a polling loop.
-      if (Platform.isIosApp) await new Promise<void>((resolve) => window.setTimeout(resolve, 450));
+      if (Platform.isIosApp) {
+        const iosPauseStartedAt = perfNow();
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 450));
+        perfLog("startup.initial-index.ios-pause", { elapsedMs: perfElapsed(iosPauseStartedAt) });
+      }
 
       // Large iOS cold start: prime parsed Markdown bodies in small transactional IndexedDB
       // checkpoints before allocating the complete semantic graph. The previous architecture read
@@ -352,16 +545,30 @@ export default class ExcaliBrainPlugin extends Plugin {
       const noteCount = this.app.vault.getMarkdownFiles().length;
       const needsIosBodyPrewarm = Platform.isIosApp && this.index.size === 0 && noteCount > 5000;
       if (needsIosBodyPrewarm) {
+        const prewarmStartedAt = perfNow();
+        perfLog("startup.initial-index.prewarm.start", { noteCount });
         const warmed = await this.index.prewarmBodyCache(() => this.openKplexViews > 0);
+        perfLog("startup.initial-index.prewarm.end", { elapsedMs: perfElapsed(prewarmStartedAt), warmed, openViews: this.openKplexViews });
         if (!warmed && this.openKplexViews <= 0) {
           return;
         }
       }
 
       if (this.indexDirty || this.index.size === 0) {
+        const rebuildStartedAt = perfNow();
+        perfLog("startup.initial-index.rebuild.start", { force: this.index.size === 0, dirty: this.indexDirty, nodes: this.index.size });
         await this.performRebuild(false, this.index.size === 0, "startup:initial-index", true);
+        perfLog("startup.initial-index.rebuild.end", { elapsedMs: perfElapsed(rebuildStartedAt), dirty: this.indexDirty, nodes: this.index.size });
       }
       this.initialIndexComplete = this.index.size > 0;
+      if (this.initialIndexComplete && !this.indexDirty) this.oldestDirtyAt = 0;
+      perfLog("startup.initial-index.complete", {
+        path: "rebuild",
+        elapsedMs: perfElapsed(requestedAt),
+        sinceOnloadMs: perfElapsed(this.instrumentationOnloadAt),
+        nodes: this.index.size,
+        dirty: this.indexDirty,
+      });
 
       // Changes that arrived while the initial build was running are coalesced. Only reconcile
       // them immediately when the user currently has a Plex open; otherwise keep the backlog.
@@ -375,9 +582,12 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async ensureIndexReady(reason = "view-open"): Promise<void> {
+    const startedAt = perfNow();
     if (!this.layoutReady) return;
+    perfLog("index-ready.start", { reason, nodes: this.index.size, dirty: this.indexDirty });
     await this.ensureInitialIndex();
     await this.rebuildIndex(false, this.index.size === 0, reason);
+    perfLog("index-ready.end", { reason, elapsedMs: perfElapsed(startedAt), nodes: this.index.size, dirty: this.indexDirty });
   }
 
   async rebuildIndex(showNotice = false, force = false, reason = "direct"): Promise<void> {
@@ -385,47 +595,110 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private async performRebuild(showNotice: boolean, force: boolean, reason: string, allowClosed: boolean): Promise<void> {
+    const requestedAt = perfNow();
     const explicitlyRequested = showNotice;
-    if (this.openKplexViews <= 0 && !allowClosed && !explicitlyRequested) return;
+    if (this.openKplexViews <= 0 && !allowClosed && !explicitlyRequested) {
+      perfCount("rebuild.skippedClosed");
+      return;
+    }
 
     if (this.rebuildTask) {
+      const waitStartedAt = perfNow();
+      perfCount("rebuild.joinExisting");
+      perfLog("rebuild-request.join-existing", { reason, dirtyMarkdownPaths: this.dirtyMarkdownPaths.size, dirtyRevision: this.indexDirtyRevision });
       // Do not invalidate an in-flight graph. Metadata events already mark indexDirty and will be
       // folded into one follow-up rebuild when the current snapshot has published.
       await this.rebuildTask;
+      perfDuration("rebuild.waitExisting", perfElapsed(waitStartedAt));
       return;
     }
 
     const shouldSkip = !force && !showNotice && !this.indexDirty && this.index.size > 0;
-    if (shouldSkip) return;
+    if (shouldSkip) {
+      perfCount("rebuild.skippedClean");
+      return;
+    }
 
     if (force || showNotice) {
       this.indexDirty = true;
       this.indexDirtyRevision += 1;
       this.indexBacklogReasons.add(reason);
+      if (!this.oldestDirtyAt) this.oldestDirtyAt = perfNow();
     }
     const startRevision = this.indexDirtyRevision;
+    perfLog("rebuild-request.start", {
+      reason,
+      force,
+      showNotice,
+      allowClosed,
+      openViews: this.openKplexViews,
+      nodes: this.index.size,
+      dirtyRevision: startRevision,
+      dirtyMarkdownPaths: this.dirtyMarkdownPaths.size,
+      dirtyAgeMs: this.oldestDirtyAt > 0 ? perfElapsed(this.oldestDirtyAt) : 0,
+      backlogReasons: [...this.indexBacklogReasons],
+    });
+
+    let pathTaken = "none";
     const task = (async () => {
       // Ordinary edits are file-owned evidence changes. Patch those files directly rather than
       // rebuilding the vault. Folder/tag topology and explicit/manual rebuilds remain full scans.
       const structuralDirty = [...this.indexBacklogReasons].some((item) => item !== "metadata:changed" && item !== "coalesced-backlog" && item !== "interval");
       const canIncrementalPatch = !force && !showNotice && this.index.size > 0 && !structuralDirty &&
         !this.settings.showTagNodes && this.dirtyMarkdownPaths.size > 0;
+      perfLog("rebuild-request.plan", {
+        reason,
+        structuralDirty,
+        canIncrementalPatch,
+        dirtyMarkdownPaths: this.dirtyMarkdownPaths.size,
+        showTagNodes: this.settings.showTagNodes,
+      });
       if (canIncrementalPatch) {
+        pathTaken = "incremental";
         const paths = [...this.dirtyMarkdownPaths];
+        const patchStartedAt = perfNow();
+        perfLog("runtime-patch.start", {
+          reason,
+          files: paths.length,
+          dirtyAgeMs: this.oldestDirtyAt > 0 ? perfElapsed(this.oldestDirtyAt) : 0,
+          nodes: this.index.size,
+        });
         const result = await this.index.patchMarkdownPaths(paths);
+        const patchMs = perfElapsed(patchStartedAt);
+        perfDuration("runtimePatch", patchMs);
+        perfCount("runtimePatch.files", result.patched ? result.count : 0);
+        perfLog("runtime-patch.end", {
+          reason,
+          patched: result.patched,
+          files: result.count,
+          requestedFiles: paths.length,
+          elapsedMs: patchMs,
+          dirtyRevisionNow: this.indexDirtyRevision,
+          dirtyMarkdownPathsNow: this.dirtyMarkdownPaths.size,
+        });
         if (result.patched) {
           for (const path of paths) this.dirtyMarkdownPaths.delete(path);
           if (this.indexDirtyRevision === startRevision && this.dirtyMarkdownPaths.size === 0) {
             this.indexDirty = false;
             this.indexBacklogReasons.clear();
           }
+          const bookmarksStartedAt = perfNow();
           await this.refreshBookmarkedEntryPoints();
+          perfDuration("bookmarks.refreshAfterPatch", perfElapsed(bookmarksStartedAt));
+          if (!this.indexDirty && this.dirtyMarkdownPaths.size === 0) this.oldestDirtyAt = 0;
+          perfGauge("queue.dirtyMarkdownPaths", this.dirtyMarkdownPaths.size);
           return;
         }
         // Any uncertainty falls back to the authoritative full builder below.
+        perfCount("runtimePatch.fallbackToFull");
       }
+      pathTaken = canIncrementalPatch ? "incremental-fallback-full" : "full";
       if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
+      const fullStartedAt = perfNow();
       const published = await this.index.rebuild();
+      const fullMs = perfElapsed(fullStartedAt);
+      perfDuration("fullRebuild", fullMs);
+      perfLog("full-rebuild.result", { reason, published, elapsedMs: fullMs, nodes: this.index.size, dirtyRevisionNow: this.indexDirtyRevision });
       if (!published) {
         this.indexDirty = true;
         this.indexBacklogReasons.add(reason);
@@ -441,17 +714,37 @@ export default class ExcaliBrainPlugin extends Plugin {
       } else {
         this.indexDirty = true;
       }
+      const bookmarksStartedAt = perfNow();
       await this.refreshBookmarkedEntryPoints();
+      perfDuration("bookmarks.refreshAfterFull", perfElapsed(bookmarksStartedAt));
+      if (!this.indexDirty && this.dirtyMarkdownPaths.size === 0) this.oldestDirtyAt = 0;
+      perfGauge("queue.dirtyMarkdownPaths", this.dirtyMarkdownPaths.size);
       if (showNotice) new Notice(`K-Plex indexed ${this.index.size} nodes.`, 1800);
     })();
     this.rebuildTask = task;
+    perfGauge("rebuild.inFlight", true);
     try {
       await task;
     } finally {
       if (this.rebuildTask === task) this.rebuildTask = null;
+      perfGauge("rebuild.inFlight", false);
     }
 
+    const elapsedMs = perfElapsed(requestedAt);
+    perfDuration("rebuildRequest", elapsedMs);
+    perfLog("rebuild-request.end", {
+      reason,
+      path: pathTaken,
+      elapsedMs,
+      nodes: this.index.size,
+      dirty: this.indexDirty,
+      dirtyRevision: this.indexDirtyRevision,
+      dirtyMarkdownPaths: this.dirtyMarkdownPaths.size,
+      backlogReasons: [...this.indexBacklogReasons],
+    });
+
     if (this.indexDirty && this.initialIndexComplete && this.openKplexViews > 0 && this.rebuildTimer === null) {
+      perfCount("schedule.coalescedBacklog");
       this.rebuildTimer = window.setTimeout(() => {
         this.rebuildTimer = null;
         void this.rebuildIndex(false, false, "coalesced-backlog");
@@ -1151,9 +1444,11 @@ export default class ExcaliBrainPlugin extends Plugin {
 
     const collect = (items: BookmarkItem[] | undefined): void => {
       for (const item of items ?? []) {
-        if (item.type === "file" && item.path && item.path !== this.settings.excalibrainFilepath && this.index.get(item.path)) {
+        if (item.type === "file" && item.path && item.path !== this.settings.excalibrainFilepath && this.app.vault.getAbstractFileByPath(item.path)) {
+          // Keep entry-point paths even while startup is displaying only a partial graph. search()
+          // resolves them against the current index later, after full hydration has completed.
           paths.push(item.path);
-        } else if (item.type === "folder" && item.path && this.index.get(`folder:${item.path}`)) {
+        } else if (item.type === "folder" && item.path && this.app.vault.getAbstractFileByPath(item.path)) {
           paths.push(`folder:${item.path}`);
         }
         if (item.type === "group" || item.items) collect(item.items);
@@ -1336,7 +1631,9 @@ export default class ExcaliBrainPlugin extends Plugin {
     // Large vaults can deliver metadataCache.changed several seconds after processFrontMatter.
     // Keep our own write suppressed long enough that it cannot accidentally trigger a full-vault
     // backlog rebuild after the live semantic pair has already been patched in memory.
+    this.pruneManagedMetadataWrites();
     this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
+    perfGauge("managedMetadataWrites.size", this.managedMetadataWrites.size);
     const ontologyFields = new Set(this.allOntologyFields().map(normalizeFieldName));
     const desiredNormalized = normalizeFieldName(field);
     const reference = this.referenceForPage(target, storageFile);
@@ -1364,7 +1661,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private async clearFrontmatterRelationship(storageFile: TFile, target: GraphPage): Promise<void> {
+    this.pruneManagedMetadataWrites();
     this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
+    perfGauge("managedMetadataWrites.size", this.managedMetadataWrites.size);
     const ontologyFields = new Set(this.allOntologyFields().map(normalizeFieldName));
     await this.app.fileManager.processFrontMatter(storageFile, (frontmatter: Record<string, unknown>) => {
       for (const key of Object.keys(frontmatter)) {
