@@ -1134,7 +1134,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const midX = (a.x + b.x) / 2 - rect.left;
     const midY = (a.y + b.y) / 2 - rect.top;
     viewport.current?.classList.add("is-pinch-gesturing");
-    plugin.recordDiagnostic("touch:pinch-start", { scale: Number(camera.current.scale.toFixed(3)), ios: Platform.isIosApp });
     pinchGesture.current = {
       startDistance: distance,
       startScale: camera.current.scale,
@@ -1391,7 +1390,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       touchPointers.current.delete(e.pointerId);
       if (moved) suppressActivateUntil.current = Date.now() + 220;
       pinchGesture.current = null;
-      if (hadPinch) plugin.recordDiagnostic("touch:pinch-end", { scale: Number(camera.current.scale.toFixed(3)) });
       viewport.current?.classList.remove("is-pinch-gesturing");
       if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
       panDrag.current = null;
@@ -1420,7 +1418,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       const hadPinch = Boolean(pinchGesture.current);
       touchPointers.current.delete(e.pointerId);
       pinchGesture.current = null;
-      if (hadPinch) plugin.recordDiagnostic("touch:pinch-cancel", { scale: Number(camera.current.scale.toFixed(3)) });
       viewport.current?.classList.remove("is-pinch-gesturing");
       if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
     }

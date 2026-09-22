@@ -130,7 +130,7 @@ Search must feel immediate in large vaults.
 
 ### Instrumentation
 
-Detailed `[K-Plex PERF]` instrumentation was useful during optimization but should be removed from normal production output.
+Temporary performance instrumentation may be added while diagnosing regressions, but it must be disabled or removed from normal production output once the issue is resolved.
 
 If profiling is needed again, add it behind an explicit development/debug flag and emit copy-friendly string lines. Do not leave high-volume console logging enabled by default.
 
@@ -218,9 +218,7 @@ Density must **not** change node interior padding. Use the tight padding from th
 - Perform one initial session index (or accept a fresh restored snapshot), then stop reactive rebuild work while no K-Plex view is open. Vault/metadata events accumulate as a dirty backlog until the next open. On iOS, cancelling the last open Plex must also cancel a first cold build; completed IndexedDB checkpoints remain reusable.
 - Large build and resolver loops must cooperate with the host using **time-budgeted slices**, not tiny fixed record-count yields. `setTimeout(0)` should occur only after the current synchronous slice has consumed its budget; yielding every note can turn an otherwise fast iOS pass into tens of seconds of timer overhead. All long work must remain cancellable. Never clear the dirty backlog unless a snapshot was actually published.
 - Per-file incremental edits must use the evidence store's path index (`declarationsTouching` / `removeDeclarationsTouching`) rather than scanning every evidence declaration. Full semantic snapshot persistence after small edits should be deferred/coalesced and cancelled when the last K-Plex view closes.
-- Keep content-free `[K-Plex index]` console timings for restore/build/cache phases. Counters, elapsed time, and optional heap figures are allowed; note contents and paths are not.
 - During iOS pinch, prefer a temporarily simplified scene over GPU/WebView memory pressure: no expensive shadows/filters and relationship SVGs may be temporarily suppressed until the gesture ends.
-- Mobile diagnostic logging must never include note contents. Persist only a small lifecycle/index/gesture ring buffer so a WebView restart can be investigated later.
 
 ### Companion sidecar
 

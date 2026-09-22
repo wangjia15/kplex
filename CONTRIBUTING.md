@@ -149,7 +149,7 @@ Reuse the previous query's matching candidate set for longer query prefixes when
 
 ### Debug logging
 
-Do not leave detailed `[K-Plex PERF]` instrumentation enabled in production.
+Do not leave temporary indexing/performance instrumentation enabled in production.
 
 If you need to profile a regression, gate detailed string-only logs behind a development/debug flag and remove/disable them before merging.
 

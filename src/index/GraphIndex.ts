@@ -190,10 +190,8 @@ export class GraphIndex {
     if (!files.length) return true;
 
     const storeReady = await this.indexedDb.bodyStoreReady();
-    this.plugin.recordDiagnostic("index:body-prewarm-start", { files: files.length, storeReady });
     perfLog("body-prewarm.start", { files: files.length, storeReady });
     if (!storeReady || !current()) {
-      this.plugin.recordDiagnostic("index:body-prewarm-unavailable", { storeReady, cancelled: !current() });
       return false;
     }
 
@@ -223,7 +221,6 @@ export class GraphIndex {
       if (!force && processed - lastProgress < 250) return;
       lastProgress = processed;
       const detail = { processed, total: files.length, hotHits, durableHits, bodyReads, bytesRead, writeFailures, elapsedMs: perfElapsed(startedAt) };
-      this.plugin.recordDiagnostic("index:body-prewarm-progress", detail);
       if (force || processed - lastConsoleProgress >= 1000) {
         lastConsoleProgress = processed;
         perfLog("body-prewarm.progress", detail);
@@ -270,7 +267,6 @@ export class GraphIndex {
           pendingWrites.push({ path: file.path, mtime: file.stat.mtime, body });
           progress();
           if (pendingWrites.length >= writeBatchSize && !(await flush())) {
-            this.plugin.recordDiagnostic("index:body-prewarm-write-failed", { processed, writeFailures });
             return false;
           }
         }
@@ -284,7 +280,6 @@ export class GraphIndex {
     if (!(await flush())) return false;
     progress(true);
     const finalDetail = { processed, total: files.length, hotHits, durableHits, bodyReads, bytesRead, writeFailures, elapsedMs: perfElapsed(startedAt) };
-    this.plugin.recordDiagnostic("index:body-prewarm-end", finalDetail);
     perfLog("body-prewarm.end", finalDetail);
     return current() && writeFailures === 0;
   }
@@ -427,17 +422,9 @@ export class GraphIndex {
     });
 
     if (structuralMismatch) {
-      this.plugin.recordDiagnostic("index:snapshot-structure-rejected", {
-        persistedPaths: persistedPhysicalPaths.size,
-        currentPaths: currentPhysicalPaths.size,
-        modifiedMarkdown: modifiedMarkdownPaths.size,
-      });
       return { restored: false, fresh: false, createdAt: meta.createdAt };
     }
     if (missingFileBindings.size) {
-      this.plugin.recordDiagnostic("index:snapshot-file-bindings-rejected", {
-        persistedFilePages, reboundFilePages, missing: missingFileBindings.size, fresh,
-      });
       return { restored: false, fresh: false, createdAt: meta.createdAt };
     }
 
@@ -513,7 +500,6 @@ export class GraphIndex {
     this.building = true;
     const run = ++this.generation;
     try {
-      this.plugin.recordDiagnostic("index:patch-start", { files: files.length });
       const builder = new GraphBuilder(
         this.plugin,
         this.app,
@@ -521,7 +507,6 @@ export class GraphIndex {
         this.metadataParser,
         this.indexedDb,
         () => run === this.generation,
-        (phase, detail) => this.plugin.recordDiagnostic(`index:${phase}`, detail),
       );
       const ok = await builder.patchMarkdownFiles(this.state, files);
       if (!ok || run !== this.generation) return { reconciled: false, patched: 0 };
@@ -532,7 +517,6 @@ export class GraphIndex {
       this.restoredPatchPlanAvailable = false;
       this.emit();
       this.scheduleSnapshotPersist(5000);
-      this.plugin.recordDiagnostic("index:patch-end", { files: files.length, nodes: this.state.pages.size });
       return { reconciled: true, patched: files.length };
     } finally {
       this.building = false;
@@ -554,11 +538,9 @@ export class GraphIndex {
     this.building = true;
     const run = ++this.generation;
     try {
-      this.plugin.recordDiagnostic("index:incremental-start", { files: files.length });
       const builder = new GraphBuilder(
         this.plugin, this.app, this.fieldCache, this.metadataParser, this.indexedDb,
         () => run === this.generation,
-        (phase, detail) => this.plugin.recordDiagnostic(`index:${phase}`, detail),
       );
       const ok = await builder.patchMarkdownFiles(this.state, files);
       if (!ok || run !== this.generation) return { patched: false, count: 0 };
@@ -567,7 +549,6 @@ export class GraphIndex {
       this.rebuildSearchIndex();
       this.emit();
       this.scheduleSnapshotPersist(5000);
-      this.plugin.recordDiagnostic("index:incremental-end", { files: files.length, nodes: this.state.pages.size });
       return { patched: true, count: files.length };
     } finally {
       this.building = false;
@@ -759,7 +740,6 @@ export class GraphIndex {
         this.metadataParser,
         this.indexedDb,
         () => run === this.generation,
-        (phase, detail) => this.plugin.recordDiagnostic(`index:${phase}`, detail),
       );
       const next = await builder.build();
       if (!next || run !== this.generation) return false;

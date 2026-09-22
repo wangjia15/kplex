@@ -34,53 +34,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
   private readonly sidecarListeners = new Set<() => void>();
   private readonly navigationListeners = new Set<(path: string) => void>();
-  private diagnosticEntries: Array<{ at: string; event: string; detail?: string }> = [];
-  private readonly diagnosticStorageKey = "k-plex:mobile-diagnostics:v1";
   private readonly managedMetadataWrites = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
-
-  private restoreDiagnostics(): void {
-    try {
-      const saved = this.app.loadLocalStorage(this.diagnosticStorageKey) as { version?: number; entries?: Array<{ at: string; event: string; detail?: string }> } | null;
-      if (saved?.version === 1 && Array.isArray(saved.entries)) this.diagnosticEntries = saved.entries.slice(-180);
-    } catch { this.diagnosticEntries = []; }
-  }
-
-  recordDiagnostic(event: string, detail?: unknown): void {
-    if (!Platform.isMobile) return;
-    let rendered: string | undefined;
-    if (detail !== undefined) {
-      try { rendered = typeof detail === "string" ? detail : JSON.stringify(detail); }
-      catch { rendered = String(detail); }
-    }
-    this.diagnosticEntries.push({ at: new Date().toISOString(), event, detail: rendered });
-    if (this.diagnosticEntries.length > 180) this.diagnosticEntries.splice(0, this.diagnosticEntries.length - 180);
-    try { this.app.saveLocalStorage(this.diagnosticStorageKey, { version: 1, entries: this.diagnosticEntries }); } catch { /* diagnostics must never affect K-Plex */ }
-  }
-
-  private async exportDiagnostics(): Promise<void> {
-    const path = normalizePath("K-Plex consolelog.md");
-    const header = [
-      "# K-Plex mobile diagnostics",
-      "",
-      `Generated: ${new Date().toISOString()}`,
-      `K-Plex: ${this.manifest.version}`,
-      `Platform: ${Platform.isIosApp ? "iOS" : Platform.isAndroidApp ? "Android" : Platform.isMobile ? "mobile" : "desktop"}`,
-      `Form factor: ${currentDeviceClass()}`,
-      `Index nodes: ${this.index?.size ?? 0}`,
-      "",
-      "> This is a small K-Plex lifecycle/gesture trace, not a capture of note contents.",
-      "",
-      "```text",
-    ];
-    const lines = this.diagnosticEntries.map((entry) => `${entry.at}  ${entry.event}${entry.detail ? `  ${entry.detail}` : ""}`);
-    const body = [...header, ...lines, "```", ""].join("\n");
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof TFile) await this.app.vault.modify(existing, body);
-    else await this.app.vault.create(path, body);
-    new Notice(`Exported K-Plex diagnostics to ${path}.`, 2600);
-  }
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -107,17 +63,6 @@ export default class ExcaliBrainPlugin extends Plugin {
       ownRecord?.noteTypeField
     );
     this.settings = migrateAndMergeSettings(ownData);
-    this.restoreDiagnostics();
-    this.recordDiagnostic("plugin:load", { ios: Platform.isIosApp, android: Platform.isAndroidApp, device: currentDeviceClass() });
-    if (Platform.isMobile) {
-      this.registerDomEvent(window, "error", (event: ErrorEvent) => {
-        this.recordDiagnostic("window:error", { message: event.message, source: event.filename, line: event.lineno, column: event.colno });
-      });
-      this.registerDomEvent(window, "unhandledrejection", (event: PromiseRejectionEvent) => {
-        const reason = event.reason instanceof Error ? `${event.reason.name}: ${event.reason.message}` : String(event.reason);
-        this.recordDiagnostic("window:unhandledrejection", reason);
-      });
-    }
     if (alreadyKplex && !ownRecord?.kplexInitialized) {
       this.settings.kplexInitialized = true;
       await this.saveData(this.settings);
@@ -148,15 +93,6 @@ export default class ExcaliBrainPlugin extends Plugin {
       },
     });
     this.addCommand({ id: "excalibrain-rebuild-index", name: "Rebuild index", callback: () => void this.rebuildIndex(true) });
-    this.addCommand({
-      id: "kplex-export-mobile-diagnostics",
-      name: "Export mobile diagnostics",
-      checkCallback: (checking) => {
-        if (!Platform.isMobile) return false;
-        if (!checking) void this.exportDiagnostics();
-        return true;
-      },
-    });
     this.addCommand({
       id: "kplex-open-popout",
       name: "Open in pop-out window",
@@ -251,7 +187,6 @@ export default class ExcaliBrainPlugin extends Plugin {
         // settling, producing the misleading "ghost then real" startup scene.
         this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot();
         const restored = await this.snapshotRestoreTask;
-        this.recordDiagnostic("index:snapshot-restore", { restored: restored.restored, fresh: restored.fresh, createdAt: restored.createdAt, nodes: this.index.size });
         if (restored.restored) await this.refreshBookmarkedEntryPoints();
         this.indexDirty = !restored.fresh;
         if (!restored.fresh) {
@@ -271,7 +206,6 @@ export default class ExcaliBrainPlugin extends Plugin {
         const largeIosExpensiveRebuild = Platform.isIosApp && !restored.fresh &&
           (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
         if (!largeIosExpensiveRebuild) void this.ensureInitialIndex();
-        else this.recordDiagnostic("index:initial-deferred", { notes: noteCount, restored: restored.restored, reason: "large-ios-full-rebuild" });
       })();
     });
   }
@@ -384,11 +318,8 @@ export default class ExcaliBrainPlugin extends Plugin {
       // reconcile. Reactive listeners will mark the snapshot dirty if a real change arrives.
       if (!this.indexDirty && this.index.size > 0) {
         this.initialIndexComplete = true;
-        this.recordDiagnostic("index:initial-snapshot-ready", { nodes: this.index.size });
         return;
       }
-
-      this.recordDiagnostic("index:initial-start", { dirty: this.indexDirty, nodes: this.index.size });
       if (!this.metadataStabilized) {
         this.metadataStabilityPromise ??= this.waitForMetadataCacheStability();
         await this.metadataStabilityPromise;
@@ -406,7 +337,6 @@ export default class ExcaliBrainPlugin extends Plugin {
           this.indexDirty = false;
           this.indexBacklogReasons.clear();
           this.initialIndexComplete = true;
-          this.recordDiagnostic("index:initial-patched-snapshot", { files: patched.patched, nodes: this.index.size });
           return;
         }
       }
@@ -424,17 +354,14 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (needsIosBodyPrewarm) {
         const warmed = await this.index.prewarmBodyCache(() => this.openKplexViews > 0);
         if (!warmed && this.openKplexViews <= 0) {
-          this.recordDiagnostic("index:initial-paused", { reason: "ios-body-prewarm-cancelled", notes: noteCount });
           return;
         }
-        if (!warmed) this.recordDiagnostic("index:body-prewarm-fallback", { notes: noteCount });
       }
 
       if (this.indexDirty || this.index.size === 0) {
         await this.performRebuild(false, this.index.size === 0, "startup:initial-index", true);
       }
       this.initialIndexComplete = this.index.size > 0;
-      this.recordDiagnostic("index:initial-end", { dirty: this.indexDirty, nodes: this.index.size, complete: this.initialIndexComplete });
 
       // Changes that arrived while the initial build was running are coalesced. Only reconcile
       // them immediately when the user currently has a Plex open; otherwise keep the backlog.
@@ -485,7 +412,6 @@ export default class ExcaliBrainPlugin extends Plugin {
         !this.settings.showTagNodes && this.dirtyMarkdownPaths.size > 0;
       if (canIncrementalPatch) {
         const paths = [...this.dirtyMarkdownPaths];
-        this.recordDiagnostic("index:runtime-patch-start", { files: paths.length, revision: startRevision });
         const result = await this.index.patchMarkdownPaths(paths);
         if (result.patched) {
           for (const path of paths) this.dirtyMarkdownPaths.delete(path);
@@ -494,19 +420,15 @@ export default class ExcaliBrainPlugin extends Plugin {
             this.indexBacklogReasons.clear();
           }
           await this.refreshBookmarkedEntryPoints();
-          this.recordDiagnostic("index:runtime-patch-end", { files: result.count, dirty: this.indexDirty });
           return;
         }
         // Any uncertainty falls back to the authoritative full builder below.
       }
-
-      this.recordDiagnostic("index:rebuild-start", { reason, force, showNotice, nodes: this.index.size, revision: startRevision });
       if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
       const published = await this.index.rebuild();
       if (!published) {
         this.indexDirty = true;
         this.indexBacklogReasons.add(reason);
-        this.recordDiagnostic("index:rebuild-not-published", { reason, revision: this.indexDirtyRevision });
         return;
       }
 
@@ -520,7 +442,6 @@ export default class ExcaliBrainPlugin extends Plugin {
         this.indexDirty = true;
       }
       await this.refreshBookmarkedEntryPoints();
-      this.recordDiagnostic("index:rebuild-end", { reason, nodes: this.index.size, dirty: this.indexDirty, revision: this.indexDirtyRevision });
       if (showNotice) new Notice(`K-Plex indexed ${this.index.size} nodes.`, 1800);
     })();
     this.rebuildTask = task;
@@ -1003,12 +924,10 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async activateSidepanel(): Promise<void> {
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
-    this.recordDiagnostic("sidepanel:activate-start");
     let leaf: WorkspaceLeaf | null = this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0] ?? null;
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(false);
       if (!leaf) {
-        this.recordDiagnostic("sidepanel:no-right-leaf");
         new Notice("The Obsidian sidepanel is not available in this workspace.", 2200);
         return;
       }
@@ -1038,7 +957,6 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.app.workspace.revealLeaf(leaf);
     }
     if (view instanceof KplexSidepanelView) await view.waitUntilReady();
-    this.recordDiagnostic("sidepanel:activate-end", { ready: view instanceof KplexSidepanelView, nodes: this.index.size });
   }
 
   async activateViewInPopout(): Promise<void> {
@@ -1552,8 +1470,6 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.writeRelationship(neighbourFile, center, inverseField);
       this.index.applyRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
     }
-
-    this.recordDiagnostic("relationship:patched", { storagePath, center: center.path, target: neighbour.path, role: semanticRole });
   }
 
   isExcalidrawAvailable(): boolean {

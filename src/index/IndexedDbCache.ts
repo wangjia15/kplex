@@ -332,6 +332,7 @@ export class KplexIndexedDbCache {
       "k-plex:index-cache:v1",
       "k-plex:index-snapshot:v1",
       "excalibrain:index-body-cache:v2",
+      "k-plex:mobile-diagnostics:v1",
     ]) {
       try { app.saveLocalStorage(key, null); } catch { /* migration only */ }
     }
