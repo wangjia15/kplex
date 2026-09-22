@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -15,6 +16,7 @@ import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { EMPTY_PLEX_FILTER, PlexFilter, type PlexFilterState } from "./PlexFilter";
+import { compilePlexFilter } from "../lens/SimplePlexFilter";
 
 type BooleanToolbarSetting =
   | "showAttachments"
@@ -55,6 +57,8 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const rootRef = useRef<HTMLDivElement>(null);
   const [renderRevision, forceRender] = useState(0);
   const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
+  const plexFilterPredicate = useMemo(() => compilePlexFilter(plexFilter), [plexFilter]);
+  const [predicateRevision, refreshPredicates] = useState(0);
   const [hostWidth, setHostWidth] = useState(0);
   const [sidecarRevision, setSidecarRevision] = useState(0);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
@@ -86,6 +90,13 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeIndexStatus(() => forceRender((value) => value + 1)), [plugin]);
+  useEffect(() => {
+    if (!plexFilterPredicate?.dependencies.usesFrontmatter) return;
+    const ref = plugin.app.metadataCache.on("changed", (file) => {
+      if (file.extension === "md") refreshPredicates((value) => value + 1);
+    });
+    return () => plugin.app.metadataCache.offref(ref);
+  }, [plugin, plexFilterPredicate]);
   useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeNavigation((path) => {
     const target = plugin.index.get(path);
@@ -347,7 +358,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} predicate={plexFilterPredicate} predicateRevision={predicateRevision} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

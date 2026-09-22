@@ -109,6 +109,26 @@ The resolved semantic graph is also persisted as a **transactional chunked snaps
 
 Desktop and Android additionally keep a per-file body parse cache keyed by file path + mtime. That lower-level cache is an optimization only and does not contain resolved graph semantics. On iOS it is intentionally neither restored nor retained across all files: each body is parsed, reduced to graph evidence, then released to reduce WebKit memory pressure. Worker parsing is also disabled on iOS to avoid structured-clone duplication.
 
+
+## Presentation predicates are not graph indexing
+
+The visible Plex can be filtered through a declarative predicate engine without broadening the persistent graph snapshot. The existing Keyword / Tag / Note type controls compile to that generic predicate representation. Future named lenses and style rules use the same selector layer.
+
+Predicate contexts are separated by meaning:
+
+- `node.*` — K-Plex node fields already present in the semantic graph;
+- `edge.*` — the resolved relationship shown in the Plex;
+- `evidence.*` — provenance retained in `RelationEvidence`;
+- `note.*` — arbitrary Markdown frontmatter resolved lazily from Obsidian `MetadataCache`;
+- `file.*` — physical file metadata;
+- `this.*` — the current center thought.
+
+Arbitrary frontmatter **values are not copied into `GraphPage`, graph snapshots or IndexedDB** for filtering. A predicate that references `note.status`, for example, reads that value from Obsidian's already-parsed metadata cache when evaluating the currently visible Plex. Predicate dependency tracking tells the UI when such cached metadata can affect the current view. That refresh path is separate from semantic graph reconstruction.
+
+The incremental semantic fingerprint likewise distinguishes graph-relevant frontmatter values from arbitrary presentation metadata. Ontology fields, aliases/tags, note type/style fields and Date properties remain semantic inputs. Unrelated property values do not cause relationship/search/UI churn merely because a lens may inspect them. Property names remain part of field discovery.
+
+This layer is intentionally not a whole-vault or arbitrary-depth graph query API. K-Plex keeps the bounded, structured Plex model; a separate graph-query API can be considered independently in the future.
+
 ## Compatibility fixture
 
 Run:

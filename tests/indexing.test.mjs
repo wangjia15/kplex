@@ -49,6 +49,8 @@ for (const file of [
   "src/index/GraphIndex.ts",
   "src/index/SectionExpansion.ts",
   "src/index/style.ts",
+  "src/lens/GraphPredicate.ts",
+  "src/lens/SimplePlexFilter.ts",
   "src/ui/layout.ts",
 ]) compile(file);
 
@@ -127,6 +129,15 @@ const { parseBodyMetadata, parseBodyMetadataCore } = require(join(temp, "src/ind
 const { RelationType, LinkDirection } = require(join(temp, "src/types.js"));
 const { RelationEvidenceStore } = require(join(temp, "src/index/RelationEvidence.js"));
 const { buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
+const {
+  GraphPredicateEngine,
+  compileGraphPredicate,
+  predicateCall,
+  predicateCompare,
+  predicateLiteral,
+  predicateProperty,
+} = require(join(temp, "src/lens/GraphPredicate.js"));
+const { compilePlexFilter } = require(join(temp, "src/lens/SimplePlexFilter.js"));
 
 function walk(dir) {
   const result = [];
@@ -458,6 +469,51 @@ try {
   assert(A);
   const neighborhoodA = index.getNeighborhood("Note A.md");
   assert(neighborhoodA);
+
+  // Predicate engine checkpoint: the existing simple filter compiles into one generic declarative
+  // predicate. It preserves keyword/alias, hierarchical-tag, note-type and relationship matching
+  // while also providing node/edge/evidence/note/file/this namespaces for later named lenses.
+  const predicateEngine = new GraphPredicateEngine(app);
+  const simplePredicate = compilePlexFilter({ keyword: "alpha hub", tag: "#taxonomy/body", noteType: "PROJECT" });
+  assert(simplePredicate);
+  assert.equal(simplePredicate.dependencies.usesFrontmatter, false);
+  assert.equal(predicateEngine.matches(simplePredicate, { node: { page: A, label: index.titleFor(A) }, center: A }), true);
+  const noteBForPredicate = index.get("Note B.md");
+  assert(noteBForPredicate);
+  assert.equal(predicateEngine.matches(simplePredicate, { node: { page: noteBForPredicate, label: index.titleFor(noteBForPredicate) }, center: A }), false);
+
+  const childCForPredicate = neighborhoodA.children.find((item) => item.page.path === "Note C.md");
+  assert(childCForPredicate);
+  const relationshipPredicate = compilePlexFilter({ keyword: childCForPredicate.typeDefinition ?? "child", tag: "", noteType: "" });
+  assert(relationshipPredicate);
+  assert.equal(predicateEngine.matches(relationshipPredicate, {
+    node: { page: childCForPredicate.page, label: index.titleFor(childCForPredicate.page) },
+    center: A,
+    edge: { role: childCForPredicate.role, definition: childCForPredicate.typeDefinition },
+  }), true);
+
+  const noteACacheForPredicate = caches.get("Note A.md");
+  noteACacheForPredicate.frontmatter["Lens Status"] = "Active";
+  const metadataPredicate = compileGraphPredicate(predicateCall(
+    "text.equals",
+    predicateProperty("note", "Lens Status"),
+    predicateLiteral("active"),
+  ));
+  assert.equal(metadataPredicate.dependencies.usesFrontmatter, true);
+  assert(metadataPredicate.dependencies.noteProperties.has("Lens Status"));
+  assert.equal(predicateEngine.matches(metadataPredicate, { node: { page: A }, center: A }), true);
+  noteACacheForPredicate.frontmatter["Lens Status"] = "Archived";
+  assert.equal(predicateEngine.matches(metadataPredicate, { node: { page: A }, center: A }), false, "Metadata-backed predicates must see cached property changes without a graph rebuild");
+  delete noteACacheForPredicate.frontmatter["Lens Status"];
+
+  const evidenceForPredicate = index.evidenceBetween("Note A.md", "Note B.md").find((item) => item.sourceKind === "frontmatter-ontology");
+  assert(evidenceForPredicate);
+  const evidencePredicate = compileGraphPredicate(predicateCompare(
+    "eq",
+    predicateProperty("evidence", "sourceKind"),
+    predicateLiteral("frontmatter-ontology"),
+  ));
+  assert.equal(predicateEngine.matches(evidencePredicate, { node: { page: noteBForPredicate }, center: A, evidence: evidenceForPredicate }), true);
   expectRole("Note A.md", "parent", "Note B.md", RelationType.DEFINED);
   expectRole("Note A.md", "parent", "https://source.com/ontology-full-line", RelationType.DEFINED);
   expectRole("Note A.md", "parent", "https://source.com/ontology-inline", RelationType.DEFINED);
@@ -728,7 +784,23 @@ try {
   assert.deepEqual(prosePatch, { patched: true, count: 1 });
   assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
 
-  // Assertion 57: evidence storage is declaration-compact. One original fact is retained once,
+  // Assertions 57–58: arbitrary frontmatter values are lens data, not graph semantics. Adding a
+  // new property name still refreshes field discovery once; changing only that property's value
+  // afterwards must not emit a semantic graph update.
+  let semanticEmits = 0;
+  const stopCountingEmits = index.subscribe(() => { semanticEmits += 1; });
+  noteA.stat.mtime += 1000;
+  noteACache.frontmatter["Lens Status"] = "Active";
+  await index.patchMarkdownPaths(["Note A.md"]);
+  const emitsAfterPropertyDiscovery = semanticEmits;
+  assert(index.discoveredFields().some((field) => field.normalized === "lens-status"));
+  noteA.stat.mtime += 1000;
+  noteACache.frontmatter["Lens Status"] = "Archived";
+  await index.patchMarkdownPaths(["Note A.md"]);
+  assert.equal(semanticEmits, emitsAfterPropertyDiscovery, "Changing a non-semantic property value must not emit a graph update");
+  stopCountingEmits();
+
+  // Assertion 59: evidence storage is declaration-compact. One original fact is retained once,
   // while both source perspectives remain queryable for classification/explainability. This is a
   // deliberate iOS memory safeguard for large vaults.
   const compactEvidence = new RelationEvidenceStore();
@@ -739,7 +811,7 @@ try {
 
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
-  console.log("Warm cache + incremental runtime patch: assertions 51–57 PASS");
+  console.log("Warm cache + predicate foundation + incremental runtime patch: assertions 51–59 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

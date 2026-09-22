@@ -12,7 +12,7 @@ import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 import { RenameNoteModal } from "./RenameNoteModal";
 import { buildCentralSectionExpansion, canExpandCentralSections, type CentralSectionExpansion } from "../index/SectionExpansion";
-import type { PlexFilterState } from "./PlexFilter";
+import { GraphPredicateEngine, type CompiledGraphPredicate, type GraphPredicateEdgeContext } from "../lens/GraphPredicate";
 
 type Point = { x: number; y: number };
 type HoverState =
@@ -251,27 +251,35 @@ function matchesZoneFilter(node: PositionedNode, filter: string): boolean {
   return node.label.toLowerCase().includes(q) || node.page.path.toLowerCase().includes(q);
 }
 
-function matchesPlexFilterPage(page: GraphPage, label: string, typeDefinition: string | undefined, filter: PlexFilterState): boolean {
-  const keyword = filter.keyword.trim().toLowerCase();
-  const wantedTag = filter.tag.trim().replace(/^#/, "").toLowerCase();
-  const wantedType = filter.noteType.trim().replace(/^#/, "").toLowerCase();
-  if (keyword) {
-    const haystack = [label, page.path, typeDefinition ?? "", ...page.aliases].join("\n").toLowerCase();
-    if (!haystack.includes(keyword)) return false;
-  }
-  if (wantedTag) {
-    const tags = page.tags.map((tag) => tag.replace(/^#/, "").toLowerCase());
-    if (!tags.some((tag) => tag === wantedTag || tag.startsWith(`${wantedTag}/`))) return false;
-  }
-  if (wantedType) {
-    const noteType = (page.noteType ?? "").replace(/^#/, "").toLowerCase();
-    if (noteType !== wantedType) return false;
-  }
-  return true;
+function matchesGraphPredicatePage(
+  engine: GraphPredicateEngine,
+  predicate: CompiledGraphPredicate | null,
+  page: GraphPage,
+  label: string,
+  typeDefinition: string | undefined,
+  center: GraphPage | undefined,
+  edge: GraphPredicateEdgeContext = {},
+): boolean {
+  return engine.matches(predicate, {
+    node: { page, label },
+    center,
+    edge: { ...edge, definition: typeDefinition ?? edge.definition },
+  });
 }
 
-function matchesPlexFilter(node: PositionedNode, filter: PlexFilterState): boolean {
-  return matchesPlexFilterPage(node.page, node.label, node.typeDefinition, filter);
+function matchesGraphPredicateNode(
+  engine: GraphPredicateEngine,
+  predicate: CompiledGraphPredicate | null,
+  node: PositionedNode,
+  center: GraphPage | undefined,
+): boolean {
+  return matchesGraphPredicatePage(engine, predicate, node.page, node.label, node.typeDefinition, center, {
+    role: node.role,
+    relationType: node.relationType,
+    linkDirection: node.linkDirection,
+    sourcePath: center?.path,
+    targetPath: node.page.path,
+  });
 }
 
 function buildZoneDisplayLayout(
@@ -436,18 +444,20 @@ function Edge({
   </g>;
 }
 
-export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, activePath, renderRevision, onActivate, onOpen }: {
+export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicate, predicateRevision, activePath, renderRevision, onActivate, onOpen }: {
   plugin: ExcaliBrainPlugin;
   index: GraphIndex;
   settings: ExcaliBrainSettings;
   surface: KplexViewSurface;
   hostLeaf: WorkspaceLeaf;
-  filter: PlexFilterState;
+  predicate: CompiledGraphPredicate | null;
+  predicateRevision: number;
   activePath: string;
   renderRevision: number;
   onActivate: (page: GraphPage) => void;
   onOpen: (page: GraphPage) => void;
 }) {
+  const predicateEngine = useMemo(() => new GraphPredicateEngine(plugin.app), [plugin]);
   // getNeighborhood() performs relationship classification/filtering. Keep it stable during local
   // pointer/camera/hover state updates; only rebuild it when navigation, settings, or the index
   // actually changes. This removes the largest source of wasted work in dense Plex scenes.
@@ -899,13 +909,13 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, 
     for (const zone of ZONES) {
       const panel = scene.zoneViewports[zone];
       if (!panel) continue;
-      const globalFiltering = Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());
-      const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone && (!globalFiltering || matchesPlexFilter(node, filter)));
+      const globalFiltering = predicate !== null;
+      const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone && (!globalFiltering || matchesGraphPredicateNode(predicateEngine, predicate, node, neighborhood?.center)));
       const layout = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings, index, neighborhood?.center.path ?? activePath);
       layouts[zone] = layout;
     }
     return layouts;
-  }, [scene.nodes, scene.zoneViewports, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision, filter]);
+  }, [scene.nodes, scene.zoneViewports, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision, predicate, predicateRevision, predicateEngine, neighborhood?.center]);
 
   const renderedNodeMap = useMemo(() => {
     const map = new Map<string, PositionedNode>();
@@ -969,10 +979,10 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, 
 
   const visibleNodePaths = useMemo(() => {
     const paths = new Set<string>();
-    const filtering = Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());
+    const filtering = predicate !== null;
     const filterMatches = new Set<string>();
     for (const node of scene.nodes) {
-      if (!filtering || node.role === "center" || matchesPlexFilter(node, filter)) filterMatches.add(node.page.path);
+      if (!filtering || node.role === "center" || matchesGraphPredicateNode(predicateEngine, predicate, node, neighborhood?.center)) filterMatches.add(node.page.path);
     }
     // Section headings are structural containers. If a section-level relationship matches the
     // global filter, retain its heading node so the matching result is not visually orphaned.
@@ -1006,7 +1016,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, 
       }
     }
     return paths;
-  }, [scene.nodes, scene.edges, scene.zoneViewports, zoneDisplayLayouts, renderedNodeMap, nodeDrag, filter, sectionExpansion]);
+  }, [scene.nodes, scene.edges, scene.zoneViewports, zoneDisplayLayouts, renderedNodeMap, nodeDrag, predicate, predicateRevision, predicateEngine, sectionExpansion]);
 
   const expandedClusters = useMemo<ExpandedCluster[]>(() => {
     if (sectionExpansion || settings.graphDepth !== 2 || !neighborhood) return [];
@@ -1017,10 +1027,24 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, 
       const parent = renderedNodeMap.get(baseNode.page.path);
       if (!parent) continue;
 
-      const globalFiltering = Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());
+      const globalFiltering = predicate !== null;
       const relations = index.neighbours(baseNode.page, "child")
         .filter((child) => child.page.path !== neighborhood.center.path)
-        .filter((child) => !globalFiltering || matchesPlexFilterPage(child.page, index.titleFor(child.page), child.typeDefinition, filter))
+        .filter((child) => !globalFiltering || matchesGraphPredicatePage(
+          predicateEngine,
+          predicate,
+          child.page,
+          index.titleFor(child.page),
+          child.typeDefinition,
+          neighborhood.center,
+          {
+            role: child.role,
+            relationType: child.relationType,
+            linkDirection: child.linkDirection,
+            sourcePath: baseNode.page.path,
+            targetPath: child.page.path,
+          },
+        ))
         .slice(0, settings.maxItemCount);
       if (!relations.length) continue;
 
@@ -1068,7 +1092,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, filter, 
     }
 
     return clusters;
-  }, [sectionExpansion, settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision, filter]);
+  }, [sectionExpansion, settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision, predicate, predicateRevision, predicateEngine]);
 
   const expandedConnectors = useMemo(() => {
     if (settings.graphDepth !== 2) return [] as Array<{ key: string; d: string; stroke: string; width: number; dash?: string; markerStart?: string; markerEnd?: string }>;

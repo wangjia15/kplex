@@ -88,27 +88,6 @@ function stableSemanticValue(value: unknown): unknown {
 }
 
 /**
- * Fingerprint only inputs that can affect K-Plex semantics. Excalidraw drawing JSON and ordinary
- * prose therefore do not force evidence/search/UI churn when the parsed fields/URLs and Obsidian
- * link/frontmatter metadata are unchanged. The string is runtime-only and bounded by the hot cache.
- */
-function semanticSourceSignature(app: App, file: TFile, body: ParsedBodyMetadata): string {
-  const cache = app.metadataCache.getFileCache(file);
-  const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
-  delete frontmatter.position;
-  const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
-  const resolved = Object.keys(app.metadataCache.resolvedLinks[file.path] ?? {}).sort();
-  const unresolved = Object.keys(app.metadataCache.unresolvedLinks[file.path] ?? {}).sort();
-  return JSON.stringify({
-    frontmatter: stableSemanticValue(frontmatter),
-    tags,
-    resolved,
-    unresolved,
-    body,
-  });
-}
-
-/**
  * Builds a complete graph snapshot from vault inputs. It does not publish state or service UI
  * queries; those responsibilities belong to GraphIndex. All collectors emit provenance-bearing
  * evidence and relationship resolution happens once, after collection is complete.
@@ -116,6 +95,7 @@ function semanticSourceSignature(app: App, file: TFile, body: ParsedBodyMetadata
 export class GraphBuilder {
   private sliceStartedAt = perfNow();
   private patchTouchedPagePaths: Set<string> | null = null;
+  private readonly semanticFrontmatterFields: Set<string>;
 
   constructor(
     private plugin: ExcaliBrainPlugin,
@@ -124,7 +104,53 @@ export class GraphBuilder {
     private metadataParser: MetadataParser,
     private bodyCache: KplexIndexedDbCache,
     private isCurrent: () => boolean,
-  ) {}
+  ) {
+    const hierarchy = plugin.settings.hierarchy;
+    this.semanticFrontmatterFields = new Set([
+      "aliases", "alias", "tags", "tag",
+      plugin.settings.noteTypeField,
+      plugin.settings.primaryTagField,
+      ...hierarchy.hidden,
+      ...hierarchy.parents,
+      ...hierarchy.children,
+      ...hierarchy.leftFriends,
+      ...hierarchy.rightFriends,
+      ...hierarchy.previous,
+      ...hierarchy.next,
+    ].map(normalizeFieldName).filter(Boolean));
+  }
+
+
+  /**
+   * Fingerprint only metadata that can affect K-Plex graph semantics. Arbitrary frontmatter
+   * property values are intentionally excluded: lenses may read them lazily from MetadataCache,
+   * but changing such a value must not cause graph evidence/search churn. Property names remain in
+   * the signature because K-Plex exposes discovered fields in ontology settings.
+   */
+  private semanticSourceSignature(file: TFile, body: ParsedBodyMetadata): string {
+    const cache = this.app.metadataCache.getFileCache(file);
+    const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
+    delete frontmatter.position;
+
+    const semanticFrontmatter: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(frontmatter)) {
+      if (this.semanticFrontmatterFields.has(normalizeFieldName(key)) || this.isDateProperty(key)) {
+        semanticFrontmatter[key] = stableSemanticValue(value);
+      }
+    }
+
+    const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
+    const resolved = Object.keys(this.app.metadataCache.resolvedLinks[file.path] ?? {}).sort();
+    const unresolved = Object.keys(this.app.metadataCache.unresolvedLinks[file.path] ?? {}).sort();
+    return JSON.stringify({
+      frontmatterFields: Object.keys(frontmatter).sort(),
+      frontmatter: stableSemanticValue(semanticFrontmatter),
+      tags,
+      resolved,
+      unresolved,
+      body,
+    });
+  }
 
   private rememberFieldCache(path: string, entry: FieldCacheEntry): void {
     // Refresh insertion order so this remains a true small hot working set during long sessions.
@@ -345,7 +371,7 @@ export class GraphBuilder {
         }
 
         const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
-        entry.semanticSignature = semanticSourceSignature(this.app, file, entry.body);
+        entry.semanticSignature = this.semanticSourceSignature(file, entry.body);
         this.applyMetadata(state, page, file, meta);
         if (!(await this.yieldToHost())) return false;
       }
@@ -408,7 +434,7 @@ export class GraphBuilder {
         }
       }
 
-      const signature = semanticSourceSignature(this.app, file, body);
+      const signature = this.semanticSourceSignature(file, body);
       if (previousEntry?.semanticSignature === signature) {
         // Drawing data / prose changed, but nothing K-Plex consumes changed. Update only runtime
         // freshness and the write-behind cache: no evidence mutation, search rebuild or UI emit.

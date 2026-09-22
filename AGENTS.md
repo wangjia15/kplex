@@ -388,6 +388,20 @@ Use **K-Plex**, not ExcaliBrain, in user-facing UI and docs except when explicit
 
 Use **nodes**, not "thoughts", in user-facing terminology. Legacy internal names can be migrated gradually, but new UI strings should say nodes.
 
+
+## Graph predicates and lenses
+
+K-Plex graph filtering is a **presentation-layer operation over the currently materialized Plex**, not a whole-vault graph query engine. Keep the persistent semantic index focused on data required to build and explain the Plex.
+
+- `src/lens/GraphPredicate.ts` owns the declarative predicate AST, dependency discovery and safe evaluator. Do not use `eval`, `Function`, DataviewJS or any other runtime code execution for filters/lenses.
+- The supported predicate contexts are deliberately distinct: `node`, `edge`, `evidence`, `note`, `file` and `this` (the current center thought). Do not collapse evidence provenance into resolved-edge fields.
+- `note.<property>` must be resolved lazily from Obsidian `MetadataCache`. Do not copy arbitrary frontmatter values into `GraphPage`, `GraphState`, snapshots or IndexedDB just to support lenses.
+- K-Plex-native graph properties should be read from the existing graph model. File metadata should come from `TFile`/cached graph fields. Relationship provenance should come from `RelationEvidence`.
+- Predicate dependency discovery must remain explicit. Metadata-dependent predicate refreshes are UI/presentation refreshes and must not call `rebuildIndex()` or otherwise couple lens evaluation to semantic graph reconstruction.
+- The current Keyword / Tag / Note type controls are a compatibility UI over the generic predicate engine. New filtering behavior should compile to the same predicate representation rather than adding another ad-hoc matcher in React.
+- Named lenses and styling rules should reuse this same selector engine. A future text syntax should be declarative and Bases-inspired, parsed by K-Plex into the AST; do not execute user-authored scripts.
+- Lens evaluation is scoped to the visible/current Plex (normally tens to a few hundred candidate nodes). Do not add whole-vault scans or arbitrary-depth traversal as a side effect of lens evaluation.
+
 ## Code-scanner compatibility
 
 Treat the Obsidian code scanner as a release gate, not as post-release cleanup. In particular:
