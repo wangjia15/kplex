@@ -57,6 +57,7 @@ export function ThoughtNode({
   };
 }) {
   const style = node.style;
+  const isSection = node.page.transient?.kind === "section";
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
   const prefix = style.prefix ?? "";
   const label = `${prefix}${node.label}`;
@@ -75,12 +76,12 @@ export function ThoughtNode({
     top: node.y - node.height / 2,
     width: node.width,
     height: node.height,
-    background: pattern,
-    color: alphaHexToCss(style.textColor, "white"),
-    borderColor: alphaHexToCss(style.borderColor, "rgba(255,255,255,.18)"),
-    borderWidth: `${style.strokeWidth ?? 1}px`,
-    borderStyle: strokeStyle,
-    borderRadius: style.strokeShaprness === "sharp" ? 5 : node.role === "center" ? 18 : 12,
+    background: isSection ? undefined : pattern,
+    color: isSection ? undefined : alphaHexToCss(style.textColor, "white"),
+    borderColor: isSection ? undefined : alphaHexToCss(style.borderColor, "rgba(255,255,255,.18)"),
+    borderWidth: isSection ? undefined : `${style.strokeWidth ?? 1}px`,
+    borderStyle: isSection ? undefined : strokeStyle,
+    borderRadius: isSection ? undefined : (style.strokeShaprness === "sharp" ? 5 : node.role === "center" ? 18 : 12),
     fontSize: `${node.role === "center" ? Math.max(13, Math.min(24, (style.fontSize ?? 18) * 0.72)) : Math.max(10, Math.min(16, (style.fontSize ?? 18) * 0.62))}px`,
     "--kplex-gate-size": `${gateSize}px`,
     "--kplex-gate-stroke": alphaHexToCss(style.gateStrokeColor, "rgba(226,239,255,.84)"),
@@ -98,7 +99,7 @@ export function ThoughtNode({
     flair ? "is-new-flair" : "",
     connectionState !== "normal" ? `is-connect-${connectionState}` : "",
     node.page.isFolder || node.page.isTag ? "is-structural-thought" : "",
-    node.page.transient?.kind === "section" ? "is-kplex-section" : "",
+    isSection ? "is-kplex-section" : "",
   ].filter(Boolean).join(" ");
 
   return <div
@@ -140,7 +141,7 @@ export function ThoughtNode({
     />}
     {GATES.map((gate) => {
       const stat = node.gateStats[gate];
-      return <span key={gate} className={`excalibrain-gate-wrap gate-wrap-${gate}`}>
+      return <span key={gate} className={`excalibrain-gate-wrap gate-wrap-${gate}${stat.hasAny ? "" : " is-empty"}`}>
         <span
           className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}${node.page.isFolder || node.page.isTag ? " is-link-disabled" : ""}`}
           data-kplex-gate={gate}

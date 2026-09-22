@@ -1283,7 +1283,7 @@
   animation: kplex-edge-arrive max(120ms, calc(var(--kplex-motion-ms, 560ms) * .55)) ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
-  .excalibrain-edge, .kplex-expanded-edge { animation: none !important; }
+  .excalibrain-edge, .kplex-expanded-edge { animation: none; }
 }
 
 .excalibrain-plex.is-section-expanded .excalibrain-thought.is-selected {
@@ -1343,7 +1343,7 @@
   animation: kplex-scene-arrive max(120ms, calc(var(--kplex-motion-ms, 560ms) * .72)) ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
-  .excalibrain-plex.is-scene-transitioning .excalibrain-camera { animation: none !important; }
+  .excalibrain-plex.is-scene-transitioning .excalibrain-camera { animation: none; }
 }
 
 /* Touch/mobile rendering stability --------------------------------------
@@ -1366,17 +1366,17 @@
 .excalibrain-plex.is-touch-gesturing .excalibrain-edge,
 .excalibrain-plex.is-touch-gesturing .kplex-expanded-edge,
 .excalibrain-plex.is-pinch-gesturing .excalibrain-camera {
-  animation: none !important;
-  transition: none !important;
+  animation: none;
+  transition: none;
 }
 .excalibrain-plex.is-pinch-gesturing .excalibrain-thought {
-  box-shadow: none !important;
+  box-shadow: none;
 }
 .excalibrain-plex.is-pinch-gesturing .excalibrain-edge-label-wrap {
-  opacity: 0 !important;
+  opacity: 0;
 }
 .excalibrain-plex.is-pinch-gesturing .kplex-section-tree-edge {
-  filter: none !important;
+  filter: none;
 }
 
 
@@ -1387,11 +1387,11 @@
 .excalibrain-plex.is-ios.is-pinch-gesturing .excalibrain-edge-visible,
 .excalibrain-plex.is-ios.is-pinch-gesturing .kplex-expanded-edge,
 .excalibrain-plex.is-ios.is-pinch-gesturing .kplex-section-tree-edge {
-  opacity: 0 !important;
+  opacity: 0;
 }
 .excalibrain-plex.is-ios.is-pinch-gesturing .excalibrain-thought {
-  box-shadow: none !important;
-  filter: none !important;
+  box-shadow: none;
+  filter: none;
 }
 
 /* Section outline tree ----------------------------------------------------
@@ -1407,18 +1407,18 @@
   pointer-events: none;
 }
 .excalibrain-thought.is-kplex-section {
-  border-radius: 4px !important;
-  border: 1px solid color-mix(in srgb, var(--text-muted) 34%, var(--background-modifier-border)) !important;
-  border-left: 3px solid color-mix(in srgb, var(--interactive-accent) 66%, var(--text-accent)) !important;
-  background: color-mix(in srgb, var(--background-secondary) 94%, var(--interactive-accent) 6%) !important;
-  color: var(--text-normal) !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,.12) !important;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 34%, var(--background-modifier-border));
+  border-left: 3px solid color-mix(in srgb, var(--interactive-accent) 66%, var(--text-accent));
+  background: color-mix(in srgb, var(--background-secondary) 94%, var(--interactive-accent) 6%);
+  color: var(--text-normal);
+  box-shadow: 0 1px 2px rgba(0,0,0,.12);
 }
 .excalibrain-thought.is-kplex-section:hover {
-  border-color: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-modifier-border)) !important;
-  border-left-color: var(--interactive-accent) !important;
-  background: color-mix(in srgb, var(--background-secondary) 90%, var(--interactive-accent) 10%) !important;
-  box-shadow: 0 2px 5px rgba(0,0,0,.15) !important;
+  border-color: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-modifier-border));
+  border-left-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--background-secondary) 90%, var(--interactive-accent) 10%);
+  box-shadow: 0 2px 5px rgba(0,0,0,.15);
 }
 /* Incoming structural port: the L-branch terminates here at the card's left-center edge. */
 .excalibrain-thought.is-kplex-section::after {
@@ -1438,7 +1438,7 @@
   justify-content: flex-start;
   gap: 8px;
   padding-inline: 8px 10px;
-  color: var(--text-normal) !important;
+  color: var(--text-normal);
   font-weight: 570;
   letter-spacing: .003em;
 }
@@ -1458,7 +1458,7 @@
   line-height: 18px;
 }
 .excalibrain-thought.is-kplex-section .excalibrain-gate.is-empty,
-.excalibrain-thought.is-kplex-section .excalibrain-gate-wrap:has(.excalibrain-gate.is-empty) .excalibrain-gate-count {
+.excalibrain-thought.is-kplex-section .excalibrain-gate-wrap.is-empty .excalibrain-gate-count {
   opacity: 0;
   pointer-events: none;
 }
@@ -1750,7 +1750,7 @@
 
 /* Declarative settings can insert one wrapper around group items depending on the Obsidian build.
    Keep the resource shortcuts on one row in either DOM shape, wrapping only when space runs out. */
-.kplex-settings .kplex-resource-links > :is(div, section):has(> .setting-item) {
+.kplex-settings .kplex-resource-links > :is(div, section):not(.setting-item) {
   display: flex;
   align-items: center;
   justify-content: center;
