@@ -76,10 +76,10 @@ export class MetadataParseWorker {
         if (message.ok && message.result) pending.resolve(message.result);
         else pending.reject(new Error(message.error || "Metadata worker failed"));
       };
-      this.worker.onerror = (event) => {
+      this.worker.onerror = () => {
         this.disableWorker();
       };
-    } catch (error) {
+    } catch {
       this.disabled = true;
       this.worker = null;
     }
@@ -96,9 +96,7 @@ export class MetadataParseWorker {
         this.pending.delete(id);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
-    }).catch((error) => {
-      return parseBodyMetadata(content);
-    });
+    }).catch(() => parseBodyMetadata(content));
   }
 
   destroy(): void {

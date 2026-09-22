@@ -5,7 +5,6 @@ export const normalizeFieldName = (name: string): string => name.toLowerCase().r
 const WIKI_LINK_RE = /\[\[([^\]#|]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
 const URL_RE = /\bhttps?:\/\/[^\s<>()\u005B\u005D{}"']+/gi;
-const MARKDOWN_URL_RE = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi;
 
 export type ExternalUrlReference = {
   url: string;
@@ -59,6 +58,8 @@ function stringifyTag(value: unknown): string[] {
  */
 export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
   const normalize = (name: string): string => name.toLowerCase().replace(/\s+/g, "-").trim();
+  const hasFieldDelimiter = (value: string): boolean =>
+    value.includes("[") || value.includes("]") || value.includes("(") || value.includes(")");
   const inlineFields: Record<string, unknown[]> = {};
   const inlineFieldOccurrences: InlineFieldOccurrence[] = [];
   const urls: ExternalUrlReference[] = [];
@@ -85,7 +86,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
     const name = stripFieldFormatting(rawName);
     const normalizedName = normalize(name);
     const value = rawValue.trim();
-    if (!normalizedName || !value || /[\[\]()]/.test(name)) return;
+    if (!normalizedName || !value || hasFieldDelimiter(name)) return;
     inlineFields[normalizedName] ??= [];
     inlineFields[normalizedName].push(value);
     inlineFieldOccurrences.push({ name, normalizedName, value, syntax, line, start, end });
@@ -223,7 +224,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
       const separator = inside.indexOf("::");
       if (separator <= 0 || separator > 120) { i = balancedEnd; continue; }
       const name = stripFieldFormatting(inside.slice(0, separator));
-      if (!name || /[\[\]()]/.test(name)) { i = balancedEnd; continue; }
+      if (!name || hasFieldDelimiter(name)) { i = balancedEnd; continue; }
       const valueStart = i + 1 + separator + 2;
       addField(name, originalLine.slice(valueStart, balancedEnd), open === "(" ? "parenthesized" : "bracketed", lineNumber, offset + i, offset + balancedEnd + 1);
       claimed.push([i, balancedEnd + 1]);
@@ -237,7 +238,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
       const full = visible.match(/^\s*(?:[-*+]\s+)?(.{1,120}?)::\s*(.*)$/);
       if (full) {
         const name = stripFieldFormatting(full[1]);
-        if (name && !/[\[\]()]/.test(name)) {
+        if (name && !hasFieldDelimiter(name)) {
           const separatorAt = visible.indexOf("::");
           const value = originalLine.slice(separatorAt + 2);
           addField(name, value, "line", lineNumber, offset + Math.max(0, firstNonSpace), offset + originalLine.length);
@@ -253,7 +254,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
       const raw = markdownUrl[2].trim().replace(/[.,;:!?]+$/, "");
       if (raw) aliasByUrl.set(raw, markdownUrl[1].trim());
     }
-    const urlRe = /\bhttps?:\/\/[^\s<>()\[\]{}"']+/gi;
+    const urlRe = /\bhttps?:\/\/[^\s<>()\u005B\u005D{}"']+/gi;
     let urlMatch: RegExpExecArray | null;
     while ((urlMatch = urlRe.exec(visible)) !== null) {
       const raw = urlMatch[0].replace(/[.,;:!?]+$/, "");
@@ -272,7 +273,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
 export const parseBodyMetadata = (content: string): ParsedBodyMetadata => parseBodyMetadataCore(content);
 
 export function mergeFileMetadata(cache: CachedMetadata | null, body: ParsedBodyMetadata): ParsedFileMetadata {
-  const frontmatter = { ...(cache?.frontmatter ?? {}) } as Record<string, unknown>;
+  const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
   delete frontmatter.position;
 
   const aliases = flattenValue(frontmatter.aliases ?? frontmatter.alias)

@@ -1,4 +1,4 @@
-import type { App, CachedMetadata, TFile } from "obsidian";
+import type { App, CachedMetadata } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neighborhood, type Relation, type Role } from "../types";
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./fieldParser";
@@ -194,7 +194,7 @@ function sectionTarget(page: GraphPage, sectionId: string): GraphPage {
 }
 
 function sourceLinks(cache: CachedMetadata | null): CacheLink[] {
-  return ((cache as CachedMetadata & { links?: CacheLink[] } | null)?.links ?? []) as CacheLink[];
+  return cache?.links ?? [];
 }
 
 /**

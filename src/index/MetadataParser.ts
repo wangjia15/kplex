@@ -72,7 +72,7 @@ export class MetadataParser {
         this.worker!.postMessage({ id, content });
       } catch (error) {
         this.pending.delete(id);
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
     }).catch(() => parseBodyMetadata(content));
   }

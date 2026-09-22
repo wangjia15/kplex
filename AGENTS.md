@@ -312,7 +312,7 @@ Use a wide dropdown and do not allow long paths/titles to make results unreadabl
 
 The create-relationship path uses one React modal and the shared `FuzzySearchInput`; do not reintroduce a second note picker or a separate “create note” modal. Both suggesters are closed until the user actually types. Selecting an existing note is a two-step flow: retain the selection, allow ontology edits, then commit with the fixed-width Link action. New-note buttons stay disabled unless the filename is valid and globally unused; Markdown is the default action and Ctrl/Cmd+Enter is its shortcut. Command-palette actions for Parent/Child/Friend/Challenger are gated by a running K-Plex view and are intended to be user-hotkeyable. New Markdown/Excalidraw files must resolve their parent through the public `app.fileManager.getNewFileParent(sourcePath, newFilePath?)` API using the current K-Plex center as `sourcePath`. Ontology input is fuzzy-searchable, remembers one default per gate role, and a newly typed ontology field becomes a real hierarchy item in settings before the relationship is written.
 
-Connector unlinking is provenance-safe. Direct deletion is allowed only when one frontmatter ontology declaration is the sole editable source of the visible pair; an Obsidian `resolvedLinks` entry that points to the exact same YAML property line is treated as a mirrored cache view, not a second user declaration. Any body link, inline ontology, multiple occurrence, or other competing evidence must fall back to the explanation dialog. Explanation rows for Markdown-backed evidence should provide line navigation in a **new Markdown tab** via ephemeral state rather than mutating the user's existing document leaf or persisted scroll state.
+Connector unlinking is provenance-safe. Direct deletion is allowed only when one frontmatter ontology declaration is the sole editable source of the visible pair; Obsidian `resolvedLinks` entries whose source positions fall inside that same YAML property block (including indented list items below the property key) are mirrored cache views, not additional user declarations. Obsidian may omit source positions for YAML links in `CachedMetadata.links`; in that case, verify that the relevant property block itself resolves to the same target before treating the generic resolved-link evidence as a mirror. Any body link, link in another property, inline ontology, or other competing evidence must fall back to the explanation dialog. Explanation rows for Markdown-backed evidence should provide line navigation in a **new Markdown tab** via ephemeral state rather than mutating the user's existing document leaf or persisted scroll state.
 
 ### Extension-resolution compatibility
 
@@ -387,6 +387,20 @@ Use sliders where a bounded numeric range is meaningful (zone heights, gate radi
 Use **K-Plex**, not ExcaliBrain, in user-facing UI and docs except when explicitly discussing compatibility/migration.
 
 Use **nodes**, not "thoughts", in user-facing terminology. Legacy internal names can be migrated gradually, but new UI strings should say nodes.
+
+## Code-scanner compatibility
+
+Treat the Obsidian code scanner as a release gate, not as post-release cleanup. In particular:
+
+- Do not assign static styles with `element.style.foo = ...`; prefer semantic CSS classes, `setCssStyles`, or `setCssProps`. Dynamic per-frame transforms may remain direct only when they are genuinely runtime values and the scanner accepts them.
+- Use Obsidian DOM helpers (`createEl`, `createDiv`, `createSpan`, etc.) rather than `document.createElement` / `ownerDocument.createElement`.
+- Do not use `!important` or broad `:has(...)` selectors in plugin CSS. Prefer explicit state classes and normal selector specificity.
+- Command names shown in the Command Palette must not repeat the plugin name; Obsidian already displays the owning plugin.
+- Keep strict TypeScript boundaries: avoid unnecessary assertions, `any`-typed member access/calls/arguments, and unsafe `JSON.parse`/IndexedDB assignments. Narrow `unknown` with type guards instead.
+- Never reject a Promise with a raw unknown value; normalize it to an `Error`.
+- Do not leave empty catch blocks, unused catch parameters, unused imports/locals, or stale instrumentation counters. A best-effort catch should either return explicitly or contain a meaningful compatibility/cleanup action.
+- Avoid regex constructs that trigger scanner lint (unnecessary escapes or literal control-character ranges). Prefer small string/code-point helpers when validation is clearer than a regex.
+- Before packaging a release, re-check for dead imports/variables and for scanner regressions that were fixed in earlier rounds; do not reintroduce them while adding adjacent features.
 
 ## Testing expectations
 

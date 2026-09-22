@@ -35,7 +35,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   private initialIndexComplete = false;
   private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> | null = null;
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
-  private readonly collapsedPlexHosts = new Map<WorkspaceLeaf, { sidecarLeaf: WorkspaceLeaf; position: SidecarPosition; hostGroup: HTMLElement; previousDisplay: string; unfoldButton: HTMLButtonElement }>();
+  private readonly collapsedPlexHosts = new Map<WorkspaceLeaf, { sidecarLeaf: WorkspaceLeaf; position: SidecarPosition; hostGroup: HTMLElement; unfoldButton: HTMLButtonElement }>();
   private readonly sidecarListeners = new Set<() => void>();
   private readonly navigationListeners = new Set<(path: string) => void>();
   private readonly relationshipFlairListeners = new Set<(path: string) => void>();
@@ -124,7 +124,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     addRelationshipCommand("kplex-add-challenger", "Add challenger", "right");
     this.addCommand({
       id: "kplex-sync-tab-from-plex",
-      name: "Sync most recent note tab with K-Plex",
+      name: "Sync most recent note tab with current node",
       callback: () => {
         const page = this.index.get(this.settings.lastActivePath);
         if (page) void this.syncMostRecentTabWithKplex(page);
@@ -132,7 +132,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
     this.addCommand({
       id: "kplex-sync-plex-from-tab",
-      name: "Sync K-Plex with most recent note tab",
+      name: "Sync current node with most recent note tab",
       callback: () => void this.syncKplexWithMostRecentTab(),
     });
     this.registerOntologyCommands();
@@ -632,8 +632,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (!collapsed) return;
     collapsed.unfoldButton.remove();
     if (collapsed.hostGroup.isConnected) {
-      if (collapsed.previousDisplay) collapsed.hostGroup.style.display = collapsed.previousDisplay;
-      else collapsed.hostGroup.style.removeProperty("display");
+      collapsed.hostGroup.setCssStyles({ display: "" });
     }
     this.collapsedPlexHosts.delete(hostLeaf);
   }
@@ -651,7 +650,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     const sidecarGroup = this.leafGroupElement(sidecarLeaf);
     if (!hostGroup || !sidecarGroup || hostGroup === sidecarGroup) return;
 
-    const button = sidecarGroup.ownerDocument.createElement("button");
+    const button = sidecarGroup.createEl("button");
     button.type = "button";
     const unfoldSide = position === "right" ? "left" : position === "left" ? "right" : position === "above" ? "bottom" : "top";
     const unfoldIcon = unfoldSide === "left" ? "panel-left-open"
@@ -669,12 +668,11 @@ export default class ExcaliBrainPlugin extends Plugin {
       sidecarLeaf,
       position,
       hostGroup,
-      previousDisplay: hostGroup.style.display,
       unfoldButton: button,
     });
     // Hiding the WorkspaceTabs group removes it from the split's flex layout completely; the
     // native content sidecar expands into the released space while remaining an ordinary tab.
-    hostGroup.style.display = "none";
+    hostGroup.setCssStyles({ display: "none" });
     this.notifySidecar();
   }
 
@@ -1749,7 +1747,11 @@ export default class ExcaliBrainPlugin extends Plugin {
 
     // Keep creation portable across desktop/mobile vaults and synced filesystems. These are the
     // characters Windows/macOS/Obsidian users most commonly cannot safely use in a filename.
-    if (/[<>:"/\\|?*\u0000-\u001F]/.test(stem)) {
+    const hasProhibitedCharacter = [...stem].some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint < 0x20 || '<>:"/\\|?*'.includes(character);
+    });
+    if (hasProhibitedCharacter) {
       return { stem, valid: false, error: 'The note name contains a prohibited filename character: < > : " / \\ | ? *', existing: null };
     }
     if (/[. ]$/.test(stem)) {
@@ -1781,23 +1783,78 @@ export default class ExcaliBrainPlugin extends Plugin {
     return typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
   }
 
+  private async frontmatterPropertyLineRange(file: TFile, fieldName: string): Promise<{ start: number; end: number } | null> {
+    const content = await this.app.vault.cachedRead(file);
+    const lines = content.split(/\r?\n/);
+    if (lines[0]?.trim() !== "---") return null;
+
+    const wanted = normalizeFieldName(fieldName);
+    const keyPattern = /^(\s*)(?:"([^"]+)"|'([^']+)'|([^:#][^:]*?))\s*:/;
+    for (let line = 1; line < lines.length; line += 1) {
+      const text = lines[line];
+      const trimmed = text.trim();
+      if (trimmed === "---" || trimmed === "...") break;
+      const match = text.match(keyPattern);
+      if (!match) continue;
+      const key = (match[2] ?? match[3] ?? match[4] ?? "").trim();
+      if (!key || normalizeFieldName(key) !== wanted) continue;
+
+      const indentation = match[1].length;
+      let end = line;
+      for (let nextLine = line + 1; nextLine < lines.length; nextLine += 1) {
+        const nextText = lines[nextLine];
+        const nextTrimmed = nextText.trim();
+        if (nextTrimmed === "---" || nextTrimmed === "...") break;
+        const nextKey = nextText.match(keyPattern);
+        if (nextKey && nextKey[1].length <= indentation) break;
+        end = nextLine;
+      }
+      return { start: line, end };
+    }
+    return null;
+  }
+
+  private async frontmatterPropertyContainsTarget(
+    file: TFile,
+    propertyRange: { start: number; end: number },
+    targetPath: string,
+  ): Promise<boolean> {
+    const content = await this.app.vault.cachedRead(file);
+    const lines = content.split(/\r?\n/);
+    const propertyText = lines.slice(propertyRange.start, propertyRange.end + 1).join("\n");
+    return extractLinksFromValue(this.app, propertyText, file).some((path) => path === targetPath);
+  }
+
   async directFrontmatterUnlinkCandidate(evidenceItems: readonly RelationEvidence[]): Promise<RelationEvidence | null> {
     const frontmatter = evidenceItems.filter((item) => item.sourceKind === "frontmatter-ontology");
     if (frontmatter.length !== 1) return null;
     const candidate = frontmatter[0];
     if (!candidate.fieldName) return null;
 
-    const candidateLocations = await this.relationshipEvidenceLocations(candidate);
-    const propertyLine = candidateLocations[0]?.line ?? null;
+    const storage = this.app.vault.getAbstractFileByPath(candidate.declaredByPath);
+    if (!(storage instanceof TFile) || storage.extension !== "md") return null;
+    const propertyRange = await this.frontmatterPropertyLineRange(storage, candidate.fieldName);
+    if (!propertyRange) return null;
+
     for (const evidence of evidenceItems) {
       if (evidence === candidate) continue;
       if (evidence.sourceKind !== "obsidian-link" && evidence.sourceKind !== "unresolved-link") return null;
       if (evidence.declaredByPath !== candidate.declaredByPath || evidence.declaredTargetPath !== candidate.declaredTargetPath) return null;
       const locations = await this.relationshipEvidenceLocations(evidence);
-      // Obsidian's resolved-links table also sees wiki-links stored inside YAML. Treat that one
-      // mirrored cache entry as the same declaration, but any additional/body occurrence makes
-      // the relationship ambiguous and therefore explanation-only.
-      if (propertyLine === null || locations.length !== 1 || locations[0].line !== propertyLine) return null;
+      // Obsidian's resolvedLinks table also counts links declared in YAML, while CachedMetadata.links
+      // may omit their source positions. A positioned occurrence must live inside this one property
+      // block. If no source position exists, verify the property block itself resolves to the same
+      // target before treating the generic link evidence as a mirrored cache view. A body occurrence
+      // still appears through CachedMetadata.links and therefore makes direct unlinking ambiguous.
+      if (locations.length) {
+        if (locations.some((location) =>
+          location.path !== storage.path ||
+          location.line < propertyRange.start ||
+          location.line > propertyRange.end
+        )) return null;
+        continue;
+      }
+      if (!(await this.frontmatterPropertyContainsTarget(storage, propertyRange, candidate.declaredTargetPath))) return null;
     }
     return candidate;
   }
@@ -1870,21 +1927,8 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (evidence.sourceKind === "frontmatter-ontology" || evidence.sourceKind === "date-property") {
       const fieldName = evidence.fieldName;
       if (!fieldName) return positions;
-      const content = await this.app.vault.cachedRead(file);
-      const lines = content.split(/\r?\n/);
-      if (lines[0]?.trim() !== "---") return positions;
-      const wanted = normalizeFieldName(fieldName);
-      for (let line = 1; line < lines.length; line += 1) {
-        const text = lines[line];
-        const trimmed = text.trim();
-        if (trimmed === "---" || trimmed === "...") break;
-        const match = text.match(/^\s*(?:"([^"]+)"|'([^']+)'|([^:#][^:]*))\s*:/);
-        const key = match ? (match[1] ?? match[2] ?? match[3] ?? "").trim() : "";
-        if (key && normalizeFieldName(key) === wanted) {
-          add(line, `Navigate to property “${key}”`);
-          break;
-        }
-      }
+      const propertyRange = await this.frontmatterPropertyLineRange(file, fieldName);
+      if (propertyRange) add(propertyRange.start, `Navigate to property “${fieldName}”`);
     }
 
     return positions;

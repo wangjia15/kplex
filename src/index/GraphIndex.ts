@@ -24,15 +24,12 @@ import {
   computeIndexSettingsSignature,
   computeVaultSignature,
   finalizeHydratedGraphStateCooperative,
-  hydrateGraphState,
   hydratePersistedPageRelations,
   isPersistedIndexManifestV2,
-  isPersistedIndexSnapshot,
   persistedDeclarationFromEvidence,
   persistedPageFromGraphPage,
   type PersistedEvidenceDeclaration,
   type PersistedIndexManifestV2,
-  type PersistedIndexSnapshot,
   type PersistedPage,
 } from "./IndexSnapshot";
 import {
@@ -366,23 +363,19 @@ export class GraphIndex {
     const next = createGraphState();
     const persistedPhysicalPaths = new Set<string>();
     const modifiedMarkdownPaths = new Set<string>();
-    let persistedFilePages = 0;
-    let reboundFilePages = 0;
     const missingFileBindings = new Set<string>();
     // Old schema-2 desktop snapshots use one slow page cursor. Retain those decoded records so we
     // do not pay the same cursor cost twice. Chunked snapshots are cheap to stream a second time,
     // so avoid retaining 100k+ duplicate serialized page objects in memory.
-    const retainedPages = !Platform.isMobile && !this.indexedDb.snapshotUsesChunks(meta) ? [] as PersistedPage[] : null;
+    const retainedPages: PersistedPage[] | null = !Platform.isMobile && !this.indexedDb.snapshotUsesChunks(meta) ? [] : null;
 
     const pagesOk = await this.indexedDb.iterateSnapshotPages(meta, (page) => {
       retainedPages?.push(page);
       addPersistedPageToState(next, page, this.app);
       if (page.filePath) {
         persistedPhysicalPaths.add(page.filePath);
-        persistedFilePages += 1;
         const rebound = next.pages.get(page.path)?.file;
         if (rebound) {
-          reboundFilePages += 1;
           if (rebound.extension === "md" && typeof page.mtime === "number" && rebound.stat.mtime !== page.mtime) modifiedMarkdownPaths.add(rebound.path);
         } else missingFileBindings.add(page.path);
       }
@@ -401,7 +394,6 @@ export class GraphIndex {
           page.file = file;
           if (file.extension === "md" && typeof page.mtime === "number" && file.stat.mtime !== page.mtime) modifiedMarkdownPaths.add(file.path);
           missingFileBindings.delete(path);
-          reboundFilePages += 1;
         }
       }
     }
@@ -418,20 +410,14 @@ export class GraphIndex {
     // much larger evidence store so a complete navigable graph can be published as soon as the
     // page snapshot is available. Evidence/provenance continues loading in the background.
     let relationsHydrated = meta.schema >= 2;
-    let hydratedPageCount = 0;
-    let hydratedRelationCount = 0;
     if (relationsHydrated) {
       let relationsComplete = true;
       if (retainedPages) {
         for (const saved of retainedPages) {
-          hydratedPageCount += 1;
-          hydratedRelationCount += saved.relations?.length ?? 0;
           if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
         }
       } else {
         const relationPassOk = await this.indexedDb.iterateSnapshotPages(meta, (saved) => {
-          hydratedPageCount += 1;
-          hydratedRelationCount += saved.relations?.length ?? 0;
           if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
         });
         relationsHydrated = relationPassOk && relationsComplete;
@@ -632,7 +618,7 @@ export class GraphIndex {
       const raw = await this.app.vault.adapter.read(manifestPath);
       const parsed: unknown = JSON.parse(raw);
       if (!isPersistedIndexManifestV2(parsed)) return { restored: false, fresh: false, createdAt: null };
-      const manifest = parsed as PersistedIndexManifestV2;
+      const manifest = parsed;
       if (manifest.settingsSignature !== computeIndexSettingsSignature(this.plugin.settings)) {
         return { restored: false, fresh: false, createdAt: manifest.createdAt };
       }
@@ -743,15 +729,17 @@ export class GraphIndex {
 
   private async persistIndexedDbSnapshot(run: number): Promise<void> {
     if (run !== this.snapshotPersistGeneration || this.state.pages.size === 0) return;
-    const pages = function* (state: typeof this.state): IterableIterator<PersistedPage> {
+    const state = this.state;
+    function* pageRecords(): IterableIterator<PersistedPage> {
       for (const page of state.pages.values()) {
         if (!page.transient) yield persistedPageFromGraphPage(page);
       }
-    }.call(this, this.state);
-
-    const evidence = function* (state: typeof this.state): IterableIterator<PersistedEvidenceDeclaration> {
+    }
+    function* evidenceRecords(): IterableIterator<PersistedEvidenceDeclaration> {
       for (const item of state.evidence.declarations()) yield persistedDeclarationFromEvidence(item);
-    }.call(this, this.state);
+    }
+    const pages = pageRecords();
+    const evidence = evidenceRecords();
 
     const vaultSignature = computeVaultSignature(this.app);
     const settingsSignature = computeIndexSettingsSignature(this.plugin.settings);

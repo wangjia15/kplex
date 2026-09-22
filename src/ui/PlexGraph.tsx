@@ -1455,7 +1455,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         }
       }
 
-      const hadPinch = Boolean(pinchGesture.current);
       touchPointers.current.delete(e.pointerId);
       if (moved) suppressActivateUntil.current = Date.now() + 220;
       pinchGesture.current = null;
@@ -1484,7 +1483,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     if (nodeDrag?.pointerId === e.pointerId) setNodeDrag(null);
     if (e.pointerType === "touch") {
       if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
-      const hadPinch = Boolean(pinchGesture.current);
       touchPointers.current.delete(e.pointerId);
       pinchGesture.current = null;
       viewport.current?.classList.remove("is-pinch-gesturing");

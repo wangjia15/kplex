@@ -19,6 +19,7 @@ export class RenameNoteModal extends Modal {
 
   onOpen(): void {
     this.titleEl.setText("Rename note");
+    this.modalEl.addClass("kplex-rename-note-modal");
     const suffix = fileSuffix(this.file);
     let value = editableStem(this.file, suffix);
     let input: HTMLInputElement | null = null;
@@ -59,7 +60,7 @@ export class RenameNoteModal extends Modal {
       }
     };
 
-    new Setting(this.contentEl)
+    const nameSetting = new Setting(this.contentEl)
       .setName("Name")
       .addText((text) => {
         input = text.inputEl;
@@ -74,6 +75,7 @@ export class RenameNoteModal extends Modal {
           text.inputEl.select();
         }, 0);
       });
+    nameSetting.settingEl.addClass("kplex-rename-note-name-setting");
 
     new Setting(this.contentEl)
       .addButton((button) => button.setButtonText("Rename").setCta().onClick(() => void rename()))

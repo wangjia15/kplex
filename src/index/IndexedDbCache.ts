@@ -49,6 +49,30 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+function requestUnknownResult(request: IDBRequest): Promise<unknown> {
+  return new Promise<unknown>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+  });
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isIndexedDbSnapshotMeta(value: unknown): value is IndexedDbSnapshotMeta {
+  if (!isUnknownRecord(value)) return false;
+  const schema = value.schema;
+  if (schema !== 1 && schema !== 2 && schema !== 3) return false;
+  if (value.key !== "active" || typeof value.generation !== "string" || typeof value.createdAt !== "number") return false;
+  if (typeof value.vaultSignature !== "string" || typeof value.settingsSignature !== "string" || !Array.isArray(value.discoveredFields)) return false;
+  if (schema === 3) {
+    if (!Number.isInteger(value.pageChunkCount) || !Number.isInteger(value.evidenceChunkCount)) return false;
+    if (Number(value.pageChunkCount) < 0 || Number(value.evidenceChunkCount) < 0) return false;
+  }
+  return true;
+}
+
 
 function safeDbName(vaultName: string): string {
   const encoded = Array.from(new TextEncoder().encode(vaultName))
@@ -107,7 +131,7 @@ export class KplexIndexedDbCache {
         request.onblocked = () => {
           resolve(null);
         };
-      } catch (error) {
+      } catch {
         resolve(null);
       }
     });
@@ -132,21 +156,10 @@ export class KplexIndexedDbCache {
     try {
       const tx = db.transaction(META_STORE, "readonly");
       const done = transactionDone(tx);
-      const value = await requestResult(tx.objectStore(META_STORE).get("active"));
+      const value = await requestUnknownResult(tx.objectStore(META_STORE).get("active"));
       await done;
-      if (!value || typeof value !== "object") {
-        return null;
-      }
-      const meta = value as Partial<IndexedDbSnapshotMeta>;
-      if ((meta.schema !== 1 && meta.schema !== 2 && meta.schema !== 3) || meta.key !== "active" || typeof meta.generation !== "string" ||
-        typeof meta.createdAt !== "number" || typeof meta.vaultSignature !== "string" ||
-        typeof meta.settingsSignature !== "string" || !Array.isArray(meta.discoveredFields) ||
-        (meta.schema === 3 && (!Number.isInteger(meta.pageChunkCount) || !Number.isInteger(meta.evidenceChunkCount) ||
-          (meta.pageChunkCount ?? -1) < 0 || (meta.evidenceChunkCount ?? -1) < 0))) {
-        return null;
-      }
-      return meta as IndexedDbSnapshotMeta;
-    } catch (error) {
+      return isIndexedDbSnapshotMeta(value) ? value : null;
+    } catch {
       return null;
     }
   }
@@ -164,7 +177,8 @@ export class KplexIndexedDbCache {
       const values = await Promise.all(unique.map((path) => requestResult(store.get([generation, path])) as Promise<PageRecord | undefined>));
       await done;
       for (const record of values) if (record?.value) result.set(record.path, record.value);
-    } catch (error) {
+    } catch {
+      return result;
     }
     return result;
   }
@@ -353,7 +367,7 @@ export class KplexIndexedDbCache {
       tx.objectStore(META_STORE).put(active);
       await transactionDone(tx);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -403,7 +417,8 @@ export class KplexIndexedDbCache {
       await done;
       const stale = generations.filter((generation) => generation !== activeGeneration);
       for (const generation of stale) await this.deleteGeneration(generation);
-    } catch (error) {
+    } catch {
+      return;
     }
   }
 
@@ -423,7 +438,8 @@ export class KplexIndexedDbCache {
         const value = values[i];
         if (value && value.mtime === request.mtime && value.parserVersion === BODY_CACHE_VERSION && value.body && Array.isArray(value.body.inlineFieldOccurrences)) result.set(request.path, value.body);
       }
-    } catch (error) {
+    } catch {
+      return result;
     }
     return result;
   }
@@ -445,7 +461,7 @@ export class KplexIndexedDbCache {
       for (const record of records) store.put({ ...record, parserVersion: BODY_CACHE_VERSION } satisfies BodyRecord);
       await done;
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -501,7 +517,7 @@ export class KplexIndexedDbCache {
       await done;
       const hit = Boolean(value && value.mtime === mtime && value.parserVersion === BODY_CACHE_VERSION && value.body && Array.isArray(value.body.inlineFieldOccurrences));
       return hit ? value!.body : null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -515,7 +531,7 @@ export class KplexIndexedDbCache {
       tx.objectStore(BODY_STORE).put({ path, mtime, parserVersion: BODY_CACHE_VERSION, body } satisfies BodyRecord);
       await done;
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

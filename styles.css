@@ -1806,3 +1806,17 @@
   border-radius: 7px;
   animation: kplex-filter-flair 3.6s ease-in-out both;
 }
+
+/* Rename-note modal: put the filename editor on its own row so it uses the full width. */
+.kplex-rename-note-modal .kplex-rename-note-name-setting {
+  display: block;
+}
+
+.kplex-rename-note-modal .kplex-rename-note-name-setting .setting-item-info {
+  margin-bottom: 8px;
+}
+
+.kplex-rename-note-modal .kplex-rename-note-name-setting .setting-item-control,
+.kplex-rename-note-modal .kplex-rename-note-name-setting input[type="text"] {
+  width: 100%;
+}

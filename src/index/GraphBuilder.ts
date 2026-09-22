@@ -72,13 +72,17 @@ function formatDailyDate(isoDate: string, format: string): string | null {
   return parsed.isValid() ? parsed.format(format) : null;
 }
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function stableSemanticValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableSemanticValue);
-  if (!value || typeof value !== "object") return value;
+  if (!isUnknownRecord(value)) return value;
   const output: Record<string, unknown> = {};
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+  for (const key of Object.keys(value).sort()) {
     if (key === "position") continue;
-    output[key] = stableSemanticValue((value as Record<string, unknown>)[key]);
+    output[key] = stableSemanticValue(value[key]);
   }
   return output;
 }
@@ -90,7 +94,7 @@ function stableSemanticValue(value: unknown): unknown {
  */
 function semanticSourceSignature(app: App, file: TFile, body: ParsedBodyMetadata): string {
   const cache = app.metadataCache.getFileCache(file);
-  const frontmatter = { ...(cache?.frontmatter ?? {}) } as Record<string, unknown>;
+  const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
   delete frontmatter.position;
   const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
   const resolved = Object.keys(app.metadataCache.resolvedLinks[file.path] ?? {}).sort();
@@ -128,7 +132,7 @@ export class GraphBuilder {
     this.fieldCache.set(path, entry);
     const hotLimit = Platform.isIosApp ? 48 : Platform.isMobile ? 160 : 1200;
     while (this.fieldCache.size > hotLimit) {
-      const oldest = this.fieldCache.keys().next().value as string | undefined;
+      const oldest = this.fieldCache.keys().next().value;
       if (!oldest) break;
       this.fieldCache.delete(oldest);
     }
