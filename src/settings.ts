@@ -57,6 +57,7 @@ export type KplexDeviceClass = "desktop" | "tablet" | "mobile";
 export type MouseInteractionMode = "smart" | "legacy" | "middle-only";
 export type SidecarPosition = "right" | "left" | "above" | "below";
 export type SidecarMarkdownMode = "preview" | "source";
+export type DocumentSyncMode = "off" | "recent" | "pinned";
 export type KplexLayoutProfile = {
   compactingFactor: number;
   parentColumns: number;
@@ -164,6 +165,10 @@ export interface ExcaliBrainSettings {
   sidecarPosition: SidecarPosition;
   sidecarMarkdownMode: SidecarMarkdownMode;
   sidecarCondensedBreakpoint: number;
+  /** How K-Plex is paired with a note tab. */
+  documentSyncMode: DocumentSyncMode;
+  /** Animation speed multiplier: 0 disables motion; 1 is normal; 2 is very fast. */
+  animationSpeed: number;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -253,7 +258,9 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sidecarOpen: false,
   sidecarPosition: "right",
   sidecarMarkdownMode: "preview",
-  sidecarCondensedBreakpoint: 560
+  sidecarCondensedBreakpoint: 560,
+  documentSyncMode: "off",
+  animationSpeed: 1
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -329,6 +336,12 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     ]),
   ) as Record<string, KplexLayoutProfile>;
 
+  const oldSyncMode = old.documentSyncMode;
+  const documentSyncMode: DocumentSyncMode = oldSyncMode === "recent" || oldSyncMode === "pinned" || oldSyncMode === "off"
+    ? oldSyncMode
+    : oldSyncMode === "kplex-to-leaf" || oldSyncMode === "leaf-to-kplex" || oldSyncMode === "two-way" || Boolean(old.autoOpenCentralDocument) || Boolean(old.followActiveFile)
+      ? "recent" : "off";
+
   return {
     ...DEFAULT_SETTINGS,
     ...old,
@@ -375,6 +388,11 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     sidecarPosition: old.sidecarPosition === "left" || old.sidecarPosition === "above" || old.sidecarPosition === "below" ? old.sidecarPosition : "right",
     sidecarMarkdownMode: old.sidecarMarkdownMode === "source" ? "source" : "preview",
     sidecarCondensedBreakpoint: Math.max(360, Math.min(900, finite(old.sidecarCondensedBreakpoint, 560))),
+    documentSyncMode,
+    animationSpeed: Math.max(0, Math.min(2, finite(old.animationSpeed, 1))),
+    // Keep legacy flags coherent for imported settings and older code paths.
+    autoOpenCentralDocument: documentSyncMode !== "off",
+    followActiveFile: documentSyncMode !== "off",
   };
 }
 
@@ -600,6 +618,8 @@ const REINDEX_SETTING_KEYS = new Set<string>([
   "inferAllLinksAsFriends",
   "inverseInfer",
   "showFullTagName",
+  "showFolderNodes",
+  "showTagNodes",
   "primaryTagField",
   "noteTypeField",
   ...Object.keys(HIERARCHY_KEY_MAP)
@@ -667,15 +687,15 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
             heading: "Navigation",
             items: [
               {
-                name: "Follow document navigation",
-                desc: "When enabled, K-Plex follows navigation in the active document leaf. If a leaf is linked in the toolbar, only that linked leaf is followed.",
-                control: { type: "toggle", key: "followActiveFile" }
+                name: "Note tab link",
+                desc: "Link K-Plex to the most recent note tab, pin it to one fixed note tab, or keep them independent. One-shot sync actions are available from the toolbar and command palette.",
+                control: { type: "dropdown", key: "documentSyncMode", defaultValue: "off", options: {
+                  off: "Not linked to a note tab",
+                  recent: "Linked to most recent note tab",
+                  pinned: "Pinned to one fixed note tab",
+                } }
               },
-              {
-                name: "Open selected node in document leaf",
-                desc: "Legacy autoOpenCentralDocument behavior. When enabled, navigating K-Plex opens the central node in the active or linked document leaf.",
-                control: { type: "toggle", key: "autoOpenCentralDocument" }
-              },
+              { name: "Animation speed", desc: "Speed multiplier: 0 = off, 0.5 = slow, 1 = normal, 1.5 = fast, 2 = very fast. Shared thoughts visibly migrate to their new position while the newly selected center arrives a little sooner.", control: { type: "slider", key: "animationSpeed", min: 0, max: 2, step: 0.1 } },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
               { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
               { name: "Sidecar position", desc: "A sidecar is a real adjacent Obsidian workspace leaf managed by K-Plex and synchronized to the central node. It is not available when K-Plex itself is in a sidepanel.", control: { type: "dropdown", key: "sidecarPosition", defaultValue: "right", options: { right: "Right", left: "Left", above: "Above", below: "Below" } } },
@@ -828,7 +848,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
             type: "group",
             heading: "Note type",
             items: [
-              { name: "Document property", desc: "The YAML property whose value selects the primary node style.", control: { type: "text", key: "noteTypeField" } },
+              { name: "Note property", desc: "The YAML property whose value selects the primary node style.", control: { type: "text", key: "noteTypeField" } },
             ]
           },
           {

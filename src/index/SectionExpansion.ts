@@ -255,7 +255,7 @@ export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, in
     sectionPage.primaryStyleTag = null;
     sectionPage.styleTags = [];
     sectionPage.transient = {
-      kind: "section", sourcePath: centerPage.path, sectionId: heading.id, heading: heading.heading,
+      kind: "section", sourcePath: centerPage.path, sectionId: heading.id, heading: heading.heading, level: heading.level,
       subpath: heading.subpath, line: heading.line, start: heading.start, end: heading.end,
     };
     const sectionText = content.slice(heading.start, heading.end);

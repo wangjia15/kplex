@@ -93,10 +93,17 @@ Do not rebuild on every startup `vault:create`/metadata event.
 
 Changes that touch indexing should preserve:
 
+- IndexedDB as the durable index/parser cache; do not put large index payloads in local storage. Bump the IndexedDB database version whenever stores/indexes change so existing vault databases receive the migration.
+- on large iOS cold starts, body-cache prewarming must happen in bounded transactional batches before the full graph is retained; keep it cancellable and resumable
+- declaration-compact evidence storage (one original declaration; inverse perspectives derived on demand)
+- rejecting structurally stale/half-bound snapshots before publication, so a replacement build does not coexist with a misleading full cached graph
 - `npm test` compatibility-fixture coverage (`tests/fixtures/excalibrain-indexing`)
 - startup metadata stabilization
 - event coalescing/debouncing
 - dirty-index checks
+- path-indexed evidence updates for single-file edits; do not scan the complete evidence store when provenance already identifies the touched path
+- time-budgeted cooperative yielding on large collectors/resolvers; do not yield every note on iOS
+- deferred/coalesced snapshot writes, cancelled when the final K-Plex view closes
 - skipped periodic refresh when nothing changed
 
 ### Reuse caches
@@ -183,13 +190,13 @@ When overflow requires a scroll zone, first-level zones expose a funnel/name fil
 - Phone command palette: only the K-Plex sidepanel opener is offered among surface-opening commands. Generic/ribbon open also routes to sidepanel.
 - Tablet: normal graph tab and sidepanel are both available; pop-out is desktop-only.
 - A touch tap is handled from the pointer stream directly because preventDefault/pan ownership can suppress synthesized click events. Verify tap navigation, one-finger pan, two-finger pinch and long-press context menus together.
-- Sidecar is a real adjacent Obsidian `WorkspaceLeaf`; never mount a faux workspace leaf inside React.
+- Sidecar is a real adjacent Obsidian `WorkspaceLeaf`; never mount a faux workspace leaf inside React. Sidecar controls are derived from **pinned-tab adjacency**, not only from whether K-Plex originally created the leaf. Moving an attached pinned tab away must not clear the pin.
 
 ## Section-outline checks
 
 - central Markdown expansion is runtime-only; no heading may enter `GraphIndex`
 - nested heading levels create parent/child outline structure
-- section nodes and outline connectors are visually distinct from semantic graph relations
+- section nodes and outline connectors are visually distinct from semantic graph relations; structural connectors use vertical-spine + horizontal L branches that enter the child at its left-center edge, never the semantic top gate; density 4 should collapse these branches/gaps aggressively rather than merely scaling the ordinary graph spacing
 - fold/unfold is view state only
 - folded descendants' semantic relations project upward to the visible folded ancestor
 - explanation provenance still identifies the actual hidden declaring section
@@ -302,8 +309,8 @@ Use **Curved**, not **Bézier**, in settings text.
 Before submitting a significant change, test the relevant subset of:
 
 - cold start in a small vault
-- warm start with persistent body cache
-- large vault (20k+ files)
+- warm start with a persisted IndexedDB semantic snapshot and per-file parser cache
+- large vault (20k+ files), including an iOS/tablet cold-start pass where practical
 - Markdown central node
 - folder central node
 - tag central node
@@ -314,7 +321,10 @@ Before submitting a significant change, test the relevant subset of:
 - straight and curved connectors
 - arrow direction
 - gate counts/fill state
-- linked and unlinked leaf navigation
+- note-tab synchronization: unlinked, linked to most recent tab, pinned to one fixed tab, plus both one-shot sync directions
+- companion sidecar open/move/detach behavior, including adjacency/control visibility for left, right, above and below splits
+- mobile sidepanel first-open behavior
+- touch tap, one-finger pan, long-press menu and two-finger pinch over both bare canvas and nodes
 - pop-out window
 - persistent history
 - pinned nodes

@@ -120,7 +120,7 @@ export function RelationPopover({
       </div>
     </>}
 
-    <label className="kplex-relation-label" htmlFor="kplex-relation-field">Document property</label>
+    <label className="kplex-relation-label" htmlFor="kplex-relation-field">Note property</label>
     <select id="kplex-relation-field" value={selectedField} onChange={(event: ChangeEvent<HTMLSelectElement>) => setSelectedField(event.currentTarget.value)}>
       {fields.map((field) => <option key={field} value={field}>{field}</option>)}
     </select>

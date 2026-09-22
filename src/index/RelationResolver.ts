@@ -78,6 +78,29 @@ export function classifyRelation(
   }
 }
 
+
+export function resolveEvidencePair(
+  pages: Map<string, GraphPage>,
+  store: RelationEvidenceStore,
+  sourcePath: string,
+  targetPath: string,
+): void {
+  const source = pages.get(sourcePath);
+  const target = pages.get(targetPath);
+  if (!source || !target) return;
+  const evidence = store.between(sourcePath, targetPath);
+  if (!evidence.length) {
+    source.neighbours.delete(targetPath);
+    return;
+  }
+  const relation: Relation = { ...emptyRelation(), target };
+  for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
+  const hasRole = relation.isHidden || relation.isParent || relation.isChild || relation.isLeftFriend ||
+    relation.isRightFriend || relation.isNextFriend || relation.isPreviousFriend;
+  if (hasRole) source.neighbours.set(targetPath, relation);
+  else source.neighbours.delete(targetPath);
+}
+
 export function resolveEvidenceStore(
   pages: Map<string, GraphPage>,
   store: RelationEvidenceStore,
@@ -93,6 +116,53 @@ export function resolveEvidenceStore(
     const hasRole = relation.isHidden || relation.isParent || relation.isChild || relation.isLeftFriend || relation.isRightFriend || relation.isNextFriend || relation.isPreviousFriend;
     if (hasRole) source.neighbours.set(targetPath, relation);
   }
+}
+
+/**
+ * Cooperative variant used by the production index builder. Large vaults can contain hundreds
+ * of thousands of directional evidence buckets; yielding periodically keeps Obsidian's WebView
+ * responsive and avoids iOS watchdog-style reloads during a long synchronous resolver pass.
+ */
+export async function resolveEvidenceStoreCooperative(
+  pages: Map<string, GraphPage>,
+  store: RelationEvidenceStore,
+  isCurrent: () => boolean,
+  batchSize = 300,
+): Promise<boolean> {
+  // batchSize is now only a cheap cancellation checkpoint. Host yielding is time-budgeted: the
+  // old iOS path yielded every 12 records, creating thousands of timers during a large rebuild.
+  const sliceBudgetMs = 7;
+  let sliceStartedAt = performance.now();
+  const maybeYield = async (processed: number): Promise<boolean> => {
+    if (processed % batchSize === 0 && !isCurrent()) return false;
+    if (performance.now() - sliceStartedAt < sliceBudgetMs) return true;
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    sliceStartedAt = performance.now();
+    return isCurrent();
+  };
+
+  let processed = 0;
+  for (const page of pages.values()) {
+    page.neighbours = new Map();
+    processed += 1;
+    if (!(await maybeYield(processed))) return false;
+  }
+
+  processed = 0;
+  for (const [sourcePath, targetPath, evidence] of store.entries()) {
+    if (!isCurrent()) return false;
+    const source = pages.get(sourcePath);
+    const target = pages.get(targetPath);
+    if (source && target) {
+      const relation: Relation = { ...emptyRelation(), target };
+      for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
+      const hasRole = relation.isHidden || relation.isParent || relation.isChild || relation.isLeftFriend || relation.isRightFriend || relation.isNextFriend || relation.isPreviousFriend;
+      if (hasRole) source.neighbours.set(targetPath, relation);
+    }
+    processed += 1;
+    if (!(await maybeYield(processed))) return false;
+  }
+  return isCurrent();
 }
 
 function sourceLabel(evidence: RelationEvidence): string {

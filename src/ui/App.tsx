@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import { Menu, type TFile, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
-import type { KplexViewSurface, SidecarPosition } from "../settings";
+import type { DocumentSyncMode, KplexViewSurface, SidecarPosition } from "../settings";
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
@@ -41,6 +41,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
   const [hostWidth, setHostWidth] = useState(0);
   const [sidecarRevision, setSidecarRevision] = useState(0);
+  const sidecarRestoreAttempted = useRef(false);
   const [activePath, setActivePath] = useState(() => {
     const active = plugin.app.workspace.getActiveFile();
     const history = plugin.settings.navigationHistory;
@@ -68,6 +69,10 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
+  useEffect(() => plugin.subscribeNavigation((path) => {
+    const target = plugin.index.get(path);
+    if (target) activate(target, true);
+  }), [plugin, activate]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -108,7 +113,11 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   }, [page?.path, plugin]);
 
   useEffect(() => {
-    if (!page || surface === "sidepanel" || !plugin.settings.sidecarOpen || plugin.isSidecarOpen(hostLeaf)) return;
+    // Restore a persisted sidecar once when this K-Plex surface materializes. After that, geometry
+    // is user-owned: moving a pinned tab away must merely hide the controls, not recreate a pane.
+    if (!page || sidecarRestoreAttempted.current) return;
+    sidecarRestoreAttempted.current = true;
+    if (surface === "sidepanel" || !plugin.settings.sidecarOpen || plugin.isSidecarOpen(hostLeaf)) return;
     void plugin.openSidecar(hostLeaf, page);
   }, [page?.path, surface, hostLeaf, plugin]);
 
@@ -125,22 +134,48 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   const toggleToolbarSetting = async (key: BooleanToolbarSetting) => {
     plugin.settings[key] = !plugin.settings[key];
-    await plugin.saveSettings(false, false);
+    const requiresGraphRebuild = key === "showFolderNodes" || key === "showTagNodes";
+    await plugin.saveSettings(requiresGraphRebuild, !requiresGraphRebuild);
     forceRender((value) => value + 1);
   };
 
-  const toggleDocumentLink = async () => {
-    await plugin.setDocumentLeafLinked(!plugin.isDocumentLeafLinked(), page);
+  const setDocumentSyncMode = async (mode: DocumentSyncMode) => {
+    await plugin.setDocumentSyncMode(mode, page);
     forceRender((value) => value + 1);
   };
 
-  const toggleNavigationSync = async () => {
-    const enabled = !(plugin.settings.autoOpenCentralDocument && plugin.settings.followActiveFile);
-    plugin.settings.autoOpenCentralDocument = enabled;
-    plugin.settings.followActiveFile = enabled;
-    if (!enabled && plugin.isDocumentLeafLinked()) await plugin.setDocumentLeafLinked(false);
-    await plugin.saveSettings(false, false);
-    forceRender((value) => value + 1);
+  const showDocumentSyncMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    const menu = new Menu();
+    const current = plugin.getDocumentSyncMode();
+
+    menu.addItem((item) => item
+      .setTitle("Sync most recent note tab with K-Plex")
+      .setIcon("arrow-right")
+      .setDisabled(!page?.file)
+      .onClick(() => { if (page) void plugin.syncMostRecentTabWithKplex(page).then(() => forceRender((value) => value + 1)); }));
+    menu.addItem((item) => item
+      .setTitle("Sync K-Plex with most recent note tab")
+      .setIcon("arrow-left")
+      .onClick(() => void plugin.syncKplexWithMostRecentTab().then((file) => {
+        if (!file) return;
+        const target = plugin.index.get(file.path);
+        if (target) activate(target, true);
+      })));
+
+    menu.addSeparator();
+    const choices: Array<[DocumentSyncMode, string, string]> = [
+      ["off", "K-Plex not linked to a note tab", "unlink"],
+      ["recent", "K-Plex linked to most recent note tab", "link"],
+      ["pinned", "K-Plex pinned to one fixed note tab", "pin"],
+    ];
+    for (const [mode, title, icon] of choices) {
+      menu.addItem((item) => item
+        .setTitle(title)
+        .setIcon(icon)
+        .setChecked(current === mode)
+        .onClick(() => void setDocumentSyncMode(mode)));
+    }
+    menu.showAtMouseEvent(event.nativeEvent);
   };
 
   const toggleExpandedView = async () => {
@@ -163,15 +198,21 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   if (!page) return <div className="excalibrain-app excalibrain-empty">Building K-Plex index…</div>;
 
-  const linked = plugin.isDocumentLeafLinked();
   const linkedLabel = plugin.getLinkedDocumentLeafLabel();
-  const syncOn = plugin.settings.autoOpenCentralDocument && plugin.settings.followActiveFile;
+  const syncMode = plugin.getDocumentSyncMode();
+  const syncIcon = syncMode === "pinned" ? "pin" : syncMode === "recent" ? "link" : "unlink";
+  const syncTitle = syncMode === "off"
+    ? "K-Plex is not linked to a note tab"
+    : syncMode === "recent"
+      ? "K-Plex is linked to the most recent note tab"
+      : `K-Plex is pinned to a fixed note tab${linkedLabel ? ` · ${linkedLabel}` : ""}`;
   const isPinned = plugin.isPinned(page.path);
   const pinnedPages = plugin.settings.pinnedNodes
     .map((path) => plugin.index.get(path))
     .filter((item): item is GraphPage => Boolean(item));
   const sidecarAvailable = surface !== "sidepanel";
-  const sidecarOpen = sidecarAvailable && plugin.isSidecarOpen(hostLeaf);
+  const sidecarPosition = sidecarAvailable ? plugin.getSidecarPosition(hostLeaf) : null;
+  const sidecarOpen = Boolean(sidecarPosition);
   const condensedBySidecar = sidecarAvailable && sidecarOpen && hostWidth > 0 && hostWidth <= plugin.settings.sidecarCondensedBreakpoint;
   const profileSurface: KplexViewSurface = condensedBySidecar ? "sidepanel" : surface;
   const viewSettings = plugin.getViewSettings(profileSurface);
@@ -185,17 +226,8 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
       ["right", "Right", "panel-right"], ["left", "Left", "panel-left"], ["above", "Above", "panel-top"], ["below", "Below", "panel-bottom"],
     ];
     for (const [position, label, icon] of options) menu.addItem((item) => item
-      .setTitle(label).setIcon(icon).setChecked(plugin.settings.sidecarPosition === position)
+      .setTitle(label).setIcon(icon).setChecked((sidecarPosition ?? plugin.settings.sidecarPosition) === position)
       .onClick(() => void plugin.moveSidecar(hostLeaf, position, page)));
-    menu.showAtMouseEvent(event.nativeEvent);
-  };
-
-  const showSidecarPopoutMenu = (event: MouseEvent<HTMLButtonElement>) => {
-    const menu = new Menu();
-    menu.addItem((item) => item.setTitle("Open copy in new tab").setIcon("file-plus-2").onClick(() => void plugin.duplicateSidecar(hostLeaf, "tab")));
-    menu.addItem((item) => item.setTitle("Open copy in current document tab").setIcon("replace").onClick(() => void plugin.duplicateSidecar(hostLeaf, "current")));
-    menu.addItem((item) => item.setTitle("Open copy in adjacent split").setIcon("columns-2").onClick(() => void plugin.duplicateSidecar(hostLeaf, "adjacent")));
-    menu.addItem((item) => item.setTitle("Open copy in pop-out window").setIcon("picture-in-picture-2").onClick(() => void plugin.duplicateSidecar(hostLeaf, "window")));
     menu.showAtMouseEvent(event.nativeEvent);
   };
 
@@ -211,14 +243,12 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <SearchBox index={plugin.index} onActivate={activate} />
           <PlexFilter index={plugin.index} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} />
           <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
-            <ToolButton
-              icon={linked ? "pin" : "pin-off"}
-              title={linked ? `Unlink K-Plex from ${linkedLabel ?? "the document leaf"}` : "Link K-Plex to the most recent document leaf"}
-              on={linked}
-              disabled={!plugin.settings.autoOpenCentralDocument}
-              onClick={() => void toggleDocumentLink()}
-            />
-            <ToolButton icon={syncOn ? "link" : "unlink"} title="Synchronize K-Plex navigation with the active or linked document leaf" on={syncOn} onClick={() => void toggleNavigationSync()} />
+            <button
+              className={`excalibrain-icon-button${syncMode !== "off" ? " is-on" : ""}`}
+              title={`${syncTitle}. Click for sync actions and link mode.`}
+              aria-label={`${syncTitle}. Note tab sync actions.`}
+              onClick={showDocumentSyncMenu}
+            ><ObsidianIcon name={syncIcon} size={17} /></button>
             <ToolButton icon={isPinned ? "bookmark-check" : "bookmark"} title={isPinned ? "Unpin current node" : "Pin current node"} on={isPinned} onClick={() => void togglePinned()} />
             {sidecarAvailable && <ToolButton icon={sidecarOpen ? "panel-right-close" : "panel-right-open"} title={sidecarOpen ? "Close companion sidecar" : "Open companion sidecar"} on={sidecarOpen} onClick={() => void plugin.toggleSidecar(hostLeaf, page)} />}
             {plugin.settings.toolbarExpanded && <>
@@ -259,13 +289,14 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
           <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} filter={plexFilter} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
-          {sidecarOpen && <div className={`kplex-sidecar-controls is-${plugin.settings.sidecarPosition}`} aria-label="Sidecar controls">
-            <button title="Collapse sidecar" onClick={() => void plugin.closeSidecar(hostLeaf)}><ObsidianIcon name="panel-right-close" size={15} /></button>
-            <button title="Move sidecar" onClick={showSidecarMoveMenu}><ObsidianIcon name="move" size={15} /></button>
-            <button title="Open an independent copy" onClick={showSidecarPopoutMenu}><ObsidianIcon name="picture-in-picture-2" size={15} /></button>
-          </div>}
         </section>
       </main>
+
+      {sidecarOpen && sidecarPosition && <div className={`kplex-sidecar-controls is-${sidecarPosition}`} aria-label="Sidecar controls">
+        <button title="Collapse sidecar" onClick={() => void plugin.closeSidecar(hostLeaf)}><ObsidianIcon name="panel-right-close" size={15} /></button>
+        <button title="Move sidecar" onClick={showSidecarMoveMenu}><ObsidianIcon name="move" size={15} /></button>
+        <button title="Detach sidecar — keep this tab open independently" onClick={() => void plugin.detachSidecar(hostLeaf)}><ObsidianIcon name="unlink" size={15} /></button>
+      </div>}
 
       <footer className="excalibrain-history-bar">
         <span className="excalibrain-history-label">PAST NODES</span>

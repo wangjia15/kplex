@@ -1,7 +1,8 @@
-import type { App } from "obsidian";
+import { Platform, TFile, type App } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { ExcaliBrainSettings } from "../settings";
 import {
+  LinkDirection,
   RelationType,
   type GraphPage,
   type GateSide,
@@ -11,14 +12,34 @@ import {
   type Relation,
   type Role,
 } from "../types";
-import type { ParsedBodyMetadata } from "./fieldParser";
 import { GraphBuilder, type FieldCacheEntry } from "./GraphBuilder";
+import type { ParsedBodyMetadata } from "./fieldParser";
+import { KplexIndexedDbCache } from "./IndexedDbCache";
 import { createGraphState, getGraphPage } from "./GraphState";
-import type { RelationEvidence } from "./RelationEvidence";
+import type { EvidenceRole, RelationEvidence } from "./RelationEvidence";
 import { MetadataParser } from "./MetadataParser";
+import {
+  addPersistedEvidenceToState,
+  addPersistedPageToState,
+  computeIndexSettingsSignature,
+  computeVaultSignature,
+  finalizeHydratedGraphStateCooperative,
+  hydrateGraphState,
+  hydratePersistedPageRelations,
+  isPersistedIndexManifestV2,
+  isPersistedIndexSnapshot,
+  persistedDeclarationFromEvidence,
+  persistedPageFromGraphPage,
+  type PersistedEvidenceDeclaration,
+  type PersistedIndexManifestV2,
+  type PersistedIndexSnapshot,
+  type PersistedPage,
+} from "./IndexSnapshot";
+import { perfElapsed, perfLog, perfNow } from "../util/perf";
 import {
   classifyRelation,
   explainResolvedRelationship,
+  resolveEvidencePair,
   type RelationshipExplanation,
 } from "./RelationResolver";
 
@@ -29,13 +50,6 @@ type CachedRelationView = {
   gateStats: GateStats;
   neighbourCount: number;
 };
-
-type PersistedBodyCache = {
-  version: 2;
-  entries: Record<string, { mtime: number; body: ParsedBodyMetadata }>;
-};
-
-const BODY_CACHE_KEY = "k-plex:index-body-cache:v2";
 
 type SearchEntry = {
   page: GraphPage;
@@ -94,12 +108,20 @@ export class GraphIndex {
   private titleCache = new Map<string, { signature: string; title: string }>();
   private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
   private metadataParser = new MetadataParser();
-  private cachePersistTimer: number | null = null;
-  private bodyCacheDirty = false;
+  private snapshotPersistTimer: number | null = null;
+  private snapshotPersistGeneration = 0;
+  private bodyWarmGeneration = 0;
+  private readonly indexedDb: KplexIndexedDbCache;
   private searchEntryPointPaths: string[] = [];
+  private restoredModifiedMarkdownPaths: string[] = [];
+  private restoredStructuralMismatch = false;
+  private restoredPatchPlanAvailable = false;
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {
-    this.restoreBodyCache();
+    this.indexedDb = new KplexIndexedDbCache(app.vault.getName());
+    // Remove the old parsed-body localStorage payload. IndexedDB is now the only durable index
+    // cache; localStorage is a poor fit for large vaults because serialization duplicates memory.
+    void this.indexedDb.clearLegacyLocalStorage(app);
   }
 
   get pages(): Map<string, GraphPage> { return this.state.pages; }
@@ -145,52 +167,586 @@ export class GraphIndex {
   }
 
   cancelRebuild(): void {
+    this.bodyWarmGeneration += 1;
     if (!this.building) return;
     this.generation += 1;
     this.rebuildQueued = false;
   }
 
+  /**
+   * Prime the durable parsed-body cache before a large iOS cold build.
+   *
+   * Obsidian's own metadata cache already gives K-Plex the vault tree and ordinary links, but
+   * inline ontology/URL parsing still requires Markdown bodies. Reading ten thousand files while
+   * simultaneously retaining a complete second graph snapshot is a poor iOS memory pattern. This
+   * pass therefore does only I/O + parsing + small transactional IndexedDB checkpoints. The full
+   * GraphBuilder then consumes durable hits without re-reading the vault. Interrupted runs resume
+   * from the committed body records rather than starting from file zero.
+   */
+  async prewarmBodyCache(isCurrent: () => boolean = () => true): Promise<boolean> {
+    const run = ++this.bodyWarmGeneration;
+    const current = () => run === this.bodyWarmGeneration && isCurrent();
+    const files = this.app.vault.getMarkdownFiles();
+    if (!files.length) return true;
+
+    const storeReady = await this.indexedDb.bodyStoreReady();
+    this.plugin.recordDiagnostic("index:body-prewarm-start", { files: files.length, storeReady });
+    perfLog("body-prewarm.start", { files: files.length, storeReady });
+    if (!storeReady || !current()) {
+      this.plugin.recordDiagnostic("index:body-prewarm-unavailable", { storeReady, cancelled: !current() });
+      return false;
+    }
+
+    const startedAt = perfNow();
+    const lookupBatchSize = Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 384;
+    const readConcurrency = Platform.isIosApp ? 4 : Platform.isMobile ? 4 : 8;
+    const writeBatchSize = Platform.isIosApp ? 24 : Platform.isMobile ? 64 : 160;
+    const pendingWrites: Array<{ path: string; mtime: number; body: ParsedBodyMetadata }> = [];
+    let processed = 0;
+    let durableHits = 0;
+    let hotHits = 0;
+    let bodyReads = 0;
+    let bytesRead = 0;
+    let writeFailures = 0;
+    let lastProgress = 0;
+    let lastConsoleProgress = 0;
+
+    const flush = async (): Promise<boolean> => {
+      if (!pendingWrites.length) return current();
+      const batch = pendingWrites.splice(0, pendingWrites.length);
+      const ok = await this.indexedDb.putBodies(batch);
+      if (!ok) writeFailures += batch.length;
+      return ok && current();
+    };
+
+    const progress = (force = false): void => {
+      if (!force && processed - lastProgress < 250) return;
+      lastProgress = processed;
+      const detail = { processed, total: files.length, hotHits, durableHits, bodyReads, bytesRead, writeFailures, elapsedMs: perfElapsed(startedAt) };
+      this.plugin.recordDiagnostic("index:body-prewarm-progress", detail);
+      if (force || processed - lastConsoleProgress >= 1000) {
+        lastConsoleProgress = processed;
+        perfLog("body-prewarm.progress", detail);
+      }
+    };
+
+    for (let batchStart = 0; batchStart < files.length; batchStart += lookupBatchSize) {
+      if (!current()) return false;
+      const batch = files.slice(batchStart, batchStart + lookupBatchSize);
+      const lookupRequests: Array<{ path: string; mtime: number }> = [];
+      const needsLookup: TFile[] = [];
+      for (const file of batch) {
+        const hot = this.fieldCache.get(file.path);
+        if (hot?.mtime === file.stat.mtime) {
+          hotHits += 1;
+          processed += 1;
+        } else {
+          needsLookup.push(file);
+          lookupRequests.push({ path: file.path, mtime: file.stat.mtime });
+        }
+      }
+      const durable = await this.indexedDb.getBodies(lookupRequests);
+      if (!current()) return false;
+      durableHits += durable.size;
+      const misses: TFile[] = [];
+      for (const file of needsLookup) {
+        if (durable.has(file.path)) processed += 1;
+        else misses.push(file);
+      }
+      progress();
+
+      for (let readStart = 0; readStart < misses.length; readStart += readConcurrency) {
+        if (!current()) return false;
+        const group = misses.slice(readStart, readStart + readConcurrency);
+        // Parallelize only native file reads. Parsing remains sequential and low-memory on iOS.
+        const contents = await Promise.all(group.map(async (file) => ({ file, content: await this.app.vault.read(file) })));
+        if (!current()) return false;
+        for (const { file, content } of contents) {
+          const body = await this.metadataParser.parse(content);
+          if (!current()) return false;
+          bodyReads += 1;
+          bytesRead += content.length;
+          processed += 1;
+          pendingWrites.push({ path: file.path, mtime: file.stat.mtime, body });
+          progress();
+          if (pendingWrites.length >= writeBatchSize && !(await flush())) {
+            this.plugin.recordDiagnostic("index:body-prewarm-write-failed", { processed, writeFailures });
+            return false;
+          }
+        }
+      }
+
+      // Give WebKit a real paint/autorelease opportunity between native I/O waves rather than
+      // one 100-second chain of micro-yields. This is intentionally longer than setTimeout(0).
+      if (Platform.isIosApp) await new Promise<void>((resolve) => window.setTimeout(resolve, 24));
+      else if (Platform.isMobile) await new Promise<void>((resolve) => window.setTimeout(resolve, 8));
+    }
+    if (!(await flush())) return false;
+    progress(true);
+    const finalDetail = { processed, total: files.length, hotHits, durableHits, bodyReads, bytesRead, writeFailures, elapsedMs: perfElapsed(startedAt) };
+    this.plugin.recordDiagnostic("index:body-prewarm-end", finalDetail);
+    perfLog("body-prewarm.end", finalDetail);
+    return current() && writeFailures === 0;
+  }
+
+  /** Stop deferred/full-cache writes when no K-Plex surface is visible. A stale complete snapshot
+   * remains safe because the next startup reconciles changed Markdown mtimes incrementally. */
+  cancelPendingPersistence(): void {
+    if (this.snapshotPersistTimer !== null) {
+      window.clearTimeout(this.snapshotPersistTimer);
+      this.snapshotPersistTimer = null;
+    }
+    this.snapshotPersistGeneration += 1;
+  }
+
   destroy(): void {
-    if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
+    this.bodyWarmGeneration += 1;
+    if (this.snapshotPersistTimer !== null) window.clearTimeout(this.snapshotPersistTimer);
+    this.indexedDb.close();
     this.metadataParser.destroy();
   }
 
-  private restoreBodyCache(): void {
-    try {
-      const raw = this.app.loadLocalStorage(BODY_CACHE_KEY) as PersistedBodyCache | null;
-      if (!raw || raw.version !== 2 || !raw.entries || typeof raw.entries !== "object") return;
-      for (const [path, value] of Object.entries(raw.entries)) {
-        if (!value || typeof value.mtime !== "number" || !value.body || !Array.isArray(value.body.inlineFieldOccurrences)) continue;
-        this.fieldCache.set(path, { mtime: value.mtime, body: value.body });
+  private snapshotPath(): string | null {
+    const dir = this.plugin.manifest?.dir;
+    return dir ? `${dir}/kplex-index-snapshot-v1.json` : null;
+  }
+
+  private snapshotManifestPath(): string | null {
+    const dir = this.plugin.manifest?.dir;
+    return dir ? `${dir}/kplex-index-snapshot-v2.json` : null;
+  }
+
+  private snapshotChunkPath(generation: string, kind: "pages" | "evidence", index: number): string | null {
+    const dir = this.plugin.manifest?.dir;
+    return dir ? `${dir}/kplex-index-${generation}-${kind}-${String(index).padStart(4, "0")}.json` : null;
+  }
+
+  private async yieldSnapshotWork(): Promise<void> {
+    if (!Platform.isMobile) return;
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  private publishRestoredState(next: ReturnType<typeof createGraphState>): void {
+    this.state = next;
+    this.titleCache.clear();
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.rebuildSearchIndex();
+    this.emit();
+  }
+
+  private async restoreIndexedDbSnapshot(): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
+    const restoreStartedAt = perfNow();
+    let phaseStartedAt = restoreStartedAt;
+    const meta = await this.indexedDb.readSnapshotMeta();
+    perfLog("restore.meta", { elapsedMs: perfElapsed(phaseStartedAt), found: Boolean(meta), schema: meta?.schema ?? null });
+    if (!meta) return { restored: false, fresh: false, createdAt: null };
+    if (meta.settingsSignature !== computeIndexSettingsSignature(this.plugin.settings)) {
+      perfLog("restore.reject.settings", { elapsedMs: perfElapsed(restoreStartedAt) });
+      return { restored: false, fresh: false, createdAt: meta.createdAt };
+    }
+
+    phaseStartedAt = perfNow();
+    const currentVaultSignature = computeVaultSignature(this.app);
+    const fresh = meta.vaultSignature === currentVaultSignature;
+    perfLog("restore.vault-signature", {
+      elapsedMs: perfElapsed(phaseStartedAt),
+      fresh,
+      physicalFiles: this.app.vault.getFiles().length,
+      markdownFiles: this.app.vault.getMarkdownFiles().length,
+    });
+
+    const next = createGraphState();
+    const persistedPhysicalPaths = new Set<string>();
+    const modifiedMarkdownPaths = new Set<string>();
+    let persistedFilePages = 0;
+    let reboundFilePages = 0;
+    const missingFileBindings = new Set<string>();
+    // Desktop can cheaply reuse serialized page objects to hydrate cached neighbour maps and avoid
+    // a second IndexedDB cursor pass. Mobile streams twice instead to keep peak object retention low.
+    const retainedPages = Platform.isMobile ? null : [] as PersistedPage[];
+    phaseStartedAt = perfNow();
+    const pagesOk = await this.indexedDb.iteratePages(meta.generation, (page) => {
+      retainedPages?.push(page);
+      addPersistedPageToState(next, page, this.app);
+      if (page.filePath) {
+        persistedPhysicalPaths.add(page.filePath);
+        persistedFilePages += 1;
+        const rebound = next.pages.get(page.path)?.file;
+        if (rebound) {
+          reboundFilePages += 1;
+          if (rebound.extension === "md" && typeof page.mtime === "number" && rebound.stat.mtime !== page.mtime) modifiedMarkdownPaths.add(rebound.path);
+        } else missingFileBindings.add(page.path);
       }
-    } catch {
-      // Cache is an optimization only; rebuild from the vault when it cannot be restored.
+    });
+    perfLog("restore.pages", {
+      elapsedMs: perfElapsed(phaseStartedAt),
+      ok: pagesOk,
+      pages: next.pages.size,
+      physicalPages: persistedFilePages,
+      missingBindings: missingFileBindings.size,
+      modifiedMarkdown: modifiedMarkdownPaths.size,
+    });
+    if (!pagesOk) return { restored: false, fresh: false, createdAt: meta.createdAt };
+
+    if (missingFileBindings.size) {
+      phaseStartedAt = perfNow();
+      const delays = Platform.isMobile ? [120, 320, 700] : [80];
+      for (const delay of delays) {
+        if (!missingFileBindings.size) break;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+        for (const path of [...missingFileBindings]) {
+          const page = next.pages.get(path);
+          const file = this.app.vault.getAbstractFileByPath(path);
+          if (!page || !(file instanceof TFile)) continue;
+          page.file = file;
+          if (file.extension === "md" && typeof page.mtime === "number" && file.stat.mtime !== page.mtime) modifiedMarkdownPaths.add(file.path);
+          missingFileBindings.delete(path);
+          reboundFilePages += 1;
+        }
+      }
+      perfLog("restore.file-bindings", {
+        elapsedMs: perfElapsed(phaseStartedAt),
+        rebound: reboundFilePages,
+        missing: missingFileBindings.size,
+      });
+    }
+
+    phaseStartedAt = perfNow();
+    const currentPhysicalPaths = new Set(this.app.vault.getFiles().map((file) => file.path));
+    let structuralMismatch = currentPhysicalPaths.size !== persistedPhysicalPaths.size;
+    if (!structuralMismatch) {
+      for (const path of currentPhysicalPaths) {
+        if (!persistedPhysicalPaths.has(path)) { structuralMismatch = true; break; }
+      }
+    }
+    perfLog("restore.structure-compare", {
+      elapsedMs: perfElapsed(phaseStartedAt),
+      mismatch: structuralMismatch,
+      persistedPaths: persistedPhysicalPaths.size,
+      currentPaths: currentPhysicalPaths.size,
+    });
+
+    if (structuralMismatch) {
+      this.plugin.recordDiagnostic("index:snapshot-structure-rejected", {
+        persistedPaths: persistedPhysicalPaths.size,
+        currentPaths: currentPhysicalPaths.size,
+        modifiedMarkdown: modifiedMarkdownPaths.size,
+      });
+      return { restored: false, fresh: false, createdAt: meta.createdAt };
+    }
+    if (missingFileBindings.size) {
+      this.plugin.recordDiagnostic("index:snapshot-file-bindings-rejected", {
+        persistedFilePages, reboundFilePages, missing: missingFileBindings.size, fresh,
+      });
+      return { restored: false, fresh: false, createdAt: meta.createdAt };
+    }
+
+    phaseStartedAt = perfNow();
+    const evidenceOk = await this.indexedDb.iterateEvidence(meta.generation, (item) => addPersistedEvidenceToState(next, item));
+    perfLog("restore.evidence", {
+      elapsedMs: perfElapsed(phaseStartedAt),
+      ok: evidenceOk,
+      declarations: next.evidence.declarationCount,
+      pairs: next.evidence.pairCount,
+    });
+    if (!evidenceOk) return { restored: false, fresh: false, createdAt: meta.createdAt };
+    next.discoveredFields = new Map(meta.discoveredFields);
+
+    phaseStartedAt = perfNow();
+    let relationsHydrated = meta.schema >= 2;
+    if (relationsHydrated) {
+      let relationsComplete = true;
+      if (retainedPages) {
+        for (const saved of retainedPages) if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
+      } else {
+        const relationPassOk = await this.indexedDb.iteratePages(meta.generation, (saved) => {
+          if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
+        });
+        relationsHydrated = relationPassOk && relationsComplete;
+      }
+      if (retainedPages) relationsHydrated = relationsComplete;
+    }
+    if (!relationsHydrated) {
+      const resolved = await finalizeHydratedGraphStateCooperative(
+        next,
+        () => true,
+        Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 400,
+      );
+      if (!resolved) return { restored: false, fresh: false, createdAt: meta.createdAt };
+    }
+    perfLog("restore.relations", { elapsedMs: perfElapsed(phaseStartedAt), hydrated: relationsHydrated });
+
+    phaseStartedAt = perfNow();
+    this.publishRestoredState(next);
+    perfLog("restore.publish", { elapsedMs: perfElapsed(phaseStartedAt), nodes: next.pages.size });
+    this.restoredModifiedMarkdownPaths = [...modifiedMarkdownPaths];
+    this.restoredStructuralMismatch = false;
+    this.restoredPatchPlanAvailable = true;
+    if (!relationsHydrated) this.scheduleSnapshotPersist(250);
+    perfLog("restore.end", {
+      elapsedMs: perfElapsed(restoreStartedAt),
+      nodes: next.pages.size,
+      fresh,
+      modifiedMarkdown: modifiedMarkdownPaths.size,
+    });
+    return { restored: true, fresh, createdAt: meta.createdAt };
+  }
+
+  hasIncrementalRestorePatch(): boolean {
+    return this.restoredPatchPlanAvailable && !this.restoredStructuralMismatch;
+  }
+
+  /** Patch modified Markdown sources into a restored snapshot without rebuilding the whole vault. */
+  async reconcileRestoredSnapshot(): Promise<{ reconciled: boolean; patched: number }> {
+    if (!this.restoredPatchPlanAvailable || this.restoredStructuralMismatch) return { reconciled: false, patched: 0 };
+    const paths = [...this.restoredModifiedMarkdownPaths];
+    if (!paths.length) return { reconciled: true, patched: 0 };
+    if (this.building) return { reconciled: false, patched: 0 };
+
+    const files: TFile[] = [];
+    for (const path of paths) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile) || file.extension !== "md") return { reconciled: false, patched: 0 };
+      files.push(file);
+    }
+
+    this.building = true;
+    const run = ++this.generation;
+    try {
+      this.plugin.recordDiagnostic("index:patch-start", { files: files.length });
+      const builder = new GraphBuilder(
+        this.plugin,
+        this.app,
+        this.fieldCache,
+        this.metadataParser,
+        this.indexedDb,
+        () => run === this.generation,
+        (phase, detail) => this.plugin.recordDiagnostic(`index:${phase}`, detail),
+      );
+      const ok = await builder.patchMarkdownFiles(this.state, files);
+      if (!ok || run !== this.generation) return { reconciled: false, patched: 0 };
+      this.titleCache.clear();
+      this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+      this.rebuildSearchIndex();
+      this.restoredModifiedMarkdownPaths = [];
+      this.restoredPatchPlanAvailable = false;
+      this.emit();
+      this.scheduleSnapshotPersist(5000);
+      this.plugin.recordDiagnostic("index:patch-end", { files: files.length, nodes: this.state.pages.size });
+      return { reconciled: true, patched: files.length };
+    } finally {
+      this.building = false;
     }
   }
 
-  private scheduleBodyCachePersist(): void {
-    if (!this.bodyCacheDirty) return;
-    if (this.cachePersistTimer !== null) window.clearTimeout(this.cachePersistTimer);
-    this.cachePersistTimer = window.setTimeout(() => {
-      this.cachePersistTimer = null;
-      try {
-        const entries: PersistedBodyCache["entries"] = {};
-        for (const [path, entry] of this.fieldCache) entries[path] = { mtime: entry.mtime, body: entry.body };
-        this.app.saveLocalStorage(BODY_CACHE_KEY, { version: 2, entries } satisfies PersistedBodyCache);
-        this.bodyCacheDirty = false;
-      } catch {
-        // Cache persistence failure must never affect graph behavior.
+  /** Incrementally replace declarations owned by already-indexed Markdown files.
+   * Used for normal metadataCache.changed events so editing one note does not rebuild a large vault. */
+  async patchMarkdownPaths(paths: readonly string[]): Promise<{ patched: boolean; count: number }> {
+    if (this.building || !paths.length) return { patched: false, count: 0 };
+    const files: TFile[] = [];
+    for (const path of [...new Set(paths)]) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile) || file.extension !== "md" || !this.get(path)) return { patched: false, count: 0 };
+      files.push(file);
+    }
+    if (!files.length) return { patched: true, count: 0 };
+
+    this.building = true;
+    const run = ++this.generation;
+    try {
+      this.plugin.recordDiagnostic("index:incremental-start", { files: files.length });
+      const builder = new GraphBuilder(
+        this.plugin, this.app, this.fieldCache, this.metadataParser, this.indexedDb,
+        () => run === this.generation,
+        (phase, detail) => this.plugin.recordDiagnostic(`index:${phase}`, detail),
+      );
+      const ok = await builder.patchMarkdownFiles(this.state, files);
+      if (!ok || run !== this.generation) return { patched: false, count: 0 };
+      this.titleCache.clear();
+      this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+      this.rebuildSearchIndex();
+      this.emit();
+      this.scheduleSnapshotPersist(5000);
+      this.plugin.recordDiagnostic("index:incremental-end", { files: files.length, nodes: this.state.pages.size });
+      return { patched: true, count: files.length };
+    } finally {
+      this.building = false;
+    }
+  }
+
+  private async restoreChunkedSnapshot(): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
+    const manifestPath = this.snapshotManifestPath();
+    if (!manifestPath || !(await this.app.vault.adapter.exists(manifestPath))) {
+      return { restored: false, fresh: false, createdAt: null };
+    }
+    try {
+      const raw = await this.app.vault.adapter.read(manifestPath);
+      const parsed: unknown = JSON.parse(raw);
+      if (!isPersistedIndexManifestV2(parsed)) return { restored: false, fresh: false, createdAt: null };
+      const manifest = parsed as PersistedIndexManifestV2;
+      if (manifest.settingsSignature !== computeIndexSettingsSignature(this.plugin.settings)) {
+        return { restored: false, fresh: false, createdAt: manifest.createdAt };
       }
-    }, 5000);
+
+      const next = createGraphState();
+      for (let i = 0; i < manifest.pageChunkCount; i += 1) {
+        const path = this.snapshotChunkPath(manifest.generation, "pages", i);
+        if (!path || !(await this.app.vault.adapter.exists(path))) throw new Error("Missing K-Plex page snapshot chunk");
+        const chunk = JSON.parse(await this.app.vault.adapter.read(path)) as PersistedPage[];
+        if (!Array.isArray(chunk)) throw new Error("Invalid K-Plex page snapshot chunk");
+        for (const saved of chunk) addPersistedPageToState(next, saved, this.app);
+        await this.yieldSnapshotWork();
+      }
+      for (let i = 0; i < manifest.evidenceChunkCount; i += 1) {
+        const path = this.snapshotChunkPath(manifest.generation, "evidence", i);
+        if (!path || !(await this.app.vault.adapter.exists(path))) throw new Error("Missing K-Plex evidence snapshot chunk");
+        const chunk = JSON.parse(await this.app.vault.adapter.read(path)) as PersistedEvidenceDeclaration[];
+        if (!Array.isArray(chunk)) throw new Error("Invalid K-Plex evidence snapshot chunk");
+        for (const declaration of chunk) addPersistedEvidenceToState(next, declaration);
+        await this.yieldSnapshotWork();
+      }
+      next.discoveredFields = new Map(manifest.discoveredFields);
+      const resolved = await finalizeHydratedGraphStateCooperative(
+        next,
+        () => true,
+        Platform.isIosApp ? 50 : Platform.isMobile ? 100 : 240,
+      );
+      if (!resolved) return { restored: false, fresh: false, createdAt: manifest.createdAt };
+      this.publishRestoredState(next);
+      const fresh = manifest.vaultSignature === computeVaultSignature(this.app);
+      // A previous iOS/WebView termination may have interrupted a new generation after some
+      // chunks were written but before its manifest became authoritative. Remove those orphaned
+      // chunks now so repeated crashes can never accumulate stale cache generations forever.
+      void this.cleanupSnapshotOrphans(manifest.generation);
+      return { restored: true, fresh, createdAt: manifest.createdAt };
+    } catch {
+      // A cache is never authoritative. Missing/corrupt chunks fall through to the legacy cache
+      // or a normal rebuild without preventing K-Plex from opening.
+      return { restored: false, fresh: false, createdAt: null };
+    }
+  }
+
+  /**
+   * Restore the last complete semantic graph before any expensive Markdown parsing. Snapshot v2
+   * is chunked so iOS never has to parse/stringify the entire graph as one enormous temporary
+   * string/object. A v1 file is still accepted once for seamless migration.
+   */
+  async restorePersistedSnapshot(): Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> {
+    // IndexedDB is the sole active graph cache. Reading the old file snapshots can require giant
+    // JSON parse/stringify spikes, exactly the startup pattern that is unsafe on large iOS vaults.
+    const startedAt = perfNow();
+    const indexed = await this.restoreIndexedDbSnapshot();
+    perfLog("restore.complete", { elapsedMs: perfElapsed(startedAt), restored: indexed.restored, fresh: indexed.fresh });
+    void this.cleanupLegacySnapshotFiles();
+    return indexed;
+  }
+
+  private async cleanupLegacySnapshotFiles(): Promise<void> {
+    try {
+      const legacyManifest = await this.readSnapshotManifest();
+      await this.removeSnapshotGeneration(legacyManifest);
+      for (const path of [this.snapshotManifestPath(), this.snapshotPath()]) {
+        if (!path) continue;
+        try { if (await this.app.vault.adapter.exists(path)) await this.app.vault.adapter.remove(path); } catch { /* migration cleanup only */ }
+      }
+      if (legacyManifest) await this.cleanupSnapshotOrphans(legacyManifest.generation);
+    } catch {
+      // Cache housekeeping is best-effort and must never delay graph restoration.
+    }
+  }
+
+  private async cleanupSnapshotOrphans(activeGeneration: string): Promise<void> {
+    const dir = this.plugin.manifest?.dir;
+    if (!dir) return;
+    try {
+      const listing = await this.app.vault.adapter.list(dir);
+      const activePrefix = `${dir}/kplex-index-${activeGeneration}-`;
+      for (const path of listing.files) {
+        if (!path.startsWith(`${dir}/kplex-index-`) || path.startsWith(`${dir}/kplex-index-snapshot-`)) continue;
+        if (!/-(?:pages|evidence)-\d+\.json$/.test(path)) continue;
+        if (path.startsWith(activePrefix)) continue;
+        try { await this.app.vault.adapter.remove(path); } catch { /* orphan cleanup only */ }
+      }
+    } catch {
+      // Cache housekeeping must never interfere with index restoration.
+    }
+  }
+
+  private async removeSnapshotGeneration(manifest: PersistedIndexManifestV2 | null): Promise<void> {
+    if (!manifest) return;
+    for (let i = 0; i < manifest.pageChunkCount; i += 1) {
+      const path = this.snapshotChunkPath(manifest.generation, "pages", i);
+      if (path) try { if (await this.app.vault.adapter.exists(path)) await this.app.vault.adapter.remove(path); } catch { /* cache cleanup only */ }
+    }
+    for (let i = 0; i < manifest.evidenceChunkCount; i += 1) {
+      const path = this.snapshotChunkPath(manifest.generation, "evidence", i);
+      if (path) try { if (await this.app.vault.adapter.exists(path)) await this.app.vault.adapter.remove(path); } catch { /* cache cleanup only */ }
+    }
+  }
+
+  private async readSnapshotManifest(): Promise<PersistedIndexManifestV2 | null> {
+    const path = this.snapshotManifestPath();
+    if (!path) return null;
+    try {
+      if (!(await this.app.vault.adapter.exists(path))) return null;
+      const parsed: unknown = JSON.parse(await this.app.vault.adapter.read(path));
+      return isPersistedIndexManifestV2(parsed) ? parsed : null;
+    } catch { return null; }
+  }
+
+  private async persistIndexedDbSnapshot(run: number): Promise<void> {
+    if (run !== this.snapshotPersistGeneration || this.state.pages.size === 0) return;
+    const startedAt = perfNow();
+    perfLog("persist.start", { nodes: this.state.pages.size, declarations: this.state.evidence.declarationCount });
+    const pages = function* (state: typeof this.state): IterableIterator<PersistedPage> {
+      for (const page of state.pages.values()) {
+        if (!page.transient) yield persistedPageFromGraphPage(page);
+      }
+    }.call(this, this.state);
+
+    const evidence = function* (state: typeof this.state): IterableIterator<PersistedEvidenceDeclaration> {
+      for (const item of state.evidence.declarations()) yield persistedDeclarationFromEvidence(item);
+    }.call(this, this.state);
+
+    const persisted = await this.indexedDb.writeSnapshot({
+      createdAt: Date.now(),
+      vaultSignature: computeVaultSignature(this.app),
+      settingsSignature: computeIndexSettingsSignature(this.plugin.settings),
+      discoveredFields: [...this.state.discoveredFields.entries()],
+    }, pages, evidence, () => run === this.snapshotPersistGeneration);
+
+    if (!persisted || run !== this.snapshotPersistGeneration) {
+      perfLog("persist.cancelled", { elapsedMs: perfElapsed(startedAt), persisted });
+      return;
+    }
+    perfLog("persist.end", { elapsedMs: perfElapsed(startedAt), nodes: this.state.pages.size });
+    // Clean legacy file-based snapshots only after IndexedDB has had a chance to become
+    // authoritative. Failures are harmless; they are ignored on the next startup once IDB loads.
+    const legacyManifest = await this.readSnapshotManifest();
+    await this.removeSnapshotGeneration(legacyManifest);
+    for (const path of [this.snapshotManifestPath(), this.snapshotPath()]) {
+      if (!path) continue;
+      try { if (await this.app.vault.adapter.exists(path)) await this.app.vault.adapter.remove(path); } catch { /* migration cleanup only */ }
+    }
+  }
+
+  private scheduleSnapshotPersist(delayOverride?: number): void {
+    if (this.snapshotPersistTimer !== null) window.clearTimeout(this.snapshotPersistTimer);
+    const run = ++this.snapshotPersistGeneration;
+    const delay = delayOverride ?? (Platform.isIosApp ? 1400 : Platform.isMobile ? 900 : 450);
+    this.snapshotPersistTimer = window.setTimeout(() => {
+      this.snapshotPersistTimer = null;
+      void this.persistIndexedDbSnapshot(run).catch(() => { /* persistence is an optimization only */ });
+    }, delay);
   }
 
   /** Build a complete graph off to the side, then atomically publish it. */
   async rebuild(): Promise<boolean> {
     if (this.building) {
+      // Main.ts coalesces dirty events and will request one follow-up rebuild after this one.
+      // Never invalidate useful work merely because MetadataCache emitted another startup event:
+      // that cancellation loop was particularly harmful on slower mobile devices.
       this.rebuildQueued = true;
-      // Invalidate the in-flight snapshot immediately. The queued rebuild will
-      // start from the newest vault state, so stale work must never publish.
-      this.generation += 1;
       return false;
     }
     this.building = true;
@@ -201,8 +757,9 @@ export class GraphIndex {
         this.app,
         this.fieldCache,
         this.metadataParser,
-        () => { this.bodyCacheDirty = true; },
+        this.indexedDb,
         () => run === this.generation,
+        (phase, detail) => this.plugin.recordDiagnostic(`index:${phase}`, detail),
       );
       const next = await builder.build();
       if (!next || run !== this.generation) return false;
@@ -213,14 +770,11 @@ export class GraphIndex {
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
       this.rebuildSearchIndex();
       this.emit();
-      this.scheduleBodyCachePersist();
+      this.scheduleSnapshotPersist();
       return true;
     } finally {
       this.building = false;
-      if (this.rebuildQueued) {
-        this.rebuildQueued = false;
-        void this.rebuild();
-      }
+      this.rebuildQueued = false;
     }
   }
 
@@ -232,6 +786,61 @@ export class GraphIndex {
       aliases: page.aliases.map((alias) => alias.toLowerCase()),
       path: page.path.toLowerCase(),
     }));
+  }
+
+  relationshipStorageCandidates(sourcePath: string, targetPath: string): string[] {
+    const editable = new Set<string>();
+    for (const path of [sourcePath, targetPath]) {
+      const page = this.get(path);
+      if (page?.file?.extension === "md") editable.add(path);
+    }
+    if (!editable.size) return [];
+
+    const evidence = this.state.evidence.between(sourcePath, targetPath);
+    const rank = new Map<string, number>();
+    const scoreKind = (kind: RelationEvidence["sourceKind"]): number => {
+      if (kind === "frontmatter-ontology") return 0;
+      if (kind === "inline-ontology") return 1;
+      if (kind === "obsidian-link" || kind === "unresolved-link") return 2;
+      return 4;
+    };
+    for (const item of evidence) {
+      const declarer = item.declaredByPath;
+      if (!editable.has(declarer)) continue;
+      const score = scoreKind(item.sourceKind);
+      rank.set(declarer, Math.min(rank.get(declarer) ?? Number.POSITIVE_INFINITY, score));
+    }
+    return [...editable].sort((a, b) => (rank.get(a) ?? 9) - (rank.get(b) ?? 9) || (a === sourcePath ? -1 : 1));
+  }
+
+  /**
+   * Apply a relationship frontmatter edit directly to the live semantic graph. The subsequent
+   * Obsidian metadata event is only a consistency signal; a one-property move must not rebuild a
+   * 20k-note index or make the optimistic node jump back while a full scan runs.
+   */
+  applyRelationshipEdit(storagePath: string, targetPath: string, role: Exclude<EvidenceRole, "hidden">, field: string): boolean {
+    const source = this.get(storagePath);
+    const target = this.get(targetPath);
+    if (!source || !target) return false;
+
+    const pair = new Set([storagePath, targetPath]);
+    this.state.evidence.removeDeclarationsTouching(storagePath, (item) =>
+      item.sourceKind === "frontmatter-ontology" &&
+      pair.has(item.declaredByPath) && pair.has(item.declaredTargetPath) &&
+      item.declaredByPath !== item.declaredTargetPath
+    );
+    this.state.evidence.addPair(storagePath, targetPath, role, RelationType.DEFINED, LinkDirection.FROM, {
+      sourceKind: "frontmatter-ontology",
+      definition: field.toLowerCase().replaceAll(" ", "-").trim(),
+      fieldName: field,
+    });
+    resolveEvidencePair(this.state.pages, this.state.evidence, storagePath, targetPath);
+    resolveEvidencePair(this.state.pages, this.state.evidence, targetPath, storagePath);
+    if (source.file) source.mtime = source.file.stat.mtime;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(5000);
+    return true;
   }
 
   explainRelationship(sourcePath: string, targetPath: string): RelationshipExplanation | null {

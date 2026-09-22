@@ -37,11 +37,14 @@ function compile(relativePath) {
 
 for (const file of [
   "src/types.ts",
+  "src/util/perf.ts",
   "src/index/fieldParser.ts",
   "src/index/MetadataParser.ts",
   "src/index/RelationEvidence.ts",
   "src/index/RelationResolver.ts",
   "src/index/GraphState.ts",
+  "src/index/IndexSnapshot.ts",
+  "src/index/IndexedDbCache.ts",
   "src/index/GraphBuilder.ts",
   "src/index/GraphIndex.ts",
   "src/index/SectionExpansion.ts",
@@ -107,7 +110,8 @@ function moment(value, inputFormat, strict) {
     },
   };
 }
-module.exports = { TAbstractFile, TFile, TFolder, getAllTags, moment };
+const Platform = { isMobile: false };
+module.exports = { TAbstractFile, TFile, TFolder, getAllTags, moment, Platform };
 `);
 
 const obsidianTestApi = require(join(obsidianModuleDir, "index.js"));
@@ -116,9 +120,12 @@ const { TFile, TFolder } = obsidianTestApi;
 // Install the test double on the fake window instead of pretending Moment is a production import.
 globalThis.window.moment = obsidianTestApi.moment;
 const { GraphIndex } = require(join(temp, "src/index/GraphIndex.js"));
+const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedRelations } = require(join(temp, "src/index/IndexSnapshot.js"));
+const { createGraphState } = require(join(temp, "src/index/GraphState.js"));
 const { buildCentralSectionExpansion, canExpandCentralSections } = require(join(temp, "src/index/SectionExpansion.js"));
 const { parseBodyMetadata, parseBodyMetadataCore } = require(join(temp, "src/index/fieldParser.js"));
-const { RelationType } = require(join(temp, "src/types.js"));
+const { RelationType, LinkDirection } = require(join(temp, "src/types.js"));
+const { RelationEvidenceStore } = require(join(temp, "src/index/RelationEvidence.js"));
 const { buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
 
 function walk(dir) {
@@ -275,8 +282,10 @@ const metadataCache = {
 
 const app = {
   vault: {
+    getName() { return "K-Plex test vault"; },
     getRoot() { return rootFolder; },
     getMarkdownFiles() { return [...files.values()]; },
+    getFiles() { return [...files.values()]; },
     cachedRead(file) { return Promise.resolve(contents.get(file.path) ?? ""); },
     getAbstractFileByPath(path) { return files.get(path) ?? folders.get(path) ?? null; },
   },
@@ -361,7 +370,7 @@ const settings = {
   renderSiblings: true,
 };
 
-const plugin = { app, settings };
+const plugin = { app, settings, recordDiagnostic() {}, manifest: { dir: "" } };
 const index = new GraphIndex(plugin, app);
 
 function expectRole(sourcePath, role, targetPath, type) {
@@ -672,8 +681,30 @@ try {
   assert(projectedGrandchild, "Folded Root One must project Grandchild relationship evidence upward");
   assert.equal(index.get(rootOne.page.path), undefined);
 
+  // Assertions 51–53: warm-start cache and runtime patching. Resolved relations are persisted
+  // alongside evidence so IndexedDB restore does not replay the full truth table, while a normal
+  // single-note metadata change can be reconciled without rebuilding the vault.
+  const savedPages = index.allPages().filter((page) => !page.transient).map(persistedPageFromGraphPage);
+  const warmState = createGraphState();
+  for (const saved of savedPages) addPersistedPageToState(warmState, saved, app);
+  assert.equal(hydratePersistedRelations(warmState, savedPages), true);
+  assert.equal(warmState.pages.get("Note A.md")?.neighbours.get("Note B.md")?.isParent, true);
+  const runtimePatch = await index.patchMarkdownPaths(["Note A.md"]);
+  assert.deepEqual(runtimePatch, { patched: true, count: 1 });
+  expectRole("Note A.md", "parent", "Note B.md", RelationType.DEFINED);
+
+  // Assertion 54: evidence storage is declaration-compact. One original fact is retained once,
+  // while both source perspectives remain queryable for classification/explainability. This is a
+  // deliberate iOS memory safeguard for large vaults.
+  const compactEvidence = new RelationEvidenceStore();
+  compactEvidence.addPair("A.md", "B.md", "parent", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "frontmatter-ontology", fieldName: "Parent" });
+  assert.equal([...compactEvidence.declarations()].length, 1);
+  assert.equal(compactEvidence.between("A.md", "B.md")[0]?.role, "parent");
+  assert.equal(compactEvidence.between("B.md", "A.md")[0]?.role, "child");
+
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
+  console.log("Warm cache + incremental runtime patch: assertions 51–54 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

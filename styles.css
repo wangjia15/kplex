@@ -1272,32 +1272,16 @@
 .kplex-surface-sidepanel .excalibrain-history-bar { padding-left: 5px; padding-right: 5px; }
 .kplex-surface-sidepanel .kplex-layout-controls { transform: scale(.92); transform-origin: bottom left; }
 
-/* Nodes enter softly. During an intentional scene transition shared nodes also
-   glide to their new layout position. Zone scrolling is unaffected because the
-   positional transition only exists for the short scene-transition window. */
-@keyframes kplex-node-arrive {
-  from { opacity: 0; transform: translateY(5px) scale(.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes kplex-edge-arrive {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.excalibrain-thought {
-  animation: kplex-node-arrive 300ms ease-out both;
-}
+/* Scene motion is driven by FLIP/Web Animations in PlexGraph so nodes that existed in both
+   scenes visibly migrate between their actual old/new positions. CSS only handles connector
+   appearance; duplicating positional CSS transitions here makes the FLIP transform fight layout. */
+@keyframes kplex-edge-arrive { from { opacity: 0; } to { opacity: 1; } }
 .excalibrain-edge,
 .kplex-expanded-edge {
-  animation: kplex-edge-arrive 330ms ease-out both;
-}
-.excalibrain-plex.is-scene-transitioning .excalibrain-thought:not(.is-dragging) {
-  transition: left 440ms cubic-bezier(.2,.8,.2,1), top 440ms cubic-bezier(.2,.8,.2,1), opacity 300ms ease;
+  animation: kplex-edge-arrive max(120ms, calc(var(--kplex-motion-ms, 560ms) * .55)) ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
-  .excalibrain-thought,
-  .excalibrain-edge,
-  .kplex-expanded-edge { animation: none !important; }
-  .excalibrain-plex.is-scene-transitioning .excalibrain-thought { transition: none !important; }
+  .excalibrain-edge, .kplex-expanded-edge { animation: none !important; }
 }
 
 .excalibrain-plex.is-section-expanded .excalibrain-thought.is-selected {
@@ -1350,59 +1334,173 @@
    activePath effect runs, so shared keyed thoughts can glide from their old
    coordinates rather than jumping and only then becoming animated. */
 @keyframes kplex-scene-arrive {
-  0% { opacity: .58; }
+  0% { opacity: .82; }
   100% { opacity: 1; }
 }
 .excalibrain-plex.is-scene-transitioning .excalibrain-camera {
-  animation: kplex-scene-arrive 480ms ease-out both;
+  animation: kplex-scene-arrive max(120ms, calc(var(--kplex-motion-ms, 560ms) * .72)) ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
   .excalibrain-plex.is-scene-transitioning .excalibrain-camera { animation: none !important; }
 }
 
+/* Touch/mobile rendering stability --------------------------------------
+   iOS WebViews are much more sensitive to large transformed/filter-heavy layers. Keep K-Plex
+   visually identical enough on touch devices while avoiding forced 3D compositing and hundreds
+   of simultaneous drop-shadow/position animations during a gesture. Camera motion itself is
+   requestAnimationFrame-batched in PlexGraph. */
+@media (hover: none) and (pointer: coarse) {
+  .excalibrain-camera { will-change: auto; }
+  .excalibrain-edge-visible { filter: none; }
+  .excalibrain-edge.is-highlighted .excalibrain-edge-visible { filter: none; }
+}
+
+
+/* Direct manipulation is intentionally visually cheaper than an idle Plex. In particular, iOS
+   WebViews can reload under memory pressure when a large transformed graph, drop shadows and
+   hundreds of CSS animations are all rasterized while pinching. The gesture classes are toggled
+   imperatively, so this adds no React render traffic during pan/pinch. */
+.excalibrain-plex.is-touch-gesturing .excalibrain-thought,
+.excalibrain-plex.is-touch-gesturing .excalibrain-edge,
+.excalibrain-plex.is-touch-gesturing .kplex-expanded-edge,
+.excalibrain-plex.is-pinch-gesturing .excalibrain-camera {
+  animation: none !important;
+  transition: none !important;
+}
+.excalibrain-plex.is-pinch-gesturing .excalibrain-thought {
+  box-shadow: none !important;
+}
+.excalibrain-plex.is-pinch-gesturing .excalibrain-edge-label-wrap {
+  opacity: 0 !important;
+}
+.excalibrain-plex.is-pinch-gesturing .kplex-section-tree-edge {
+  filter: none !important;
+}
+
+
+/* iOS WebKit is particularly prone to process reloads when a large SVG relationship layer and
+   hundreds of shadowed HTML nodes are continuously rescaled together. During the *active* pinch
+   gesture keep thoughts visible but temporarily suppress expensive relationship painting. The
+   edges return as soon as the second finger lifts. Android/desktop keep the full graph. */
+.excalibrain-plex.is-ios.is-pinch-gesturing .excalibrain-edge-visible,
+.excalibrain-plex.is-ios.is-pinch-gesturing .kplex-expanded-edge,
+.excalibrain-plex.is-ios.is-pinch-gesturing .kplex-section-tree-edge {
+  opacity: 0 !important;
+}
+.excalibrain-plex.is-ios.is-pinch-gesturing .excalibrain-thought {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
 /* Section outline tree ----------------------------------------------------
-   Structural heading connectors are deliberately distinct from semantic K-Plex
-   relationships. The 10% edge position is 4/5 of the way from node center
-   toward the left corner (50% -> 10%). */
+   Central-note sections use a document-outline language, not ordinary Plex thought styling.
+   Structural hierarchy is a solid orthogonal tree entering each heading at its left-center edge;
+   semantic relationships still use the normal four K-Plex gates. */
 .kplex-section-tree-edge {
-  stroke: var(--interactive-accent);
-  stroke-width: 1.6;
-  stroke-dasharray: 4 6;
-  opacity: .82;
+  stroke: color-mix(in srgb, var(--interactive-accent) 64%, var(--text-muted));
+  stroke-width: 1.55;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  opacity: .9;
   pointer-events: none;
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,.38));
 }
 .excalibrain-thought.is-kplex-section {
-  border-radius: 3px !important;
-  border: 1.5px solid var(--interactive-accent) !important;
-  background: color-mix(in srgb, var(--background-primary) 92%, var(--interactive-accent)) !important;
+  border-radius: 4px !important;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 34%, var(--background-modifier-border)) !important;
+  border-left: 3px solid color-mix(in srgb, var(--interactive-accent) 66%, var(--text-accent)) !important;
+  background: color-mix(in srgb, var(--background-secondary) 94%, var(--interactive-accent) 6%) !important;
+  color: var(--text-normal) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.12) !important;
+}
+.excalibrain-thought.is-kplex-section:hover {
+  border-color: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-modifier-border)) !important;
+  border-left-color: var(--interactive-accent) !important;
+  background: color-mix(in srgb, var(--background-secondary) 90%, var(--interactive-accent) 10%) !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,.15) !important;
+}
+/* Incoming structural port: the L-branch terminates here at the card's left-center edge. */
+.excalibrain-thought.is-kplex-section::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translate(-50%, -50%);
+  border-radius: 1px;
+  background: var(--background-primary);
+  border: 1.5px solid color-mix(in srgb, var(--interactive-accent) 72%, var(--text-muted));
+  pointer-events: none;
 }
 .excalibrain-thought.is-kplex-section .excalibrain-thought-label {
-  font-weight: 600;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-inline: 8px 10px;
+  color: var(--text-normal) !important;
+  font-weight: 570;
+  letter-spacing: .003em;
+}
+.kplex-section-heading-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 24px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+  color: color-mix(in srgb, var(--text-accent) 86%, var(--text-normal));
+  font-size: 9px;
+  font-weight: 760;
+  line-height: 18px;
+}
+.excalibrain-thought.is-kplex-section .excalibrain-gate.is-empty,
+.excalibrain-thought.is-kplex-section .excalibrain-gate-wrap:has(.excalibrain-gate.is-empty) .excalibrain-gate-count {
+  opacity: 0;
+  pointer-events: none;
 }
 .kplex-section-fold-handle {
   position: absolute;
-  left: 10%;
-  bottom: -7px;
-  width: 11px;
-  height: 11px;
-  min-width: 11px;
-  min-height: 11px;
+  left: 14px;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
   padding: 0;
   margin: 0;
   transform: translateX(-50%);
-  border: 1.5px solid var(--interactive-accent);
+  border: 1.5px solid color-mix(in srgb, var(--interactive-accent) 76%, var(--text-muted));
   border-radius: 1px;
   background: var(--background-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--background-primary) 82%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--background-primary) 88%, transparent);
   z-index: 8;
   cursor: pointer;
 }
-.kplex-section-fold-handle.is-folded {
+.kplex-section-fold-handle.is-expanded::after {
+  content: "";
+  position: absolute;
+  left: 2px; right: 2px; top: 3px;
+  height: 1.5px;
+  border-radius: 1px;
   background: var(--interactive-accent);
 }
+.kplex-section-fold-handle.is-folded {
+  background: color-mix(in srgb, var(--interactive-accent) 72%, var(--background-primary));
+}
+.kplex-section-fold-handle.is-folded::before,
+.kplex-section-fold-handle.is-folded::after {
+  content: "";
+  position: absolute;
+  background: var(--background-primary);
+  border-radius: 1px;
+}
+.kplex-section-fold-handle.is-folded::before { left: 2px; right: 2px; top: 3px; height: 1.5px; }
+.kplex-section-fold-handle.is-folded::after { top: 2px; bottom: 2px; left: 3px; width: 1.5px; }
 .kplex-section-fold-handle:hover {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 24%, transparent), 0 0 8px color-mix(in srgb, var(--interactive-accent) 48%, transparent);
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
 }
 
 /* Relationship edits are optimistic, but briefly block accidental follow-up clicks until the
@@ -1472,3 +1570,9 @@
 
 .excalibrain-top-actions.is-compact { flex-wrap: nowrap; }
 .excalibrain-app.is-sidecar-condensed .excalibrain-brand strong { display: none; }
+.kplex-section-root-port {
+  fill: var(--background-primary);
+  stroke: color-mix(in srgb, var(--interactive-accent) 65%, var(--text-muted));
+  stroke-width: 1.25;
+  pointer-events: none;
+}

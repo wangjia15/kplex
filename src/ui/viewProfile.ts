@@ -3,10 +3,13 @@ import type { ExcaliBrainSettings, KplexDeviceClass, KplexLayoutProfile, KplexVi
 
 export function currentDeviceClass(): KplexDeviceClass {
   if (!Platform.isMobile) return "desktop";
-  // Obsidian exposes the stable public `Platform.isMobile` flag, but phone/tablet-specific
-  // flags are not part of the supported API surface. Split mobile form factors by the
-  // shortest CSS-pixel side instead. 600px is the conventional tablet breakpoint and keeps
-  // foldables / small tablets on the more spacious tablet profile when appropriate.
+  // Modern Obsidian exposes explicit phone/tablet form-factor flags. Prefer them so command
+  // availability and persisted layout profiles follow Obsidian's own classification on iPad,
+  // Android tablets, foldables and narrow split-screen layouts. Keep the screen-size fallback
+  // for older Obsidian API packages where those runtime properties may not exist yet.
+  const runtime = Platform as typeof Platform & { isPhone?: boolean; isTablet?: boolean };
+  if (runtime.isPhone) return "mobile";
+  if (runtime.isTablet) return "tablet";
   const screenRef = typeof window !== "undefined" ? window.screen : undefined;
   const width = screenRef?.width || (typeof window !== "undefined" ? window.innerWidth : 0);
   const height = screenRef?.height || (typeof window !== "undefined" ? window.innerHeight : 0);

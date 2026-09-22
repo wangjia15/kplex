@@ -81,29 +81,29 @@ Clicking elsewhere in the Plex also closes the search results.
 
 When the search field is empty, K-Plex prioritizes Obsidian **Bookmarks** (or legacy Starred entries), followed by K-Plex pins, before the normal node list.
 
-## Document navigation and linking
+## Note-tab synchronization
 
-K-Plex can work either as an independent graph navigator or together with an Obsidian document leaf.
+K-Plex can be independent from Obsidian note tabs, linked to whichever note tab was used most recently, or pinned to one fixed note tab. The toolbar deliberately uses the same **tab** and **note** language as Obsidian rather than Workspace API terminology.
 
-The toolbar lets you:
+Two one-shot actions are available both from the sync menu and the Command Palette:
 
-- synchronize K-Plex navigation with document navigation
-- link K-Plex to a specific/recent document leaf
-- keep graph exploration decoupled from the document you are currently reading
+- **Sync most recent note tab with K-Plex** — load the current central K-Plex note into the most recently used note tab.
+- **Sync K-Plex with most recent note tab** — make the note in the most recently used note tab the K-Plex center.
 
-When synchronization is enabled, selecting a file-backed node can open that node in the active or linked document leaf, and K-Plex can follow navigation in that leaf.
+For persistent behavior choose **not linked**, **linked to most recent note tab**, or **pinned to one fixed note tab**. A pinned note tab is considered a companion sidecar whenever it is physically adjacent to K-Plex; moving it elsewhere hides the sidecar controls without breaking the pin, and moving it back beside K-Plex restores those controls. Opening the companion sidecar creates or reuses an adjacent visible note tab and switches K-Plex to pinned mode. Closing the sidecar closes that pinned tab, while Detach leaves it open and removes synchronization.
 
 
 ## Companion sidecar
 
 K-Plex can manage a **companion sidecar** next to a normal K-Plex leaf. The sidecar is intentionally implemented as a real adjacent Obsidian `WorkspaceLeaf`, not as a faux leaf mounted inside React. This keeps native Obsidian resizing, view persistence and third-party plugin rendering intact.
 
-- The sidecar can be placed to the right, left, above or below K-Plex.
+- The sidecar can be placed to the right, left, above or below K-Plex. Adjacency is measured from the containing workspace tab-group geometry rather than only the inner view body, so stacked panes remain recognizable even though Obsidian's tab header creates a visual gap between `ItemView.containerEl` rectangles.
 - Its native Obsidian divider controls the relative size of the two areas.
 - It stays hard-linked to the current K-Plex center and updates automatically as you navigate.
 - Markdown defaults to the configured reading/preview or source mode; plugin-owned file views such as Excalidraw remain native.
 - URL centers are sent to Obsidian's built-in Web Viewer when available.
-- Edge controls beside the Plex collapse the sidecar, move it, or open an independent copy in a new tab/current document tab/adjacent split/pop-out window. The copied leaf is no longer synchronized to K-Plex.
+- Edge controls beside the Plex collapse the sidecar, move it, or **detach** it. The controls are positioned against the complete K-Plex leaf rather than only the graph canvas, so they remain visible on the actual divider edge for above/below as well as left/right sidecars. Detach stops K-Plex synchronization but leaves the native Obsidian tab open exactly where it is, so it becomes an ordinary independent document/view.
+- At workspace startup K-Plex prefers an already-visible adjacent document tab over Obsidian's sometimes misleading deferred “most recent” tab, so a restored sidecar reconnects to the pane the user actually sees.
 - If the remaining K-Plex width becomes smaller than the configured condensed breakpoint, K-Plex switches to the current device's sidepanel density/column profile.
 - The companion sidecar is unavailable when K-Plex itself is already running in an Obsidian sidepanel.
 
@@ -161,6 +161,8 @@ Siblings occupy a separate peripheral region and are rendered slightly smaller t
 
 The **Density** control changes spacing and label truncation and can be increased up to **4.0** for very compact layouts. The **Columns** control changes the parent/child column combination without changing relationship semantics.
 
+Scene changes use positional animation rather than a simple fade: thoughts that exist in both scenes visibly migrate to their new location, the newly selected center arrives a little faster, and genuinely new thoughts enter from the direction of their gate. **Settings → Appearance → Animation speed** controls the effect from **0 (off)** through slow/normal to **2×** speed. Section fold/unfold is treated as an outline operation and deliberately preserves the current camera instead of auto-fitting the graph.
+
 ## Expanded view
 
 Expanded view shows children beneath visible first-level nodes.
@@ -176,9 +178,9 @@ Expanded view shows children beneath visible first-level nodes.
 
 For a Markdown central node, right-click (or long-press on touch) and choose **Expand note to sections**. K-Plex parses the current document on demand; headings become transient outline nodes and are **not** added to the persistent vault index.
 
-- Section nodes use square rectangles and a separate dashed outline connector so document structure is visually distinct from semantic K-Plex relationships.
-- The outline connector attaches near the corner region rather than using the normal top/bottom relationship gates.
-- Nested headings form a foldable tree. A small square fold handle shows whether a section with descendants is expanded or folded.
+- Section nodes use compact theme-aware outline cards and a separate **solid orthogonal folder-tree connector**, so Markdown structure remains visually distinct from semantic K-Plex relationships.
+- The outline spine leaves a small square structural port near the lower-left of the parent and enters each child at its **left-center edge**. The resulting vertical-spine + horizontal-branch “L” geometry never routes through the normal top/bottom relationship gates.
+- Nested headings form a foldable tree. A small square fold handle shows whether a section with descendants is expanded or folded. Section spacing uses a deliberately steeper density curve than the ordinary Plex: density 1 is already compact, while density 4 reduces vertical gaps and tree-branch indentation to a very tight outline.
 - Folding a section hides its descendant headings and projects the hidden descendants' semantic relationships onto the nearest visible folded ancestor. Explainability still identifies the exact hidden section that originally declared each projected relationship.
 - Section context menus provide one-level and recursive fold/unfold actions; the central node also offers **Fold all sections** / **Unfold all sections** while expanded.
 - YAML/frontmatter relationships and links before the first heading stay attached to the central note.
@@ -248,7 +250,9 @@ Folder and tag relationships are structural, so drag-link creation involving fol
 
 ## Reclassifying an existing relationship
 
-A node directly connected to the center can be dragged to another side of the Plex. Moving it between the top, bottom, left and right regions proposes changing the relationship class and opens the relationship dialog before committing the change. K-Plex applies the accepted move optimistically so the node changes position immediately, then briefly shows an **Updating relationship…** guard while frontmatter, Obsidian metadata and the authoritative graph index catch up. If the write fails, the optimistic state is discarded.
+A node directly connected to the center can be dragged to another side of the Plex. Moving it between the top, bottom, left and right regions proposes changing the relationship class and opens the relationship dialog before committing the change. K-Plex applies the accepted move optimistically so the node changes position immediately. The YAML write is then patched directly into the live semantic pair—there is no full-vault rebuild for a one-relationship move—and a short **Updating relationship…** guard prevents accidental follow-up clicks while the write completes. If the write fails, the optimistic state is discarded.
+
+When both endpoints are Markdown notes, K-Plex ranks where the relationship should be stored by the existing provenance: an existing frontmatter declaration is preferred, then body ontology, then the note that supplied the ordinary link. The relationship dialog exposes **Write property to note** only when there is a meaningful choice, so the recommended source can still be overridden without forcing every move through an extra decision.
 
 When the same note contains conflicting ontology for the same target, a YAML/frontmatter ontology written by K-Plex takes precedence over the body ontology. The body declaration is not deleted from the index; it remains available to **Explain relationship** as overridden evidence. This keeps future layout deterministic without silently losing provenance or rewriting arbitrary prose.
 
@@ -313,9 +317,15 @@ In **Settings → K-Plex → Appearance** you can create styles for individual N
 
 Legacy tag-specific styling remains part of the ExcaliBrain compatibility model.
 
-## On-demand indexing
+## Index lifecycle and startup cache
 
-K-Plex avoids continuously rebuilding a graph that nobody is viewing. Vault/metadata changes are recorded as a dirty backlog while no K-Plex leaf or sidepanel is open. The expensive rebuild is deferred until a K-Plex view is opened again. If the last K-Plex view closes during an in-flight rebuild, publication is cancelled and the backlog remains dirty so the next open cannot accidentally use that cancelled snapshot.
+K-Plex performs one initial index per Obsidian session. If a persisted semantic snapshot is still current, startup restores that snapshot instead of rereading every Markdown body. After the initial pass, K-Plex avoids continuously rebuilding a graph that nobody is viewing: vault/metadata changes are recorded as a dirty backlog while no K-Plex tab or sidepanel is open, and that backlog is reconciled when K-Plex is opened again. Later in-flight rebuilds are cancelled when the final K-Plex view closes; on iOS even a first cold build is cancelled when the user closes K-Plex, because keeping a large hidden WebView build alive is a poor memory tradeoff. Completed per-file cache checkpoints remain reusable on the next attempt.
+
+The durable index is stored in **IndexedDB**, not browser local storage. K-Plex persists three complementary cache layers: parsed body metadata keyed by file mtime **and parser version**, provenance-bearing graph evidence, and the already-resolved neighbour maps used by the renderer. The last layer means a warm 20k-note startup does not need to replay the complete relationship truth table before the graph can appear. Snapshot generations are written transactionally and become active only after all page/evidence records have completed. Relationship evidence is declaration-compact in memory and also path-indexed, so changing one note can remove/re-resolve only evidence touching that note instead of scanning the whole evidence store. Legacy local-storage and file-snapshot index payloads are not used as active restore backends and are removed opportunistically.
+
+When the physical vault structure is unchanged but a few Markdown files changed while K-Plex was closed, startup restores the semantic snapshot immediately and patches only those changed files. If files were created/deleted/renamed, or cached real files cannot yet bind to Obsidian `TFile` objects, K-Plex rejects the cached topology instead of briefly rendering a misleading half-stale/ghost graph while a second graph is built in memory. On iOS the hot in-memory parser cache is kept deliberately tiny. A large first-ever full rebuild is deferred until K-Plex is actually opened; before allocating the complete semantic graph, K-Plex prewarms parsed Markdown bodies into small transactional IndexedDB checkpoints. Native file reads are bounded and batched, the prewarm is cancellable when the last K-Plex view closes, and an interrupted run resumes from committed body records. Only after that low-memory prewarm does K-Plex allocate and atomically publish the complete graph. IndexedDB schema upgrades must bump the database version whenever a store/index changes so existing vault databases actually run `onupgradeneeded`.
+
+On mobile, **Export mobile diagnostics** writes the recent K-Plex lifecycle/index/gesture trace to `K-Plex consolelog.md` in the vault root. The trace survives a WebView restart through plugin local storage and also records uncaught window errors/rejections. In addition, the developer console now receives content-free `[K-Plex index]` timing records for snapshot restore, vault-signature checks, page/evidence hydration, each cold-build phase, Markdown read/parse/cache time, host-yield counts, and snapshot persistence. Neither diagnostic path records note contents or paths.
 
 
 ## Settings
@@ -341,7 +351,7 @@ Compatibility includes the classic hierarchy/ontology model, relationship reconc
 
 ## Large vaults
 
-K-Plex is designed for large Obsidian vaults. Markdown body parsing is cached per file/mtime, parsing can run in a worker, search and relationship views are cached, and graph rebuilds are assembled off to the side and published atomically. Normal navigation does not rescan the vault; metadata changes may trigger a full graph rebuild, but unchanged Markdown bodies are reused from cache.
+K-Plex is designed for large Obsidian vaults. Parsed Markdown metadata is persisted per file/mtime/parser-version in IndexedDB on every platform so an interrupted cold build does not have to restart parsing at file zero. Desktop/Android can keep a larger hot parser cache and use a worker; iOS uses a tiny bounded in-memory hot cache and one-shot vault reads. Large collectors/resolvers use **time-budgeted cooperative slices** rather than yielding after an arbitrary tiny number of records; this avoids thousands of `setTimeout(0)` calls on iOS while still returning control to WebKit frequently enough to remain responsive. Deferred full-snapshot persistence is cancelled when the final K-Plex view closes, so hidden cache work cannot keep draining Obsidian after K-Plex has been dismissed. Normal navigation does not rescan the vault.
 
 If graph data appears stale, use the toolbar refresh button or the **Rebuild K-Plex index** command.
 

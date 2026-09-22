@@ -76,6 +76,7 @@ export function ThoughtNode({
     "--kplex-gate-size": `${gateSize}px`,
     "--kplex-gate-stroke": alphaHexToCss(style.gateStrokeColor, "rgba(226,239,255,.84)"),
     "--kplex-gate-fill": alphaHexToCss(style.gateBackgroundColor, "rgba(226,239,255,.84)"),
+    "--kplex-section-level": String(node.page.transient?.kind === "section" ? (node.page.transient.level ?? 1) : 0),
   } as CSSProperties;
 
   const classes = [
@@ -109,7 +110,12 @@ export function ThoughtNode({
     aria-label={`${node.label} — ${node.page.path}`}
   >
     <span className="excalibrain-thought-label">
-      {style.icon && <ObsidianIcon name={style.icon} size={node.role === "center" ? 18 : 13} className="excalibrain-node-icon" />}
+      {node.page.transient?.kind === "section"
+        ? <span className="kplex-section-heading-mark" aria-hidden="true">{(() => {
+          const level = node.page.transient?.level ?? 1;
+          return level <= 3 ? "#".repeat(level) : `H${level}`;
+        })()}</span>
+        : style.icon && <ObsidianIcon name={style.icon} size={node.role === "center" ? 18 : 13} className="excalibrain-node-icon" />}
       <span>{display}</span>
     </span>
     {sectionFold?.hasChildren && <button

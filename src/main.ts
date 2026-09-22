@@ -1,6 +1,6 @@
-import { FileView, MarkdownView, Menu, Notice, Plugin, TFile, normalizePath, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { GraphIndex } from "./index/GraphIndex";
-import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
+import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type DocumentSyncMode, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
 import { EXCALIBRAIN_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, ExcaliBrainView, KplexSidepanelView } from "./ui/ExcaliBrainView";
 import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
 import { LinkDirection, type GateRole, type GraphPage } from "./types";
@@ -9,6 +9,8 @@ import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./
 import { AddToOntologyModal, type OntologyAssignmentRole } from "./ui/AddToOntologyModal";
 import { NoteTypeModal } from "./ui/NoteTypeModal";
 import { activeLayoutProfile, currentDeviceClass, effectiveViewSettings, layoutProfileKey } from "./ui/viewProfile";
+
+type LoadAwareView = FileView & { _loaded?: boolean };
 
 export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
@@ -24,8 +26,61 @@ export default class ExcaliBrainPlugin extends Plugin {
   private metadataStabilized = false;
   private metadataStabilityPromise: Promise<number> | null = null;
   private readonly indexBacklogReasons = new Set<string>();
+  private indexDirtyRevision = 0;
+  private rebuildTask: Promise<void> | null = null;
+  private initialIndexTask: Promise<void> | null = null;
+  private initialIndexComplete = false;
+  private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null }> | null = null;
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
   private readonly sidecarListeners = new Set<() => void>();
+  private readonly navigationListeners = new Set<(path: string) => void>();
+  private diagnosticEntries: Array<{ at: string; event: string; detail?: string }> = [];
+  private readonly diagnosticStorageKey = "k-plex:mobile-diagnostics:v1";
+  private readonly managedMetadataWrites = new Map<string, number>();
+  /** Markdown files whose metadata/body changed since the last published graph. */
+  private readonly dirtyMarkdownPaths = new Set<string>();
+
+  private restoreDiagnostics(): void {
+    try {
+      const saved = this.app.loadLocalStorage(this.diagnosticStorageKey) as { version?: number; entries?: Array<{ at: string; event: string; detail?: string }> } | null;
+      if (saved?.version === 1 && Array.isArray(saved.entries)) this.diagnosticEntries = saved.entries.slice(-180);
+    } catch { this.diagnosticEntries = []; }
+  }
+
+  recordDiagnostic(event: string, detail?: unknown): void {
+    if (!Platform.isMobile) return;
+    let rendered: string | undefined;
+    if (detail !== undefined) {
+      try { rendered = typeof detail === "string" ? detail : JSON.stringify(detail); }
+      catch { rendered = String(detail); }
+    }
+    this.diagnosticEntries.push({ at: new Date().toISOString(), event, detail: rendered });
+    if (this.diagnosticEntries.length > 180) this.diagnosticEntries.splice(0, this.diagnosticEntries.length - 180);
+    try { this.app.saveLocalStorage(this.diagnosticStorageKey, { version: 1, entries: this.diagnosticEntries }); } catch { /* diagnostics must never affect K-Plex */ }
+  }
+
+  private async exportDiagnostics(): Promise<void> {
+    const path = normalizePath("K-Plex consolelog.md");
+    const header = [
+      "# K-Plex mobile diagnostics",
+      "",
+      `Generated: ${new Date().toISOString()}`,
+      `K-Plex: ${this.manifest.version}`,
+      `Platform: ${Platform.isIosApp ? "iOS" : Platform.isAndroidApp ? "Android" : Platform.isMobile ? "mobile" : "desktop"}`,
+      `Form factor: ${currentDeviceClass()}`,
+      `Index nodes: ${this.index?.size ?? 0}`,
+      "",
+      "> This is a small K-Plex lifecycle/gesture trace, not a capture of note contents.",
+      "",
+      "```text",
+    ];
+    const lines = this.diagnosticEntries.map((entry) => `${entry.at}  ${entry.event}${entry.detail ? `  ${entry.detail}` : ""}`);
+    const body = [...header, ...lines, "```", ""].join("\n");
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) await this.app.vault.modify(existing, body);
+    else await this.app.vault.create(path, body);
+    new Notice(`Exported K-Plex diagnostics to ${path}.`, 2600);
+  }
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -52,6 +107,17 @@ export default class ExcaliBrainPlugin extends Plugin {
       ownRecord?.noteTypeField
     );
     this.settings = migrateAndMergeSettings(ownData);
+    this.restoreDiagnostics();
+    this.recordDiagnostic("plugin:load", { ios: Platform.isIosApp, android: Platform.isAndroidApp, device: currentDeviceClass() });
+    if (Platform.isMobile) {
+      this.registerDomEvent(window, "error", (event: ErrorEvent) => {
+        this.recordDiagnostic("window:error", { message: event.message, source: event.filename, line: event.lineno, column: event.colno });
+      });
+      this.registerDomEvent(window, "unhandledrejection", (event: PromiseRejectionEvent) => {
+        const reason = event.reason instanceof Error ? `${event.reason.name}: ${event.reason.message}` : String(event.reason);
+        this.recordDiagnostic("window:unhandledrejection", reason);
+      });
+    }
     if (alreadyKplex && !ownRecord?.kplexInitialized) {
       this.settings.kplexInitialized = true;
       await this.saveData(this.settings);
@@ -82,7 +148,15 @@ export default class ExcaliBrainPlugin extends Plugin {
       },
     });
     this.addCommand({ id: "excalibrain-rebuild-index", name: "Rebuild index", callback: () => void this.rebuildIndex(true) });
-    this.addCommand({ id: "kplex-open-settings", name: "Open settings", callback: () => this.openSettings() });
+    this.addCommand({
+      id: "kplex-export-mobile-diagnostics",
+      name: "Export mobile diagnostics",
+      checkCallback: (checking) => {
+        if (!Platform.isMobile) return false;
+        if (!checking) void this.exportDiagnostics();
+        return true;
+      },
+    });
     this.addCommand({
       id: "kplex-open-popout",
       name: "Open in pop-out window",
@@ -93,6 +167,19 @@ export default class ExcaliBrainPlugin extends Plugin {
       },
     });
     this.addCommand({ id: "kplex-open-sidepanel", name: "Open in side panel", callback: () => void this.activateSidepanel() });
+    this.addCommand({
+      id: "kplex-sync-tab-from-plex",
+      name: "Sync most recent note tab with K-Plex",
+      callback: () => {
+        const page = this.index.get(this.settings.lastActivePath);
+        if (page) void this.syncMostRecentTabWithKplex(page);
+      },
+    });
+    this.addCommand({
+      id: "kplex-sync-plex-from-tab",
+      name: "Sync K-Plex with most recent note tab",
+      callback: () => void this.syncKplexWithMostRecentTab(),
+    });
     this.registerOntologyCommands();
     this.addCommand({
       id: "excalibrain-focus-active-note",
@@ -114,19 +201,35 @@ export default class ExcaliBrainPlugin extends Plugin {
       for (const [host, sidecar] of [...this.sidecarLeaves.entries()]) {
         if (!this.leafIsAttached(host) || !this.leafIsAttached(sidecar)) {
           this.sidecarLeaves.delete(host);
+          if (this.linkedDocumentLeaf === sidecar && !this.leafIsAttached(sidecar)) {
+            this.linkedDocumentLeaf = null;
+            this.settings.documentSyncMode = "off";
+          }
           changed = true;
         }
       }
-      if (changed) {
-        this.settings.sidecarOpen = false;
-        void this.saveSettings(false, false);
-        this.notifySidecar();
+      this.validateLinkedDocumentLeaf();
+      if (this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf) {
+        const adjacent = this.isLeafAdjacentToAnyKplex(this.linkedDocumentLeaf);
+        if (this.settings.sidecarOpen !== adjacent) {
+          this.settings.sidecarOpen = adjacent;
+          changed = true;
+        }
       }
+      if (changed) void this.saveSettings(false, false);
+      // Adjacency itself is UI state. Moving a pinned tab away must hide sidecar controls without
+      // breaking the pin, and moving it back beside K-Plex must make them reappear immediately.
+      if (changed || this.settings.documentSyncMode === "pinned") this.notifySidecar();
     }));
 
     if (this.settings.indexUpdateInterval > 0) {
       const interval = Math.max(5000, this.settings.indexUpdateInterval);
-      this.registerInterval(window.setInterval(() => void this.rebuildIndex(false, false, "interval"), interval));
+      this.registerInterval(window.setInterval(() => {
+        // Event-driven dirty tracking is authoritative. The legacy interval may flush a pending
+        // backlog while a Plex is open, but it must never make a closed/clean index dirty merely
+        // because a minute passed.
+        if (this.openKplexViews > 0 && this.indexDirty) void this.rebuildIndex(false, false, "interval");
+      }, interval));
     }
 
     this.app.workspace.onLayoutReady(() => {
@@ -143,12 +246,32 @@ export default class ExcaliBrainPlugin extends Plugin {
           await this.saveData(this.settings);
         }
 
+        // Restore only after Obsidian's workspace/vault layout is ready. Restoring earlier can
+        // temporarily hydrate real files as virtual nodes on mobile while the vault tree is still
+        // settling, producing the misleading "ghost then real" startup scene.
+        this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot();
+        const restored = await this.snapshotRestoreTask;
+        this.recordDiagnostic("index:snapshot-restore", { restored: restored.restored, fresh: restored.fresh, createdAt: restored.createdAt, nodes: this.index.size });
+        if (restored.restored) await this.refreshBookmarkedEntryPoints();
+        this.indexDirty = !restored.fresh;
+        if (!restored.fresh) {
+          this.indexDirtyRevision += 1;
+          this.indexBacklogReasons.add(restored.restored ? "startup:stale-snapshot" : "startup:no-snapshot");
+        }
+
         this.layoutReady = true;
         this.registerReactiveIndexListeners();
         this.registerOntologyContextMenu();
-        // Opening/restoring a K-Plex view is the demand signal for expensive indexing. Vault
-        // events while no view is open simply accumulate in indexBacklogReasons.
-        if (this.openKplexViews > 0) await this.ensureIndexReady("layout-ready-view-open");
+        // Prewarm exactly once per Obsidian session when it is safe to do so. A fresh persisted
+        // semantic snapshot makes this effectively free. On iOS, a first-ever large-vault cold
+        // scan is deferred until K-Plex is actually opened: repeatedly rebuilding 20k notes in a
+        // hidden WebView was responsible for a restart loop on iPad. The per-file IndexedDB body
+        // checkpoints still let an interrupted first scan resume instead of starting at file zero.
+        const noteCount = this.app.vault.getMarkdownFiles().length;
+        const largeIosExpensiveRebuild = Platform.isIosApp && !restored.fresh &&
+          (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
+        if (!largeIosExpensiveRebuild) void this.ensureInitialIndex();
+        else this.recordDiagnostic("index:initial-deferred", { notes: noteCount, restored: restored.restored, reason: "large-ios-full-rebuild" });
       })();
     });
   }
@@ -169,8 +292,16 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("create", () => this.scheduleRebuild("vault:create")));
     this.registerEvent(this.app.vault.on("delete", () => this.scheduleRebuild("vault:delete")));
     this.registerEvent(this.app.vault.on("rename", () => this.scheduleRebuild("vault:rename")));
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.scheduleRebuild("metadata:changed")));
-    this.registerEvent(this.app.metadataCache.on("resolved", () => this.scheduleRebuild("metadata:resolved")));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      const until = this.managedMetadataWrites.get(file.path) ?? 0;
+      if (until > Date.now()) return;
+      this.managedMetadataWrites.delete(file.path);
+      if (file.extension === "md") this.dirtyMarkdownPaths.add(file.path);
+      this.scheduleRebuild("metadata:changed");
+    }));
+    // metadataCache.resolved fires in large waves during startup and after a single link edit.
+    // `changed`, vault create/delete/rename and explicit K-Plex edits already cover semantic
+    // invalidation without turning one relationship move into a whole-vault rebuild storm.
   }
 
   private async waitForMetadataCacheStability(): Promise<number> {
@@ -210,13 +341,14 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   private scheduleRebuild(reason = "unknown"): void {
     this.indexDirty = true;
+    this.indexDirtyRevision += 1;
     this.indexBacklogReasons.add(reason);
-    if (this.openKplexViews <= 0) return;
+    if (this.openKplexViews <= 0 || !this.initialIndexComplete || this.rebuildTask) return;
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     this.rebuildTimer = window.setTimeout(() => {
       this.rebuildTimer = null;
       void this.rebuildIndex(false, false, reason);
-    }, 900);
+    }, 1100);
   }
 
   async onKplexViewOpened(): Promise<void> {
@@ -233,40 +365,177 @@ export default class ExcaliBrainPlugin extends Plugin {
       window.clearTimeout(this.rebuildTimer);
       this.rebuildTimer = null;
     }
-    this.index.cancelRebuild();
+    // Desktop/Android may finish the once-per-session prewarm in the background. On iOS a large
+    // first-ever build is intentionally demand-driven: if the user closes the last Plex, cancel
+    // the in-memory graph build immediately. Parsed-body IndexedDB checkpoints already completed
+    // remain useful, so reopening resumes with less work instead of keeping a hidden iPad WebView
+    // under memory pressure.
+    if (this.initialIndexComplete || Platform.isIosApp) this.index.cancelRebuild();
+    this.index.cancelPendingPersistence();
+  }
+
+  private async ensureInitialIndex(): Promise<void> {
+    if (this.initialIndexTask) return this.initialIndexTask;
+    this.initialIndexTask = (async () => {
+      if (!this.layoutReady) return;
+
+      // A fresh persisted semantic snapshot is already the initial index. Do not make mobile
+      // users wait for MetadataCache's startup quiet window when there is literally nothing to
+      // reconcile. Reactive listeners will mark the snapshot dirty if a real change arrives.
+      if (!this.indexDirty && this.index.size > 0) {
+        this.initialIndexComplete = true;
+        this.recordDiagnostic("index:initial-snapshot-ready", { nodes: this.index.size });
+        return;
+      }
+
+      this.recordDiagnostic("index:initial-start", { dirty: this.indexDirty, nodes: this.index.size });
+      if (!this.metadataStabilized) {
+        this.metadataStabilityPromise ??= this.waitForMetadataCacheStability();
+        await this.metadataStabilityPromise;
+        this.metadataStabilized = true;
+      }
+
+      // Warm startup: a semantic IndexedDB snapshot already contains the entire graph. When the
+      // physical vault structure is unchanged, patch only Markdown files whose mtimes differ from
+      // the snapshot instead of reparsing/re-resolving every note. This is the common case after
+      // editing a few notes between Obsidian sessions and is especially important for 20k+ vaults.
+      if (this.indexDirty && this.index.size > 0 && this.index.hasIncrementalRestorePatch()) {
+        const patchRevision = this.indexDirtyRevision;
+        const patched = await this.index.reconcileRestoredSnapshot();
+        if (patched.reconciled && patchRevision === this.indexDirtyRevision) {
+          this.indexDirty = false;
+          this.indexBacklogReasons.clear();
+          this.initialIndexComplete = true;
+          this.recordDiagnostic("index:initial-patched-snapshot", { files: patched.patched, nodes: this.index.size });
+          return;
+        }
+      }
+      // Give iOS one paint/GC opportunity after Obsidian's own startup metadata wave before
+      // allocating a second graph snapshot. This is deliberately small; it is not a polling loop.
+      if (Platform.isIosApp) await new Promise<void>((resolve) => window.setTimeout(resolve, 450));
+
+      // Large iOS cold start: prime parsed Markdown bodies in small transactional IndexedDB
+      // checkpoints before allocating the complete semantic graph. The previous architecture read
+      // ~12k files while retaining the growing graph and could push WebKit over its memory limit
+      // near the end of the pass. Prewarming keeps that phase low-memory, survives interruption,
+      // and makes the subsequent authoritative GraphBuilder run almost entirely durable-cache hits.
+      const noteCount = this.app.vault.getMarkdownFiles().length;
+      const needsIosBodyPrewarm = Platform.isIosApp && this.index.size === 0 && noteCount > 5000;
+      if (needsIosBodyPrewarm) {
+        const warmed = await this.index.prewarmBodyCache(() => this.openKplexViews > 0);
+        if (!warmed && this.openKplexViews <= 0) {
+          this.recordDiagnostic("index:initial-paused", { reason: "ios-body-prewarm-cancelled", notes: noteCount });
+          return;
+        }
+        if (!warmed) this.recordDiagnostic("index:body-prewarm-fallback", { notes: noteCount });
+      }
+
+      if (this.indexDirty || this.index.size === 0) {
+        await this.performRebuild(false, this.index.size === 0, "startup:initial-index", true);
+      }
+      this.initialIndexComplete = this.index.size > 0;
+      this.recordDiagnostic("index:initial-end", { dirty: this.indexDirty, nodes: this.index.size, complete: this.initialIndexComplete });
+
+      // Changes that arrived while the initial build was running are coalesced. Only reconcile
+      // them immediately when the user currently has a Plex open; otherwise keep the backlog.
+      if (this.indexDirty && this.openKplexViews > 0) this.scheduleRebuild("startup:post-initial-backlog");
+    })().finally(() => {
+      // Keep the resolved promise only after a complete initial index. If iOS work was cancelled
+      // because the last K-Plex view closed, reopening must be able to resume the durable prewarm.
+      if (!this.initialIndexComplete) this.initialIndexTask = null;
+    });
+    return this.initialIndexTask;
   }
 
   async ensureIndexReady(reason = "view-open"): Promise<void> {
     if (!this.layoutReady) return;
-    if (!this.metadataStabilized) {
-      this.metadataStabilityPromise ??= this.waitForMetadataCacheStability();
-      await this.metadataStabilityPromise;
-      this.metadataStabilized = true;
-      this.indexDirty = true;
-    }
+    await this.ensureInitialIndex();
     await this.rebuildIndex(false, this.index.size === 0, reason);
   }
 
   async rebuildIndex(showNotice = false, force = false, reason = "direct"): Promise<void> {
+    await this.performRebuild(showNotice, force, reason, false);
+  }
+
+  private async performRebuild(showNotice: boolean, force: boolean, reason: string, allowClosed: boolean): Promise<void> {
     const explicitlyRequested = showNotice;
-    if (this.openKplexViews <= 0 && !explicitlyRequested) {
-      this.indexDirty = true;
-      this.indexBacklogReasons.add(reason);
+    if (this.openKplexViews <= 0 && !allowClosed && !explicitlyRequested) return;
+
+    if (this.rebuildTask) {
+      // Do not invalidate an in-flight graph. Metadata events already mark indexDirty and will be
+      // folded into one follow-up rebuild when the current snapshot has published.
+      await this.rebuildTask;
       return;
     }
+
     const shouldSkip = !force && !showNotice && !this.indexDirty && this.index.size > 0;
     if (shouldSkip) return;
-    if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
-    const published = await this.index.rebuild();
-    if (!published) {
+
+    if (force || showNotice) {
       this.indexDirty = true;
+      this.indexDirtyRevision += 1;
       this.indexBacklogReasons.add(reason);
-      return;
     }
-    this.indexDirty = false;
-    this.indexBacklogReasons.clear();
-    await this.refreshBookmarkedEntryPoints();
-    if (showNotice) new Notice(`K-Plex indexed ${this.index.size} nodes.`, 1800);
+    const startRevision = this.indexDirtyRevision;
+    const task = (async () => {
+      // Ordinary edits are file-owned evidence changes. Patch those files directly rather than
+      // rebuilding the vault. Folder/tag topology and explicit/manual rebuilds remain full scans.
+      const structuralDirty = [...this.indexBacklogReasons].some((item) => item !== "metadata:changed" && item !== "coalesced-backlog" && item !== "interval");
+      const canIncrementalPatch = !force && !showNotice && this.index.size > 0 && !structuralDirty &&
+        !this.settings.showTagNodes && this.dirtyMarkdownPaths.size > 0;
+      if (canIncrementalPatch) {
+        const paths = [...this.dirtyMarkdownPaths];
+        this.recordDiagnostic("index:runtime-patch-start", { files: paths.length, revision: startRevision });
+        const result = await this.index.patchMarkdownPaths(paths);
+        if (result.patched) {
+          for (const path of paths) this.dirtyMarkdownPaths.delete(path);
+          if (this.indexDirtyRevision === startRevision && this.dirtyMarkdownPaths.size === 0) {
+            this.indexDirty = false;
+            this.indexBacklogReasons.clear();
+          }
+          await this.refreshBookmarkedEntryPoints();
+          this.recordDiagnostic("index:runtime-patch-end", { files: result.count, dirty: this.indexDirty });
+          return;
+        }
+        // Any uncertainty falls back to the authoritative full builder below.
+      }
+
+      this.recordDiagnostic("index:rebuild-start", { reason, force, showNotice, nodes: this.index.size, revision: startRevision });
+      if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
+      const published = await this.index.rebuild();
+      if (!published) {
+        this.indexDirty = true;
+        this.indexBacklogReasons.add(reason);
+        this.recordDiagnostic("index:rebuild-not-published", { reason, revision: this.indexDirtyRevision });
+        return;
+      }
+
+      // Only clear the backlog that this build actually covered. If a vault/metadata event fired
+      // while GraphBuilder was working, keep the index dirty and coalesce one follow-up pass.
+      if (this.indexDirtyRevision === startRevision) {
+        this.indexDirty = false;
+        this.indexBacklogReasons.clear();
+        this.dirtyMarkdownPaths.clear();
+      } else {
+        this.indexDirty = true;
+      }
+      await this.refreshBookmarkedEntryPoints();
+      this.recordDiagnostic("index:rebuild-end", { reason, nodes: this.index.size, dirty: this.indexDirty, revision: this.indexDirtyRevision });
+      if (showNotice) new Notice(`K-Plex indexed ${this.index.size} nodes.`, 1800);
+    })();
+    this.rebuildTask = task;
+    try {
+      await task;
+    } finally {
+      if (this.rebuildTask === task) this.rebuildTask = null;
+    }
+
+    if (this.indexDirty && this.initialIndexComplete && this.openKplexViews > 0 && this.rebuildTimer === null) {
+      this.rebuildTimer = window.setTimeout(() => {
+        this.rebuildTimer = null;
+        void this.rebuildIndex(false, false, "coalesced-backlog");
+      }, 1100);
+    }
   }
 
   async saveSettings(reindex = false, notifyIndex = true): Promise<void> {
@@ -296,8 +565,85 @@ export default class ExcaliBrainPlugin extends Plugin {
     return attached;
   }
 
+  private leafRect(leaf: WorkspaceLeaf | null): DOMRect | null {
+    if (!leaf) return null;
+    // ItemView.containerEl excludes the tab header. That is harmless for left/right splits, but
+    // for an above/below split it creates a ~tab-height gap between the two measured rectangles,
+    // so a genuinely adjacent pane was misclassified as non-adjacent and its sidecar controls
+    // disappeared. Prefer the containing workspace tab-group chrome when available; fall back to
+    // the leaf/view containers for compatibility with non-standard views and older Obsidian builds.
+    const workspaceLeaf = leaf as WorkspaceLeaf & {
+      containerEl?: HTMLElement;
+      parent?: { containerEl?: HTMLElement } | null;
+    };
+    const candidates = [workspaceLeaf.parent?.containerEl, workspaceLeaf.containerEl, leaf.view?.containerEl];
+    for (const element of candidates) {
+      if (!element?.isConnected) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 8 && rect.height > 8) return rect;
+    }
+    return null;
+  }
+
+  private leafIsVisible(leaf: WorkspaceLeaf | null): boolean {
+    return Boolean(this.leafRect(leaf));
+  }
+
+  private leafViewIsLoaded(leaf: WorkspaceLeaf | null): boolean {
+    if (!leaf) return false;
+    const view = leaf.view as LoadAwareView;
+    if (typeof view?._loaded === "boolean") return view._loaded;
+    // `_loaded` is an intentionally isolated compatibility hint for Deferred/FileView startup.
+    // Public signals remain the primary criteria, so views without that private property work too.
+    return leaf.view instanceof FileView ? Boolean(leaf.view.file) : this.leafIsVisible(leaf);
+  }
+
+  private adjacentPosition(hostLeaf: WorkspaceLeaf, otherLeaf: WorkspaceLeaf): SidecarPosition | null {
+    if (hostLeaf === otherLeaf) return null;
+    // DOMRect coordinates are local to a window. A pinned tab moved to a pop-out must therefore
+    // never be considered geometrically adjacent just because its separate window happens to use
+    // similar viewport coordinates.
+    const hostDocument = hostLeaf.view?.containerEl?.ownerDocument;
+    const otherDocument = otherLeaf.view?.containerEl?.ownerDocument;
+    if (hostDocument && otherDocument && hostDocument !== otherDocument) return null;
+    const host = this.leafRect(hostLeaf);
+    const other = this.leafRect(otherLeaf);
+    if (!host || !other) return null;
+    const tolerance = 24;
+    const minOverlap = 32;
+    const verticalOverlap = Math.min(host.bottom, other.bottom) - Math.max(host.top, other.top);
+    const horizontalOverlap = Math.min(host.right, other.right) - Math.max(host.left, other.left);
+    if (verticalOverlap >= minOverlap) {
+      if (Math.abs(other.right - host.left) <= tolerance) return "left";
+      if (Math.abs(other.left - host.right) <= tolerance) return "right";
+    }
+    if (horizontalOverlap >= minOverlap) {
+      if (Math.abs(other.bottom - host.top) <= tolerance) return "above";
+      if (Math.abs(other.top - host.bottom) <= tolerance) return "below";
+    }
+    return null;
+  }
+
+  private isLeafAdjacentToAnyKplex(leaf: WorkspaceLeaf): boolean {
+    return this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)
+      .some((host) => this.adjacentPosition(host, leaf) !== null);
+  }
+
+  private findVisibleAdjacentDocumentLeaf(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
+    let best: WorkspaceLeaf | null = null;
+    let bestScore = -1;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (!this.isDocumentLeafCandidate(leaf)) return;
+      const position = this.adjacentPosition(hostLeaf, leaf);
+      if (!position) return;
+      const score = (this.leafViewIsLoaded(leaf) ? 10 : 0) + (leaf === this.lastDocumentLeaf ? 4 : 0) + (leaf === this.app.workspace.getMostRecentLeaf() ? 2 : 0);
+      if (score > bestScore) { best = leaf; bestScore = score; }
+    });
+    return best;
+  }
+
   private rememberDocumentLeaf(leaf: WorkspaceLeaf | null): void {
-    if (this.isDocumentLeafCandidate(leaf)) this.lastDocumentLeaf = leaf;
+    if (this.isDocumentLeafCandidate(leaf) && this.leafIsVisible(leaf)) this.lastDocumentLeaf = leaf;
   }
 
   private validateLinkedDocumentLeaf(): void {
@@ -307,15 +653,30 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   private findRecentDocumentLeaf(): WorkspaceLeaf | null {
     this.validateLinkedDocumentLeaf();
-    if (this.isDocumentLeafCandidate(this.lastDocumentLeaf)) return this.lastDocumentLeaf;
+    if (this.isDocumentLeafCandidate(this.lastDocumentLeaf) && this.leafIsVisible(this.lastDocumentLeaf)) return this.lastDocumentLeaf;
 
     const recent = this.app.workspace.getMostRecentLeaf();
-    if (this.isDocumentLeafCandidate(recent)) {
+    if (this.isDocumentLeafCandidate(recent) && this.leafIsVisible(recent) && this.leafViewIsLoaded(recent)) {
       this.lastDocumentLeaf = recent;
       return recent;
     }
 
+    // At workspace startup Obsidian can report the first serialized tab as "most recent" while it
+    // is still a deferred, hidden view. Prefer a visible/materialized document tab instead.
     let candidate: WorkspaceLeaf | null = null;
+    let bestScore = -1;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (!this.isDocumentLeafCandidate(leaf) || !this.leafIsVisible(leaf)) return;
+      const score = (this.leafViewIsLoaded(leaf) ? 10 : 0) + (leaf === recent ? 2 : 0);
+      if (score > bestScore) { candidate = leaf; bestScore = score; }
+    });
+    if (candidate) {
+      this.lastDocumentLeaf = candidate;
+      return candidate;
+    }
+
+    // Last-resort fallback for workspaces with no currently visible document tab.
+    if (this.isDocumentLeafCandidate(recent)) return recent;
     this.app.workspace.iterateAllLeaves((leaf) => {
       if (!candidate && this.isDocumentLeafCandidate(leaf)) candidate = leaf;
     });
@@ -350,35 +711,117 @@ export default class ExcaliBrainPlugin extends Plugin {
     return file?.basename ?? this.linkedDocumentLeaf.getDisplayText();
   }
 
+  getDocumentSyncMode(): DocumentSyncMode { return this.settings.documentSyncMode; }
+
+  private syncKplexToLeafEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
+  private syncLeafToKplexEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
+
   shouldFollowDocumentFile(file: TFile): boolean {
-    if (!this.settings.followActiveFile || !this.settings.autoOpenCentralDocument) return false;
+    if (!this.syncLeafToKplexEnabled()) return false;
     this.validateLinkedDocumentLeaf();
-    const leaf = this.linkedDocumentLeaf ?? this.findRecentDocumentLeaf();
+    const leaf = this.settings.documentSyncMode === "pinned" ? this.linkedDocumentLeaf : this.findRecentDocumentLeaf();
     return this.fileForLeaf(leaf)?.path === file.path;
   }
 
-  async setDocumentLeafLinked(linked: boolean, page?: GraphPage): Promise<void> {
+  private targetNoteLeaf(createIfMissing = true): WorkspaceLeaf | null {
     this.validateLinkedDocumentLeaf();
-    if (!linked) {
-      this.linkedDocumentLeaf = null;
-      return;
-    }
+    if (this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf) return this.linkedDocumentLeaf;
+    const recent = this.findRecentDocumentLeaf();
+    if (recent) return recent;
+    return createIfMissing ? this.app.workspace.getLeaf("split") : null;
+  }
 
+  async relinkDocumentLeafToMostRecent(page?: GraphPage): Promise<void> {
     const candidate = this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf("split");
     this.linkedDocumentLeaf = candidate;
     this.lastDocumentLeaf = candidate;
+    this.settings.documentSyncMode = "pinned";
+    if (page?.file) await candidate.openFile(page.file, { active: false });
+    this.settings.sidecarOpen = this.isLeafAdjacentToAnyKplex(candidate);
+    await this.saveSettings(false, false);
+    this.notifySidecar();
+  }
 
-    if (this.settings.autoOpenCentralDocument && page?.file) {
-      await candidate.openFile(page.file, { active: false });
+  async setDocumentSyncMode(mode: DocumentSyncMode, page?: GraphPage): Promise<TFile | null> {
+    this.settings.documentSyncMode = mode;
+    this.settings.autoOpenCentralDocument = mode !== "off";
+    this.settings.followActiveFile = mode !== "off";
+
+    if (mode === "off") {
+      const released = this.linkedDocumentLeaf;
+      this.linkedDocumentLeaf = null;
+      if (released) {
+        for (const [host, managed] of [...this.sidecarLeaves.entries()]) if (managed === released) this.sidecarLeaves.delete(host);
+      }
+      this.settings.sidecarOpen = false;
+      await this.saveSettings(false, false);
+      this.notifySidecar();
+      return null;
     }
+
+    if (mode === "recent") {
+      this.linkedDocumentLeaf = null;
+      this.settings.sidecarOpen = false;
+      await this.saveSettings(false, false);
+      this.notifySidecar();
+      return null;
+    }
+
+    // Pinned means one fixed note tab. If a sidecar is open it is already the obvious fixed tab;
+    // otherwise pin the most recently used note tab.
+    const candidate = this.linkedDocumentLeaf ?? this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf("split");
+    this.linkedDocumentLeaf = candidate;
+    this.lastDocumentLeaf = candidate;
+    if (page?.file) await candidate.openFile(page.file, { active: false });
+    this.settings.sidecarOpen = this.isLeafAdjacentToAnyKplex(candidate);
+    await this.saveSettings(false, false);
+    this.notifySidecar();
+    return null;
+  }
+
+  async setDocumentLeafLinked(linked: boolean, page?: GraphPage): Promise<void> {
+    await this.setDocumentSyncMode(linked ? "recent" : "off", page);
+  }
+
+  async syncMostRecentTabWithKplex(page: GraphPage): Promise<void> {
+    if (!page.file) return;
+    const leaf = this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf("split");
+    this.lastDocumentLeaf = leaf;
+    await leaf.openFile(page.file, { active: false });
+  }
+
+  async syncKplexWithMostRecentTab(): Promise<TFile | null> {
+    const leaf = this.findRecentDocumentLeaf();
+    const file = this.fileForLeaf(leaf);
+    if (!file || !this.index.get(file.path)) return null;
+    this.settings.lastActivePath = file.path;
+    const history = [...this.settings.navigationHistory.filter((path) => path !== file.path), file.path].slice(-40);
+    this.settings.navigationHistory = history;
+    await this.saveSettings(false, false);
+    this.notifyNavigation(file.path);
+    this.index.notify();
+    return file;
+  }
+
+  async showPageInDocumentLeaf(page: GraphPage): Promise<void> {
+    await this.syncMostRecentTabWithKplex(page);
   }
 
   async syncPageToDocumentLeaf(page: GraphPage): Promise<void> {
-    if (!this.settings.autoOpenCentralDocument || !page.file) return;
-    this.validateLinkedDocumentLeaf();
-    const leaf = this.linkedDocumentLeaf ?? this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf("split");
+    if (!this.syncKplexToLeafEnabled() || !page.file) return;
+    const leaf = this.targetNoteLeaf(true);
+    if (!leaf) return;
     this.lastDocumentLeaf = leaf;
     await leaf.openFile(page.file, { active: false });
+  }
+
+  subscribeNavigation(listener: (path: string) => void): () => void {
+    this.navigationListeners.add(listener);
+    return () => this.navigationListeners.delete(listener);
+  }
+
+  private notifyNavigation(path: string): void {
+    for (const listener of this.navigationListeners) listener(path);
   }
 
   subscribeSidecar(listener: () => void): () => void {
@@ -406,8 +849,15 @@ export default class ExcaliBrainPlugin extends Plugin {
     return leaf;
   }
 
+  getSidecarPosition(hostLeaf: WorkspaceLeaf): SidecarPosition | null {
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE || this.settings.documentSyncMode !== "pinned") return null;
+    this.validateLinkedDocumentLeaf();
+    if (!this.linkedDocumentLeaf) return null;
+    return this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf);
+  }
+
   isSidecarOpen(hostLeaf: WorkspaceLeaf): boolean {
-    return Boolean(this.validateSidecarLeaf(hostLeaf));
+    return this.getSidecarPosition(hostLeaf) !== null;
   }
 
   private createSidecarLeaf(hostLeaf: WorkspaceLeaf, position: SidecarPosition): WorkspaceLeaf {
@@ -443,26 +893,66 @@ export default class ExcaliBrainPlugin extends Plugin {
   async openSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
     if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
     let leaf = this.validateSidecarLeaf(hostLeaf);
+    if (!leaf && this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)) {
+      leaf = this.linkedDocumentLeaf;
+    }
+    // On workspace restore prefer the already-visible adjacent document pane. This avoids binding
+    // to Obsidian's arbitrary deferred "most recent" first tab and recreates the prior sidecar.
+    if (!leaf) leaf = this.findVisibleAdjacentDocumentLeaf(hostLeaf);
     if (!leaf) {
       leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
       this.sidecarLeaves.set(hostLeaf, leaf);
     }
     this.settings.sidecarOpen = true;
-    await this.saveSettings(false, false);
+    this.settings.documentSyncMode = "pinned";
+    this.linkedDocumentLeaf = leaf;
+    this.lastDocumentLeaf = leaf;
     await this.openPageInSidecarLeaf(leaf, page);
+    const actualPosition = this.adjacentPosition(hostLeaf, leaf);
+    if (actualPosition) this.settings.sidecarPosition = actualPosition;
+    await this.saveSettings(false, false);
     this.notifySidecar();
   }
 
   async closeSidecar(hostLeaf: WorkspaceLeaf, persist = true): Promise<void> {
-    const leaf = this.sidecarLeaves.get(hostLeaf);
+    const managed = this.sidecarLeaves.get(hostLeaf) ?? null;
+    const adjacentPinned = this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
+      ? this.linkedDocumentLeaf
+      : null;
+    const leaf = managed ?? adjacentPinned;
     this.sidecarLeaves.delete(hostLeaf);
     if (leaf) {
       try { leaf.detach(); } catch { /* already detached */ }
+    }
+    if (this.linkedDocumentLeaf === leaf) {
+      this.linkedDocumentLeaf = null;
+      this.settings.documentSyncMode = "off";
     }
     if (persist) {
       this.settings.sidecarOpen = false;
       await this.saveSettings(false, false);
     }
+    this.notifySidecar();
+  }
+
+  /**
+   * Stop managing/synchronizing the companion leaf but leave that native Obsidian leaf open.
+   * From this point it behaves exactly like any ordinary workspace leaf and no longer follows
+   * K-Plex navigation. This is intentionally simpler than the old "open copy in…" workflow.
+   */
+  async detachSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
+    const managed = this.sidecarLeaves.get(hostLeaf) ?? null;
+    const adjacentPinned = this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
+      ? this.linkedDocumentLeaf
+      : null;
+    const leaf = managed ?? adjacentPinned;
+    if (!leaf) return;
+    this.sidecarLeaves.delete(hostLeaf);
+    this.settings.sidecarOpen = false;
+    if (this.linkedDocumentLeaf === leaf) this.linkedDocumentLeaf = null;
+    this.settings.documentSyncMode = "off";
+    await this.saveSettings(false, false);
+    this.lastDocumentLeaf = leaf;
     this.notifySidecar();
   }
 
@@ -482,27 +972,12 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async syncSidecarToPage(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
-    const leaf = this.validateSidecarLeaf(hostLeaf);
+    const managed = this.validateSidecarLeaf(hostLeaf);
+    const leaf = managed ?? (this.getSidecarPosition(hostLeaf) ? this.linkedDocumentLeaf : null);
     if (!leaf) return;
     await this.openPageInSidecarLeaf(leaf, page);
   }
 
-  async duplicateSidecar(hostLeaf: WorkspaceLeaf, destination: "tab" | "current" | "window" | "adjacent"): Promise<void> {
-    const sidecar = this.validateSidecarLeaf(hostLeaf);
-    if (!sidecar) return;
-    const viewState = sidecar.getViewState();
-    let target: WorkspaceLeaf;
-    try {
-      if (destination === "window") target = this.app.workspace.getLeaf("window");
-      else if (destination === "tab") target = this.app.workspace.getLeaf("tab");
-      else if (destination === "adjacent") target = this.app.workspace.createLeafBySplit(hostLeaf, "vertical", false);
-      else target = this.findRecentDocumentLeaf() ?? this.app.workspace.getLeaf(false);
-      await target.setViewState({ ...viewState, active: true });
-      await this.app.workspace.revealLeaf(target);
-    } catch {
-      new Notice("That workspace destination is not available on this platform.", 2200);
-    }
-  }
 
   async activateView(): Promise<void> {
     // Phones intentionally route the generic/open-ribbon action to the sidepanel. Tablets retain
@@ -528,27 +1003,42 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async activateSidepanel(): Promise<void> {
     this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
+    this.recordDiagnostic("sidepanel:activate-start");
     let leaf: WorkspaceLeaf | null = this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0] ?? null;
     if (!leaf) {
-      // Follow the same lifecycle pattern used by Excalidraw's sidepanel: sidepanel views belong
-      // in Obsidian's right sidebar, not in a fallback main workspace tab. Some mobile startup
-      // sequences create the leaf before constructing its ItemView, so set the state once more if
-      // necessary after the first transition.
       leaf = this.app.workspace.getRightLeaf(false);
       if (!leaf) {
+        this.recordDiagnostic("sidepanel:no-right-leaf");
         new Notice("The Obsidian sidepanel is not available in this workspace.", 2200);
         return;
       }
       await leaf.setViewState({ type: KPLEX_SIDEPANEL_VIEW_TYPE, active: true });
     }
-    if (!(leaf.view instanceof KplexSidepanelView)) {
+
+    // Match Excalidraw's proven mobile sidepanel lifecycle. During Obsidian startup a leaf can
+    // already have the right serialized type while leaf.view is still a generic ItemView. A
+    // second active setViewState materializes the registered view constructor on that first tap.
+    let view = leaf.view;
+    if (!(view instanceof KplexSidepanelView)) {
       await leaf.setViewState({ type: KPLEX_SIDEPANEL_VIEW_TYPE, active: true });
-      if (!(leaf.view instanceof KplexSidepanelView)) {
-        new Notice("K-Plex could not initialize its sidepanel view.", 2200);
-        return;
-      }
+      view = leaf.view;
     }
     await this.app.workspace.revealLeaf(leaf);
+    if (Platform.isMobile) {
+      // Mobile sidebars sometimes commit their expanded/collapsed state one frame after the view
+      // state changes. Revealing again on the next frame makes the first command invocation
+      // deterministic instead of requiring a second tap.
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      await this.app.workspace.revealLeaf(leaf);
+    }
+    if (!(view instanceof KplexSidepanelView)) {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      await leaf.setViewState({ type: KPLEX_SIDEPANEL_VIEW_TYPE, active: true });
+      view = leaf.view;
+      await this.app.workspace.revealLeaf(leaf);
+    }
+    if (view instanceof KplexSidepanelView) await view.waitUntilReady();
+    this.recordDiagnostic("sidepanel:activate-end", { ready: view instanceof KplexSidepanelView, nodes: this.index.size });
   }
 
   async activateViewInPopout(): Promise<void> {
@@ -923,11 +1413,16 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private async writeRelationship(storageFile: TFile, target: GraphPage, field: string): Promise<void> {
+    // Mark before processFrontMatter so our own metadataCache.changed event is not interpreted as
+    // an external vault edit that requires a 20k-note rebuild.
+    // Large vaults can deliver metadataCache.changed several seconds after processFrontMatter.
+    // Keep our own write suppressed long enough that it cannot accidentally trigger a full-vault
+    // backlog rebuild after the live semantic pair has already been patched in memory.
+    this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
     const ontologyFields = new Set(this.allOntologyFields().map(normalizeFieldName));
     const desiredNormalized = normalizeFieldName(field);
     const reference = this.referenceForPage(target, storageFile);
 
-    const metadataWait = this.waitForMetadataChange(storageFile);
     await this.app.fileManager.processFrontMatter(storageFile, (frontmatter: Record<string, unknown>) => {
       let desiredKey = field;
       for (const key of Object.keys(frontmatter)) {
@@ -948,7 +1443,19 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (Array.isArray(current)) frontmatter[desiredKey] = [...(current as unknown[]), reference];
       else frontmatter[desiredKey] = [current, reference];
     });
-    await metadataWait;
+  }
+
+  private async clearFrontmatterRelationship(storageFile: TFile, target: GraphPage): Promise<void> {
+    this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
+    const ontologyFields = new Set(this.allOntologyFields().map(normalizeFieldName));
+    await this.app.fileManager.processFrontMatter(storageFile, (frontmatter: Record<string, unknown>) => {
+      for (const key of Object.keys(frontmatter)) {
+        if (!ontologyFields.has(normalizeFieldName(key))) continue;
+        const next = this.removeTargetFromValue(frontmatter[key], storageFile, target);
+        if (next === undefined) delete frontmatter[key];
+        else frontmatter[key] = next;
+      }
+    });
   }
 
   async createRelationFromGate(origin: GraphPage, semanticRole: GateRole, selectedFile: TFile, selectedField: string): Promise<void> {
@@ -977,13 +1484,16 @@ export default class ExcaliBrainPlugin extends Plugin {
 
     if (origin.file?.extension === "md") {
       await this.writeRelationship(origin.file, target, selectedField);
+      this.index.applyRelationshipEdit(origin.path, target.path, semanticRole, selectedField);
     } else if (target.file?.extension === "md") {
-      await this.writeRelationship(target.file, origin, this.inverseOntologyField(selectedField, semanticRole));
+      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseField = this.inverseOntologyField(selectedField, semanticRole);
+      await this.writeRelationship(target.file, origin, inverseField);
+      this.index.applyRelationshipEdit(target.path, origin.path, inverseRole, inverseField);
     } else {
       new Notice("When the drag origin is not a Markdown note, the target must be a Markdown note.", 2800);
       return;
     }
-    await this.rebuildIndex(false, true);
   }
 
   async relinkCentralNeighbour(
@@ -992,6 +1502,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     semanticRole: GateRole,
     selectedField: string,
     existingDirection: LinkDirection | null = null,
+    storagePathOverride: string | null = null,
   ): Promise<void> {
     const centerFile = center.file?.extension === "md" ? center.file : null;
     const neighbourFile = neighbour.file?.extension === "md" ? neighbour.file : null;
@@ -1001,21 +1512,48 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
     const inverseField = this.inverseOntologyField(selectedField, semanticRole);
+    const candidates = this.index.relationshipStorageCandidates(center.path, neighbour.path);
+    let storagePath: string | null = storagePathOverride && candidates.includes(storagePathOverride)
+      ? storagePathOverride
+      : (candidates.length > 0 ? candidates[0] : null);
+    if (!storagePath) storagePath = centerFile?.path ?? neighbourFile?.path ?? null;
 
-    // Preserve which note owns the relationship whenever the existing link direction tells
-    // us that unambiguously. Adding the new relationship as YAML makes it authoritative over
-    // any stale inline/body ontology link without rewriting prose in the note body.
-    if (centerFile && neighbourFile && existingDirection === LinkDirection.TO) {
-      await this.writeRelationship(neighbourFile, center, inverseField);
-    } else if (centerFile && neighbourFile && existingDirection === LinkDirection.BOTH) {
+    // Prefer the note that already owns the defining relationship evidence. If both Markdown
+    // notes are valid declarers, RelationModal exposes a small "Store relationship in" chooser
+    // with this intelligent choice preselected. We update one canonical frontmatter declaration,
+    // rather than duplicating metadata in both notes. If the relationship previously had YAML on
+    // the opposite note, remove that stale declaration first; body ontology is retained and the
+    // resolver records it as overridden evidence when it conflicts with the new YAML authority.
+    const existingFrontmatterOwners = new Set(
+      this.index.evidenceBetween(center.path, neighbour.path)
+        .filter((item) => item.sourceKind === "frontmatter-ontology")
+        .map((item) => item.declaredByPath),
+    );
+    const cleanup: Promise<void>[] = [];
+    if (centerFile && storagePath !== centerFile.path && existingFrontmatterOwners.has(centerFile.path)) {
+      cleanup.push(this.clearFrontmatterRelationship(centerFile, neighbour));
+    }
+    if (neighbourFile && storagePath !== neighbourFile.path && existingFrontmatterOwners.has(neighbourFile.path)) {
+      cleanup.push(this.clearFrontmatterRelationship(neighbourFile, center));
+    }
+    if (cleanup.length) await Promise.all(cleanup);
+    if (storagePath === centerFile?.path && centerFile) {
       await this.writeRelationship(centerFile, neighbour, selectedField);
+      this.index.applyRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
+    } else if (storagePath === neighbourFile?.path && neighbourFile) {
+      const inverseRole = this.inverseGateRole(semanticRole);
       await this.writeRelationship(neighbourFile, center, inverseField);
+      this.index.applyRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
     } else if (centerFile) {
       await this.writeRelationship(centerFile, neighbour, selectedField);
+      this.index.applyRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
     } else if (neighbourFile) {
+      const inverseRole = this.inverseGateRole(semanticRole);
       await this.writeRelationship(neighbourFile, center, inverseField);
+      this.index.applyRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
     }
-    await this.rebuildIndex(false, true);
+
+    this.recordDiagnostic("relationship:patched", { storagePath, center: center.path, target: neighbour.path, role: semanticRole });
   }
 
   isExcalidrawAvailable(): boolean {

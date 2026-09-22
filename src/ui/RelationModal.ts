@@ -47,11 +47,15 @@ export class RelationModal extends Modal {
   private resultsEl: HTMLDivElement | null = null;
   private saveButton: HTMLButtonElement | null = null;
   private searchInput: HTMLInputElement | null = null;
+  private selectedStoragePath: string | null = null;
 
   constructor(private plugin: ExcaliBrainPlugin, private options: RelationModalOptions) {
     super(plugin.app);
     this.semanticRole = options.semanticRole;
     this.selectedField = plugin.defaultOntologyField(this.semanticRole);
+    if (options.mode === "relink" && options.fixedTarget) {
+      this.selectedStoragePath = plugin.index.relationshipStorageCandidates(options.origin.path, options.fixedTarget.path)[0] ?? null;
+    }
   }
 
   private candidates(): TFile[] {
@@ -156,6 +160,7 @@ export class RelationModal extends Modal {
           this.semanticRole,
           this.selectedField,
           this.options.existingDirection ?? null,
+          this.selectedStoragePath,
         );
       } else if (this.options.fixedTarget) {
         await this.plugin.createRelationToPage(
@@ -251,7 +256,55 @@ export class RelationModal extends Modal {
       this.renderResults();
     }
 
-    this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Document property", attr: { for: "kplex-relation-modal-field" } });
+    let storageHint: HTMLDivElement | null = null;
+    if (this.options.mode === "relink" && this.options.fixedTarget) {
+      const storageCandidates = this.plugin.index.relationshipStorageCandidates(this.options.origin.path, this.options.fixedTarget.path);
+      const evidence = this.plugin.index.evidenceBetween(this.options.origin.path, this.options.fixedTarget.path);
+      const rankFor = (path: string): number => {
+        let rank = 9;
+        for (const item of evidence) {
+          if (item.declaredByPath !== path) continue;
+          const score = item.sourceKind === "frontmatter-ontology" ? 0
+            : item.sourceKind === "inline-ontology" ? 1
+              : item.sourceKind === "obsidian-link" || item.sourceKind === "unresolved-link" ? 2 : 4;
+          rank = Math.min(rank, score);
+        }
+        return rank;
+      };
+      if (storageCandidates.length > 1) {
+        this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Write property to note", attr: { for: "kplex-relation-modal-storage" } });
+        const storageSelect = this.contentEl.createEl("select", { attr: { id: "kplex-relation-modal-storage" } });
+        for (let candidateIndex = 0; candidateIndex < storageCandidates.length; candidateIndex += 1) {
+          const path = storageCandidates[candidateIndex];
+          const page = this.plugin.index.get(path);
+          const title = page ? this.plugin.index.titleFor(page) : path;
+          storageSelect.createEl("option", { text: candidateIndex === 0 ? `${title} — recommended` : title, attr: { value: path } });
+        }
+        this.selectedStoragePath = this.selectedStoragePath && storageCandidates.includes(this.selectedStoragePath)
+          ? this.selectedStoragePath : storageCandidates[0];
+        storageSelect.value = this.selectedStoragePath ?? storageCandidates[0];
+        storageHint = this.contentEl.createDiv({ cls: "kplex-relation-hint" });
+        storageHint.setText(rankFor(storageCandidates[0]) < 9
+          ? "K-Plex recommends the note that already contains the strongest relationship evidence. You can deliberately move the defining property to the other note."
+          : "Either Markdown note can own the relationship property. K-Plex recommends the current note by default.");
+        storageSelect.addEventListener("change", () => {
+          this.selectedStoragePath = storageSelect.value;
+          updateStorageHint();
+        });
+      } else if (storageCandidates[0]) {
+        this.selectedStoragePath = storageCandidates[0];
+      }
+    }
+
+    const updateStorageHint = () => {
+      if (!storageHint || !this.options.fixedTarget || !this.selectedStoragePath) return;
+      const storingOnOrigin = this.selectedStoragePath === this.options.origin.path;
+      const page = this.plugin.index.get(this.selectedStoragePath);
+      const effectiveField = storingOnOrigin ? this.selectedField : this.plugin.inverseOntologyField(this.selectedField, this.semanticRole);
+      storageHint.setText(`K-Plex will write ${effectiveField} in ${page ? this.plugin.index.titleFor(page) : this.selectedStoragePath}.`);
+    };
+
+    this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Note property", attr: { for: "kplex-relation-modal-field" } });
     const select = this.contentEl.createEl("select", { attr: { id: "kplex-relation-modal-field" } });
     fieldSelect = select;
     repopulateFields();
@@ -266,8 +319,10 @@ export class RelationModal extends Modal {
     select.addEventListener("change", () => {
       this.selectedField = select.value;
       updateInverseHint();
+      updateStorageHint();
     });
     updateInverseHint();
+    updateStorageHint();
 
     if (!this.options.fixedTarget && this.options.mode === "create") {
       const newButton = this.contentEl.createEl("button", { cls: "kplex-relation-new-note", attr: { type: "button" } });

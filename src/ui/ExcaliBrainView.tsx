@@ -10,12 +10,25 @@ export const KPLEX_SIDEPANEL_VIEW_TYPE = "k-plex-sidepanel-view";
 abstract class BaseKplexView extends ItemView {
   private root: Root | null = null;
   private windowMigrationCleanup: (() => void) | null = null;
+  private ready = false;
+  private readyResolvers: Array<() => void> = [];
 
   constructor(leaf: WorkspaceLeaf, protected plugin: ExcaliBrainPlugin) { super(leaf); }
 
   getDisplayText(): string { return "K-Plex"; }
   getIcon(): string { return "brain-circuit"; }
   protected abstract getSurface(): KplexViewSurface;
+
+  waitUntilReady(): Promise<void> {
+    if (this.ready) return Promise.resolve();
+    return new Promise<void>((resolve) => this.readyResolvers.push(resolve));
+  }
+
+  private markReady(): void {
+    if (this.ready) return;
+    this.ready = true;
+    for (const resolve of this.readyResolvers.splice(0)) resolve();
+  }
 
   protected renderReact(): void {
     this.root?.unmount();
@@ -32,7 +45,12 @@ abstract class BaseKplexView extends ItemView {
       this.windowMigrationCleanup = this.containerEl.onWindowMigrated(() => this.renderReact());
     }
     this.renderReact();
-    await this.plugin.onKplexViewOpened();
+    this.markReady();
+    // View construction/reveal must never wait for a potentially long initial index. On mobile,
+    // awaiting the build here makes the sidepanel appear not to open at all and can keep
+    // setViewState() pending long enough for the WebView to look hung. Render the indexing state
+    // immediately, then let the index publish asynchronously into the mounted React view.
+    void this.plugin.onKplexViewOpened().catch((error) => console.error("K-Plex view initialization failed", error));
   }
 
   async onClose(): Promise<void> {
@@ -40,6 +58,8 @@ abstract class BaseKplexView extends ItemView {
     this.windowMigrationCleanup = null;
     this.root?.unmount();
     this.root = null;
+    this.ready = false;
+    for (const resolve of this.readyResolvers.splice(0)) resolve();
     this.plugin.onKplexViewClosed(this.leaf);
     await super.onClose();
   }

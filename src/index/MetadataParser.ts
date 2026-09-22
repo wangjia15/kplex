@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import { parseBodyMetadata, parseBodyMetadataCore, type ParsedBodyMetadata } from "./fieldParser";
 
 type Pending = {
@@ -24,7 +25,10 @@ export class MetadataParser {
   private disabled = false;
 
   constructor() {
-    if (typeof Worker === "undefined" || typeof Blob === "undefined") {
+    // WebKit/WebView worker message passing clones whole Markdown strings and parsed payloads.
+    // On iOS this transient duplication can be more expensive than parsing one file at a time
+    // on the renderer thread with GraphBuilder's cooperative yields, so prefer the low-memory path.
+    if (Platform.isIosApp || typeof Worker === "undefined" || typeof Blob === "undefined") {
       this.disabled = true;
       return;
     }

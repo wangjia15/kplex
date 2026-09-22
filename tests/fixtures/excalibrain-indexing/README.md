@@ -1066,3 +1066,10 @@ Note Y
 ```
 
 This summary describes the ordinary whole-note index. The optional expanded-central-note view temporarily redistributes only **Note A's outgoing body evidence after the first heading** to transient section nodes as described above.
+
+## Cache / incremental-update assertions
+
+51. a persisted semantic page snapshot includes resolved neighbour data and can restore the relationship presentation without replaying the full relationship classifier.
+52. the restored Note A → Note B relationship remains Parent — DEFINED after fast neighbour hydration.
+53. patching a single changed Markdown file through the runtime incremental path preserves the expected relationship semantics without rebuilding the vault.
+54. one original relationship declaration is stored once in memory while both directional perspectives remain queryable; K-Plex must not retain duplicate forward/reverse evidence objects merely for convenience.

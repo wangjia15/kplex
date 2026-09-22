@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react";
-import { Menu } from "obsidian";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { Menu, Platform } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
@@ -47,6 +47,7 @@ const ZONES: ScrollZone[] = ["parent", "child", "left", "right", "sibling"];
 const EMPTY_SCROLLS: ScrollValues = { parent: 0, child: 0, left: 0, right: 0, sibling: 0 };
 const GATE_GAP = 3;
 const MAX_ZOOM = 3;
+const IOS_MAX_ZOOM = 1.85;
 const COLUMN_PRESETS: ReadonlyArray<readonly [number, number]> = [
   [1, 1], [1, 2], [1, 3], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7],
 ];
@@ -122,6 +123,14 @@ function applyOptimisticRelink(base: Neighborhood, targetPath: string, role: Gat
   else if (role === "left") next.leftFriends.push(moved);
   else next.rightFriends.push(moved);
   return next;
+}
+
+function neighborhoodHasRelink(base: Neighborhood | null | undefined, targetPath: string, role: GateRole): boolean {
+  if (!base) return false;
+  const list = role === "parent" ? base.parents
+    : role === "child" ? base.children
+      : role === "left" ? base.leftFriends : base.rightFriends;
+  return list.some((item) => item.page.path === targetPath);
 }
 
 function semanticRoleForGate(gate: GateSide): GateRole {
@@ -446,6 +455,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(new Set());
   const sectionFoldCenter = useRef<string | null>(null);
   const [sceneTransitioning, setSceneTransitioning] = useState(false);
+  const previousNodeRects = useRef<Map<string, { left: number; top: number; width: number; height: number }>>(new Map());
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [optimisticRelink, setOptimisticRelink] = useState<{ targetPath: string; role: GateRole } | null>(null);
   const [relationshipUpdating, setRelationshipUpdating] = useState(false);
@@ -456,11 +466,27 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     ? { ...sectionExpansion, centerNeighborhood: applyOptimisticRelink(sectionExpansion.centerNeighborhood, optimisticRelink.targetPath, optimisticRelink.role) }
     : sectionExpansion, [sectionExpansion, optimisticRelink]);
   const neighborhood = effectiveSectionExpansion?.centerNeighborhood ?? effectivePersistentNeighborhood;
+
+  // Keep the optimistic role in place until the authoritative rebuilt graph actually agrees.
+  // RelationModal awaits the metadata write/rebuild, but React may not have committed the new
+  // index revision yet when its success callback fires. Clearing here instead of in the modal
+  // callback prevents the confusing new-side → old-side → new-side flash.
+  useEffect(() => {
+    if (!optimisticRelink || !relationshipUpdating) return;
+    if (!neighborhoodHasRelink(persistentNeighborhood, optimisticRelink.targetPath, optimisticRelink.role)) return;
+    // Section expansion is rebuilt asynchronously from the new authoritative index. Keep the
+    // optimistic overlay until that transient scene has caught up as well, otherwise expanded
+    // mode can still flash the old side for one render.
+    if (sectionExpanded && sectionExpansion && !neighborhoodHasRelink(sectionExpansion.centerNeighborhood, optimisticRelink.targetPath, optimisticRelink.role)) return;
+    setOptimisticRelink(null);
+    setRelationshipUpdating(false);
+  }, [persistentNeighborhood, sectionExpanded, sectionExpansion, renderRevision, optimisticRelink, relationshipUpdating]);
   const scene = useMemo(() => neighborhood
     ? (effectiveSectionExpansion ? buildSectionExpandedScene(effectiveSectionExpansion, index, settings, expandedSectionIds) : buildScene(neighborhood, index, settings))
     : { nodes: [], edges: [], zoneViewports: {} }, [neighborhood, effectiveSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
+  const cameraFrame = useRef<number | null>(null);
   const zoneScrollRefs = useRef<Partial<Record<ScrollZone, HTMLDivElement>>>({});
   const camera = useRef({ x: 0, y: 0, scale: 1 });
   const [hover, setHover] = useState<HoverState>(null);
@@ -477,6 +503,16 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   const suppressActivateUntil = useRef(0);
   const layoutSaveTimer = useRef<number | null>(null);
   const preserveCameraOnNextLayout = useRef(false);
+  const suppressAutoFitUntil = useRef(0);
+  const updateSectionFolds = (updater: (current: Set<string>) => Set<string>): void => {
+    // Folding is an outline operation, not navigation. Preserve the user's exact viewport while
+    // the transient section scene reflows around the changed subtree.
+    preserveCameraOnNextLayout.current = true;
+    // Folding changes only the transient outline. ResizeObserver can fire while relation clusters
+    // reflow; suppress auto-fit briefly so the camera remains *exactly* where the user left it.
+    suppressAutoFitUntil.current = Date.now() + 2500;
+    setExpandedSectionIds(updater);
+  };
   const sceneTransitionTimer = useRef<number | null>(null);
   const transitionPath = useRef(activePath);
   const pathChangedThisRender = transitionPath.current !== activePath;
@@ -521,8 +557,8 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     sceneTransitionTimer.current = window.setTimeout(() => {
       sceneTransitionTimer.current = null;
       setSceneTransitioning(false);
-    }, 520);
-  }, [activePath]);
+    }, settings.animationSpeed <= 0 ? 0 : Math.max(140, Math.round(620 / Math.max(0.25, settings.animationSpeed))));
+  }, [activePath, settings.animationSpeed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -551,17 +587,33 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       sceneTransitionTimer.current = window.setTimeout(() => {
         sceneTransitionTimer.current = null;
         setSceneTransitioning(false);
-      }, 520);
+      }, settings.animationSpeed <= 0 ? 0 : Math.max(140, Math.round(620 / Math.max(0.25, settings.animationSpeed))));
     });
     return () => { cancelled = true; };
-  }, [sectionExpanded, persistentNeighborhood?.center.path, renderRevision, plugin, index]);
+  }, [sectionExpanded, persistentNeighborhood?.center.path, renderRevision, plugin, index, settings.animationSpeed]);
   const applyCamera = (nextOrUpdater: { x: number; y: number; scale: number } | ((current: { x: number; y: number; scale: number }) => { x: number; y: number; scale: number })) => {
     const next = typeof nextOrUpdater === "function" ? nextOrUpdater(camera.current) : nextOrUpdater;
     camera.current = next;
-    if (cameraElement.current) {
-      cameraElement.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
+    // Pointer streams on iOS can deliver substantially more events than the screen can paint.
+    // Coalesce camera writes to one per animation frame, and use a 2D transform rather than
+    // forcing the entire Plex into a large GPU-backed 3D compositing layer.
+    if (cameraFrame.current === null) {
+      cameraFrame.current = window.requestAnimationFrame(() => {
+        cameraFrame.current = null;
+        const element = cameraElement.current;
+        if (!element) return;
+        const current = camera.current;
+        element.style.transform = `translate(${current.x}px, ${current.y}px) scale(${current.scale})`;
+      });
     }
     return next;
+  };
+
+  const flushCameraTransform = () => {
+    const element = cameraElement.current;
+    if (!element) return;
+    const current = camera.current;
+    element.style.transform = `translate(${current.x}px, ${current.y}px) scale(${current.scale})`;
   };
 
   const sceneLayoutKey = [
@@ -572,6 +624,71 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       return panel ? `${zone}:${panel.left}:${panel.top}:${panel.width}:${panel.height}:${panel.contentTop}:${panel.contentHeight}` : `${zone}:-`;
     }),
   ].join("::");
+
+  useLayoutEffect(() => {
+    const root = viewport.current;
+    if (!root) return;
+
+    // Establish the *new scene's* camera before FLIP measures target rectangles. Previously the
+    // nodes were measured against the old camera and auto-fit moved the entire canvas one effect
+    // later, masking much of the old→new thought migration. Section folds explicitly opt out.
+    if (!preserveCameraOnNextLayout.current) {
+      if (settings.allowAutozoom) fit();
+      else {
+        const el = viewport.current;
+        if (el) applyCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
+      }
+      flushCameraTransform();
+    }
+
+    const nextRects = new Map<string, { left: number; top: number; width: number; height: number }>();
+    const elements = root.querySelectorAll<HTMLElement>("[data-kplex-path]");
+    elements.forEach((element) => {
+      const path = element.dataset.kplexPath;
+      if (!path) return;
+      const rect = element.getBoundingClientRect();
+      nextRects.set(path, { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+    });
+
+    const speed = Math.max(0, Math.min(2, settings.animationSpeed));
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    if (speed > 0 && !reduceMotion) {
+      // At 1x, shared thoughts migrate for ~520ms so their old→new position is legible without
+      // making navigation feel delayed. The newly selected center moves more briskly (~300ms),
+      // while genuinely new thoughts enter over ~390ms. The slider is a speed multiplier.
+      const duration = Math.max(170, Math.round(520 / Math.max(0.25, speed)));
+      const easing = "cubic-bezier(.2,.72,.22,1)";
+      elements.forEach((element) => {
+        const path = element.dataset.kplexPath;
+        if (!path) return;
+        const current = nextRects.get(path);
+        if (!current) return;
+        const previous = previousNodeRects.current.get(path);
+        if (previous) {
+          const dx = previous.left - current.left;
+          const dy = previous.top - current.top;
+          const sx = current.width > 0 ? previous.width / current.width : 1;
+          const sy = current.height > 0 ? previous.height / current.height : 1;
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5 || Math.abs(sx - 1) > 0.02 || Math.abs(sy - 1) > 0.02) {
+            const isCenter = element.classList.contains("excalibrain-role-center");
+            element.animate([
+              { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, opacity: 0.90 },
+              { transform: "translate(0, 0) scale(1, 1)", opacity: 1 },
+            ], { duration: isCenter ? Math.max(150, Math.round(duration * 0.58)) : duration, easing, fill: "both" });
+          }
+          return;
+        }
+
+        const role = Array.from(element.classList).find((value) => value.startsWith("excalibrain-role-"))?.replace("excalibrain-role-", "") ?? "child";
+        const offset = role === "parent" ? [0, 22] : role === "child" ? [0, -22] : role === "left" || role === "previous" ? [22, 0] : role === "right" || role === "next" ? [-22, 0] : [0, 14];
+        element.animate([
+          { transform: `translate(${offset[0]}px, ${offset[1]}px) scale(.92)`, opacity: 0 },
+          { transform: "translate(0, 0) scale(1)", opacity: 1 },
+        ], { duration: Math.max(160, Math.round(duration * 0.75)), easing, fill: "both" });
+      });
+    }
+    previousNodeRects.current = nextRects;
+  }, [sceneLayoutKey, settings.animationSpeed]);
 
   const fit = () => {
     const el = viewport.current;
@@ -609,7 +726,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const padding = 46;
     const availableWidth = Math.max(80, el.clientWidth - padding * 2);
     const availableHeight = Math.max(80, el.clientHeight - padding * 2);
-    const maxScale = MAX_ZOOM;
+    const maxScale = Platform.isIosApp ? IOS_MAX_ZOOM : MAX_ZOOM;
     const scale = Math.max(0.18, Math.min(maxScale, availableWidth / graphWidth, availableHeight / graphHeight));
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
@@ -665,6 +782,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const el = viewport.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
+      if (Date.now() < suppressAutoFitUntil.current) return;
       if (settings.allowAutozoom) fit();
     });
     observer.observe(el);
@@ -685,7 +803,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       const py = e.clientY - rect.top;
       const factor = Math.exp(-e.deltaY * 0.0015);
       applyCamera((c) => {
-        const nextScale = Math.max(0.3, Math.min(MAX_ZOOM, c.scale * factor));
+        const nextScale = Math.max(0.3, Math.min(Platform.isIosApp ? IOS_MAX_ZOOM : MAX_ZOOM, c.scale * factor));
         const worldX = (px - c.x) / c.scale;
         const worldY = (py - c.y) / c.scale;
         const next = { scale: nextScale, x: px - worldX * nextScale, y: py - worldY * nextScale };
@@ -714,7 +832,13 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       // vertical scrolling remains available inside bounded relationship lists and modal content.
       event.stopPropagation();
       const target = event.target as Element | null;
-      if (target?.closest?.(".kplex-zone-scroll, .kplex-expanded-scroll, .modal-container, input, select, textarea, button")) return;
+      if (target?.closest?.(".modal-container, input, select, textarea, button")) return;
+      const scrollSurface = target?.closest?.(".kplex-zone-scroll, .kplex-expanded-scroll");
+      const graphTarget = target?.closest?.(".excalibrain-thought, .excalibrain-edge-hit");
+      // Empty bounded relationship lists keep native one-finger scrolling. A touch that starts on
+      // a thought/connector belongs to the Plex, so two-finger pinch works even when the Plex is
+      // visually full of thoughts (important on iPad where there may be almost no bare canvas).
+      if (scrollSurface && !graphTarget) return;
       if (event.cancelable) event.preventDefault();
     };
     el.addEventListener("touchstart", protectTouchGesture, { passive: false });
@@ -729,6 +853,8 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     if (layoutSaveTimer.current !== null) window.clearTimeout(layoutSaveTimer.current);
     if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
     if (sceneTransitionTimer.current !== null) window.clearTimeout(sceneTransitionTimer.current);
+    if (cameraFrame.current !== null) window.cancelAnimationFrame(cameraFrame.current);
+    viewport.current?.classList.remove("is-touch-gesturing", "is-pinch-gesturing");
   }, []);
 
   const scheduleLayoutSave = () => {
@@ -1007,6 +1133,8 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const rect = el.getBoundingClientRect();
     const midX = (a.x + b.x) / 2 - rect.left;
     const midY = (a.y + b.y) / 2 - rect.top;
+    viewport.current?.classList.add("is-pinch-gesturing");
+    plugin.recordDiagnostic("touch:pinch-start", { scale: Number(camera.current.scale.toFixed(3)), ios: Platform.isIosApp });
     pinchGesture.current = {
       startDistance: distance,
       startScale: camera.current.scale,
@@ -1031,13 +1159,18 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     if (target.closest(".excalibrain-zoom-controls, .kplex-zone-tools, .kplex-layout-controls, .kplex-filter-panel, input, select, textarea, button")) return;
 
     if (e.pointerType === "touch") {
-      // Bounded lists own one-finger vertical scrolling. All other touch gestures belong to the
-      // graph, even when the finger starts on a thought.
-      if (target.closest(".kplex-zone-scroll, .kplex-expanded-scroll")) return;
+      // Empty bounded lists own one-finger vertical scrolling. A thought/edge inside such a list
+      // still belongs to the graph so pinch can begin over visible content, not only bare canvas.
+      const scrollSurface = target.closest(".kplex-zone-scroll, .kplex-expanded-scroll");
+      const graphTarget = target.closest(".excalibrain-thought, .excalibrain-edge-hit");
+      if (scrollSurface && !graphTarget) return;
       e.preventDefault();
       e.stopPropagation();
       touchPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      e.currentTarget.setPointerCapture(e.pointerId);
+      viewport.current?.classList.add("is-touch-gesturing");
+      // Touch/pen pointers receive implicit capture on direct-manipulation browsers. Explicitly
+      // capturing multiple touch pointers has historically been fragile in iOS WebViews and is
+      // unnecessary here; mouse capture remains explicit in the non-touch path below.
 
       // Obsidian Mobile/browser native long-press menus are unreliable once K-Plex owns the
       // touch stream (which it must do to prevent workspace edge/top swipe gestures). Provide an
@@ -1129,7 +1262,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         const rect = el.getBoundingClientRect();
         const midX = (a.x + b.x) / 2 - rect.left;
         const midY = (a.y + b.y) / 2 - rect.top;
-        const scale = Math.max(0.3, Math.min(MAX_ZOOM, pinch.startScale * distance / pinch.startDistance));
+        const scale = Math.max(0.3, Math.min(Platform.isIosApp ? IOS_MAX_ZOOM : MAX_ZOOM, pinch.startScale * distance / pinch.startDistance));
         applyCamera({
           scale,
           x: midX - pinch.worldMidpoint.x * scale,
@@ -1204,11 +1337,14 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
                 setRelationshipUpdating(true);
               },
               onCommitEnd: (success) => {
-                setRelationshipUpdating(false);
-                if (!success) setOptimisticRelink(null);
+                // On success keep the optimistic overlay and interaction blocker until an index
+                // revision confirms the requested role. On failure roll back immediately.
+                if (!success) {
+                  setRelationshipUpdating(false);
+                  setOptimisticRelink(null);
+                }
               },
               onCommitted: () => {
-                setOptimisticRelink(null);
                 clearHoverIntent(true);
               },
             });
@@ -1251,9 +1387,13 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         }
       }
 
+      const hadPinch = Boolean(pinchGesture.current);
       touchPointers.current.delete(e.pointerId);
       if (moved) suppressActivateUntil.current = Date.now() + 220;
       pinchGesture.current = null;
+      if (hadPinch) plugin.recordDiagnostic("touch:pinch-end", { scale: Number(camera.current.scale.toFixed(3)) });
+      viewport.current?.classList.remove("is-pinch-gesturing");
+      if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
       panDrag.current = null;
       const remaining = [...touchPointers.current.entries()][0];
       if (remaining) {
@@ -1277,8 +1417,12 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     if (nodeDrag?.pointerId === e.pointerId) setNodeDrag(null);
     if (e.pointerType === "touch") {
       if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
+      const hadPinch = Boolean(pinchGesture.current);
       touchPointers.current.delete(e.pointerId);
       pinchGesture.current = null;
+      if (hadPinch) plugin.recordDiagnostic("touch:pinch-cancel", { scale: Number(camera.current.scale.toFixed(3)) });
+      viewport.current?.classList.remove("is-pinch-gesturing");
+      if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
     }
     if (panDrag.current?.pointerId === e.pointerId) panDrag.current = null;
   };
@@ -1351,11 +1495,11 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         menu.addItem((item) => item
           .setTitle("Fold all sections")
           .setIcon("list-tree")
-          .onClick(() => setExpandedSectionIds(new Set())));
+          .onClick(() => updateSectionFolds(() => new Set())));
         menu.addItem((item) => item
           .setTitle("Unfold all sections")
           .setIcon("list-tree")
-          .onClick(() => setExpandedSectionIds(new Set(sectionExpansion.sections.filter((section) => section.childIds.length).map((section) => section.id)))));
+          .onClick(() => updateSectionFolds(() => new Set(sectionExpansion.sections.filter((section) => section.childIds.length).map((section) => section.id)))));
       }
     }
 
@@ -1378,7 +1522,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         menu.addItem((item) => item
           .setTitle(expanded ? "Fold one level" : "Unfold one level")
           .setIcon(expanded ? "square-minus" : "square-plus")
-          .onClick(() => setExpandedSectionIds((current) => {
+          .onClick(() => updateSectionFolds((current) => {
             const next = new Set(current);
             if (expanded) next.delete(section.id); else next.add(section.id);
             return next;
@@ -1386,7 +1530,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         menu.addItem((item) => item
           .setTitle("Fold all descendants")
           .setIcon("fold-vertical")
-          .onClick(() => setExpandedSectionIds((current) => {
+          .onClick(() => updateSectionFolds((current) => {
             const next = new Set(current);
             next.delete(section.id);
             for (const id of descendants) next.delete(id);
@@ -1395,7 +1539,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         menu.addItem((item) => item
           .setTitle("Unfold all descendants")
           .setIcon("unfold-vertical")
-          .onClick(() => setExpandedSectionIds((current) => {
+          .onClick(() => updateSectionFolds((current) => {
             const next = new Set(current);
             next.add(section.id);
             for (const id of descendants) {
@@ -1448,7 +1592,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     if (connectDrag?.originPath === baseNode.page.path) highlightedGates.add(connectDrag.gate);
 
     return <ThoughtNode
-      key={`${baseNode.role}:${baseNode.page.path}`}
+      key={baseNode.page.path}
       node={displayNode}
       settings={settings}
       selected={baseNode.page.path === activePath}
@@ -1482,7 +1626,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
           hasChildren: section.childIds.length > 0,
           expanded: expandedSectionIds.has(section.id),
           hiddenDescendantCount: expandedSectionIds.has(section.id) ? 0 : descendants.size,
-          onToggle: () => setExpandedSectionIds((current) => {
+          onToggle: () => updateSectionFolds((current) => {
             const next = new Set(current);
             if (next.has(section.id)) next.delete(section.id); else next.add(section.id);
             return next;
@@ -1631,8 +1775,12 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
 
   return <div
     ref={viewport}
-    className={`excalibrain-plex${sceneTransitioning || pathChangedThisRender ? " is-scene-transitioning" : ""}${sectionExpanded ? " is-section-expanded" : ""}`}
-    style={{ background: alphaHexToCss(settings.backgroundColor, "#0c2233") }}
+    className={`excalibrain-plex${sceneTransitioning || pathChangedThisRender ? " is-scene-transitioning" : ""}${sectionExpanded ? " is-section-expanded" : ""}${Platform.isIosApp ? " is-ios" : ""}`}
+    style={{
+      background: alphaHexToCss(settings.backgroundColor, "#0c2233"),
+      "--kplex-motion-scale": String(Math.max(0, Math.min(2, settings.animationSpeed))),
+      "--kplex-motion-ms": settings.animationSpeed <= 0 ? "0ms" : `${Math.max(140, Math.round(520 / Math.max(.25, settings.animationSpeed)))}ms`,
+    } as CSSProperties}
     onPointerDown={down}
     onPointerMove={move}
     onPointerUp={up}
@@ -1640,7 +1788,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     onContextMenu={(event: MouseEvent<HTMLDivElement>) => event.preventDefault()}
   >
     {relationshipUpdating && <div className="kplex-relationship-updating" aria-live="polite" aria-busy="true"><ObsidianIcon name="loader-circle" size={16} /><span>Updating relationship…</span></div>}
-    <div ref={cameraElement} className="excalibrain-camera" style={{ transform: `translate3d(${camera.current.x}px, ${camera.current.y}px, 0) scale(${camera.current.scale})` }}>
+    <div ref={cameraElement} className="excalibrain-camera" style={{ transform: `translate(${camera.current.x}px, ${camera.current.y}px) scale(${camera.current.scale})` }}>
       <svg className="excalibrain-links" width="3200" height="2400" viewBox="-1600 -1200 3200 2400">
         <defs>
           <marker id="excalibrain-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M1,1 L8,4.5 L1,8" fill="none" stroke="context-stroke" strokeWidth="1.4" /></marker>
@@ -1652,13 +1800,28 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
           const source = renderedNodeMap.get(treeEdge.sourcePath) ?? scene.nodes.find((node) => node.page.path === treeEdge.sourcePath);
           const target = renderedNodeMap.get(treeEdge.targetPath) ?? scene.nodes.find((node) => node.page.path === treeEdge.targetPath);
           if (!source || !target || !visibleNodePaths.has(source.page.path) || !visibleNodePaths.has(target.page.path)) return null;
-          const sourceX = source.x - source.width * 0.40;
-          const sourceY = source.y + source.height / 2 + 4;
-          const targetX = target.x - target.width * 0.40;
-          const targetY = target.y - target.height / 2 - 4;
-          const bendY = sourceY + Math.max(22, (targetY - sourceY) * 0.42);
-          const d = `M ${sourceX} ${sourceY} L ${sourceX} ${bendY} L ${targetX} ${bendY} L ${targetX} ${targetY}`;
-          return <path key={treeEdge.id} className="kplex-section-tree-edge" d={d} fill="none" vectorEffect="non-scaling-stroke" />;
+          // Folder-tree geometry: each parent owns a vertical spine from its small bottom-left
+          // structural port; the child receives one horizontal L-branch at its left-center edge.
+          // This is intentionally orthogonal and never enters through the semantic top gate.
+          const sourceInset = source.role === "center" ? 20 : 14;
+          const sourceX = source.x - source.width / 2 + sourceInset;
+          const sourceY = source.y + source.height / 2;
+          const targetX = target.x - target.width / 2;
+          const targetY = target.y;
+          const d = `M ${sourceX} ${sourceY} L ${sourceX} ${targetY} L ${targetX} ${targetY}`;
+          const sourceIsCenter = source.role === "center";
+          return <g key={treeEdge.id}>
+            <path className="kplex-section-tree-edge" d={d} fill="none" vectorEffect="non-scaling-stroke" />
+            {sourceIsCenter && <rect
+              className="kplex-section-root-port"
+              x={sourceX - 3.5}
+              y={sourceY - 3.5}
+              width="7"
+              height="7"
+              rx="1.5"
+              vectorEffect="non-scaling-stroke"
+            />}
+          </g>;
         })}
         {visibleEdges.map((edge) => <Edge
           key={edge.id}
@@ -1749,7 +1912,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     </div>
 
     <div className="excalibrain-zoom-controls">
-      <button title="Zoom in" aria-label="Zoom in" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.min(MAX_ZOOM, c.scale * 1.15) })); }}><ObsidianIcon name="zoom-in" size={16} /></button>
+      <button title="Zoom in" aria-label="Zoom in" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.min(Platform.isIosApp ? IOS_MAX_ZOOM : MAX_ZOOM, c.scale * 1.15) })); }}><ObsidianIcon name="zoom-in" size={16} /></button>
       <button title="Zoom out" aria-label="Zoom out" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.max(.3, c.scale / 1.15) })); }}><ObsidianIcon name="zoom-out" size={16} /></button>
       <button title="Fit graph" aria-label="Fit graph" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); fit(); }}><ObsidianIcon name="focus" size={16} /></button>
     </div>

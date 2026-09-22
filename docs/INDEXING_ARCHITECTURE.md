@@ -101,11 +101,13 @@ Obsidian properties configured as type **Date** are mapped through the enabled D
 
 This is different from interpreting every ISO-looking string as a date: K-Plex checks the Obsidian property type registry first.
 
-## Snapshot publication
+## Snapshot publication and startup persistence
 
-`GraphBuilder` constructs a graph privately. `GraphIndex` publishes only a fully collected and resolved state. A rebuild requested while another build is running invalidates the in-flight generation, so stale partial work cannot replace the live graph before the queued rebuild completes.
+`GraphBuilder` constructs a graph privately. `GraphIndex` publishes only a fully collected and resolved state. Rebuilds are generation-scoped and cancellable, so stale partial work cannot replace the live graph. `main.ts` tracks a dirty revision and clears the backlog only when a build actually publishes the revision it started from.
 
-The persisted body parse cache is keyed by file path + mtime and is an optimization only. It does not contain resolved graph semantics.
+The resolved semantic graph is also persisted as a **transactional chunked snapshot** in the K-Plex plugin directory. Pages and original evidence declarations are written to generation-scoped chunk files; the manifest is written last. If Obsidian/WebKit terminates during persistence, the previous manifest remains authoritative and any orphan chunks are removed after the next successful restore. A cheap vault signature plus semantic-settings signature decides whether the restored snapshot is already fresh.
+
+Desktop and Android additionally keep a per-file body parse cache keyed by file path + mtime. That lower-level cache is an optimization only and does not contain resolved graph semantics. On iOS it is intentionally neither restored nor retained across all files: each body is parsed, reduced to graph evidence, then released to reduce WebKit memory pressure. Worker parsing is also disabled on iOS to avoid structured-clone duplication.
 
 ## Compatibility fixture
 
@@ -119,4 +121,4 @@ The golden fixture is `tests/fixtures/excalibrain-indexing`.
 
 The current automated baseline covers README assertions **1–33 plus P1–P2**, including parsing, explicit/inferred reconciliation, K-Plex frontmatter precedence, Previous/Next, Hidden, note type, folders, tags, URLs, Date → Daily Notes, placeholders, and explanation provenance.
 
-Assertions **34–42** describe the planned central-note heading/section expansion and are intentionally pending until that feature is implemented.
+Assertions **34–50** cover the runtime-only central-note section outline, including nested heading structure, folding, projection of hidden descendant relationships to the nearest visible folded section, and restoration of the unchanged note-level persistent index after collapse.

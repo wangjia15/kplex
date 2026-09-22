@@ -474,9 +474,38 @@ export function buildSectionExpandedScene(
     : ordinaryChildren.length
       ? Math.max(...ordinaryChildren.map((node) => node.y + node.height / 2))
       : 90;
-  const startY = normalBottom + Math.max(110, 135 * clamp(1.35 / settings.compactingFactor, 0.55, 1.3));
-  const depthIndent = Math.max(120, 150 * clamp(1.35 / settings.compactingFactor, 0.62, 1.25));
-  const verticalGap = Math.max(72, 92 * clamp(1.35 / settings.compactingFactor, 0.62, 1.25));
+  // Section expansion has its own much steeper density curve. Density 1 deliberately matches the
+  // previous density-4 appearance; density 4 becomes a genuinely compact outline with short tree
+  // branches instead of merely shaving a few pixels from a spacious layout.
+  const sectionDensity = clamp(settings.compactingFactor, 1, 4);
+  const densityT = (sectionDensity - 1) / 3;
+  const mix = (lo: number, hi: number): number => lo + (hi - lo) * densityT;
+
+  // Keep the outline itself very compact at high density, but do not squeeze the semantic
+  // neighbours attached to a section nearly as aggressively. User testing showed that the old
+  // density 2.25 relationship spacing is the right visual target for density 4: compact, but with
+  // a visible sliver of air between sibling thoughts. This remap therefore drives only the
+  // section-attached semantic nodes through a gentler density curve while leaving the L-shaped
+  // structural tree on the steeper section curve above.
+  const relationDensityT = densityT * (5 / 12); // density 4 -> previous density 2.25 spacing
+  const relationMix = (lo: number, hi: number): number => lo + (hi - lo) * relationDensityT;
+
+  const sectionStartGap = mix(78, 26);
+  const depthIndent = mix(92, 28);
+  const verticalGap = mix(48, 20);
+  const relationHorizontalGap = relationMix(60, 24);
+  const relationLateralStep = relationMix(36, 22);
+  const relationVerticalGap = relationMix(66, 38);
+  const relationRowStep = relationMix(38, 22);
+  // These reserves determine section-to-section outline spacing, so keep them on the compact
+  // section curve. The semantic nodes themselves are spaced with relationMix above.
+  const clusterBaseGap = mix(56, 30);
+  const clusterLateralReserve = mix(18, 9);
+  const relationMinGap = relationMix(8, 4);
+  const startY = normalBottom + sectionStartGap;
+  const centerNode = scene.nodes.find((node) => node.role === "center");
+  const centerStructuralX = centerNode ? centerNode.x - centerNode.width / 2 + 20 : -80;
+  const rootLeft = centerStructuralX + mix(92, 24);
   const sectionTreeEdges: SectionTreeEdge[] = [];
   const sectionNodeById = new Map<string, PositionedNode>();
   let cursorY = startY;
@@ -484,9 +513,10 @@ export function buildSectionExpandedScene(
   const makeSectionNode = (section: import("../index/SectionExpansion").ExpandedSection, depth: number, relations: ReturnType<typeof collectForVisibleSection>): PositionedNode => {
     const pseudo: Neighbour = { page: section.page, role: "child", relationType: RelationType.DEFINED, typeDefinition: "section", linkDirection: null };
     const node = makeNode(pseudo, "child", index, settings);
-    node.width = Math.max(190, Math.min(330, node.width + 36));
-    node.height = Math.max(38, node.height + 10);
-    node.x = depth * depthIndent + 32;
+    node.width = Math.max(172, Math.min(286, node.width + mix(16, 2)));
+    node.height = Math.max(32, node.height + mix(3, -1));
+    // x is the card centre; rootLeft is the left edge of the first heading card.
+    node.x = rootLeft + node.width / 2 + depth * depthIndent;
     node.gateStats = {
       top: { visibleCount: relations.parent.length, hasAny: relations.parent.length > 0 },
       bottom: { visibleCount: relations.child.length, hasAny: relations.child.length > 0 },
@@ -500,18 +530,41 @@ export function buildSectionExpandedScene(
     const nodes = items.map((item) => makeNode(item.relation, role, index, settings));
     const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
     const direction = role === "left" || role === "previous" ? -1 : role === "right" || role === "next" ? 1 : 0;
-    nodes.forEach((node, itemIndex) => {
-      if (horizontal) {
-        node.x = sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + 92);
-        node.y = sectionNode.y + (itemIndex - (nodes.length - 1) / 2) * 42;
-      } else {
-        const columns = Math.min(3, Math.max(1, nodes.length));
-        const row = Math.floor(itemIndex / columns);
-        const col = itemIndex % columns;
-        const rowCount = Math.min(columns, nodes.length - row * columns);
-        node.x = sectionNode.x + (col - (rowCount - 1) / 2) * 150;
-        node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (82 + row * 44);
+
+    if (horizontal) {
+      // Side neighbours form a vertical stack. At maximum density, never allow the thought pills
+      // themselves to touch/overlap: preserve a small positive gap even when their rendered height
+      // is larger than the nominal density step.
+      const maxHeight = Math.max(0, ...nodes.map((node) => node.height));
+      const lateralStep = Math.max(relationLateralStep, maxHeight + relationMinGap);
+      nodes.forEach((node, itemIndex) => {
+        node.x = sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + relationHorizontalGap);
+        node.y = sectionNode.y + (itemIndex - (nodes.length - 1) / 2) * lateralStep;
+      });
+    } else {
+      // Parents/children are arranged in rows of up to three. Position each row from the actual
+      // rendered node widths instead of a fixed centre-to-centre step, so long labels can never
+      // make adjacent pills overlap. Row spacing receives the same minimum-air guarantee.
+      const columns = Math.min(3, Math.max(1, nodes.length));
+      const rows = Math.ceil(nodes.length / columns);
+      let rowOffset = 0;
+      for (let row = 0; row < rows; row++) {
+        const start = row * columns;
+        const rowNodes = nodes.slice(start, start + columns);
+        const totalWidth = rowNodes.reduce((sum, node) => sum + node.width, 0) + relationMinGap * Math.max(0, rowNodes.length - 1);
+        let x = sectionNode.x - totalWidth / 2;
+        const rowHeight = Math.max(0, ...rowNodes.map((node) => node.height));
+        const rowStep = Math.max(relationRowStep, rowHeight + relationMinGap);
+        for (const node of rowNodes) {
+          node.x = x + node.width / 2;
+          node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (relationVerticalGap + rowOffset);
+          x += node.width + relationMinGap;
+        }
+        rowOffset += rowStep;
       }
+    }
+
+    nodes.forEach((node, itemIndex) => {
       scene.nodes.push(node);
       const sourced = items[itemIndex];
       scene.edges.push({
@@ -534,8 +587,8 @@ export function buildSectionExpandedScene(
     const lateralCount = Math.max(relations.left.length, relations.right.length);
     const topRows = Math.ceil(relations.parent.length / 3);
     const bottomRows = Math.ceil(relations.child.length / 3);
-    const clusterAbove = Math.max(topRows * 44 + (topRows ? 74 : 0), lateralCount > 1 ? (lateralCount - 1) * 21 : 0);
-    const clusterBelow = Math.max(bottomRows * 44 + (bottomRows ? 74 : 0), lateralCount > 1 ? (lateralCount - 1) * 21 : 0);
+    const clusterAbove = Math.max(topRows * relationRowStep + (topRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
+    const clusterBelow = Math.max(bottomRows * relationRowStep + (bottomRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
     const node = makeSectionNode(section, depth, relations);
     cursorY += clusterAbove;
     node.y = cursorY;
@@ -548,7 +601,6 @@ export function buildSectionExpandedScene(
     addRelationGroup(node, relations.right, "right");
   }
 
-  const centerNode = scene.nodes.find((node) => node.role === "center");
   for (const { section } of visible) {
     const childNode = sectionNodeById.get(section.id);
     if (!childNode) continue;

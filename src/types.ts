@@ -114,6 +114,7 @@ export type GraphPage = {
     actualPath?: string;
     sectionId: string;
     heading?: string;
+    level?: number;
     subpath?: string;
     line?: number;
     start?: number;
