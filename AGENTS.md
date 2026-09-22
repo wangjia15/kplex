@@ -222,11 +222,11 @@ Density must **not** change node interior padding. Use the tight padding from th
 
 ### Companion sidecar
 
-The sidecar is a **native adjacent Obsidian WorkspaceLeaf**, never a fake nested leaf inside React. “Sidecar” is a geometric/UI state of a pinned tab: when the pinned tab is adjacent to K-Plex the edge controls are visible; moving it away hides those controls without breaking the pin; moving it back restores them. On startup prefer a visible adjacent loaded document leaf over Obsidian's deferred/hidden “most recent” leaf. `_loaded` may be used only as an isolated optional compatibility hint (`FileView & { _loaded?: boolean }`), never as the sole criterion. Detach breaks synchronization but leaves the native tab open. Sidecar is unavailable when K-Plex itself is hosted in a sidepanel.
+The sidecar is a **native adjacent Obsidian WorkspaceLeaf**, never a fake nested leaf inside React. “Sidecar” is a geometric/UI state of a pinned tab: when the pinned tab is adjacent to K-Plex the edge controls are visible; moving it away hides those controls without breaking the pin; moving it back restores them. On startup prefer a visible adjacent loaded document leaf over Obsidian's deferred/hidden “most recent” leaf. `_loaded` may be used only as an isolated optional compatibility hint (`FileView & { _loaded?: boolean }`), never as the sole criterion. Detach breaks synchronization but leaves the native tab open. Closing K-Plex must also release ownership without detaching the user's companion document. Sidecar Markdown mode is a persisted K-Plex default (Reading view vs Edit/source mode). Folding K-Plex in sidecar mode hides the complete K-Plex tab-group DOM container, keeps both workspace leaves alive, and mounts the recovery/unfold button on the surviving document tab group; all fold state is ephemeral and must be restored on leaf removal/plugin unload. Sidecar is unavailable when K-Plex itself is hosted in a sidepanel.
 
 ### Runtime section outline
 
-Central-note heading expansion remains outside the persistent graph index. Nested headings form a transient foldable outline tree. Section nodes are compact theme-aware outline cards; structural outline edges use a distinct **solid orthogonal folder-tree** geometry: vertical spine from the parent's lower-left structural port, horizontal L-branch into the child's left-center port. Semantic relationships still use normal K-Plex gates. Folding hides descendants and projects their relationships to the nearest visible folded ancestor while preserving the original hidden section as explainability provenance. Fold/unfold must preserve the exact camera and suppress transient ResizeObserver auto-fit long enough for the complete section reflow to settle.
+Central-note heading expansion remains outside the persistent graph index. Nested headings form a transient foldable outline tree. Section nodes are compact theme-aware outline cards; structural outline edges use a distinct **solid orthogonal folder-tree** geometry: vertical spine from the parent's lower-left structural port, horizontal L-branch into the child's left-center port. Semantic relationships still use normal K-Plex gates. A Markdown central node always exposes the small lower-left fold handle so sections can be unfolded directly; non-Markdown centers must not render that handle. Folding hides descendants and projects their relationships to the nearest visible folded ancestor while preserving the original hidden section as explainability provenance. Fold/unfold must preserve the exact camera and suppress transient ResizeObserver auto-fit long enough for the complete section reflow to settle.
 
 ## Expanded view contract
 
@@ -307,6 +307,16 @@ Use a wide dropdown and do not allow long paths/titles to make results unreadabl
 - zoom is hard-capped at 300%; do not expose a separate max-zoom setting
 
 ## Drag-connect and relinking
+
+### Add-relationship composer
+
+The create-relationship path uses one React modal and the shared `FuzzySearchInput`; do not reintroduce a second note picker or a separate “create note” modal. Both suggesters are closed until the user actually types. Selecting an existing note is a two-step flow: retain the selection, allow ontology edits, then commit with the fixed-width Link action. New-note buttons stay disabled unless the filename is valid and globally unused; Markdown is the default action and Ctrl/Cmd+Enter is its shortcut. Command-palette actions for Parent/Child/Friend/Challenger are gated by a running K-Plex view and are intended to be user-hotkeyable. New Markdown/Excalidraw files must resolve their parent through the public `app.fileManager.getNewFileParent(sourcePath, newFilePath?)` API using the current K-Plex center as `sourcePath`. Ontology input is fuzzy-searchable, remembers one default per gate role, and a newly typed ontology field becomes a real hierarchy item in settings before the relationship is written.
+
+Connector unlinking is provenance-safe. Direct deletion is allowed only when one frontmatter ontology declaration is the sole editable source of the visible pair; an Obsidian `resolvedLinks` entry that points to the exact same YAML property line is treated as a mirrored cache view, not a second user declaration. Any body link, inline ontology, multiple occurrence, or other competing evidence must fall back to the explanation dialog. Explanation rows for Markdown-backed evidence should provide line navigation in a **new Markdown tab** via ephemeral state rather than mutating the user's existing document leaf or persisted scroll state.
+
+### Extension-resolution compatibility
+
+Some upgraded development checkouts may still contain both `src/ui/NewRelatedNoteModal.ts` and the older `.tsx` path. The `.ts` module is canonical; `esbuild.config.mjs` deliberately resolves `.ts` before `.tsx` so the production bundle matches TypeScript. Keep the two files behaviorally synchronized until the legacy `.tsx` copy can be removed from a full-repository distribution.
 
 ### Create relationship from gate
 

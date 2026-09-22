@@ -10,6 +10,7 @@ import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChi
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
+import { RenameNoteModal } from "./RenameNoteModal";
 import { buildCentralSectionExpansion, canExpandCentralSections, type CentralSectionExpansion } from "../index/SectionExpansion";
 import type { PlexFilterState } from "./PlexFilter";
 
@@ -494,6 +495,11 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   const [zoneScrollTop, setZoneScrollTop] = useState<ScrollValues>({ ...EMPTY_SCROLLS });
   const [zoneFilterOpen, setZoneFilterOpen] = useState<ZoneBooleanMap>({});
   const [zoneFilters, setZoneFilters] = useState<ZoneStringMap>({});
+  const [pendingRelationshipFlair, setPendingRelationshipFlair] = useState<{ path: string; requestedAt: number } | null>(null);
+  const [activeRelationshipFlair, setActiveRelationshipFlair] = useState<string | null>(null);
+  const [flairFilterZone, setFlairFilterZone] = useState<ScrollZone | null>(null);
+  const flairClearTimer = useRef<number | null>(null);
+  const flairPendingTimer = useRef<number | null>(null);
   const [expandedScrollTop, setExpandedScrollTop] = useState<Record<string, number>>({});
   const [connectDrag, setConnectDrag] = useState<ConnectDrag | null>(null);
   const [nodeDrag, setNodeDrag] = useState<NodeDrag | null>(null);
@@ -513,6 +519,11 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     suppressAutoFitUntil.current = Date.now() + 2500;
     setExpandedSectionIds(updater);
   };
+  const toggleCentralSections = (): void => {
+    preserveCameraOnNextLayout.current = true;
+    suppressAutoFitUntil.current = Date.now() + 2500;
+    setSectionExpanded((current) => !current);
+  };
   const sceneTransitionTimer = useRef<number | null>(null);
   const transitionPath = useRef(activePath);
   const pathChangedThisRender = transitionPath.current !== activePath;
@@ -531,6 +542,23 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   };
 
   useEffect(() => () => cancelTouchLongPress(), []);
+
+  useEffect(() => plugin.subscribeRelationshipFlair((path) => {
+    if (flairClearTimer.current !== null) window.clearTimeout(flairClearTimer.current);
+    if (flairPendingTimer.current !== null) window.clearTimeout(flairPendingTimer.current);
+    setActiveRelationshipFlair(null);
+    setFlairFilterZone(null);
+    setPendingRelationshipFlair({ path, requestedAt: Date.now() });
+    flairPendingTimer.current = window.setTimeout(() => {
+      flairPendingTimer.current = null;
+      setPendingRelationshipFlair((current) => current?.path === path ? null : current);
+    }, 15000);
+  }), [plugin]);
+
+  useEffect(() => () => {
+    if (flairClearTimer.current !== null) window.clearTimeout(flairClearTimer.current);
+    if (flairPendingTimer.current !== null) window.clearTimeout(flairPendingTimer.current);
+  }, []);
 
   const clearHoverIntent = (clearActive = false) => {
     if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
@@ -629,10 +657,13 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const root = viewport.current;
     if (!root) return;
 
-    // Establish the *new scene's* camera before FLIP measures target rectangles. Previously the
-    // nodes were measured against the old camera and auto-fit moved the entire canvas one effect
-    // later, masking much of the old→new thought migration. Section folds explicitly opt out.
-    if (!preserveCameraOnNextLayout.current) {
+    // Recenter only for initial display or explicit navigation. Index/metadata updates often add
+    // or move thoughts a second after an autosave or Sync event; those updates must preserve the
+    // user's exact camera and bounded-list scroll positions. FLIP still animates nodes into their
+    // new layout, but the canvas itself stays anchored.
+    const preserveCamera = preserveCameraOnNextLayout.current;
+    const shouldRecenter = !preserveCamera && (previousNodeRects.current.size === 0 || pathChangedThisRender);
+    if (shouldRecenter) {
       if (settings.allowAutozoom) fit();
       else {
         const el = viewport.current;
@@ -688,6 +719,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       });
     }
     previousNodeRects.current = nextRects;
+    preserveCameraOnNextLayout.current = false;
   }, [sceneLayoutKey, settings.animationSpeed]);
 
   const fit = () => {
@@ -748,6 +780,8 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   };
 
   useEffect(() => {
+    // Zone scroll/filter state is navigation state. Reset it only when the central note changes,
+    // never when the same graph receives a delayed metadata/index update.
     const nextScrolls: ScrollValues = { ...EMPTY_SCROLLS };
     for (const zone of ZONES) nextScrolls[zone] = scene.zoneViewports[zone]?.initialScrollTop ?? 0;
     setZoneScrollTop(nextScrolls);
@@ -759,24 +793,14 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     setNodeDrag(null);
     panDrag.current = null;
 
-    const preserveCamera = preserveCameraOnNextLayout.current;
-    preserveCameraOnNextLayout.current = false;
     const resetTimer = window.setTimeout(() => {
       for (const zone of ZONES) {
         const scrollEl = zoneScrollRefs.current[zone];
         if (scrollEl) scrollEl.scrollTop = nextScrolls[zone];
       }
-      // Density is an in-place layout refinement. Rebuilding node positions must not trigger
-      // Fit/autozoom and make the graph jump away from the user's current camera position.
-      if (preserveCamera) return;
-      if (settings.allowAutozoom) fit();
-      else {
-        const el = viewport.current;
-        if (el) applyCamera({ x: el.clientWidth / 2, y: el.clientHeight / 2, scale: 1 });
-      }
     }, 0);
     return () => window.clearTimeout(resetTimer);
-  }, [sceneLayoutKey, settings.allowAutozoom]);
+  }, [activePath]);
 
   useEffect(() => {
     const el = viewport.current;
@@ -896,6 +920,51 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     }
     return map;
   }, [scene.nodes, scene.zoneViewports, zoneDisplayLayouts, zoneScrollTop, nodeDrag]);
+
+  useEffect(() => {
+    const pending = pendingRelationshipFlair;
+    if (!pending) return;
+    const targetNode = scene.nodes.find((node) => node.page.path === pending.path);
+    if (!targetNode) return;
+
+    const finishFlair = (path: string | null, filterZone: ScrollZone | null) => {
+      if (flairPendingTimer.current !== null) {
+        window.clearTimeout(flairPendingTimer.current);
+        flairPendingTimer.current = null;
+      }
+      setPendingRelationshipFlair(null);
+      setActiveRelationshipFlair(path);
+      setFlairFilterZone(filterZone);
+      if (flairClearTimer.current !== null) window.clearTimeout(flairClearTimer.current);
+      flairClearTimer.current = window.setTimeout(() => {
+        flairClearTimer.current = null;
+        setActiveRelationshipFlair(null);
+        setFlairFilterZone(null);
+      }, 3600);
+    };
+
+    const zone = zoneForRole(targetNode.role);
+    if (zone && scene.zoneViewports[zone]) {
+      const layout = zoneDisplayLayouts[zone];
+      const local = layout?.localPositions.get(pending.path);
+      if (!local) {
+        // The relationship exists, but a bounded-list filter is hiding it. Point the user's
+        // attention at the filter rather than silently failing to show where the new link went.
+        finishFlair(null, zone);
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        const scrollEl = zoneScrollRefs.current[zone];
+        if (!scrollEl) return;
+        const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+        const targetTop = Math.max(0, Math.min(maxScroll, local.y - scrollEl.clientHeight / 2));
+        scrollEl.scrollTo({ top: targetTop, behavior: "smooth" });
+      });
+    }
+
+    finishFlair(pending.path, null);
+  }, [pendingRelationshipFlair, scene.nodes, scene.zoneViewports, zoneDisplayLayouts]);
 
   const visibleNodePaths = useMemo(() => {
     const paths = new Set<string>();
@@ -1474,6 +1543,13 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         .onClick(() => plugin.openNoteTypeModal(persistent)));
     }
 
+    if (persistent?.file && page.transient?.kind !== "section") {
+      menu.addItem((item) => item
+        .setTitle("Rename note…")
+        .setIcon("pencil-line")
+        .onClick(() => new RenameNoteModal(plugin, persistent.file!).open()));
+    }
+
     if (persistent && page.transient?.kind !== "section") {
       const pinned = plugin.isPinned(persistent.path);
       menu.addItem((item) => item
@@ -1487,7 +1563,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       menu.addItem((item) => item
         .setTitle(sectionExpanded ? "Collapse note sections" : "Expand note to sections")
         .setIcon(sectionExpanded ? "fold-vertical" : "unfold-vertical")
-        .onClick(() => setSectionExpanded((current) => !current)));
+        .onClick(() => toggleCentralSections()));
       if (sectionExpanded && sectionExpansion) {
         menu.addItem((item) => item
           .setTitle("Fold all sections")
@@ -1568,15 +1644,32 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     const targetNode = renderedNodeMap.get(edge.targetPath) ?? scene.nodes.find((node) => node.page.path === edge.targetPath);
     const explanationSection = sectionExpansion?.sections.find((section) => section.page.path === explanationSourcePath);
     const explanationTargetSection = sectionExpansion?.sections.find((section) => section.page.path === explanationTargetPath);
+    const openExplanation = () => new RelationshipExplanationModal(plugin, explanation, {
+      role: edge.role,
+      centerPath: neighborhood?.center.path,
+      sourceTitle: explanationSection?.page.name ?? sourceNode?.label,
+      targetTitle: explanationTargetSection?.page.name ?? targetNode?.label,
+    }).open();
+
     menu.addItem((item) => item
       .setTitle("Explain relationship")
       .setIcon("circle-help")
-      .onClick(() => new RelationshipExplanationModal(plugin, explanation, {
-        role: edge.role,
-        centerPath: neighborhood?.center.path,
-        sourceTitle: explanationSection?.page.name ?? sourceNode?.label,
-        targetTitle: explanationTargetSection?.page.name ?? targetNode?.label,
-      }).open()));
+      .onClick(openExplanation));
+
+    menu.addItem((item) => item
+      .setTitle("Unlink connection")
+      .setIcon("unlink")
+      .onClick(() => {
+        void plugin.directFrontmatterUnlinkCandidate(explanation.decisions.map((decision) => decision.evidence)).then(async (candidate) => {
+          if (!candidate) {
+            openExplanation();
+            return;
+          }
+          const removed = await plugin.unlinkFrontmatterEvidence(candidate);
+          if (!removed) openExplanation();
+          else clearHoverIntent(true);
+        }).catch(() => openExplanation());
+      }));
     const doc = viewport.current?.ownerDocument ?? document;
     menu.showAtPosition({ x: clientX, y: clientY }, doc);
   };
@@ -1597,6 +1690,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
       dimmed={!connectDrag && hover !== null && !interaction.nodePaths.has(baseNode.page.path)}
       highlightedGates={highlightedGates}
       dragging={nodeDrag?.path === baseNode.page.path}
+      flair={activeRelationshipFlair === baseNode.page.path}
       connectionState={connectionStateFor(baseNode)}
       onActivate={() => activateNode(baseNode.page)}
       onOpen={() => openNode(baseNode.page)}
@@ -1629,7 +1723,14 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
             return next;
           }),
         };
-      })() : undefined}
+      })() : (baseNode.role === "center" && persistentPageFor(baseNode.page)?.file?.extension === "md" ? {
+        hasChildren: true,
+        expanded: sectionExpanded,
+        hiddenDescendantCount: 0,
+        expandedTitle: "Fold note sections",
+        foldedTitle: "Unfold note sections",
+        onToggle: toggleCentralSections,
+      } : undefined)}
     />;
   };
 
@@ -1670,7 +1771,7 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
           onPointerDown={(event: PointerEvent<HTMLInputElement>) => event.stopPropagation()}
           autoFocus
         />}
-        <span className="kplex-zone-filter-control">
+        <span className={`kplex-zone-filter-control${flairFilterZone === zone ? " is-new-flair" : ""}`}>
           <span className="kplex-zone-count" aria-label={`${layout.count} ${zoneTitle(zone).toLowerCase()}`}>{layout.count}</span>
           <button
             className={`kplex-zone-filter-button${zoneFilterOpen[zone] ? " is-on" : ""}`}

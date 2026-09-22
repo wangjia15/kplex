@@ -33,6 +33,9 @@ const context = await esbuild.context({
   banner: { js: "/* ExcaliBrain - generated bundle */" },
   entryPoints: ["src/main.ts"],
   bundle: true,
+  // Keep extensionless imports aligned with TypeScript's resolution order. A legacy
+  // NewRelatedNoteModal.tsx may still exist in upgraded checkouts beside the canonical .ts file.
+  resolveExtensions: [".ts", ".tsx", ".js", ".jsx", ".css", ".json"],
   external: [
     "obsidian",
     "electron",

@@ -1,7 +1,7 @@
 import { Modal } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import { RelationType, type Role } from "../types";
-import type { EvidenceDecision, EvidenceSourceKind } from "../index/RelationEvidence";
+import type { EvidenceDecision, EvidenceSourceKind, RelationEvidence } from "../index/RelationEvidence";
 import type { RelationshipExplanation } from "../index/RelationResolver";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -42,6 +42,8 @@ function evidenceDescription(decision: EvidenceDecision): string {
 }
 
 export class RelationshipExplanationModal extends Modal {
+  private closed = false;
+
   constructor(
     private plugin: ExcaliBrainPlugin,
     private explanation: RelationshipExplanation,
@@ -50,7 +52,25 @@ export class RelationshipExplanationModal extends Modal {
     super(plugin.app);
   }
 
+  private async addNavigationActions(row: HTMLElement, evidence: RelationEvidence): Promise<void> {
+    const locations = await this.plugin.relationshipEvidenceLocations(evidence);
+    if (this.closed || !row.isConnected || !locations.length) return;
+
+    const actions = row.createDiv({ cls: "kplex-explanation-actions" });
+    for (const location of locations) {
+      const button = actions.createEl("button", {
+        cls: "kplex-explanation-navigate",
+        text: location.label,
+        attr: { type: "button", title: `${location.path}:${location.line + 1}` },
+      });
+      button.addEventListener("click", () => {
+        void this.plugin.openRelationshipEvidenceLocation(location).then(() => this.close());
+      });
+    }
+  }
+
   onOpen(): void {
+    this.closed = false;
     const source = this.plugin.index.get(this.explanation.sourcePath);
     const target = this.plugin.index.get(this.explanation.targetPath);
     const sourceTitle = this.displayContext?.sourceTitle
@@ -102,10 +122,12 @@ export class RelationshipExplanationModal extends Modal {
       row.createSpan({ cls: "kplex-explanation-description", text: evidenceDescription(decision) });
       if (decision.evidence.rawValue) row.createEl("code", { text: decision.evidence.rawValue });
       if (decision.suppressionReason) row.createDiv({ cls: "kplex-explanation-reason", text: decision.suppressionReason });
+      void this.addNavigationActions(row, decision.evidence);
     }
   }
 
   onClose(): void {
+    this.closed = true;
     this.contentEl.empty();
   }
 }

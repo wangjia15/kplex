@@ -1,7 +1,6 @@
 import { Modal, Notice, TFile, getIcon } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GateRole, GateSide, GraphPage, LinkDirection } from "../types";
-import { NewRelatedNoteModal } from "./NewRelatedNoteModal";
 
 export type RelationModalOptions = {
   mode: "create" | "relink";
@@ -323,16 +322,6 @@ export class RelationModal extends Modal {
     });
     updateInverseHint();
     updateStorageHint();
-
-    if (!this.options.fixedTarget && this.options.mode === "create") {
-      const newButton = this.contentEl.createEl("button", { cls: "kplex-relation-new-note", attr: { type: "button" } });
-      addIcon(newButton, "file-plus-2");
-      newButton.createSpan({ text: "Create new note…" });
-      newButton.addEventListener("click", () => {
-        new NewRelatedNoteModal(this.plugin, this.options.origin, this.semanticRole, this.selectedField, this.options.onCommitted).open();
-        this.close();
-      });
-    }
 
     const actions = this.contentEl.createDiv({ cls: "kplex-relation-actions" });
     const cancel = actions.createEl("button", { attr: { type: "button", title: "Cancel", "aria-label": "Cancel" } });

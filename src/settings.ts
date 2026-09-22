@@ -165,6 +165,8 @@ export interface ExcaliBrainSettings {
   sidecarPosition: SidecarPosition;
   sidecarMarkdownMode: SidecarMarkdownMode;
   sidecarCondensedBreakpoint: number;
+  /** Remember the last ontology field used by each add-relationship action. */
+  relationDefaultFields: { parent: string; child: string; left: string; right: string };
   /** How K-Plex is paired with a note tab. */
   documentSyncMode: DocumentSyncMode;
   /** Animation speed multiplier: 0 disables motion; 1 is normal; 2 is very fast. */
@@ -259,6 +261,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sidecarPosition: "right",
   sidecarMarkdownMode: "preview",
   sidecarCondensedBreakpoint: 560,
+  relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger" },
   documentSyncMode: "off",
   animationSpeed: 1
 };
@@ -388,6 +391,12 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     sidecarPosition: old.sidecarPosition === "left" || old.sidecarPosition === "above" || old.sidecarPosition === "below" ? old.sidecarPosition : "right",
     sidecarMarkdownMode: old.sidecarMarkdownMode === "source" ? "source" : "preview",
     sidecarCondensedBreakpoint: Math.max(360, Math.min(900, finite(old.sidecarCondensedBreakpoint, 560))),
+    relationDefaultFields: {
+      parent: String(old.relationDefaultFields?.parent ?? DEFAULT_SETTINGS.relationDefaultFields.parent),
+      child: String(old.relationDefaultFields?.child ?? DEFAULT_SETTINGS.relationDefaultFields.child),
+      left: String(old.relationDefaultFields?.left ?? DEFAULT_SETTINGS.relationDefaultFields.left),
+      right: String(old.relationDefaultFields?.right ?? DEFAULT_SETTINGS.relationDefaultFields.right),
+    },
     documentSyncMode,
     animationSpeed: Math.max(0, Math.min(2, finite(old.animationSpeed, 1))),
     // Keep legacy flags coherent for imported settings and older code paths.
@@ -698,9 +707,6 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Animation speed", desc: "Speed multiplier: 0 = off, 0.5 = slow, 1 = normal, 1.5 = fast, 2 = very fast. Shared thoughts visibly migrate to their new position while the newly selected center arrives a little sooner.", control: { type: "slider", key: "animationSpeed", min: 0, max: 2, step: 0.1 } },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
               { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
-              { name: "Sidecar position", desc: "A sidecar is a real adjacent Obsidian workspace leaf managed by K-Plex and synchronized to the central node. It is not available when K-Plex itself is in a sidepanel.", control: { type: "dropdown", key: "sidecarPosition", defaultValue: "right", options: { right: "Right", left: "Left", above: "Above", below: "Below" } } },
-              { name: "Sidecar Markdown mode", desc: "Default mode for ordinary Markdown files opened in the managed sidecar. Plugin-specific views such as Excalidraw keep their own native view type.", control: { type: "dropdown", key: "sidecarMarkdownMode", defaultValue: "preview", options: { preview: "Reading / preview", source: "Editing / source" } } },
-              { name: "Condensed Plex breakpoint", desc: "When a companion sidecar makes the K-Plex leaf narrower than this width, use the active device's sidepanel density/column profile.", control: { type: "slider", key: "sidecarCondensedBreakpoint", min: 360, max: 900, step: 20 } },
               { name: "Expanded toolbar", desc: "Show the full visibility/layout toolbar. When disabled, K-Plex keeps only the most important navigation controls visible.", control: { type: "toggle", key: "toolbarExpanded" } },
               {
                 name: "Mouse navigation",
@@ -810,24 +816,6 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
       },
       {
         type: "page",
-        name: "Compatibility",
-        desc: "Migration and legacy ExcaliBrain interoperability.",
-        items: [
-          {
-            type: "group",
-            heading: "ExcaliBrain",
-            items: [
-              {
-                name: "Import ExcaliBrain settings",
-                desc: "Import a backed-up ExcaliBrain data.json file and migrate compatible settings into K-Plex.",
-                action: () => this.openLegacySettingsImporter(),
-              },
-            ],
-          },
-        ],
-      },
-      {
-        type: "page",
         name: "Appearance",
         desc: "Node, gate and note type styling.",
         items: [
@@ -864,7 +852,58 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
             ]
           },
         ]
-      }
+      },
+
+      {
+        type: "page",
+        name: "Sidecar",
+        desc: "Companion document placement and behavior.",
+        items: [
+          {
+            type: "group",
+            heading: "Companion document",
+            items: [
+              {
+                name: "Default position",
+                desc: "Where a newly opened companion sidecar is placed relative to K-Plex.",
+                control: { type: "dropdown", key: "sidecarPosition", defaultValue: "right", options: { right: "Right", left: "Left", above: "Above", below: "Below" } }
+              },
+              {
+                name: "Default Markdown mode",
+                desc: "Open Markdown notes in the sidecar in reading view or source/edit mode.",
+                control: { type: "dropdown", key: "sidecarMarkdownMode", defaultValue: "preview", options: { preview: "Reading view", source: "Edit mode" } }
+              },
+              {
+                name: "Condensed Plex breakpoint",
+                desc: "When the remaining K-Plex width is at or below this value, use the compact sidecar toolbar layout.",
+                control: { type: "slider", key: "sidecarCondensedBreakpoint", min: 280, max: 900, step: 20 }
+              },
+              {
+                name: "Fold K-Plex",
+                desc: "When a companion sidecar is open, use the fold button beside the graph to temporarily hide the entire K-Plex tab group. An unfold button remains on the document edge."
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "page",
+        name: "Compatibility",
+        desc: "Migration and legacy ExcaliBrain interoperability.",
+        items: [
+          {
+            type: "group",
+            heading: "ExcaliBrain",
+            items: [
+              {
+                name: "Import ExcaliBrain settings",
+                desc: "Import a backed-up ExcaliBrain data.json file and migrate compatible settings into K-Plex.",
+                action: () => this.openLegacySettingsImporter(),
+              },
+            ],
+          },
+        ],
+      },
     ];
   }
 

@@ -90,7 +90,7 @@ Two one-shot actions are available both from the sync menu and the Command Palet
 - **Sync most recent note tab with K-Plex** — load the current central K-Plex note into the most recently used note tab.
 - **Sync K-Plex with most recent note tab** — make the note in the most recently used note tab the K-Plex center.
 
-For persistent behavior choose **not linked**, **linked to most recent note tab**, or **pinned to one fixed note tab**. A pinned note tab is considered a companion sidecar whenever it is physically adjacent to K-Plex; moving it elsewhere hides the sidecar controls without breaking the pin, and moving it back beside K-Plex restores those controls. Opening the companion sidecar creates or reuses an adjacent visible note tab and switches K-Plex to pinned mode. Closing the sidecar closes that pinned tab, while Detach leaves it open and removes synchronization.
+For persistent behavior choose **not linked**, **linked to most recent note tab**, or **pinned to one fixed note tab**. A pinned note tab is considered a companion sidecar whenever it is physically adjacent to K-Plex; moving it elsewhere hides the sidecar controls without breaking the pin, and moving it back beside K-Plex restores those controls. Opening the companion sidecar creates or reuses an adjacent visible note tab and switches K-Plex to pinned mode. Closing K-Plex itself releases that companion tab but deliberately leaves the user's document open.
 
 
 ## Companion sidecar
@@ -100,9 +100,10 @@ K-Plex can manage a **companion sidecar** next to a normal K-Plex leaf. The side
 - The sidecar can be placed to the right, left, above or below K-Plex. Adjacency is measured from the containing workspace tab-group geometry rather than only the inner view body, so stacked panes remain recognizable even though Obsidian's tab header creates a visual gap between `ItemView.containerEl` rectangles.
 - Its native Obsidian divider controls the relative size of the two areas.
 - It stays hard-linked to the current K-Plex center and updates automatically as you navigate.
-- Markdown defaults to the configured reading/preview or source mode; plugin-owned file views such as Excalidraw remain native.
+- Markdown defaults to the configured **Reading view** or **Edit mode**; plugin-owned file views such as Excalidraw remain native.
 - URL centers are sent to Obsidian's built-in Web Viewer when available.
-- Edge controls beside the Plex collapse the sidecar, move it, or **detach** it. The controls are positioned against the complete K-Plex leaf rather than only the graph canvas, so they remain visible on the actual divider edge for above/below as well as left/right sidecars. Detach stops K-Plex synchronization but leaves the native Obsidian tab open exactly where it is, so it becomes an ordinary independent document/view.
+- Edge controls beside the Plex can **fold K-Plex**, close the companion sidecar, move it, or **detach** it. Folding hides the entire K-Plex tab group from the split and leaves a small unfold control on the document-side edge, giving the companion document the available split area without detaching either leaf.
+- Detach stops K-Plex synchronization but leaves the native Obsidian tab open exactly where it is, so it becomes an ordinary independent document/view. Closing K-Plex also leaves the companion document open; only the explicit close-sidecar action closes that companion leaf.
 - At workspace startup K-Plex prefers an already-visible adjacent document tab over Obsidian's sometimes misleading deferred “most recent” tab, so a restored sidecar reconnects to the pane the user actually sees.
 - If the remaining K-Plex width becomes smaller than the configured condensed breakpoint, K-Plex switches to the current device's sidepanel density/column profile.
 - The companion sidecar is unavailable when K-Plex itself is already running in an Obsidian sidepanel.
@@ -180,7 +181,7 @@ For a Markdown central node, right-click (or long-press on touch) and choose **E
 
 - Section nodes use compact theme-aware outline cards and a separate **solid orthogonal folder-tree connector**, so Markdown structure remains visually distinct from semantic K-Plex relationships.
 - The outline spine leaves a small square structural port near the lower-left of the parent and enters each child at its **left-center edge**. The resulting vertical-spine + horizontal-branch “L” geometry never routes through the normal top/bottom relationship gates.
-- Nested headings form a foldable tree. A small square fold handle shows whether a section with descendants is expanded or folded. Section spacing uses a deliberately steeper density curve than the ordinary Plex: density 1 is already compact, while density 4 reduces vertical gaps and tree-branch indentation to a very tight outline.
+- Nested headings form a foldable tree. A small square fold handle shows whether a section with descendants is expanded or folded. The same square appears on the lower-left of a Markdown central note even while its sections are folded, so the outline can be opened directly without using the context menu. Non-Markdown central nodes do not show this control. Section spacing uses a deliberately steeper density curve than the ordinary Plex: density 1 is already compact, while density 4 reduces vertical gaps and tree-branch indentation to a very tight outline.
 - Folding a section hides its descendant headings and projects the hidden descendants' semantic relationships onto the nearest visible folded ancestor. Explainability still identifies the exact hidden section that originally declared each projected relationship.
 - Section context menus provide one-level and recursive fold/unfold actions; the central node also offers **Fold all sections** / **Unfold all sections** while expanded.
 - YAML/frontmatter relationships and links before the first heading stay attached to the central note.
@@ -206,7 +207,9 @@ Generic labels such as Parent, Child, Friend, Challenger and structural file/tag
 
 ### Explain relationships
 
-Right-click a visible connector and choose **Explain relationship** to see why K-Plex placed that relationship where it did. The explanation shows the resolved role plus the underlying evidence, such as frontmatter ontology, body ontology, ordinary Obsidian links, folder/tag structure, URLs or Date-property links.
+Right-click a visible connector and choose **Explain relationship** to see why K-Plex placed that relationship where it did. The explanation shows the resolved role plus the underlying evidence, such as frontmatter ontology, body ontology, ordinary Obsidian links, folder/tag structure, URLs or Date-property links. Evidence that comes from a Markdown file also exposes **Navigate** actions: K-Plex opens a new native Markdown tab and uses ephemeral line state to jump to the relevant property/link without changing the saved workspace scroll state.
+
+Connector menus also include **Unlink connection**. When exactly one editable frontmatter ontology declaration is responsible for the relationship (ignoring Obsidian's mirrored resolved-link cache entry for that same YAML link), K-Plex removes it directly. Ambiguous cases—multiple declarations, body/inline links, or other evidence—open the same explanation dialog instead of guessing which source should be edited.
 
 When frontmatter deliberately overrides conflicting body ontology, the body evidence is retained and shown as **OVERRIDDEN** rather than discarded. This makes the visible result deterministic while keeping the source conflict inspectable.
 
@@ -231,9 +234,9 @@ Normal hover does not open page preview.
 
 Drag from a gate to create a relationship.
 
-If you release on empty Plex space, K-Plex opens a relationship dialog where you can choose a target Markdown note and ontology field. If you release on a specific node/gate, that target and gate help determine the proposed relationship.
+If you release on empty Plex space, K-Plex opens one compact relationship dialog. Both fuzzy result lists start closed and only open after the user types. Selecting an existing note keeps the dialog open so the ontology can still be changed; the create controls are replaced in-place by a **Link** button without changing the row width. For a new note name, Markdown is the default create action and **Ctrl/Cmd+Enter** creates it immediately. Markdown/Excalidraw creation stays disabled until the name is valid and no Markdown/Excalidraw note with that name already exists anywhere in the vault. K-Plex rejects cross-platform-invalid filename characters such as `< > : " / \ | ? *`, trailing periods/spaces, and reserved device names. New files use Obsidian's configured **Default location for new notes**, resolved relative to the current K-Plex center when Obsidian is configured to create notes beside the current file.
 
-The relationship dialog also offers **Create new note…**. K-Plex can create a Markdown note and immediately connect it. If the Excalidraw plugin is installed, **Excalidraw drawing** is also available; K-Plex delegates drawing creation to Excalidraw so its normal configured-template prompt is preserved.
+The ontology field is fuzzy-searchable as well. It starts with the role's remembered default (Parent, Child, Friend, or Challenger initially). Choosing or typing a different field makes that field the default for the next relationship of the same role. A new field name is added to the matching K-Plex ontology list automatically. Command Palette actions **Add child**, **Add parent**, **Add friend**, and **Add challenger** open the same dialog and are only available while K-Plex is running, so users can assign their own hotkeys to any of them.
 
 The default direction follows the gate you started from:
 
@@ -329,12 +332,15 @@ When the physical vault structure is unchanged but a few Markdown files changed 
 
 ## Settings
 
-K-Plex settings are organized into four main pages:
+K-Plex settings are organized into five pages, in this order:
 
 - **Graph** — navigation, layout, visibility and connector behavior
 - **Ontology** — relationship field names and ontology suggester triggers
-- **Compatibility** — legacy ExcaliBrain import
 - **Appearance** — Plex, gate and Note type styling
+- **Sidecar** — companion position, default Markdown mode and sidecar presentation behavior
+- **Compatibility** — legacy ExcaliBrain import
+
+The three resource links at the top share one compact row whenever the settings width allows it.
 
 The Graph page also controls zone heights, parent/child columns, maximum nodes per zone, density, connector style, arrowheads and visibility of supported node types.
 

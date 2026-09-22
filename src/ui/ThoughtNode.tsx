@@ -16,6 +16,7 @@ export function ThoughtNode({
   dimmed,
   highlightedGates,
   dragging,
+  flair = false,
   connectionState = "normal",
   onActivate,
   onOpen,
@@ -35,6 +36,7 @@ export function ThoughtNode({
   dimmed: boolean;
   highlightedGates: ReadonlySet<GateSide>;
   dragging?: boolean;
+  flair?: boolean;
   connectionState?: ConnectionDragState;
   onActivate: (node: PositionedNode) => void;
   onOpen: (node: PositionedNode) => void;
@@ -45,7 +47,14 @@ export function ThoughtNode({
   onGatePointerDown: (node: PositionedNode, gate: GateSide, event: ReactPointerEvent<HTMLSpanElement>) => void;
   onNodePointerDown: (node: PositionedNode, event: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (node: PositionedNode, event: MouseEvent<HTMLDivElement>) => void;
-  sectionFold?: { hasChildren: boolean; expanded: boolean; hiddenDescendantCount: number; onToggle: () => void };
+  sectionFold?: {
+    hasChildren: boolean;
+    expanded: boolean;
+    hiddenDescendantCount: number;
+    onToggle: () => void;
+    expandedTitle?: string;
+    foldedTitle?: string;
+  };
 }) {
   const style = node.style;
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
@@ -86,6 +95,7 @@ export function ThoughtNode({
     highlighted ? "is-highlighted" : "",
     dimmed ? "is-dimmed" : "",
     dragging ? "is-dragging" : "",
+    flair ? "is-new-flair" : "",
     connectionState !== "normal" ? `is-connect-${connectionState}` : "",
     node.page.isFolder || node.page.isTag ? "is-structural-thought" : "",
     node.page.transient?.kind === "section" ? "is-kplex-section" : "",
@@ -121,10 +131,10 @@ export function ThoughtNode({
     {sectionFold?.hasChildren && <button
       type="button"
       className={`kplex-section-fold-handle${sectionFold.expanded ? " is-expanded" : " is-folded"}`}
-      aria-label={sectionFold.expanded ? "Fold section children" : "Unfold section children"}
+      aria-label={sectionFold.expanded ? (sectionFold.expandedTitle ?? "Fold section children") : (sectionFold.foldedTitle ?? "Unfold section children")}
       title={sectionFold.expanded
-        ? "Fold section children"
-        : `Unfold section children${sectionFold.hiddenDescendantCount ? ` · ${sectionFold.hiddenDescendantCount} hidden` : ""}`}
+        ? (sectionFold.expandedTitle ?? "Fold section children")
+        : `${sectionFold.foldedTitle ?? "Unfold section children"}${sectionFold.hiddenDescendantCount ? ` · ${sectionFold.hiddenDescendantCount} hidden` : ""}`}
       onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); }}
       onClick={(e: MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); sectionFold.onToggle(); }}
     />}

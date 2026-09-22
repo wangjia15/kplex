@@ -953,6 +953,28 @@ export class GraphIndex {
     return true;
   }
 
+  applyFrontmatterRelationshipRemoval(storagePath: string, targetPath: string, field: string): boolean {
+    const source = this.get(storagePath);
+    const target = this.get(targetPath);
+    if (!source || !target) return false;
+    const normalizedField = field.toLowerCase().replace(/\s+/g, "-").trim();
+    const removed = this.state.evidence.removeDeclarations((item) =>
+      item.sourceKind === "frontmatter-ontology" &&
+      item.declaredByPath === storagePath &&
+      item.declaredTargetPath === targetPath &&
+      (item.fieldName ?? item.definition ?? "").toLowerCase().replace(/\s+/g, "-").trim() === normalizedField
+    );
+    if (!removed) return false;
+
+    resolveEvidencePair(this.state.pages, this.state.evidence, storagePath, targetPath);
+    resolveEvidencePair(this.state.pages, this.state.evidence, targetPath, storagePath);
+    if (source.file) source.mtime = source.file.stat.mtime;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return true;
+  }
+
   explainRelationship(sourcePath: string, targetPath: string): RelationshipExplanation | null {
     const source = this.get(sourcePath);
     const target = this.get(targetPath);

@@ -190,13 +190,17 @@ When overflow requires a scroll zone, first-level zones expose a funnel/name fil
 - Phone command palette: only the K-Plex sidepanel opener is offered among surface-opening commands. Generic/ribbon open also routes to sidepanel.
 - Tablet: normal graph tab and sidepanel are both available; pop-out is desktop-only.
 - A touch tap is handled from the pointer stream directly because preventDefault/pan ownership can suppress synthesized click events. Verify tap navigation, one-finger pan, two-finger pinch and long-press context menus together.
-- Sidecar is a real adjacent Obsidian `WorkspaceLeaf`; never mount a faux workspace leaf inside React. Sidecar controls are derived from **pinned-tab adjacency**, not only from whether K-Plex originally created the leaf. Moving an attached pinned tab away must not clear the pin.
+- Sidecar is a real adjacent Obsidian `WorkspaceLeaf`; never mount a faux workspace leaf inside React. Sidecar controls are derived from **pinned-tab adjacency**, not only from whether K-Plex originally created the leaf. Moving an attached pinned tab away must not clear the pin. Closing K-Plex must leave the companion document leaf open. Sidecar fold hides only the K-Plex tab group and must leave an unfold control on the companion group's relevant edge.
 
 ## Section-outline checks
 
 - central Markdown expansion is runtime-only; no heading may enter `GraphIndex`
 - nested heading levels create parent/child outline structure
 - section nodes and outline connectors are visually distinct from semantic graph relations; structural connectors use vertical-spine + horizontal L branches that enter the child at its left-center edge, never the semantic top gate; density 4 should collapse these branches/gaps aggressively rather than merely scaling the ordinary graph spacing
+- Markdown central nodes expose the same lower-left fold square even before section expansion; non-Markdown central nodes do not
+- delayed metadata/index updates may move/add nodes but must preserve graph camera and bounded-list scroll positions; only explicit navigation/initial display may recenter
+- relationship creation uses the shared fuzzy-search component, with both suggesters closed until typing; selecting an existing note must leave ontology editable and commit through a stable-width Link action; new-note actions require a valid globally-unused filename, Markdown is the default Ctrl/Cmd+Enter action, user-hotkeyable Add parent/child/friend/challenger commands are active only while K-Plex is running, new files honor Obsidian `FileManager.getNewFileParent(...)`, and custom ontology values become persisted hierarchy fields/defaults
+- connector unlinking must remain provenance-safe: direct removal is limited to a single frontmatter ontology declaration (plus any mirrored resolved-link cache entry at the same YAML line); ambiguous/body/multi-link cases route through Explain relationship, whose Markdown-backed evidence rows navigate in a new Markdown tab using ephemeral line state
 - fold/unfold is view state only
 - folded descendants' semantic relations project upward to the visible folded ancestor
 - explanation provenance still identifies the actual hidden declaring section

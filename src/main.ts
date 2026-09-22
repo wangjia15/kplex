@@ -1,11 +1,13 @@
-import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, setIcon, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { GraphIndex } from "./index/GraphIndex";
 import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type DocumentSyncMode, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
 import { EXCALIBRAIN_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, ExcaliBrainView, KplexSidepanelView } from "./ui/ExcaliBrainView";
 import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
+import { NewRelatedNoteModal } from "./ui/NewRelatedNoteModal";
 import { LinkDirection, type GateRole, type GraphPage } from "./types";
 import { OntologySuggester } from "./editor/OntologySuggester";
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./index/fieldParser";
+import type { RelationEvidence } from "./index/RelationEvidence";
 import { AddToOntologyModal, type OntologyAssignmentRole } from "./ui/AddToOntologyModal";
 import { NoteTypeModal } from "./ui/NoteTypeModal";
 import { activeLayoutProfile, currentDeviceClass, effectiveViewSettings, layoutProfileKey } from "./ui/viewProfile";
@@ -33,8 +35,10 @@ export default class ExcaliBrainPlugin extends Plugin {
   private initialIndexComplete = false;
   private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> | null = null;
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
+  private readonly collapsedPlexHosts = new Map<WorkspaceLeaf, { sidecarLeaf: WorkspaceLeaf; position: SidecarPosition; hostGroup: HTMLElement; previousDisplay: string; unfoldButton: HTMLButtonElement }>();
   private readonly sidecarListeners = new Set<() => void>();
   private readonly navigationListeners = new Set<(path: string) => void>();
+  private readonly relationshipFlairListeners = new Set<(path: string) => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
@@ -104,6 +108,20 @@ export default class ExcaliBrainPlugin extends Plugin {
       },
     });
     this.addCommand({ id: "kplex-open-sidepanel", name: "Open in side panel", callback: () => void this.activateSidepanel() });
+    const addRelationshipCommand = (id: string, name: string, role: GateRole) => this.addCommand({
+      id,
+      name,
+      checkCallback: (checking) => {
+        const origin = this.commandCentralPage();
+        if (!origin) return false;
+        if (!checking) new NewRelatedNoteModal(this, origin, role).open();
+        return true;
+      },
+    });
+    addRelationshipCommand("kplex-add-child", "Add child", "child");
+    addRelationshipCommand("kplex-add-parent", "Add parent", "parent");
+    addRelationshipCommand("kplex-add-friend", "Add friend", "left");
+    addRelationshipCommand("kplex-add-challenger", "Add challenger", "right");
     this.addCommand({
       id: "kplex-sync-tab-from-plex",
       name: "Sync most recent note tab with K-Plex",
@@ -135,8 +153,14 @@ export default class ExcaliBrainPlugin extends Plugin {
     }));
     this.registerEvent(this.app.workspace.on("layout-change", () => {
       let changed = false;
+      for (const [host, collapsed] of [...this.collapsedPlexHosts.entries()]) {
+        if (this.leafIsAttached(host) && this.leafIsAttached(collapsed.sidecarLeaf)) continue;
+        this.restoreCollapsedPlex(host);
+        changed = true;
+      }
       for (const [host, sidecar] of [...this.sidecarLeaves.entries()]) {
         if (!this.leafIsAttached(host) || !this.leafIsAttached(sidecar)) {
+          this.restoreCollapsedPlex(host);
           this.sidecarLeaves.delete(host);
           if (this.linkedDocumentLeaf === sidecar && !this.leafIsAttached(sidecar)) {
             this.linkedDocumentLeaf = null;
@@ -147,7 +171,8 @@ export default class ExcaliBrainPlugin extends Plugin {
       }
       this.validateLinkedDocumentLeaf();
       if (this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf) {
-        const adjacent = this.isLeafAdjacentToAnyKplex(this.linkedDocumentLeaf);
+        const folded = [...this.collapsedPlexHosts.values()].some((state) => state.sidecarLeaf === this.linkedDocumentLeaf);
+        const adjacent = folded || this.isLeafAdjacentToAnyKplex(this.linkedDocumentLeaf);
         if (this.settings.sidecarOpen !== adjacent) {
           this.settings.sidecarOpen = adjacent;
           changed = true;
@@ -229,10 +254,12 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   onunload(): void {
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
-    for (const leaf of this.sidecarLeaves.values()) {
-      try { leaf.detach(); } catch { /* workspace is already closing */ }
-    }
+    for (const host of [...this.collapsedPlexHosts.keys()]) this.restoreCollapsedPlex(host);
+    // A managed sidecar is still an ordinary Obsidian content tab. Plugin unload/disable must not
+    // close the user's note; simply release K-Plex ownership and leave workspace leaves intact.
     this.sidecarLeaves.clear();
+    this.relationshipFlairListeners.clear();
+    this.linkedDocumentLeaf = null;
     this.index?.destroy();
   }
 
@@ -347,7 +374,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   onKplexViewClosed(hostLeaf?: WorkspaceLeaf): void {
-    if (hostLeaf) void this.closeSidecar(hostLeaf, false);
+    if (hostLeaf) void this.releaseSidecar(hostLeaf, true);
     this.openKplexViews = Math.max(0, this.openKplexViews - 1);
     if (this.openKplexViews > 0) return;
     if (this.rebuildTimer !== null) {
@@ -557,6 +584,13 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
   }
 
+  private commandCentralPage(): GraphPage | null {
+    if (this.openKplexViews <= 0) return null;
+    const page = this.index.get(this.settings.lastActivePath);
+    if (!page || page.isFolder || page.isTag) return null;
+    return page;
+  }
+
   async saveSettings(reindex = false, notifyIndex = true): Promise<void> {
     this.settings.primaryTagFieldLowerCase = this.settings.primaryTagField.toLowerCase().replaceAll(" ", "-");
     await this.saveData(this.settings);
@@ -582,6 +616,74 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (candidate === leaf) attached = true;
     });
     return attached;
+  }
+
+  private leafGroupElement(leaf: WorkspaceLeaf | null): HTMLElement | null {
+    if (!leaf) return null;
+    const workspaceLeaf = leaf as WorkspaceLeaf & {
+      containerEl?: HTMLElement;
+      parent?: { containerEl?: HTMLElement } | null;
+    };
+    return workspaceLeaf.parent?.containerEl ?? workspaceLeaf.containerEl ?? leaf.view?.containerEl ?? null;
+  }
+
+  private restoreCollapsedPlex(hostLeaf: WorkspaceLeaf): void {
+    const collapsed = this.collapsedPlexHosts.get(hostLeaf);
+    if (!collapsed) return;
+    collapsed.unfoldButton.remove();
+    if (collapsed.hostGroup.isConnected) {
+      if (collapsed.previousDisplay) collapsed.hostGroup.style.display = collapsed.previousDisplay;
+      else collapsed.hostGroup.style.removeProperty("display");
+    }
+    this.collapsedPlexHosts.delete(hostLeaf);
+  }
+
+  isPlexFoldedForSidecar(hostLeaf: WorkspaceLeaf): boolean {
+    return this.collapsedPlexHosts.has(hostLeaf);
+  }
+
+  async collapsePlexForSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
+    if (this.collapsedPlexHosts.has(hostLeaf)) return;
+    const position = this.getSidecarPosition(hostLeaf);
+    const sidecarLeaf = this.validateSidecarLeaf(hostLeaf) ?? (position ? this.linkedDocumentLeaf : null);
+    if (!position || !sidecarLeaf) return;
+    const hostGroup = this.leafGroupElement(hostLeaf);
+    const sidecarGroup = this.leafGroupElement(sidecarLeaf);
+    if (!hostGroup || !sidecarGroup || hostGroup === sidecarGroup) return;
+
+    const button = sidecarGroup.ownerDocument.createElement("button");
+    button.type = "button";
+    const unfoldSide = position === "right" ? "left" : position === "left" ? "right" : position === "above" ? "bottom" : "top";
+    const unfoldIcon = unfoldSide === "left" ? "panel-left-open"
+      : unfoldSide === "right" ? "panel-right-open"
+        : unfoldSide === "top" ? "panel-top-open"
+          : "panel-bottom-open";
+    button.className = `kplex-sidecar-unfold-plex is-${unfoldSide}`;
+    button.title = "Unfold K-Plex";
+    button.setAttribute("aria-label", "Unfold K-Plex");
+    setIcon(button, unfoldIcon);
+    button.addEventListener("click", () => void this.expandPlexFromSidecar(hostLeaf));
+    sidecarGroup.appendChild(button);
+
+    this.collapsedPlexHosts.set(hostLeaf, {
+      sidecarLeaf,
+      position,
+      hostGroup,
+      previousDisplay: hostGroup.style.display,
+      unfoldButton: button,
+    });
+    // Hiding the WorkspaceTabs group removes it from the split's flex layout completely; the
+    // native content sidecar expands into the released space while remaining an ordinary tab.
+    hostGroup.style.display = "none";
+    this.notifySidecar();
+  }
+
+  async expandPlexFromSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
+    if (!this.collapsedPlexHosts.has(hostLeaf)) return;
+    this.restoreCollapsedPlex(hostLeaf);
+    // Let Obsidian's split layout settle before recalculating sidecar geometry.
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    this.notifySidecar();
   }
 
   private leafRect(leaf: WorkspaceLeaf | null): DOMRect | null {
@@ -843,6 +945,15 @@ export default class ExcaliBrainPlugin extends Plugin {
     for (const listener of this.navigationListeners) listener(path);
   }
 
+  subscribeRelationshipFlair(listener: (path: string) => void): () => void {
+    this.relationshipFlairListeners.add(listener);
+    return () => this.relationshipFlairListeners.delete(listener);
+  }
+
+  requestRelationshipFlair(path: string): void {
+    for (const listener of this.relationshipFlairListeners) listener(path);
+  }
+
   subscribeSidecar(listener: () => void): () => void {
     this.sidecarListeners.add(listener);
     return () => this.sidecarListeners.delete(listener);
@@ -870,6 +981,8 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   getSidecarPosition(hostLeaf: WorkspaceLeaf): SidecarPosition | null {
     if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE || this.settings.documentSyncMode !== "pinned") return null;
+    const collapsed = this.collapsedPlexHosts.get(hostLeaf);
+    if (collapsed && this.leafIsAttached(collapsed.sidecarLeaf)) return collapsed.position;
     this.validateLinkedDocumentLeaf();
     if (!this.linkedDocumentLeaf) return null;
     return this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf);
@@ -918,10 +1031,11 @@ export default class ExcaliBrainPlugin extends Plugin {
     // On workspace restore prefer the already-visible adjacent document pane. This avoids binding
     // to Obsidian's arbitrary deferred "most recent" first tab and recreates the prior sidecar.
     if (!leaf) leaf = this.findVisibleAdjacentDocumentLeaf(hostLeaf);
-    if (!leaf) {
-      leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
-      this.sidecarLeaves.set(hostLeaf, leaf);
-    }
+    if (!leaf) leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
+    // Once a leaf is being used as a sidecar, remember that ownership regardless of whether it was
+    // newly created or an existing adjacent native tab. This gives close/detach/fold one consistent
+    // lifecycle and avoids geometry heuristics becoming the source of truth later.
+    this.sidecarLeaves.set(hostLeaf, leaf);
     this.settings.sidecarOpen = true;
     this.settings.documentSyncMode = "pinned";
     this.linkedDocumentLeaf = leaf;
@@ -934,11 +1048,13 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async closeSidecar(hostLeaf: WorkspaceLeaf, persist = true): Promise<void> {
-    const managed = this.sidecarLeaves.get(hostLeaf) ?? null;
+    const collapsed = this.collapsedPlexHosts.get(hostLeaf);
+    const managed = this.sidecarLeaves.get(hostLeaf) ?? collapsed?.sidecarLeaf ?? null;
     const adjacentPinned = this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
       ? this.linkedDocumentLeaf
       : null;
     const leaf = managed ?? adjacentPinned;
+    this.restoreCollapsedPlex(hostLeaf);
     this.sidecarLeaves.delete(hostLeaf);
     if (leaf) {
       try { leaf.detach(); } catch { /* already detached */ }
@@ -956,23 +1072,28 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   /**
    * Stop managing/synchronizing the companion leaf but leave that native Obsidian leaf open.
-   * From this point it behaves exactly like any ordinary workspace leaf and no longer follows
-   * K-Plex navigation. This is intentionally simpler than the old "open copy in…" workflow.
+   * This path is also used when K-Plex itself closes: the user's document is content, not disposable
+   * plugin chrome, so closing the graph must never close the note that happened to be beside it.
    */
-  async detachSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
-    const managed = this.sidecarLeaves.get(hostLeaf) ?? null;
-    const adjacentPinned = this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
+  private async releaseSidecar(hostLeaf: WorkspaceLeaf, persist = true): Promise<void> {
+    const collapsed = this.collapsedPlexHosts.get(hostLeaf);
+    const managed = this.sidecarLeaves.get(hostLeaf) ?? collapsed?.sidecarLeaf ?? null;
+    const adjacentPinned = !managed && this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf
       ? this.linkedDocumentLeaf
       : null;
     const leaf = managed ?? adjacentPinned;
-    if (!leaf) return;
+    this.restoreCollapsedPlex(hostLeaf);
     this.sidecarLeaves.delete(hostLeaf);
-    this.settings.sidecarOpen = false;
     if (this.linkedDocumentLeaf === leaf) this.linkedDocumentLeaf = null;
     this.settings.documentSyncMode = "off";
-    await this.saveSettings(false, false);
-    this.lastDocumentLeaf = leaf;
+    this.settings.sidecarOpen = false;
+    if (leaf) this.lastDocumentLeaf = leaf;
+    if (persist) await this.saveSettings(false, false);
     this.notifySidecar();
+  }
+
+  async detachSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
+    await this.releaseSidecar(hostLeaf, true);
   }
 
   async toggleSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
@@ -982,6 +1103,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async moveSidecar(hostLeaf: WorkspaceLeaf, position: SidecarPosition, page: GraphPage): Promise<void> {
     if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
+    if (this.isPlexFoldedForSidecar(hostLeaf)) await this.expandPlexFromSidecar(hostLeaf);
     const wasOpen = this.isSidecarOpen(hostLeaf);
     if (wasOpen) await this.closeSidecar(hostLeaf, false);
     this.settings.sidecarPosition = position;
@@ -1298,6 +1420,10 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   openRelationModal(options: RelationModalOptions): void {
+    if (options.mode === "create" && !options.fixedTarget) {
+      new NewRelatedNoteModal(this, options.origin, options.semanticRole, options.onCommitted, options.allowRoleSelection === true).open();
+      return;
+    }
     new RelationModal(this, options).open();
   }
 
@@ -1364,6 +1490,11 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   defaultOntologyField(role: GateRole): string {
     const fields = this.ontologyFieldsForRole(role);
+    const remembered = this.settings.relationDefaultFields?.[role]?.trim();
+    if (remembered) {
+      const canonical = fields.find((field) => normalizeFieldName(field) === normalizeFieldName(remembered));
+      if (canonical) return canonical;
+    }
     const preferred: Record<GateRole, string[]> = {
       parent: ["parent", "parents"],
       child: ["child", "children"],
@@ -1375,6 +1506,43 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (found) return found;
     }
     return fields[0] ?? (role === "parent" ? "Parent" : role === "child" ? "Child" : role === "left" ? "Friend" : "Challenger");
+  }
+
+  async rememberRelationshipOntology(role: GateRole, rawField: string): Promise<string> {
+    const trimmed = rawField.trim();
+    if (!trimmed) return this.defaultOntologyField(role);
+    const normalized = normalizeFieldName(trimmed);
+    const existing = this.ontologyFieldsForRole(role).find((field) => normalizeFieldName(field) === normalized);
+    let canonical = existing ?? trimmed;
+    let hierarchyChanged = false;
+
+    if (!existing) {
+      // A field typed into a relationship role is an explicit ontology assignment. Keep ontology
+      // membership unambiguous by moving an identically named field out of another hierarchy list
+      // before assigning it to this role. Previous/next are already offered by the matching lateral
+      // role suggester, so they are preserved when selected from that role's own result list.
+      const h = this.settings.hierarchy;
+      const lists = [h.hidden, h.parents, h.children, h.leftFriends, h.rightFriends, h.previous, h.next, h.exclusions];
+      for (const list of lists) {
+        const match = list.find((field) => normalizeFieldName(field) === normalized);
+        if (match) canonical = match;
+      }
+      for (const list of lists) {
+        const next = list.filter((field) => normalizeFieldName(field) !== normalized);
+        if (next.length !== list.length) { list.splice(0, list.length, ...next); hierarchyChanged = true; }
+      }
+      const target = role === "parent" ? h.parents : role === "child" ? h.children : role === "left" ? h.leftFriends : h.rightFriends;
+      target.push(canonical);
+      hierarchyChanged = true;
+    }
+
+    if (this.settings.relationDefaultFields[role] !== canonical) {
+      this.settings.relationDefaultFields[role] = canonical;
+      await this.saveSettings(hierarchyChanged, false);
+    } else if (hierarchyChanged) {
+      await this.saveSettings(true, false);
+    }
+    return canonical;
   }
 
   private allOntologyFields(): string[] {
@@ -1574,11 +1742,164 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
   }
 
+  validateRelatedNoteName(rawName: string): { stem: string; valid: boolean; error: string | null; existing: TFile | null } {
+    let stem = rawName.trim();
+    stem = stem.replace(/\.excalidraw(?:\.md)?$/i, "").replace(/\.md$/i, "").trim();
+    if (!stem) return { stem: "", valid: false, error: "Type a note name.", existing: null };
+
+    // Keep creation portable across desktop/mobile vaults and synced filesystems. These are the
+    // characters Windows/macOS/Obsidian users most commonly cannot safely use in a filename.
+    if (/[<>:"/\\|?*\u0000-\u001F]/.test(stem)) {
+      return { stem, valid: false, error: 'The note name contains a prohibited filename character: < > : " / \\ | ? *', existing: null };
+    }
+    if (/[. ]$/.test(stem)) {
+      return { stem, valid: false, error: "A note name cannot end with a period or space.", existing: null };
+    }
+    if (stem === "." || stem === "..") {
+      return { stem, valid: false, error: "Choose a different note name.", existing: null };
+    }
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(stem)) {
+      return { stem, valid: false, error: "That note name is reserved by the filesystem.", existing: null };
+    }
+
+    const normalized = stem.toLocaleLowerCase();
+    const existing = this.app.vault.getMarkdownFiles().find((file) => {
+      const name = file.name.toLocaleLowerCase();
+      const candidate = name.endsWith(".excalidraw.md")
+        ? file.name.slice(0, -".excalidraw.md".length)
+        : file.name.replace(/\.md$/i, "");
+      return candidate.toLocaleLowerCase() === normalized;
+    }) ?? null;
+
+    return { stem, valid: true, error: null, existing };
+  }
+
   isExcalidrawAvailable(): boolean {
     type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile> };
     type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
     const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
     return typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
+  }
+
+  async directFrontmatterUnlinkCandidate(evidenceItems: readonly RelationEvidence[]): Promise<RelationEvidence | null> {
+    const frontmatter = evidenceItems.filter((item) => item.sourceKind === "frontmatter-ontology");
+    if (frontmatter.length !== 1) return null;
+    const candidate = frontmatter[0];
+    if (!candidate.fieldName) return null;
+
+    const candidateLocations = await this.relationshipEvidenceLocations(candidate);
+    const propertyLine = candidateLocations[0]?.line ?? null;
+    for (const evidence of evidenceItems) {
+      if (evidence === candidate) continue;
+      if (evidence.sourceKind !== "obsidian-link" && evidence.sourceKind !== "unresolved-link") return null;
+      if (evidence.declaredByPath !== candidate.declaredByPath || evidence.declaredTargetPath !== candidate.declaredTargetPath) return null;
+      const locations = await this.relationshipEvidenceLocations(evidence);
+      // Obsidian's resolved-links table also sees wiki-links stored inside YAML. Treat that one
+      // mirrored cache entry as the same declaration, but any additional/body occurrence makes
+      // the relationship ambiguous and therefore explanation-only.
+      if (propertyLine === null || locations.length !== 1 || locations[0].line !== propertyLine) return null;
+    }
+    return candidate;
+  }
+
+  async unlinkFrontmatterEvidence(evidence: RelationEvidence): Promise<boolean> {
+    if (evidence.sourceKind !== "frontmatter-ontology" || !evidence.fieldName) return false;
+    const storage = this.app.vault.getAbstractFileByPath(evidence.declaredByPath);
+    const target = this.index.get(evidence.declaredTargetPath);
+    if (!(storage instanceof TFile) || storage.extension !== "md" || !target) return false;
+
+    this.pruneManagedMetadataWrites();
+    this.managedMetadataWrites.set(storage.path, Date.now() + 15000);
+    let changed = false;
+    const wanted = normalizeFieldName(evidence.fieldName);
+    await this.app.fileManager.processFrontMatter(storage, (frontmatter: Record<string, unknown>) => {
+      for (const key of Object.keys(frontmatter)) {
+        if (normalizeFieldName(key) !== wanted) continue;
+        if (!this.valueContainsTarget(frontmatter[key], storage, target)) continue;
+        const next = this.removeTargetFromValue(frontmatter[key], storage, target);
+        if (next === undefined) delete frontmatter[key];
+        else frontmatter[key] = next;
+        changed = true;
+        break;
+      }
+    });
+
+    if (!changed) return false;
+    this.index.applyFrontmatterRelationshipRemoval(storage.path, target.path, evidence.fieldName);
+    return true;
+  }
+
+  async relationshipEvidenceLocations(evidence: RelationEvidence): Promise<Array<{ path: string; line: number; label: string }>> {
+    const file = this.app.vault.getAbstractFileByPath(evidence.declaredByPath);
+    if (!(file instanceof TFile) || file.extension !== "md") return [];
+
+    const positions: Array<{ path: string; line: number; label: string }> = [];
+    const add = (line: number, label: string) => {
+      const safeLine = Math.max(0, Math.floor(line));
+      if (positions.some((item) => item.line === safeLine && item.label === label)) return;
+      positions.push({ path: file.path, line: safeLine, label });
+    };
+
+    if (evidence.sourceKind === "inline-ontology" || evidence.sourceKind === "body-url") {
+      if (evidence.line) add(evidence.line - 1, `Navigate to line ${evidence.line}`);
+      return positions;
+    }
+
+    if (evidence.sourceKind === "obsidian-link" || evidence.sourceKind === "unresolved-link") {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const linkCaches = [...(cache?.links ?? []), ...(cache?.embeds ?? [])];
+      const targetLower = evidence.declaredTargetPath.replace(/\.md$/i, "").toLocaleLowerCase();
+      const targetBase = targetLower.split("/").pop() ?? targetLower;
+      const matchingLines: number[] = [];
+      for (const link of linkCaches) {
+        const resolved = this.app.metadataCache.getFirstLinkpathDest(link.link, file.path);
+        let matches = resolved?.path === evidence.declaredTargetPath;
+        if (!matches && !resolved && evidence.sourceKind === "unresolved-link") {
+          const raw = link.link.split("#", 1)[0].trim().replace(/\.md$/i, "").toLocaleLowerCase();
+          matches = raw === targetLower || raw === targetBase || raw.split("/").pop() === targetBase;
+        }
+        if (matches) matchingLines.push(link.position.start.line);
+      }
+      matchingLines.forEach((line, index) => add(
+        line,
+        matchingLines.length > 1 ? `Navigate to link ${index + 1}` : "Navigate to link",
+      ));
+      return positions;
+    }
+
+    if (evidence.sourceKind === "frontmatter-ontology" || evidence.sourceKind === "date-property") {
+      const fieldName = evidence.fieldName;
+      if (!fieldName) return positions;
+      const content = await this.app.vault.cachedRead(file);
+      const lines = content.split(/\r?\n/);
+      if (lines[0]?.trim() !== "---") return positions;
+      const wanted = normalizeFieldName(fieldName);
+      for (let line = 1; line < lines.length; line += 1) {
+        const text = lines[line];
+        const trimmed = text.trim();
+        if (trimmed === "---" || trimmed === "...") break;
+        const match = text.match(/^\s*(?:"([^"]+)"|'([^']+)'|([^:#][^:]*))\s*:/);
+        const key = match ? (match[1] ?? match[2] ?? match[3] ?? "").trim() : "";
+        if (key && normalizeFieldName(key) === wanted) {
+          add(line, `Navigate to property “${key}”`);
+          break;
+        }
+      }
+    }
+
+    return positions;
+  }
+
+  async openRelationshipEvidenceLocation(location: { path: string; line: number }): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(location.path);
+    if (!(file instanceof TFile) || file.extension !== "md") return;
+    const leaf = this.app.workspace.getLeaf("tab");
+    this.lastDocumentLeaf = leaf;
+    // Force a native Markdown view even for .excalidraw.md so the provenance location is visible
+    // as editable source text. The second argument is ephemeral view state; it scrolls to the
+    // evidence line without persisting that transient navigation position in the workspace state.
+    await leaf.setViewState({ type: "markdown", state: { file: file.path }, active: true }, { line: location.line });
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   private async ensureFolderPath(folderPath: string): Promise<void> {
@@ -1593,12 +1914,34 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
   }
 
-  async createNewRelatedFile(rawPath: string, kind: "markdown" | "excalidraw"): Promise<TFile | null> {
-    const normalized = normalizePath(rawPath);
-    const slash = normalized.lastIndexOf("/");
-    const folder = slash >= 0 ? normalized.slice(0, slash) : "";
-    let name = slash >= 0 ? normalized.slice(slash + 1) : normalized;
-    if (!name) name = "New note";
+  async createNewRelatedFileForOrigin(origin: GraphPage, rawName: string, kind: "markdown" | "excalidraw"): Promise<TFile | null> {
+    const validation = this.validateRelatedNoteName(rawName);
+    if (!validation.valid) {
+      new Notice(validation.error ?? "Enter a valid note name.", 2800);
+      return null;
+    }
+    if (validation.existing) {
+      new Notice(`A note named “${validation.stem}” already exists in the vault.`, 2800);
+      return null;
+    }
+
+    const leafName = validation.stem;
+    // FileManager.getNewFileParent is the public Obsidian API that applies the user's
+    // "Default location for new notes" preference. sourcePath is the central note so the
+    // "same folder as current file" option resolves relative to the K-Plex origin, not whichever
+    // editor tab happens to be active while this modal is open.
+    const sourcePath = origin.file?.path ?? "";
+    const proposedName = kind === "excalidraw" ? `${leafName}.excalidraw.md` : `${leafName}.md`;
+    const configuredParent = this.app.fileManager.getNewFileParent(sourcePath, proposedName);
+    const configuredFolder = configuredParent.path === "/" ? "" : configuredParent.path;
+    await this.ensureFolderPath(configuredFolder);
+
+    const destination = normalizePath(configuredFolder ? `${configuredFolder}/${proposedName}` : proposedName);
+    if (this.app.vault.getAbstractFileByPath(destination)) {
+      new Notice(`A file already exists at ${destination}.`, 3000);
+      return null;
+    }
+
     if (kind === "excalidraw") {
       type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile> };
       type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
@@ -1608,19 +1951,38 @@ export default class ExcaliBrainPlugin extends Plugin {
         new Notice("Excalidraw is not available.", 2200);
         return null;
       }
-      return excalidraw.createDrawing(name, folder || undefined);
+      return excalidraw.createDrawing(leafName, configuredFolder || undefined);
     }
 
-    await this.ensureFolderPath(folder);
-    if (!name.toLowerCase().endsWith(".md")) name += ".md";
-    let path = normalizePath(folder ? `${folder}/${name}` : name);
-    if (this.app.vault.getAbstractFileByPath(path)) {
-      const stem = path.replace(/\.md$/i, "");
-      let i = 2;
-      while (this.app.vault.getAbstractFileByPath(`${stem} ${i}.md`)) i += 1;
-      path = `${stem} ${i}.md`;
+    return this.app.vault.create(destination, `# ${leafName}
+`);
+  }
+
+  async linkNewRelatedFile(origin: GraphPage, semanticRole: GateRole, file: TFile, selectedField: string): Promise<void> {
+    const indexed = this.index.get(file.path);
+    if (indexed) {
+      await this.createRelationToPage(origin, semanticRole, indexed, selectedField);
+      return;
     }
-    return this.app.vault.create(path, `# ${name.replace(/\.md$/i, "")}\n`);
+
+    // Vault creation is asynchronous with respect to MetadataCache/K-Plex indexing. Persist the
+    // requested relationship immediately using the real TFile and let the normal create/metadata
+    // events materialize the new graph node afterwards; do not block this simple modal on a full
+    // graph rebuild just to obtain a temporary GraphPage.
+    const target: GraphPage = {
+      path: file.path, file, name: file.basename, url: null, isFolder: false, isTag: false,
+      mtime: file.stat.mtime, neighbours: new Map(), aliases: [], tags: [], noteType: null,
+      primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
+    };
+    if (origin.file?.extension === "md") {
+      await this.writeRelationship(origin.file, target, selectedField);
+      return;
+    }
+    if (file.extension === "md") {
+      await this.writeRelationship(file, origin, this.inverseOntologyField(selectedField, semanticRole));
+      return;
+    }
+    new Notice("At least one side of the relationship must be a Markdown note.", 2600);
   }
 
   async createGhostNote(rawPath: string): Promise<void> {

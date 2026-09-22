@@ -1165,6 +1165,8 @@
 .kplex-explanation-description { font-size: 12px; }
 .kplex-explanation-evidence code { display: block; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .kplex-explanation-reason { margin-top: 5px; color: var(--text-muted); font-size: 11px; }
+.kplex-explanation-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kplex-explanation-navigate { height: 28px; min-height: 28px; padding: 0 9px; font-size: var(--font-ui-smaller); }
 .kplex-explanation-empty { color: var(--text-muted); }
 
 .kplex-explanation-display-context {
@@ -1575,4 +1577,232 @@
   stroke: color-mix(in srgb, var(--interactive-accent) 65%, var(--text-muted));
   stroke-width: 1.25;
   pointer-events: none;
+}
+
+/* Streamlined add-related modal: one fuzzy note field, ontology field, and creation buttons. */
+.kplex-add-related-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
+}
+.kplex-add-related-form {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.kplex-add-related-form .kplex-fuzzy-search {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.kplex-add-related-form .excalibrain-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px 0 35px;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--input-radius, 5px);
+  box-shadow: none;
+}
+.kplex-add-related-form .excalibrain-search:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.kplex-add-related-form .excalibrain-search-icon {
+  top: 10px;
+  color: var(--text-muted);
+}
+.kplex-add-related-form .kplex-fuzzy-inline-results {
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: min(36vh, 300px);
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border-color: var(--background-modifier-border);
+  box-shadow: var(--shadow-l, 0 12px 32px rgba(0,0,0,.28));
+}
+.kplex-add-related-form .excalibrain-search-result {
+  color: var(--text-normal);
+}
+.kplex-add-related-form .excalibrain-search-result small {
+  color: var(--text-muted);
+}
+.kplex-add-related-form .excalibrain-search-result:hover,
+.kplex-add-related-form .excalibrain-search-result.is-selected {
+  background: var(--background-modifier-hover);
+}
+.kplex-add-related-role-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.kplex-add-related-role-row button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+}
+.kplex-add-related-role-row button.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+.kplex-add-related-bottom-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 94px;
+  gap: 10px;
+  align-items: start;
+}
+.kplex-add-related-action-area {
+  width: 94px;
+  min-width: 94px;
+  height: 38px;
+}
+.kplex-add-related-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 94px;
+  height: 38px;
+}
+.kplex-add-related-type-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 38px;
+  min-width: 42px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.kplex-add-related-type-button:not(:disabled):hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+.kplex-add-related-type-button.is-default:not(:disabled) {
+  border-color: color-mix(in srgb, var(--interactive-accent) 65%, var(--background-modifier-border));
+}
+.kplex-add-related-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 94px;
+  height: 38px;
+  min-width: 94px;
+  padding: 0 10px;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border: 1px solid var(--interactive-accent);
+}
+.kplex-add-related-link-button:not(:disabled):hover {
+  background: var(--interactive-accent-hover);
+}
+.kplex-add-related-create-hint.is-error {
+  color: var(--text-error);
+}
+.kplex-add-related-create-hint {
+  margin-top: -4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
+}
+@media (max-width: 520px) {
+  .kplex-add-related-role-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kplex-add-related-bottom-row { grid-template-columns: minmax(0, 1fr) 83px; gap: 7px; }
+  .kplex-add-related-action-area,
+  .kplex-add-related-create-actions { width: 83px; min-width: 83px; }
+  .kplex-add-related-create-actions { gap: 7px; }
+  .kplex-add-related-type-button { width: 38px; min-width: 38px; }
+  .kplex-add-related-link-button { width: 83px; min-width: 83px; }
+}
+
+/* Folding K-Plex in companion-sidecar mode removes the Plex tab group from the split. The
+   surviving native document group owns this small edge control so K-Plex is always recoverable. */
+.kplex-sidecar-unfold-plex {
+  position: absolute;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+  box-shadow: 0 4px 14px rgba(0,0,0,.24);
+  cursor: pointer;
+}
+.kplex-sidecar-unfold-plex:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+.kplex-sidecar-unfold-plex.is-left { left: 5px; top: 50%; transform: translateY(-50%); }
+.kplex-sidecar-unfold-plex.is-right { right: 5px; top: 50%; transform: translateY(-50%); }
+.kplex-sidecar-unfold-plex.is-top { top: 5px; left: 50%; transform: translateX(-50%); }
+.kplex-sidecar-unfold-plex.is-bottom { bottom: 5px; left: 50%; transform: translateX(-50%); }
+
+/* Declarative settings can insert one wrapper around group items depending on the Obsidian build.
+   Keep the resource shortcuts on one row in either DOM shape, wrapping only when space runs out. */
+.kplex-settings .kplex-resource-links > :is(div, section):has(> .setting-item) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+/* Markdown is the default create action in the add-related modal; Ctrl/Cmd+Enter invokes it. */
+.kplex-add-related-type-button.is-default:not(:disabled) {
+  color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+}
+
+/* Fuzzy results shown from modals are portalled to the viewport so they are never clipped by
+   the modal's own bounds. Keep their theme-native appearance even though they no longer inherit
+   from `.kplex-add-related-form`. */
+.kplex-fuzzy-floating-results {
+  color: var(--text-normal);
+  background: var(--background-primary);
+  border-color: var(--background-modifier-border);
+  box-shadow: var(--shadow-l, 0 12px 32px rgba(0,0,0,.28));
+}
+.kplex-fuzzy-floating-results .excalibrain-search-result { color: var(--text-normal); }
+.kplex-fuzzy-floating-results .excalibrain-search-result small { color: var(--text-muted); }
+.kplex-fuzzy-floating-results .excalibrain-search-result:hover,
+.kplex-fuzzy-floating-results .excalibrain-search-result.is-selected { background: var(--background-modifier-hover); }
+.kplex-fuzzy-match {
+  padding: 0;
+  color: var(--text-accent);
+  background: transparent;
+  font: inherit;
+  font-weight: 750;
+}
+
+/* Relationship-create/link feedback. The animation intentionally changes only glow/brightness so
+   it composes with FLIP positioning and never moves the thought itself. */
+@keyframes kplex-new-relationship-flair {
+  0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.075); filter: brightness(1); }
+  12%, 38%, 64% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 82%, white), 0 0 34px color-mix(in srgb, var(--interactive-accent) 58%, transparent), 0 8px 24px rgba(0,0,0,.42); filter: brightness(1.28); }
+  25%, 51%, 77% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 50%, transparent), 0 0 16px color-mix(in srgb, var(--interactive-accent) 34%, transparent), 0 6px 18px rgba(0,0,0,.36); filter: brightness(1.08); }
+}
+.excalibrain-thought.is-new-flair {
+  z-index: 35;
+  animation: kplex-new-relationship-flair 3.6s ease-in-out both;
+}
+@keyframes kplex-filter-flair {
+  0%, 100% { box-shadow: none; }
+  12%, 38%, 64% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 75%, transparent), 0 0 22px color-mix(in srgb, var(--interactive-accent) 48%, transparent); }
+  25%, 51%, 77% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 45%, transparent); }
+}
+.kplex-zone-filter-control.is-new-flair {
+  border-radius: 7px;
+  animation: kplex-filter-flair 3.6s ease-in-out both;
 }

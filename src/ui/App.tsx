@@ -213,6 +213,14 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const sidecarAvailable = surface !== "sidepanel";
   const sidecarPosition = sidecarAvailable ? plugin.getSidecarPosition(hostLeaf) : null;
   const sidecarOpen = Boolean(sidecarPosition);
+  const foldPlexIcon = sidecarPosition === "left" ? "panel-right-close"
+    : sidecarPosition === "above" ? "panel-bottom-close"
+      : sidecarPosition === "below" ? "panel-top-close"
+        : "panel-left-close";
+  const closeSidecarIcon = sidecarPosition === "left" ? "panel-left-close"
+    : sidecarPosition === "above" ? "panel-top-close"
+      : sidecarPosition === "below" ? "panel-bottom-close"
+        : "panel-right-close";
   const condensedBySidecar = sidecarAvailable && sidecarOpen && hostWidth > 0 && hostWidth <= plugin.settings.sidecarCondensedBreakpoint;
   const profileSurface: KplexViewSurface = condensedBySidecar ? "sidepanel" : surface;
   const viewSettings = plugin.getViewSettings(profileSurface);
@@ -293,7 +301,8 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
       </main>
 
       {sidecarOpen && sidecarPosition && <div className={`kplex-sidecar-controls is-${sidecarPosition}`} aria-label="Sidecar controls">
-        <button title="Collapse sidecar" onClick={() => void plugin.closeSidecar(hostLeaf)}><ObsidianIcon name="panel-right-close" size={15} /></button>
+        <button title="Fold K-Plex and give the companion document the full split" onClick={() => void plugin.collapsePlexForSidecar(hostLeaf)}><ObsidianIcon name={foldPlexIcon} size={15} /></button>
+        <button title="Close companion sidecar" onClick={() => void plugin.closeSidecar(hostLeaf)}><ObsidianIcon name={closeSidecarIcon} size={15} /></button>
         <button title="Move sidecar" onClick={showSidecarMoveMenu}><ObsidianIcon name="move" size={15} /></button>
         <button title="Detach sidecar — keep this tab open independently" onClick={() => void plugin.detachSidecar(hostLeaf)}><ObsidianIcon name="unlink" size={15} /></button>
       </div>}
