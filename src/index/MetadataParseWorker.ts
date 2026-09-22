@@ -1,10 +1,8 @@
 import { parseBodyMetadata, type ParsedBodyMetadata } from "./fieldParser";
-import { perfLog } from "../util/perf";
 
 type Pending = {
   resolve: (value: ParsedBodyMetadata) => void;
   reject: (reason?: unknown) => void;
-  started: number;
 };
 
 type WorkerResponse = {
@@ -79,14 +77,11 @@ export class MetadataParseWorker {
         else pending.reject(new Error(message.error || "Metadata worker failed"));
       };
       this.worker.onerror = (event) => {
-        perfLog("index.worker.error", { message: event.message || "unknown worker error" });
         this.disableWorker();
       };
-      perfLog("index.worker.ready", { enabled: true });
     } catch (error) {
       this.disabled = true;
       this.worker = null;
-      perfLog("index.worker.ready", { enabled: false, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -94,7 +89,7 @@ export class MetadataParseWorker {
     if (this.disabled || !this.worker) return parseBodyMetadata(content);
     const id = this.nextId++;
     return new Promise<ParsedBodyMetadata>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, started: performance.now() });
+      this.pending.set(id, { resolve, reject });
       try {
         this.worker!.postMessage({ id, content });
       } catch (error) {
@@ -102,7 +97,6 @@ export class MetadataParseWorker {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     }).catch((error) => {
-      perfLog("index.worker.parse-fallback", { error: error instanceof Error ? error.message : String(error) });
       return parseBodyMetadata(content);
     });
   }

@@ -12,7 +12,6 @@ import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 import { buildCentralSectionExpansion, canExpandCentralSections, type CentralSectionExpansion } from "../index/SectionExpansion";
 import type { PlexFilterState } from "./PlexFilter";
-import { perfCount, perfDuration, perfElapsed, perfGauge, perfLog, perfNow } from "../util/perf";
 
 type Point = { x: number; y: number };
 type HoverState =
@@ -447,21 +446,10 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   onActivate: (page: GraphPage) => void;
   onOpen: (page: GraphPage) => void;
 }) {
-  perfCount("ui.plex.render");
-  const graphMountedAt = useRef(perfNow());
-  const firstSceneVisibleLogged = useRef(false);
   // getNeighborhood() performs relationship classification/filtering. Keep it stable during local
   // pointer/camera/hover state updates; only rebuild it when navigation, settings, or the index
   // actually changes. This removes the largest source of wasted work in dense Plex scenes.
-  const persistentNeighborhood = useMemo(() => {
-    const started = perfNow();
-    const result = index.getNeighborhood(activePath);
-    const elapsed = perfElapsed(started);
-    perfDuration("ui.neighborhood-ms", elapsed);
-    perfCount("ui.neighborhood-build");
-    if (elapsed >= 8) perfLog("ui.neighborhood.slow", { elapsedMs: elapsed, indexNodes: index.size, renderRevision });
-    return result;
-  }, [index, activePath, renderRevision]);
+  const persistentNeighborhood = useMemo(() => index.getNeighborhood(activePath), [index, activePath, renderRevision]);
   const [sectionExpanded, setSectionExpanded] = useState(false);
   const [sectionExpansion, setSectionExpansion] = useState<CentralSectionExpansion | null>(null);
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(new Set());
@@ -493,35 +481,11 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
     setOptimisticRelink(null);
     setRelationshipUpdating(false);
   }, [persistentNeighborhood, sectionExpanded, sectionExpansion, renderRevision, optimisticRelink, relationshipUpdating]);
-  const scene = useMemo(() => {
-    const started = perfNow();
-    const result = neighborhood
-      ? (effectiveSectionExpansion ? buildSectionExpandedScene(effectiveSectionExpansion, index, settings, expandedSectionIds) : buildScene(neighborhood, index, settings))
-      : { nodes: [], edges: [], zoneViewports: {} };
-    const elapsed = perfElapsed(started);
-    perfDuration("ui.scene-build-ms", elapsed);
-    perfCount("ui.scene-build");
-    perfGauge("ui.scene-nodes", result.nodes.length);
-    perfGauge("ui.scene-edges", result.edges.length);
-    if (elapsed >= 8) perfLog("ui.scene-build.slow", { elapsedMs: elapsed, nodes: result.nodes.length, edges: result.edges.length, sectionExpanded: Boolean(effectiveSectionExpansion) });
-    return result;
-  }, [neighborhood, effectiveSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
+  const scene = useMemo(() => neighborhood
+    ? (effectiveSectionExpansion ? buildSectionExpandedScene(effectiveSectionExpansion, index, settings, expandedSectionIds) : buildScene(neighborhood, index, settings))
+    : { nodes: [], edges: [], zoneViewports: {} }, [neighborhood, effectiveSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (firstSceneVisibleLogged.current || scene.nodes.length === 0) return;
-    firstSceneVisibleLogged.current = true;
-    window.requestAnimationFrame(() => {
-      perfLog("ui.first-graph-visible", {
-        surface,
-        elapsedMs: perfElapsed(graphMountedAt.current),
-        indexNodes: index.size,
-        sceneNodes: scene.nodes.length,
-        sceneEdges: scene.edges.length,
-        renderRevision,
-      });
-    });
-  }, [scene.nodes.length, scene.edges.length, index, surface, renderRevision]);
   const cameraFrame = useRef<number | null>(null);
   const zoneScrollRefs = useRef<Partial<Record<ScrollZone, HTMLDivElement>>>({});
   const camera = useRef({ x: 0, y: 0, scale: 1 });
@@ -906,23 +870,15 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   };
 
   const zoneDisplayLayouts = useMemo(() => {
-    const started = perfNow();
     const layouts: Partial<Record<ScrollZone, ZoneDisplayLayout>> = {};
-    let laidOutNodes = 0;
     for (const zone of ZONES) {
       const panel = scene.zoneViewports[zone];
       if (!panel) continue;
       const globalFiltering = Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());
       const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone && (!globalFiltering || matchesPlexFilter(node, filter)));
       const layout = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings, index, neighborhood?.center.path ?? activePath);
-      laidOutNodes += nodes.length;
       layouts[zone] = layout;
     }
-    const elapsed = perfElapsed(started);
-    perfDuration("ui.zone-layout-ms", elapsed);
-    perfCount("ui.zone-layout");
-    perfGauge("ui.zone-layout-nodes", laidOutNodes);
-    if (elapsed >= 8) perfLog("ui.zone-layout.slow", { elapsedMs: elapsed, nodes: laidOutNodes });
     return layouts;
   }, [scene.nodes, scene.zoneViewports, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision, filter]);
 
@@ -942,7 +898,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
   }, [scene.nodes, scene.zoneViewports, zoneDisplayLayouts, zoneScrollTop, nodeDrag]);
 
   const visibleNodePaths = useMemo(() => {
-    const started = perfNow();
     const paths = new Set<string>();
     const filtering = Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());
     const filterMatches = new Set<string>();
@@ -980,10 +935,6 @@ export function PlexGraph({ plugin, index, settings, surface, filter, activePath
         paths.add(node.page.path);
       }
     }
-    const elapsed = perfElapsed(started);
-    perfDuration("ui.visibility-filter-ms", elapsed);
-    perfCount("ui.visibility-filter");
-    perfGauge("ui.visible-nodes", paths.size);
     return paths;
   }, [scene.nodes, scene.edges, scene.zoneViewports, zoneDisplayLayouts, renderedNodeMap, nodeDrag, filter, sectionExpansion]);
 

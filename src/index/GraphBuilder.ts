@@ -17,9 +17,21 @@ import type { KplexIndexedDbCache } from "./IndexedDbCache";
 import type { EvidenceProvenance, EvidenceRole, EvidenceSourceKind } from "./RelationEvidence";
 import { resolveEvidencePair, resolveEvidenceStoreCooperative } from "./RelationResolver";
 import { createGraphState, getGraphPage, type GraphState } from "./GraphState";
-import { perfCount, perfDuration, perfElapsed, perfGauge, perfLog, perfNow } from "../util/perf";
+import { perfNow } from "../util/perf";
 
-export type FieldCacheEntry = { mtime: number; body: ParsedBodyMetadata };
+export type FieldCacheEntry = {
+  mtime: number;
+  body: ParsedBodyMetadata;
+  /** Runtime-only semantic fingerprint used to suppress graph work for drawing-only/format-only edits. */
+  semanticSignature?: string;
+};
+
+export type PatchMarkdownResult = {
+  ok: boolean;
+  touchedPagePaths: Set<string>;
+  semanticChanges: number;
+  semanticNoops: number;
+};
 
 const FILE_OWNED_EVIDENCE = new Set<EvidenceSourceKind>([
   "obsidian-link",
@@ -60,6 +72,38 @@ function formatDailyDate(isoDate: string, format: string): string | null {
   return parsed.isValid() ? parsed.format(format) : null;
 }
 
+function stableSemanticValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableSemanticValue);
+  if (!value || typeof value !== "object") return value;
+  const output: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    if (key === "position") continue;
+    output[key] = stableSemanticValue((value as Record<string, unknown>)[key]);
+  }
+  return output;
+}
+
+/**
+ * Fingerprint only inputs that can affect K-Plex semantics. Excalidraw drawing JSON and ordinary
+ * prose therefore do not force evidence/search/UI churn when the parsed fields/URLs and Obsidian
+ * link/frontmatter metadata are unchanged. The string is runtime-only and bounded by the hot cache.
+ */
+function semanticSourceSignature(app: App, file: TFile, body: ParsedBodyMetadata): string {
+  const cache = app.metadataCache.getFileCache(file);
+  const frontmatter = { ...(cache?.frontmatter ?? {}) } as Record<string, unknown>;
+  delete frontmatter.position;
+  const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
+  const resolved = Object.keys(app.metadataCache.resolvedLinks[file.path] ?? {}).sort();
+  const unresolved = Object.keys(app.metadataCache.unresolvedLinks[file.path] ?? {}).sort();
+  return JSON.stringify({
+    frontmatter: stableSemanticValue(frontmatter),
+    tags,
+    resolved,
+    unresolved,
+    body,
+  });
+}
+
 /**
  * Builds a complete graph snapshot from vault inputs. It does not publish state or service UI
  * queries; those responsibilities belong to GraphIndex. All collectors emit provenance-bearing
@@ -67,9 +111,7 @@ function formatDailyDate(isoDate: string, format: string): string | null {
  */
 export class GraphBuilder {
   private sliceStartedAt = perfNow();
-  private hostYieldCount = 0;
-  private hostYieldWaitMs = 0;
-  private hostYieldMaxMs = 0;
+  private patchTouchedPagePaths: Set<string> | null = null;
 
   constructor(
     private plugin: ExcaliBrainPlugin,
@@ -78,52 +120,34 @@ export class GraphBuilder {
     private metadataParser: MetadataParser,
     private bodyCache: KplexIndexedDbCache,
     private isCurrent: () => boolean,
-    private onProgress?: (phase: string, detail?: Record<string, unknown>) => void,
   ) {}
+
+  private rememberFieldCache(path: string, entry: FieldCacheEntry): void {
+    // Refresh insertion order so this remains a true small hot working set during long sessions.
+    this.fieldCache.delete(path);
+    this.fieldCache.set(path, entry);
+    const hotLimit = Platform.isIosApp ? 48 : Platform.isMobile ? 160 : 1200;
+    while (this.fieldCache.size > hotLimit) {
+      const oldest = this.fieldCache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.fieldCache.delete(oldest);
+    }
+  }
 
   async build(): Promise<GraphState | null> {
     const state = createGraphState();
-    const startedAt = perfNow();
-    const phase = async (name: string, work: () => Promise<boolean>): Promise<boolean> => {
-      const phaseStartedAt = perfNow();
-      this.onProgress?.(`${name}:start`);
-      const ok = await work();
-      const detail = {
-        elapsedMs: perfElapsed(phaseStartedAt),
-        nodes: state.pages.size,
-        declarations: state.evidence.declarationCount,
-        pairs: state.evidence.pairCount,
-        hostYields: this.hostYieldCount,
-        hostYieldWaitMs: Math.round(this.hostYieldWaitMs * 10) / 10,
-        hostYieldMaxMs: Math.round(this.hostYieldMaxMs * 10) / 10,
-      };
-      this.onProgress?.(`${name}:end`, detail);
-      perfLog(`build.${name}`, detail);
-      return ok;
-    };
-
-    perfLog("build.start", { markdownFiles: this.app.vault.getMarkdownFiles().length, physicalFiles: this.app.vault.getFiles().length });
-    if (!(await phase("vault-tree", () => this.addVaultTree(state)))) return null;
-    if (!(await phase("tag-tree", () => this.addTagTree(state)))) return null;
-    if (!(await phase("resolved-links", () => this.addResolvedLinks(state)))) return null;
-    if (!(await phase("unresolved-links", () => this.addUnresolvedLinks(state)))) return null;
-    if (!(await phase("metadata", () => this.enrichMarkdownPages(state)))) return null;
+    if (!(await this.addVaultTree(state))) return null;
+    if (!(await this.addTagTree(state))) return null;
+    if (!(await this.addResolvedLinks(state))) return null;
+    if (!(await this.addUnresolvedLinks(state))) return null;
+    if (!(await this.enrichMarkdownPages(state))) return null;
     if (!this.isCurrent()) return null;
-    if (!(await phase("resolve", () => resolveEvidenceStoreCooperative(
+    if (!(await resolveEvidenceStoreCooperative(
       state.pages,
       state.evidence,
       this.isCurrent,
       Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 400,
-    )))) return null;
-    perfLog("build.end", {
-      elapsedMs: perfElapsed(startedAt),
-      nodes: state.pages.size,
-      declarations: state.evidence.declarationCount,
-      pairs: state.evidence.pairCount,
-      hostYields: this.hostYieldCount,
-      hostYieldWaitMs: Math.round(this.hostYieldWaitMs * 10) / 10,
-      hostYieldMaxMs: Math.round(this.hostYieldMaxMs * 10) / 10,
-    });
+    ))) return null;
     return state;
   }
 
@@ -131,14 +155,7 @@ export class GraphBuilder {
     if (!this.isCurrent()) return false;
     const budgetMs = Platform.isIosApp ? 7 : Platform.isMobile ? 9 : 13;
     if (!force && perfNow() - this.sliceStartedAt < budgetMs) return true;
-    const yieldStartedAt = perfNow();
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-    const yieldMs = perfNow() - yieldStartedAt;
-    this.hostYieldCount += 1;
-    this.hostYieldWaitMs += yieldMs;
-    this.hostYieldMaxMs = Math.max(this.hostYieldMaxMs, yieldMs);
-    perfCount("builder.hostYields");
-    perfDuration("builder.hostYieldWait", yieldMs);
     this.sliceStartedAt = perfNow();
     return this.isCurrent();
   }
@@ -171,6 +188,7 @@ export class GraphBuilder {
   private addPage(state: GraphState, page: GraphPage): void {
     state.pages.set(page.path, page);
     state.lowercasePathMap.set(page.path.toLowerCase(), page.path);
+    this.patchTouchedPagePaths?.add(page.path);
   }
 
   private async addVaultTree(state: GraphState): Promise<boolean> {
@@ -178,15 +196,11 @@ export class GraphBuilder {
     this.addPage(state, root);
     const indexFolders = this.plugin.settings.showFolderNodes;
     const stack: Array<{ folder: TFolder; parent: GraphPage }> = [{ folder: this.app.vault.getRoot(), parent: root }];
-    let processed = 0;
-    let folders = 0;
-    let files = 0;
     while (stack.length) {
       if (!this.isCurrent()) return false;
       const { folder, parent } = stack.pop()!;
       for (const item of folder.children) {
         if (item instanceof TFolder) {
-          folders += 1;
           if (indexFolders) {
             const node = this.createPage({ path: `folder:${item.path}`, name: item.name, isFolder: true });
             this.addPage(state, node);
@@ -198,16 +212,13 @@ export class GraphBuilder {
             stack.push({ folder: item, parent: root });
           }
         } else if (item instanceof TFile) {
-          files += 1;
           const node = this.createPage({ path: item.path, name: item.extension === "md" ? item.basename : item.name, file: item });
           this.addPage(state, node);
           if (indexFolders) this.addEvidencePair(state, parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "file-tree", definition: "file-tree" });
         }
-        processed += 1;
         if (!(await this.yieldToHost())) return false;
       }
     }
-    perfLog("build.vault-tree.detail", { processed, folders, files, indexFolders });
     return this.isCurrent();
   }
 
@@ -217,18 +228,14 @@ export class GraphBuilder {
     // tag thoughts are hidden, so build it only when the feature is enabled.
     if (!this.plugin.settings.showTagNodes) return this.isCurrent();
     const tagNames = new Set<string>();
-    let processed = 0;
     for (const file of this.app.vault.getMarkdownFiles()) {
       if (!this.isCurrent()) return false;
       const cache = this.app.metadataCache.getFileCache(file);
       if (!cache) continue;
       for (const tag of getAllTags(cache) ?? []) tagNames.add(tag);
-      processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
 
-    const scannedMarkdown = processed;
-    processed = 0;
     for (const rawTag of tagNames) {
       const parts = rawTag.slice(1).split("/").filter(Boolean);
       let parent: GraphPage | null = null;
@@ -243,51 +250,36 @@ export class GraphBuilder {
         if (parent) this.addEvidencePair(state, parent, page, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "tag-tree", definition: "tag-tree" });
         parent = page;
       });
-      processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
-    perfLog("build.tag-tree.detail", { scannedMarkdown, uniqueTags: tagNames.size, createdTagPaths: processed });
     return this.isCurrent();
   }
 
   private async addResolvedLinks(state: GraphState): Promise<boolean> {
-    let processed = 0;
-    let linkCount = 0;
     for (const [sourcePath, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
       if (!this.isCurrent()) return false;
       const source = getGraphPage(state, sourcePath);
       if (!source) continue;
       for (const targetPath of Object.keys(targets)) {
-        linkCount += 1;
         const target = getGraphPage(state, targetPath);
         if (target) this.addInferredParentChild(state, source, target, "obsidian-link");
       }
-      processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
-    perfLog("build.resolved-links.detail", { sources: processed, links: linkCount });
     return this.isCurrent();
   }
 
   private async addUnresolvedLinks(state: GraphState): Promise<boolean> {
-    let processed = 0;
-    let linkCount = 0;
-    let virtualCreated = 0;
     for (const [sourcePath, targets] of Object.entries(this.app.metadataCache.unresolvedLinks)) {
       if (!this.isCurrent()) return false;
       const source = getGraphPage(state, sourcePath);
       if (!source || sourcePath === this.plugin.settings.excalibrainFilepath) continue;
       for (const targetPath of Object.keys(targets)) {
-        linkCount += 1;
-        const existed = Boolean(getGraphPage(state, targetPath));
         const target = this.ensureVirtual(state, targetPath);
-        if (!existed) virtualCreated += 1;
         this.addInferredParentChild(state, source, target, "unresolved-link");
       }
-      processed += 1;
       if (!(await this.yieldToHost())) return false;
     }
-    perfLog("build.unresolved-links.detail", { sources: processed, links: linkCount, virtualCreated });
     return this.isCurrent();
   }
 
@@ -300,19 +292,6 @@ export class GraphBuilder {
       void this.bodyCache.deleteBody(cachedPath);
     }
 
-    const startedAt = perfNow();
-    let processed = 0;
-    let hotHits = 0;
-    let durableHits = 0;
-    let bodyReads = 0;
-    let bytesRead = 0;
-    let readMs = 0;
-    let parseMs = 0;
-    let idbLookupMs = 0;
-    let idbWriteMs = 0;
-    let mergeMs = 0;
-    let applyMetadataMs = 0;
-    let idbWriteFailures = 0;
     // A handful of medium IDB transactions is much cheaper than one transaction per note. iOS
     // still uses conservative batches to cap temporary decoded-object retention.
     const lookupBatchSize = Platform.isIosApp ? 64 : Platform.isMobile ? 96 : 256;
@@ -322,10 +301,7 @@ export class GraphBuilder {
     const flushWrites = async (): Promise<boolean> => {
       if (!pendingWrites.length) return true;
       const batch = pendingWrites.splice(0, pendingWrites.length);
-      const writeStartedAt = perfNow();
-      const stored = await this.bodyCache.putBodies(batch);
-      if (!stored) idbWriteFailures += batch.length;
-      idbWriteMs += perfElapsed(writeStartedAt);
+      await this.bodyCache.putBodies(batch);
       this.markHostOpportunity();
       return this.isCurrent();
     };
@@ -335,17 +311,10 @@ export class GraphBuilder {
       const batchFiles = files.slice(batchStart, batchStart + lookupBatchSize);
       const misses = batchFiles.filter((file) => {
         const hot = this.fieldCache.get(file.path);
-        if (hot?.mtime === file.stat.mtime) {
-          hotHits += 1;
-          return false;
-        }
-        return true;
+        return hot?.mtime !== file.stat.mtime;
       });
-      const lookupStartedAt = perfNow();
       const durable = await this.bodyCache.getBodies(misses.map((file) => ({ path: file.path, mtime: file.stat.mtime })));
-      idbLookupMs += perfElapsed(lookupStartedAt);
       this.markHostOpportunity();
-      durableHits += durable.size;
       if (!this.isCurrent()) return false;
 
       for (const file of batchFiles) {
@@ -359,74 +328,25 @@ export class GraphBuilder {
           if (cachedBody) {
             entry = { mtime: file.stat.mtime, body: cachedBody };
           } else {
-            const readStartedAt = perfNow();
             const content = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
-            readMs += perfElapsed(readStartedAt);
             this.markHostOpportunity();
-            bodyReads += 1;
-            bytesRead += content.length;
             if (!this.isCurrent()) return false;
-            const parseStartedAt = perfNow();
             const body = await this.metadataParser.parse(content);
-            parseMs += perfElapsed(parseStartedAt);
             if (!this.isCurrent()) return false;
             entry = { mtime: file.stat.mtime, body };
             pendingWrites.push({ path: file.path, mtime: file.stat.mtime, body });
             if (pendingWrites.length >= writeBatchSize && !(await flushWrites())) return false;
           }
-          this.fieldCache.set(file.path, entry);
-          const hotLimit = Platform.isIosApp ? 48 : Platform.isMobile ? 160 : 1200;
-          while (this.fieldCache.size > hotLimit) {
-            const oldest = this.fieldCache.keys().next().value as string | undefined;
-            if (!oldest) break;
-            this.fieldCache.delete(oldest);
-          }
+          this.rememberFieldCache(file.path, entry);
         }
 
-        const mergeStartedAt = perfNow();
         const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
-        mergeMs += perfNow() - mergeStartedAt;
-        const applyStartedAt = perfNow();
+        entry.semanticSignature = semanticSourceSignature(this.app, file, entry.body);
         this.applyMetadata(state, page, file, meta);
-        applyMetadataMs += perfNow() - applyStartedAt;
-
-        processed += 1;
-        if (processed % 250 === 0) {
-          this.onProgress?.("metadata:progress", {
-            processed,
-            total: files.length,
-            hotHits,
-            durableHits,
-            bodyReads,
-            idbWriteFailures,
-            elapsedMs: perfElapsed(startedAt),
-            rateFilesPerSecond: perfElapsed(startedAt) > 0 ? Math.round(processed * 10000 / perfElapsed(startedAt)) / 10 : 0,
-          });
-        }
         if (!(await this.yieldToHost())) return false;
       }
     }
     if (!(await flushWrites())) return false;
-    perfLog("build.metadata.detail", {
-      elapsedMs: perfElapsed(startedAt),
-      processed,
-      hotHits,
-      durableHits,
-      bodyReads,
-      bytesRead,
-      readMs: Math.round(readMs * 10) / 10,
-      parseMs: Math.round(parseMs * 10) / 10,
-      idbLookupMs: Math.round(idbLookupMs * 10) / 10,
-      idbWriteMs: Math.round(idbWriteMs * 10) / 10,
-      mergeMs: Math.round(mergeMs * 10) / 10,
-      applyMetadataMs: Math.round(applyMetadataMs * 10) / 10,
-      hostYieldWaitMs: Math.round(this.hostYieldWaitMs * 10) / 10,
-      hostYieldMaxMs: Math.round(this.hostYieldMaxMs * 10) / 10,
-      idbWriteFailures,
-      fieldCacheSize: this.fieldCache.size,
-      rateFilesPerSecond: perfElapsed(startedAt) > 0 ? Math.round(processed * 10000 / perfElapsed(startedAt)) / 10 : 0,
-    });
-    perfGauge("builder.fieldCacheSize", this.fieldCache.size);
     return this.isCurrent();
   }
 
@@ -438,24 +358,65 @@ export class GraphBuilder {
    * K-Plex was closed. Incoming declarations from other notes remain untouched. Structural vault
    * changes (create/delete/rename) are intentionally handled by a full rebuild instead.
    */
-  async patchMarkdownFiles(state: GraphState, files: readonly TFile[]): Promise<boolean> {
-    const startedAt = perfNow();
-    let processed = 0;
-    let bodyCacheHits = 0;
-    let bodyReads = 0;
-    let readMs = 0;
-    let parseMs = 0;
-    let writeMs = 0;
-    let applyMs = 0;
-    let resolveMs = 0;
-    let affectedPairs = 0;
-    perfLog("patch.builder.start", { files: files.length, nodes: state.pages.size, declarations: state.evidence.declarationCount });
+  async patchMarkdownFiles(
+    state: GraphState,
+    files: readonly TFile[],
+    options: { useDurableCache?: boolean; awaitBodyWrite?: boolean } = {},
+  ): Promise<PatchMarkdownResult> {
+    const touchedPagePaths = new Set<string>();
+    this.patchTouchedPagePaths = touchedPagePaths;
+    let semanticChanges = 0;
+    let semanticNoops = 0;
+    const useDurableCache = options.useDurableCache === true;
+    const awaitBodyWrite = options.awaitBodyWrite === true;
+
+
     for (const file of files) {
-      if (!this.isCurrent()) return false;
+      if (!this.isCurrent()) return { ok: false, touchedPagePaths, semanticChanges, semanticNoops };
       const page = getGraphPage(state, file.path);
-      if (!page) return false;
+      if (!page) return { ok: false, touchedPagePaths, semanticChanges, semanticNoops };
+
+      // Live metadata events imply a new mtime, so a durable lookup is normally guaranteed to
+      // miss and can be badly delayed by unrelated IndexedDB maintenance. Startup reconciliation
+      // opts into durable lookup because it can legitimately hit a body written in the prior run.
+      const previousEntry = this.fieldCache.get(file.path);
+      let body: ParsedBodyMetadata | null = null;
+      if (previousEntry && previousEntry.mtime === file.stat.mtime) {
+        body = previousEntry.body;
+      } else if (useDurableCache) {
+        body = await this.bodyCache.getBody(file.path, file.stat.mtime);
+        this.markHostOpportunity();
+      }
+
+      if (!body) {
+        const content = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
+        this.markHostOpportunity();
+        if (!this.isCurrent()) return { ok: false, touchedPagePaths, semanticChanges, semanticNoops };
+
+        body = await this.metadataParser.parse(content);
+        if (!this.isCurrent()) return { ok: false, touchedPagePaths, semanticChanges, semanticNoops };
+
+        if (awaitBodyWrite) {
+          await this.bodyCache.putBody(file.path, file.stat.mtime, body);
+          this.markHostOpportunity();
+        } else {
+          this.bodyCache.queueBodyWrite(file.path, file.stat.mtime, body);
+        }
+      }
+
+      const signature = semanticSourceSignature(this.app, file, body);
+      if (previousEntry?.semanticSignature === signature) {
+        // Drawing data / prose changed, but nothing K-Plex consumes changed. Update only runtime
+        // freshness and the write-behind cache: no evidence mutation, search rebuild or UI emit.
+        this.rememberFieldCache(file.path, { mtime: file.stat.mtime, body, semanticSignature: signature });
+        page.mtime = file.stat.mtime;
+        semanticNoops += 1;
+        if (!(await this.yieldToHost())) return { ok: false, touchedPagePaths, semanticChanges, semanticNoops };
+        continue;
+      }
 
       const affected = new Set<string>();
+      touchedPagePaths.add(file.path);
       for (const item of state.evidence.declarationsTouching(file.path)) {
         const ownedByFile = item.declaredByPath === file.path && FILE_OWNED_EVIDENCE.has(item.sourceKind);
         const tagMembership = item.sourceKind === "tag-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("tag:");
@@ -482,30 +443,9 @@ export class GraphBuilder {
         affected.add(target.path);
       }
 
-      let body = await this.bodyCache.getBody(file.path, file.stat.mtime);
-      this.markHostOpportunity();
-      if (body) bodyCacheHits += 1;
-      if (!body) {
-        const readStartedAt = perfNow();
-        const content = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
-        readMs += perfNow() - readStartedAt;
-        bodyReads += 1;
-        this.markHostOpportunity();
-        if (!this.isCurrent()) return false;
-        const parseStartedAt = perfNow();
-        body = await this.metadataParser.parse(content);
-        parseMs += perfNow() - parseStartedAt;
-        if (!this.isCurrent()) return false;
-        const writeStartedAt = perfNow();
-        await this.bodyCache.putBody(file.path, file.stat.mtime, body);
-        writeMs += perfNow() - writeStartedAt;
-        this.markHostOpportunity();
-      }
-      this.fieldCache.set(file.path, { mtime: file.stat.mtime, body });
+      this.rememberFieldCache(file.path, { mtime: file.stat.mtime, body, semanticSignature: signature });
       const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
-      const applyStartedAt = perfNow();
-      this.applyMetadata(state, page, file, meta);
-      applyMs += perfNow() - applyStartedAt;
+      this.applyMetadata(state, page, file, meta, "patch");
       page.mtime = file.stat.mtime;
 
       // Capture new targets after applying metadata and resolve just the touched relationship
@@ -514,39 +454,27 @@ export class GraphBuilder {
         affected.add(item.declaredByPath);
         affected.add(item.declaredTargetPath);
       }
-      const resolveStartedAt = perfNow();
       for (const targetPath of affected) {
+        touchedPagePaths.add(targetPath);
         if (targetPath === file.path) continue;
-        affectedPairs += 2;
         resolveEvidencePair(state.pages, state.evidence, file.path, targetPath);
         resolveEvidencePair(state.pages, state.evidence, targetPath, file.path);
       }
-      resolveMs += perfNow() - resolveStartedAt;
 
-      processed += 1;
-      this.onProgress?.("patch:progress", { processed, total: files.length });
-      if (!(await this.yieldToHost())) return false;
+      semanticChanges += 1;
+      if (!(await this.yieldToHost())) return { ok: false, touchedPagePaths, semanticChanges, semanticNoops };
     }
-    const elapsedMs = perfElapsed(startedAt);
-    perfDuration("patch.builder", elapsedMs);
-    perfLog("patch.builder.end", {
-      files: files.length,
-      processed,
-      elapsedMs,
-      bodyCacheHits,
-      bodyReads,
-      readMs: Math.round(readMs * 10) / 10,
-      parseMs: Math.round(parseMs * 10) / 10,
-      writeMs: Math.round(writeMs * 10) / 10,
-      applyMs: Math.round(applyMs * 10) / 10,
-      resolveMs: Math.round(resolveMs * 10) / 10,
-      affectedPairs,
-      declarations: state.evidence.declarationCount,
-    });
-    return this.isCurrent();
+
+    return { ok: this.isCurrent(), touchedPagePaths, semanticChanges, semanticNoops };
   }
 
-  private applyMetadata(state: GraphState, page: GraphPage, file: TFile, meta: ParsedFileMetadata): void {
+  private applyMetadata(
+    state: GraphState,
+    page: GraphPage,
+    file: TFile,
+    meta: ParsedFileMetadata,
+    discoveryMode: "rebuild" | "patch" = "rebuild",
+  ): void {
     page.aliases = meta.aliases;
     page.tags = meta.tags;
 
@@ -554,6 +482,12 @@ export class GraphBuilder {
       const normalized = normalizeFieldName(name);
       if (!normalized) return;
       const current = state.discoveredFields.get(normalized);
+      if (discoveryMode === "patch") {
+        // Incremental edits must not inflate counts every time the same note is saved. Exact counts
+        // are rebuilt on an authoritative full build; during patches we only discover new fields.
+        if (!current) state.discoveredFields.set(normalized, { name: name.trim(), count: 1 });
+        return;
+      }
       state.discoveredFields.set(normalized, { name: current?.name ?? name.trim(), count: (current?.count ?? 0) + 1 });
     };
     Object.keys(meta.frontmatter).forEach(recordField);

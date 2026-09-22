@@ -124,57 +124,89 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
     return -1;
   };
 
-  const lines = content.split(/\r?\n/);
+  // Scan by offsets instead of `content.split(...)`. Large Excalidraw files often contain a
+  // megabyte-scale JSON payload inside a fenced block. Splitting the whole file duplicates all of
+  // that text into thousands of strings even though K-Plex intentionally ignores fenced content.
+  // While inside a fence we inspect only a short prefix of each line and never materialize the
+  // potentially enormous JSON line itself.
+  const firstNewline = content.indexOf("\n");
+  const firstRawEnd = firstNewline < 0 ? content.length : firstNewline;
+  const firstLogicalEnd = firstRawEnd > 0 && content.charCodeAt(firstRawEnd - 1) === 13 ? firstRawEnd - 1 : firstRawEnd;
+  const firstLine = content.slice(0, firstLogicalEnd);
   let offset = 0;
-  let inFrontmatter = lines[0]?.trim() === "---";
+  let lineStart = 0;
+  let lineIndex = 0;
+  let inFrontmatter = firstLine.trim() === "---";
   let frontmatterClosed = !inFrontmatter;
   let fence: string | null = null;
   let inHtmlComment = false;
 
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const originalLine = lines[lineIndex];
-    const trimmed = originalLine.trim();
+  while (lineStart <= content.length) {
+    const newlineAt = content.indexOf("\n", lineStart);
+    const rawEnd = newlineAt < 0 ? content.length : newlineAt;
+    const logicalEnd = rawEnd > lineStart && content.charCodeAt(rawEnd - 1) === 13 ? rawEnd - 1 : rawEnd;
+    const logicalLength = logicalEnd - lineStart;
     const lineNumber = lineIndex + 1;
+    const advance = (): boolean => {
+      // Preserve the historical offset convention: CRLF counts like one newline because the old
+      // split(/\r?\n/) parser removed both delimiter characters and then added one.
+      offset += logicalLength + 1;
+      lineIndex += 1;
+      if (newlineAt < 0) {
+        lineStart = content.length + 1;
+        return false;
+      }
+      lineStart = newlineAt + 1;
+      return true;
+    };
 
     if (inFrontmatter && !frontmatterClosed) {
+      const originalLine = content.slice(lineStart, logicalEnd);
+      const trimmed = originalLine.trim();
       if (lineIndex > 0 && (trimmed === "---" || trimmed === "...")) {
         frontmatterClosed = true;
         inFrontmatter = false;
       }
-      offset += originalLine.length + 1;
+      if (!advance()) break;
       continue;
     }
 
-    const fenceMatch = originalLine.match(/^\s*(```+|~~~+)/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1][0];
-      if (!fence) fence = marker;
-      else if (fence === marker) fence = null;
-      offset += originalLine.length + 1;
-      continue;
-    }
+    // Fence detection needs only the leading characters. This is the important fast path for
+    // Excalidraw's large ```json drawing block.
+    const preview = content.slice(lineStart, Math.min(logicalEnd, lineStart + 256));
+    const fenceMatch = preview.match(/^\s*(```+|~~~+)/);
     if (fence) {
-      offset += originalLine.length + 1;
+      if (fenceMatch && fence === fenceMatch[1][0]) fence = null;
+      if (!advance()) break;
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1][0];
+      if (!advance()) break;
       continue;
     }
 
+    const originalLine = content.slice(lineStart, logicalEnd);
     let visible = maskInlineCode(originalLine);
     if (inHtmlComment) {
-      const end = visible.indexOf("-->");
-      if (end < 0) { offset += originalLine.length + 1; continue; }
-      visible = " ".repeat(end + 3) + visible.slice(end + 3);
+      const commentEnd = visible.indexOf("-->");
+      if (commentEnd < 0) {
+        if (!advance()) break;
+        continue;
+      }
+      visible = " ".repeat(commentEnd + 3) + visible.slice(commentEnd + 3);
       inHtmlComment = false;
     }
     for (;;) {
-      const start = visible.indexOf("<!--");
-      if (start < 0) break;
-      const end = visible.indexOf("-->", start + 4);
-      if (end < 0) {
-        visible = visible.slice(0, start) + " ".repeat(visible.length - start);
+      const commentStart = visible.indexOf("<!--");
+      if (commentStart < 0) break;
+      const commentEnd = visible.indexOf("-->", commentStart + 4);
+      if (commentEnd < 0) {
+        visible = visible.slice(0, commentStart) + " ".repeat(visible.length - commentStart);
         inHtmlComment = true;
         break;
       }
-      visible = visible.slice(0, start) + " ".repeat(end + 3 - start) + visible.slice(end + 3);
+      visible = visible.slice(0, commentStart) + " ".repeat(commentEnd + 3 - commentStart) + visible.slice(commentEnd + 3);
     }
 
     const claimed: Array<[number, number]> = [];
@@ -185,22 +217,22 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
       if (open !== "(" && open !== "[") continue;
       if (open === "[" && visible[i + 1] === "[") { i += 1; continue; }
       const close = open === "(" ? ")" : "]";
-      const end = balancedClose(visible, i, open, close);
-      if (end < 0) continue;
-      const inside = visible.slice(i + 1, end);
+      const balancedEnd = balancedClose(visible, i, open, close);
+      if (balancedEnd < 0) continue;
+      const inside = visible.slice(i + 1, balancedEnd);
       const separator = inside.indexOf("::");
-      if (separator <= 0 || separator > 120) { i = end; continue; }
+      if (separator <= 0 || separator > 120) { i = balancedEnd; continue; }
       const name = stripFieldFormatting(inside.slice(0, separator));
-      if (!name || /[\[\]()]/.test(name)) { i = end; continue; }
+      if (!name || /[\[\]()]/.test(name)) { i = balancedEnd; continue; }
       const valueStart = i + 1 + separator + 2;
-      addField(name, originalLine.slice(valueStart, end), open === "(" ? "parenthesized" : "bracketed", lineNumber, offset + i, offset + end + 1);
-      claimed.push([i, end + 1]);
-      i = end;
+      addField(name, originalLine.slice(valueStart, balancedEnd), open === "(" ? "parenthesized" : "bracketed", lineNumber, offset + i, offset + balancedEnd + 1);
+      claimed.push([i, balancedEnd + 1]);
+      i = balancedEnd;
     }
 
     // Full-line Dataview fields. List markers and Markdown emphasis around the key are accepted.
     const firstNonSpace = visible.search(/\S/);
-    const firstClaimed = claimed.some(([start]) => start === firstNonSpace);
+    const firstClaimed = claimed.some(([claimedStart]) => claimedStart === firstNonSpace);
     if (!firstClaimed) {
       const full = visible.match(/^\s*(?:[-*+]\s+)?(.{1,120}?)::\s*(.*)$/);
       if (full) {
@@ -231,7 +263,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
       urls.push(label ? { url: raw, label, line: lineNumber } : { url: raw, line: lineNumber });
     }
 
-    offset += originalLine.length + 1;
+    if (!advance()) break;
   }
 
   return { inlineFields, inlineFieldOccurrences, urls };

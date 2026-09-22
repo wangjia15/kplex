@@ -438,6 +438,20 @@ try {
     "Text (Friend:: [[B]]) then [Challenger:: [[C]]]",
   ].join("\n")));
 
+  // Large Excalidraw drawings live inside fenced JSON. The body parser must ignore the drawing
+  // payload without materializing/parsing it as Dataview fields or URLs.
+  const hugeDrawingPayload = `{"blob":"${"x".repeat(1024 * 1024)}","fake":"Friend:: [[IgnoredDrawingData]]"}`;
+  const hugeDrawingParsed = parseBodyMetadata([
+    "Parent:: [[A]]",
+    "```json",
+    hugeDrawingPayload,
+    "```",
+    "Child:: [[B]]",
+  ].join("\n"));
+  assert.deepEqual(hugeDrawingParsed.inlineFields.parent, ["[[A]]"]);
+  assert.deepEqual(hugeDrawingParsed.inlineFields.child, ["[[B]]"]);
+  assert.equal(hugeDrawingParsed.inlineFields.friend, undefined);
+
   await index.rebuild();
 
   const A = index.get("Note A.md");
@@ -693,7 +707,28 @@ try {
   assert.deepEqual(runtimePatch, { patched: true, count: 1 });
   expectRole("Note A.md", "parent", "Note B.md", RelationType.DEFINED);
 
-  // Assertion 54: evidence storage is declaration-compact. One original fact is retained once,
+  // Assertions 54–56: a semantic edit refreshes only the changed search entry; a prose-only edit
+  // can then reuse the semantic signature without mutating the graph. Incremental patching must
+  // also stop discovered-field counts from growing on every save.
+  const aliasesCountBefore = index.discoveredFields().find((field) => field.normalized === "aliases")?.count ?? 0;
+  const noteA = files.get("Note A.md");
+  const noteACache = caches.get("Note A.md");
+  noteA.stat.mtime += 1000;
+  noteACache.frontmatter.aliases = "RuntimeAliasZZZ";
+  const aliasPatch = await index.patchMarkdownPaths(["Note A.md"]);
+  assert.deepEqual(aliasPatch, { patched: true, count: 1 });
+  assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
+  const aliasesCountAfter = index.discoveredFields().find((field) => field.normalized === "aliases")?.count ?? 0;
+  assert.equal(aliasesCountAfter, aliasesCountBefore, "Incremental saves must not inflate discovered-field counts");
+
+  const proseBefore = contents.get("Note A.md");
+  contents.set("Note A.md", `${proseBefore}\nPlain prose that does not affect K-Plex semantics.`);
+  noteA.stat.mtime += 1000;
+  const prosePatch = await index.patchMarkdownPaths(["Note A.md"]);
+  assert.deepEqual(prosePatch, { patched: true, count: 1 });
+  assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
+
+  // Assertion 57: evidence storage is declaration-compact. One original fact is retained once,
   // while both source perspectives remain queryable for classification/explainability. This is a
   // deliberate iOS memory safeguard for large vaults.
   const compactEvidence = new RelationEvidenceStore();
@@ -704,7 +739,7 @@ try {
 
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
-  console.log("Warm cache + incremental runtime patch: assertions 51–54 PASS");
+  console.log("Warm cache + incremental runtime patch: assertions 51–57 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });
