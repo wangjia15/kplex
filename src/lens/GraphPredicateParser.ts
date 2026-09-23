@@ -100,7 +100,7 @@ class Parser {
   private advance(): Token { return this.tokens[this.cursor++]; }
   private is(text: string): boolean { return this.current().text.toLowerCase() === text.toLowerCase(); }
   private match(text: string): boolean { if (!this.is(text)) return false; this.advance(); return true; }
-  private expect(kindOrText: TokenKind | string): Token {
+  private expect(kindOrText: string): Token {
     const token = this.current();
     if (token.kind === kindOrText || token.text === kindOrText) return this.advance();
     throw new PredicateSyntaxError(`Expected ${kindOrText}, found '${token.text || "end of expression"}'`, token.position);

@@ -2,7 +2,7 @@ import { Modal, setIcon, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { RelationshipSourceSection } from "../main";
 import { RelationType, type GateRole, type Role } from "../types";
-import type { EvidenceDecision, EvidenceSourceKind, RelationEvidence } from "../index/RelationEvidence";
+import type { EvidenceDecision, EvidenceSourceKind } from "../index/RelationEvidence";
 import type { RelationshipExplanation } from "../index/RelationResolver";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -310,7 +310,8 @@ export class RelationshipExplanationModal extends Modal {
       });
     }
 
-    requestAnimationFrame(() => {
+    const viewWindow = this.contentEl.ownerDocument.defaultView ?? window;
+    viewWindow.requestAnimationFrame(() => {
       if (this.closed) return;
       const focus = this.displayContext?.initialFocus === "why" ? why : list;
       focus.scrollIntoView({ block: "nearest" });

@@ -29,6 +29,18 @@ Installable output must be written to `./dist/`:
 
 Do not claim a successful build from a stub-only/type-harness check. When Obsidian APIs are involved, validate against the actual installed `obsidian` type package.
 
+## Code-scanner hygiene
+
+Treat Obsidian's code scanner as part of the compatibility contract. New or touched code should avoid known scanner warnings rather than relying on suppressions.
+
+- Prefer TypeScript's inferred/public API type when it is already correct. Do not add `as SomeType` assertions that do not narrow or change the expression type.
+- Do not union literal/string-enum types with the broad `string` primitive (for example `TokenKind | string`); `string` subsumes the narrower string members. Use `string`, a genuinely closed union, or separate parameters/overloads as appropriate.
+- Do not use `globalThis` in plugin/UI code. For host globals use `window` or the owning/active window. For DOM created in pop-outs, derive the window from `element.ownerDocument.defaultView` when the operation is window-specific.
+- Do not call bare viewport/window scheduling APIs such as `requestAnimationFrame()`. Use the correct owning window (`element.ownerDocument.defaultView ?? window`) and call `viewWindow.requestAnimationFrame(...)`; use the same window for cancellation.
+- Remove unused imports, types and locals as part of every change. Do not leave dead type-only imports after refactors.
+- Prefer broadly supported CSS primitives within K-Plex's minimum Obsidian version. In grid/flex layouts use `gap` instead of `column-gap` when either expresses the same intent; avoid CSS features the Obsidian scanner reports as only partially supported.
+- Do not silence scanner findings with `!important`, blanket casts, or compatibility suppressions unless the underlying issue cannot be solved cleanly and the exception is documented here.
+
 ## Obsidian API discipline
 
 This project has already lost time to invented/assumed APIs. Do not guess Obsidian methods.

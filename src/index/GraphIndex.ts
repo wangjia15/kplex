@@ -180,7 +180,7 @@ export class GraphIndex {
 
     const frontmatterValue = (file: TFile, normalized: string): unknown => {
       if (!normalized) return undefined;
-      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
       if (!frontmatter) return undefined;
       for (const [key, value] of Object.entries(frontmatter)) {
         if (key !== "position" && normalizeFieldName(key) === normalized) return value;

@@ -1996,7 +1996,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile | string> };
     type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
     const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
-    const automate = (globalThis as unknown as { ExcalidrawAutomate?: { create?: unknown; getAPI?: unknown } }).ExcalidrawAutomate;
+    const automate = (window as unknown as { ExcalidrawAutomate?: { create?: unknown; getAPI?: unknown } }).ExcalidrawAutomate;
     return typeof automate?.create === "function" || typeof automate?.getAPI === "function" ||
       typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
   }
@@ -2341,7 +2341,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         getAPI?: () => Automate;
         create?: (params?: { filename?: string; foldername?: string; onNewPane?: boolean; silent?: boolean }) => Promise<string>;
       };
-      const globalEA = (globalThis as unknown as { ExcalidrawAutomate?: Automate }).ExcalidrawAutomate;
+      const globalEA = (window as unknown as { ExcalidrawAutomate?: Automate }).ExcalidrawAutomate;
       const ea = typeof globalEA?.getAPI === "function" ? globalEA.getAPI() : globalEA;
       if (ea?.create) {
         try {

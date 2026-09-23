@@ -273,12 +273,12 @@ export function PlexFilter({
   useEffect(() => {
     if (!open || !triggerRef.current) return;
     const doc = triggerRef.current.ownerDocument;
-    const onPointerDown = (event: globalThis.PointerEvent) => {
+    const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target && (triggerRef.current?.contains(target) || panelRef.current?.contains(target))) return;
       setOpen(false);
     };
-    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     doc.addEventListener("pointerdown", onPointerDown, true);
     doc.addEventListener("keydown", onKeyDown, true);
     return () => {
