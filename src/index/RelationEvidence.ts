@@ -105,6 +105,38 @@ export class RelationEvidenceStore {
   /** Start an isolated local transaction. Mutating the returned store cannot mutate this store. */
   fork(): RelationEvidenceStore { return new RelationEvidenceStore(this); }
 
+  /**
+   * Collapse a copy-on-write chain into one standalone store. The current store remains published
+   * and untouched until the caller swaps in the completed result, so cancellation cannot expose a
+   * partial compaction. Pair insertion order follows the oldest layer while newer layers replace
+   * values in place, matching the observable order of `allPairKeys()`.
+   */
+  async compactCooperative(checkpoint: () => Promise<boolean>): Promise<RelationEvidenceStore | null> {
+    if (!this.base) return this;
+    const layers: RelationEvidenceStore[] = [];
+    for (let layer: RelationEvidenceStore | null = this; layer; layer = layer.base) layers.push(layer);
+    layers.reverse();
+
+    const latest = new Map<string, RelationEvidence[]>();
+    let processed = 0;
+    for (const layer of layers) {
+      for (const [key, declarations] of layer.byPair) {
+        latest.set(key, declarations);
+        processed += 1;
+        if ((processed & 255) === 0 && !(await checkpoint())) return null;
+      }
+    }
+
+    const compacted = new RelationEvidenceStore();
+    for (const [key, declarations] of latest) {
+      if (declarations.length) compacted.writePair(key, [...declarations], 0);
+      processed += declarations.length + 1;
+      if ((processed & 255) === 0 && !(await checkpoint())) return null;
+    }
+    compacted.nextId = this.nextId;
+    return compacted;
+  }
+
   addPair(
     sourcePath: string,
     targetPath: string,

@@ -84,6 +84,7 @@ export function resolveEvidencePair(
   store: RelationEvidenceStore,
   sourcePath: string,
   targetPath: string,
+  canonicalTarget?: (path: string, staged: GraphPage) => GraphPage,
 ): void {
   const source = pages.get(sourcePath);
   const target = pages.get(targetPath);
@@ -93,7 +94,7 @@ export function resolveEvidencePair(
     source.neighbours.delete(targetPath);
     return;
   }
-  const relation: Relation = { ...emptyRelation(), target };
+  const relation: Relation = { ...emptyRelation(), target: canonicalTarget?.(targetPath, target) ?? target };
   for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
   const hasRole = relation.isHidden || relation.isParent || relation.isChild || relation.isLeftFriend ||
     relation.isRightFriend || relation.isNextFriend || relation.isPreviousFriend;

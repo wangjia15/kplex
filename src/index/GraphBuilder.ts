@@ -120,11 +120,18 @@ function compactFingerprint(serialized: string): string {
 
 /** Small copy-on-write map used only while staging one incremental file patch. Reads fall through
  * to the published map; writes/deletes stay private until commit. */
+const MAX_PATCH_OVERLAY_DEPTH = 8;
+
 class PatchOverlayMap<K, V> extends Map<K, V> {
   private readonly local = new Map<K, V>();
   private readonly removed = new Set<K>();
+  private readonly clonedBaseKeys = new Set<K>();
+  readonly depth: number;
 
-  constructor(private readonly base: Map<K, V>, private cloneOnRead?: (value: V) => V) { super(); }
+  constructor(private readonly base: Map<K, V>, private cloneOnRead?: (value: V) => V) {
+    super();
+    this.depth = base instanceof PatchOverlayMap ? base.depth + 1 : 1;
+  }
 
   override get size(): number {
     let size = this.base.size;
@@ -143,10 +150,16 @@ class PatchOverlayMap<K, V> extends Map<K, V> {
     if (value === undefined || !this.cloneOnRead) return value;
     const clone = this.cloneOnRead(value);
     this.local.set(key, clone);
+    this.clonedBaseKeys.add(key);
     return clone;
   }
 
-  override set(key: K, value: V): this { this.removed.delete(key); this.local.set(key, value); return this; }
+  override set(key: K, value: V): this {
+    if (this.base.has(key)) this.clonedBaseKeys.add(key);
+    this.removed.delete(key);
+    this.local.set(key, value);
+    return this;
+  }
   override delete(key: K): boolean {
     const existed = this.has(key);
     this.local.delete(key);
@@ -179,8 +192,28 @@ class PatchOverlayMap<K, V> extends Map<K, V> {
 
   localEntries(): IterableIterator<[K, V]> { return this.local.entries(); }
   removedKeys(): IterableIterator<K> { return this.removed.values(); }
-  hasLocal(key: K): boolean { return this.local.has(key); }
+  *existingLocalEntries(): IterableIterator<[K, V, V]> {
+    for (const key of this.clonedBaseKeys) {
+      const staged = this.local.get(key);
+      const published = this.base.get(key);
+      if (staged !== undefined && published !== undefined) yield [key, staged, published];
+    }
+  }
+  publicationValue(key: K): V | undefined {
+    if (this.base.has(key)) return this.base.get(key);
+    return this.removed.has(key) ? undefined : this.local.get(key);
+  }
   changeCount(): number { return this.local.size + this.removed.size; }
+  async flattenCooperative(checkpoint: () => Promise<boolean>): Promise<Map<K, V> | null> {
+    const flattened = new Map<K, V>();
+    let processed = 0;
+    for (const [key, value] of this.entries()) {
+      flattened.set(key, value);
+      processed += 1;
+      if ((processed & 255) === 0 && !(await checkpoint())) return null;
+    }
+    return flattened;
+  }
   /** Published overlays must become read-only views over their base. Clone-on-read is a staging
    * behavior only; leaving it enabled would make ordinary graph reads mutate the published map. */
   seal(): this { this.cloneOnRead = undefined; return this; }
@@ -195,6 +228,23 @@ function cloneGraphPage(page: GraphPage): GraphPage {
     styleTags: [...page.styleTags],
     transient: page.transient ? { ...page.transient } : undefined,
   };
+}
+
+function publishGraphPage(target: GraphPage, staged: GraphPage): void {
+  target.file = staged.file;
+  target.name = staged.name;
+  target.url = staged.url;
+  target.isFolder = staged.isFolder;
+  target.isTag = staged.isTag;
+  target.mtime = staged.mtime;
+  target.neighbours = staged.neighbours;
+  target.aliases = staged.aliases;
+  target.tags = staged.tags;
+  target.noteType = staged.noteType;
+  target.primaryStyleTag = staged.primaryStyleTag;
+  target.styleTags = staged.styleTags;
+  target.maxLabelLength = staged.maxLabelLength;
+  target.transient = staged.transient;
 }
 
 /**
@@ -359,13 +409,57 @@ export class GraphBuilder {
     return provenanceHash ? `v2:${topologyHash}~${provenanceHash}` : null;
   }
 
-  private createPatchState(state: GraphState): GraphState {
+  private createPatchState(state: GraphState, forkEvidence = true): GraphState {
     return {
       pages: new PatchOverlayMap(state.pages, cloneGraphPage),
       lowercasePathMap: new PatchOverlayMap(state.lowercasePathMap),
-      evidence: state.evidence.fork(),
+      evidence: forkEvidence ? state.evidence.fork() : state.evidence,
       discoveredFields: new PatchOverlayMap(state.discoveredFields, (value) => ({ ...value })),
     };
+  }
+
+  /** Bound retained copy-on-write history before starting another transaction. Compaction builds
+   * complete private replacements and publishes them together only after all checkpoints pass. */
+  private async compactPublishedPatchLayers(state: GraphState): Promise<boolean> {
+    const pageOverlay = state.pages instanceof PatchOverlayMap && state.pages.depth >= MAX_PATCH_OVERLAY_DEPTH
+      ? state.pages : null;
+    const lowercaseOverlay = state.lowercasePathMap instanceof PatchOverlayMap && state.lowercasePathMap.depth >= MAX_PATCH_OVERLAY_DEPTH
+      ? state.lowercasePathMap : null;
+    const fieldOverlay = state.discoveredFields instanceof PatchOverlayMap && state.discoveredFields.depth >= MAX_PATCH_OVERLAY_DEPTH
+      ? state.discoveredFields : null;
+    const compactEvidence = state.evidence.depth >= MAX_PATCH_OVERLAY_DEPTH;
+    if (!pageOverlay && !lowercaseOverlay && !fieldOverlay && !compactEvidence) return this.isCurrent();
+
+    const pages = pageOverlay ? await pageOverlay.flattenCooperative(() => this.yieldToHost()) : state.pages;
+    if (!pages) return false;
+    const lowercasePathMap = lowercaseOverlay
+      ? await lowercaseOverlay.flattenCooperative(() => this.yieldToHost()) : state.lowercasePathMap;
+    if (!lowercasePathMap) return false;
+    const discoveredFields = fieldOverlay
+      ? await fieldOverlay.flattenCooperative(() => this.yieldToHost()) : state.discoveredFields;
+    if (!discoveredFields) return false;
+    const evidence = compactEvidence
+      ? await state.evidence.compactCooperative(() => this.yieldToHost()) : state.evidence;
+    if (!evidence || !this.isCurrent()) return false;
+
+    state.pages = pages;
+    state.lowercasePathMap = lowercasePathMap;
+    state.discoveredFields = discoveredFields;
+    state.evidence = evidence;
+    return true;
+  }
+
+  private resolvePatchEvidencePair(state: GraphState, sourcePath: string, targetPath: string): void {
+    const pages = state.pages;
+    resolveEvidencePair(
+      pages,
+      state.evidence,
+      sourcePath,
+      targetPath,
+      pages instanceof PatchOverlayMap
+        ? (path, staged) => pages.publicationValue(path) ?? staged
+        : undefined,
+    );
   }
 
   /** Publish a fully staged file patch. All expensive parsing/evidence/resolution work happens in
@@ -381,6 +475,14 @@ export class GraphBuilder {
     // longest main-thread task. Publish sealed copy-on-write overlays in O(1) instead. Smaller
     // patches are flattened into the existing maps to avoid building deep overlay chains during
     // ordinary editing sessions. Evidence already uses the same copy-on-write publication model.
+    // Existing pages have stable identity because Relation stores direct GraphPage targets. Copy
+    // staged fields into those identities and make the overlay reference them before publication.
+    // New pages can be published directly; deleted pages need no identity preservation.
+    for (const [path, stagedPage, publishedPage] of pages.existingLocalEntries()) {
+      publishGraphPage(publishedPage, stagedPage);
+      pages.set(path, publishedPage);
+    }
+
     const bulkPublish = pages.changeCount() + lowercase.changeCount() + fields.changeCount() > 1024;
     if (bulkPublish) {
       live.pages = pages.seal();
@@ -779,7 +881,10 @@ export class GraphBuilder {
         return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       }
       const previousSignature = this.semanticFingerprints.get(file.path) ?? previousEntry?.semanticSignature;
-      const stagedState = this.createPatchState(state);
+      if (!(await this.compactPublishedPatchLayers(state)) || !this.fileRevisionMatches(file, revision)) {
+        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      }
+      const stagedState = this.createPatchState(state, previousSignature !== signature);
       const stagedPage = getGraphPage(stagedState, file.path);
       if (!stagedPage) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
 
@@ -868,8 +973,8 @@ export class GraphBuilder {
       for (const targetPath of affected) {
         fileTouchedPagePaths.add(targetPath);
         if (targetPath !== file.path) {
-          resolveEvidencePair(stagedState.pages, stagedState.evidence, file.path, targetPath);
-          resolveEvidencePair(stagedState.pages, stagedState.evidence, targetPath, file.path);
+          this.resolvePatchEvidencePair(stagedState, file.path, targetPath);
+          this.resolvePatchEvidencePair(stagedState, targetPath, file.path);
         }
         processed += 1;
         if ((processed & 31) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
@@ -1210,8 +1315,8 @@ export class GraphBuilder {
         if (!exists) {
           this.addEvidencePair(state, parent, page, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "tag-tree", definition: "tag-tree" });
           if (this.patchTouchedPagePaths) {
-            resolveEvidencePair(state.pages, state.evidence, parent.path, page.path);
-            resolveEvidencePair(state.pages, state.evidence, page.path, parent.path);
+            this.resolvePatchEvidencePair(state, parent.path, page.path);
+            this.resolvePatchEvidencePair(state, page.path, parent.path);
             this.patchTouchedPagePaths.add(parent.path);
             this.patchTouchedPagePaths.add(page.path);
           }
@@ -1332,8 +1437,8 @@ export class GraphBuilder {
       }
       affected.add(urlPath);
       affected.add(origin);
-      resolveEvidencePair(state.pages, state.evidence, origin, urlPath);
-      resolveEvidencePair(state.pages, state.evidence, urlPath, origin);
+      this.resolvePatchEvidencePair(state, origin, urlPath);
+      this.resolvePatchEvidencePair(state, urlPath, origin);
     }
   }
 
@@ -1377,8 +1482,8 @@ export class GraphBuilder {
       }
       affected.add(urlPath);
       affected.add(origin);
-      resolveEvidencePair(state.pages, state.evidence, origin, urlPath);
-      resolveEvidencePair(state.pages, state.evidence, urlPath, origin);
+      this.resolvePatchEvidencePair(state, origin, urlPath);
+      this.resolvePatchEvidencePair(state, urlPath, origin);
       processed += 1;
       if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
     }

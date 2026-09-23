@@ -461,6 +461,31 @@ export async function parseBodyMetadataCooperative(
     return right;
   };
 
+  const matchingDelimiterCloses = async (text: string): Promise<Map<number, number>> => {
+    const round: number[] = [];
+    const square: number[] = [];
+    const closes = new Map<number, number>();
+    let checkpoint = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      if (i >= checkpoint) {
+        await yieldToHost(false, "inline-field-scan");
+        checkpoint = i + 512;
+      }
+      const ch = text[i];
+      if (ch === "\\") { i += 1; continue; }
+      if (ch === "(") round.push(i);
+      else if (ch === "[") square.push(i);
+      else if (ch === ")") {
+        const start = round.pop();
+        if (start !== undefined) closes.set(start, i);
+      } else if (ch === "]") {
+        const start = square.pop();
+        if (start !== undefined) closes.set(start, i);
+      }
+    }
+    return closes;
+  };
+
   const stripFieldFormatting = (raw: string): string => {
     let text = raw.trim().replace(/^[-*+]\s+/, "").trim();
     const wrappers: Array<[string, string]> = [["**", "**"], ["__", "__"], ["~~", "~~"], ["==", "=="], ["*", "*"], ["_", "_"]];
@@ -653,91 +678,33 @@ export async function parseBodyMetadataCooperative(
 
     const hasFieldSyntax = firstFieldSeparator >= 0;
     const hasInlineFieldSyntax = hasFieldSyntax && ((hasRoundOpen && hasRoundClose) || (hasSquareOpen && hasSquareClose));
+    const delimiterCloses = hasInlineFieldSyntax ? await matchingDelimiterCloses(visible) : null;
     let firstClaimed = false;
 
     if (hasInlineFieldSyntax) {
-      type RecentOpen = { type: "(" | "["; depth: number; pos: number; wiki: boolean };
-      type InlineCandidate = RecentOpen & { separator: number; name: string };
-      type InlineMatch = InlineCandidate & { close: number };
-      let roundDepth = 0;
-      let squareDepth = 0;
-      let recent: RecentOpen[] = [];
-      const activeRecent = new Map<string, RecentOpen>();
-      const candidates = new Map<string, InlineCandidate>();
-      const matches: InlineMatch[] = [];
-      const keyFor = (type: "(" | "[", depth: number): string => `${type}${depth}`;
-
       let inlineCheckpoint = 0;
       for (let i = 0; i < visible.length; i += 1) {
         if (i >= inlineCheckpoint) {
           await yieldToHost(false, "inline-field-scan");
           inlineCheckpoint = i + 512;
-          const cutoff = i - 122;
-          if (recent.length > 256) {
-            const retained: RecentOpen[] = [];
-            for (const entry of recent) {
-              if (entry.pos >= cutoff && activeRecent.get(keyFor(entry.type, entry.depth)) === entry) retained.push(entry);
-              else if (entry.pos < cutoff && activeRecent.get(keyFor(entry.type, entry.depth)) === entry) activeRecent.delete(keyFor(entry.type, entry.depth));
-            }
-            recent = retained;
-          }
         }
-        const ch = visible[i];
-        if (ch === "\\") { i += 1; continue; }
-        if (ch === "(") {
-          roundDepth += 1;
-          const entry: RecentOpen = { type: "(", depth: roundDepth, pos: i, wiki: false };
-          recent.push(entry); activeRecent.set(keyFor("(", roundDepth), entry);
-          continue;
+        const open = visible[i];
+        if (open !== "(" && open !== "[") continue;
+        if (open === "[" && visible[i + 1] === "[") { i += 1; continue; }
+        const balancedEnd = delimiterCloses?.get(i) ?? -1;
+        if (balancedEnd < 0) continue;
+        let separator = -1;
+        const searchEnd = Math.min(balancedEnd, i + 1 + 122);
+        for (let cursor = i + 1; cursor + 1 < searchEnd; cursor += 1) {
+          if (visible[cursor] === ":" && visible[cursor + 1] === ":") { separator = cursor - (i + 1); break; }
         }
-        if (ch === "[") {
-          squareDepth += 1;
-          const entry: RecentOpen = { type: "[", depth: squareDepth, pos: i, wiki: visible[i + 1] === "[" || visible[i - 1] === "[" };
-          recent.push(entry); activeRecent.set(keyFor("[", squareDepth), entry);
-          continue;
-        }
-        if (ch === ":" && visible[i + 1] === ":") {
-          const cutoff = i - 121;
-          for (let r = recent.length - 1; r >= 0; r -= 1) {
-            const entry = recent[r];
-            if (entry.pos < cutoff) break;
-            const key = keyFor(entry.type, entry.depth);
-            if (entry.wiki || candidates.has(key) || activeRecent.get(key) !== entry) continue;
-            const rawName = visible.slice(entry.pos + 1, i);
-            const name = stripFieldFormatting(rawName);
-            if (!name || rawName.length > 120 || hasFieldDelimiter(name)) continue;
-            candidates.set(key, { ...entry, separator: i, name });
-          }
-          i += 1;
-          continue;
-        }
-        if (ch === ")") {
-          if (roundDepth > 0) {
-            const key = keyFor("(", roundDepth);
-            const candidate = candidates.get(key);
-            if (candidate) { matches.push({ ...candidate, close: i }); candidates.delete(key); }
-            activeRecent.delete(key);
-            roundDepth -= 1;
-          }
-          continue;
-        }
-        if (ch === "]") {
-          if (squareDepth > 0) {
-            const key = keyFor("[", squareDepth);
-            const candidate = candidates.get(key);
-            if (candidate) { matches.push({ ...candidate, close: i }); candidates.delete(key); }
-            activeRecent.delete(key);
-            squareDepth -= 1;
-          }
-        }
-      }
-
-      matches.sort((a, b) => a.pos - b.pos);
-      for (const match of matches) {
-        const valueStart = match.separator + 2;
-        await addField(match.name, originalLine.slice(valueStart, match.close), match.type === "(" ? "parenthesized" : "bracketed", lineNumber, offset + match.pos, offset + match.close + 1);
-        if (match.pos === firstNonSpace) firstClaimed = true;
-        await yieldToHost(false, "inline-field-value");
+        if (separator <= 0 || separator > 120) { i = balancedEnd; continue; }
+        const name = stripFieldFormatting(visible.slice(i + 1, i + 1 + separator));
+        if (!name || hasFieldDelimiter(name)) { i = balancedEnd; continue; }
+        const valueStart = i + 1 + separator + 2;
+        await addField(name, originalLine.slice(valueStart, balancedEnd), open === "(" ? "parenthesized" : "bracketed", lineNumber, offset + i, offset + balancedEnd + 1);
+        if (i === firstNonSpace) firstClaimed = true;
+        i = balancedEnd;
       }
     }
 

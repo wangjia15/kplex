@@ -906,6 +906,7 @@ try {
   const aliasesCountBefore = index.discoveredFields().find((field) => field.normalized === "aliases")?.count ?? 0;
   const noteA = files.get("Note A.md");
   const noteACache = caches.get("Note A.md");
+  const noteAIdentity = index.get("Note A.md");
   noteA.stat.mtime += 1000;
   noteACache.frontmatter.aliases = "RuntimeAliasZZZ";
   const aliasPatch = await index.patchMarkdownPaths(["Note A.md"]);
@@ -920,6 +921,12 @@ try {
   const prosePatch = await index.patchMarkdownPaths(["Note A.md"]);
   assert.deepEqual(prosePatch, { outcome: "patched", count: 1 });
   assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
+  assert.equal(index.get("Note A.md"), noteAIdentity, "Incremental publication must preserve canonical GraphPage identity");
+  for (const source of index.state.pages.values()) {
+    for (const relation of source.neighbours.values()) {
+      assert.equal(relation.target, index.get(relation.target.path), `Relation target must be canonical: ${source.path} -> ${relation.target.path}`);
+    }
+  }
 
   // Assertions 57–58: arbitrary frontmatter names/values are lens data, not graph semantics.
   // A newly discovered property may update the lightweight field catalogue, but neither adding it
@@ -1106,6 +1113,11 @@ try {
     "\\(Parent:: [[A]]) https://example.com",
     "\\[Parent:: [[A]]] https://example.com",
     "(Parent:: [[A]])\n[Child:: [[B]]]",
+    "(outer (Parent:: [[A]]))",
+    "(Parent:: (Child:: [[A]]))",
+    "[outer [Child:: [[B]]]]",
+    "[Parent:: (Child:: [[B]])]",
+    "((Parent:: [[A]]))",
     "`Parent:: [[ignored]]`\nParent:: [[A]]",
     "``Parent:: [[ignored]]``\r\nChild:: [[B]]",
     "[label](https://example.com/path).",
@@ -1405,6 +1417,7 @@ try {
   // than the parser itself. Cancelling after parsing must publish nothing; retry remains searchable.
   const originalManagedContent = contents.get(managedFile.path);
   const originalManagedSize = managedFile.stat.size;
+  const managedPageIdentity = index.get(managedFile.path);
   const urlHeavyBody = Array.from({ length: 10_000 }, (_, i) => `https://perf-${i}.example/path/${i}`).join("\n");
   const urlHeavyParsed = parseBodyMetadataCore(urlHeavyBody);
   managedFile.stat.mtime += 1000;
@@ -1416,6 +1429,12 @@ try {
   });
   assert(graphPatchGap < 50, `URL-heavy post-parse graph patch blocked timers for ${graphPatchGap.toFixed(1)} ms`);
   assert(index.get("https://perf-9999.example/path/9999"), "URL-heavy staged patch must publish all URL nodes");
+  assert.equal(index.get(managedFile.path), managedPageIdentity, "Bulk publication must preserve existing GraphPage identity");
+  for (const source of index.state.pages.values()) {
+    for (const relation of source.neighbours.values()) {
+      assert.equal(relation.target, index.get(relation.target.path), `Bulk relation target must be canonical: ${source.path} -> ${relation.target.path}`);
+    }
+  }
 
   const cancelUrlBody = `${urlHeavyBody}\nhttps://cancel-after-parse.example/path`;
   const cancelUrlParsed = parseBodyMetadataCore(cancelUrlBody);
@@ -1437,6 +1456,38 @@ try {
   contents.set(managedFile.path, originalManagedContent);
   index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: parseBodyMetadataCore(originalManagedContent) });
   assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+
+  // P17: copy-on-write publication must remain bounded across a long editing session. Alternate
+  // URL-heavy add/remove patches so page, lowercase-path and evidence overlays all cross their
+  // compaction limit, then verify no-op saves do not create evidence layers at all.
+  for (let cycle = 0; cycle < 5; cycle += 1) {
+    const boundedBody = Array.from({ length: 600 }, (_, i) => `https://bounded-${cycle}.example/path/${i}`).join("\n");
+    managedFile.stat.mtime += 1000;
+    managedFile.stat.size = boundedBody.length;
+    contents.set(managedFile.path, boundedBody);
+    index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: parseBodyMetadataCore(boundedBody) });
+    assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+
+    managedFile.stat.mtime += 1000;
+    managedFile.stat.size = originalManagedSize;
+    contents.set(managedFile.path, originalManagedContent);
+    index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: parseBodyMetadataCore(originalManagedContent) });
+    assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+  }
+  assert((index.state.pages.depth ?? 0) <= 8, "Published page overlay depth must remain bounded");
+  assert(index.state.evidence.depth <= 8, "Published evidence overlay depth must remain bounded");
+  const evidenceDepthBeforeNoops = index.state.evidence.depth;
+  for (let i = 0; i < 12; i += 1) {
+    managedFile.stat.mtime += 1000;
+    assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+  }
+  assert.equal(index.state.evidence.depth, evidenceDepthBeforeNoops, "Semantic no-op saves must not retain evidence layers");
+  assert.equal(index.get(managedFile.path), managedPageIdentity, "Compaction must preserve canonical GraphPage identity");
+  for (const source of index.state.pages.values()) {
+    for (const relation of source.neighbours.values()) {
+      assert.equal(relation.target, index.get(relation.target.path), `Compacted relation target must be canonical: ${source.path} -> ${relation.target.path}`);
+    }
+  }
 
   // P12: exercise the production rebuild coordinator. If the last visible K-Plex surface closes
   // while an incremental patch is awaiting work, cancellation must not fall through to a hidden
@@ -1485,7 +1536,7 @@ try {
   assert.equal(coordinator.indexDirty, false);
   assert.equal(coordinator.dirtyMarkdownPaths.size, 0);
 
-  console.log("K-Plex indexing fixture: assertions 1–33 + P1–P16 PASS");
+  console.log("K-Plex indexing fixture: assertions 1–33 + P1–P17 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
   console.log("Immediate creation + lazy node imagery: assertions 60–66 PASS");
