@@ -643,6 +643,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     settings.showVirtualNodes ? "1" : "0",
     settings.showInferredNodes ? "1" : "0",
     settings.inferAllLinksAsFriends ? "1" : "0",
+    settings.renderSiblings ? "1" : "0",
     settings.maxItemCount,
   ].join("|");
   const projectedSectionExpansion = useMemo(() => sectionExpansion

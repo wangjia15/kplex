@@ -1149,8 +1149,11 @@ export class GraphIndex {
   private patchSearchIndex(paths: Iterable<string>): void {
     this.searchCandidateCache.clear();
     const removed = new Set<string>();
-    for (const path of new Set(paths)) {
-      const page = this.get(path);
+    const uniquePaths: Iterable<string> = paths instanceof Set ? paths : new Set(paths);
+    for (const path of uniquePaths) {
+      // Incremental commits already provide canonical graph paths. Prefer the direct lookup so a
+      // URL-heavy patch does not repeat lowercase/path-resolution work for thousands of entries.
+      const page = this.state.pages.get(path) ?? this.get(path);
       if (!page) {
         if (this.searchEntryByPath.delete(path)) removed.add(path);
         continue;

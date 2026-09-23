@@ -74,23 +74,36 @@ const splitPairKey = (key: string): [string, string] => {
  * the visible result and can later edit the original source instead of relying on hidden state.
  */
 export class RelationEvidenceStore {
-  private nextId = 1;
+  private nextId: number;
   /**
-   * Store each original declaration exactly once, keyed by the unordered node pair.
-   *
-   * Earlier K-Plex builds materialized a second RelationEvidence object and a second relation-map
-   * bucket for every inverse view. Large vaults therefore paid almost 2x evidence-object memory
-   * before relationship resolution even began — a poor tradeoff on iOS where WebKit may reload
-   * the process under memory pressure. Perspective-specific inverse records are now derived only
-   * when a caller asks for `between()`/`entries()`.
+   * Incremental patches stage evidence in a copy-on-write fork. Reads fall through to the previous
+   * published store, while only touched pair buckets are copied locally. Publishing the fork is an
+   * O(1) pointer swap, so a note with thousands of URLs never needs to mutate the live store while
+   * yielding back to Obsidian.
    */
+  private readonly base: RelationEvidenceStore | null;
+  /** Pair buckets owned by this layer. An empty array is a tombstone that shadows a base bucket. */
   private readonly byPair = new Map<string, RelationEvidence[]>();
-  /** Pair keys touched by each declaring/target path. Keeps incremental note edits O(local evidence). */
+  /** Pair keys overridden/created by this layer, indexed by either endpoint. */
   private readonly pairsByPath = new Map<string, Set<string>>();
-  private declarationTotal = 0;
+  private declarationTotal: number;
+  private pairTotal: number;
+  private readonly layerDepth: number;
+
+  constructor(base: RelationEvidenceStore | null = null) {
+    this.base = base;
+    this.nextId = base?.nextId ?? 1;
+    this.declarationTotal = base?.declarationCount ?? 0;
+    this.pairTotal = base?.pairCount ?? 0;
+    this.layerDepth = (base?.depth ?? 0) + (base ? 1 : 0);
+  }
 
   get declarationCount(): number { return this.declarationTotal; }
-  get pairCount(): number { return this.byPair.size; }
+  get pairCount(): number { return this.pairTotal; }
+  get depth(): number { return this.layerDepth; }
+
+  /** Start an isolated local transaction. Mutating the returned store cannot mutate this store. */
+  fork(): RelationEvidenceStore { return new RelationEvidenceStore(this); }
 
   addPair(
     sourcePath: string,
@@ -154,7 +167,7 @@ export class RelationEvidenceStore {
 
   between(sourcePath: string, targetPath: string): RelationEvidence[] {
     if (sourcePath === targetPath) return [];
-    const declarations = this.byPair.get(pairKey(sourcePath, targetPath));
+    const declarations = this.readPair(pairKey(sourcePath, targetPath));
     if (!declarations?.length) return [];
     const output: RelationEvidence[] = [];
     for (const item of declarations) {
@@ -177,12 +190,15 @@ export class RelationEvidenceStore {
     return output;
   }
 
+  /** Original declarations for exactly one unordered pair. Useful for staged relationship work. */
+  declarationsForPair(sourcePath: string, targetPath: string): RelationEvidence[] {
+    return [...(this.readPair(pairKey(sourcePath, targetPath)) ?? [])];
+  }
+
   from(sourcePath: string): Array<{ targetPath: string; evidence: RelationEvidence[] }> {
     const output: Array<{ targetPath: string; evidence: RelationEvidence[] }> = [];
-    const keys = this.pairsByPath.get(sourcePath);
-    if (!keys?.size) return output;
-    // Keep deterministic pair insertion order while visiting only evidence local to this node.
-    // The previous global byPair scan made every neighborhood/explanation query O(vault evidence).
+    const keys = this.pairKeysForPath(sourcePath);
+    if (!keys.size) return output;
     for (const key of keys) {
       const [left, right] = splitPairKey(key);
       const targetPath = left === sourcePath ? right : left;
@@ -194,53 +210,74 @@ export class RelationEvidenceStore {
 
   /** Original declarations whose unordered pair touches one path. */
   declarationsTouching(path: string): RelationEvidence[] {
-    const keys = this.pairsByPath.get(path);
-    if (!keys?.size) return [];
     const output: RelationEvidence[] = [];
-    for (const key of keys) {
-      const list = this.byPair.get(key);
-      if (list) output.push(...list);
-    }
+    for (const item of this.declarationsTouchingIterator(path)) output.push(item);
     return output;
+  }
+
+  /** Allocation-light iterator used by time-sliced incremental patches. */
+  *declarationsTouchingIterator(path: string): IterableIterator<RelationEvidence> {
+    for (const key of this.pairKeysForPath(path)) {
+      const list = this.readPair(key);
+      if (list?.length) yield* list;
+    }
   }
 
   /** Remove complete original declarations matching a predicate. */
   removeDeclarations(predicate: (evidence: RelationEvidence) => boolean): number {
     let removed = 0;
-    for (const [key, list] of [...this.byPair.entries()]) {
-      const next = list.filter((item) => {
+    for (const key of this.allPairKeys()) {
+      const current = this.readPair(key) ?? [];
+      if (!current.length) continue;
+      const next = current.filter((item) => {
         if (!predicate(item)) return true;
         removed += 1;
-        this.declarationTotal = Math.max(0, this.declarationTotal - 1);
         return false;
       });
-      if (next.length) this.byPair.set(key, next);
-      else {
-        this.byPair.delete(key);
-        this.unindexPairKey(key);
-      }
+      if (next.length !== current.length) this.writePair(key, next, current.length);
     }
     return removed;
   }
 
   /** Fast path used by per-file incremental indexing. */
   removeDeclarationsTouching(path: string, predicate: (evidence: RelationEvidence) => boolean): number {
-    const keys = [...(this.pairsByPath.get(path) ?? [])];
     let removed = 0;
-    for (const key of keys) {
-      const list = this.byPair.get(key);
-      if (!list) continue;
-      const next = list.filter((item) => {
+    for (const key of this.pairKeysForPath(path)) {
+      const current = this.readPair(key) ?? [];
+      if (!current.length) continue;
+      const next = current.filter((item) => {
         if (!predicate(item)) return true;
         removed += 1;
-        this.declarationTotal = Math.max(0, this.declarationTotal - 1);
         return false;
       });
-      if (next.length) this.byPair.set(key, next);
-      else {
-        this.byPair.delete(key);
-        this.unindexPairKey(key);
+      if (next.length !== current.length) this.writePair(key, next, current.length);
+    }
+    return removed;
+  }
+
+  /** Cooperative variant for very high-degree edited notes. The store is expected to be a private
+   * fork, so yields never expose a partially changed published graph. */
+  async removeDeclarationsTouchingCooperative(
+    path: string,
+    predicate: (evidence: RelationEvidence) => boolean,
+    checkpoint: () => Promise<boolean>,
+  ): Promise<number | null> {
+    let removed = 0;
+    let processed = 0;
+    for (const key of this.pairKeysForPath(path)) {
+      const current = this.readPair(key) ?? [];
+      if (current.length) {
+        const next: RelationEvidence[] = [];
+        for (const item of current) {
+          if (predicate(item)) removed += 1;
+          else next.push(item);
+          processed += 1;
+          if ((processed & 255) === 0 && !(await checkpoint())) return null;
+        }
+        if (next.length !== current.length) this.writePair(key, next, current.length);
       }
+      processed += 1;
+      if ((processed & 255) === 0 && !(await checkpoint())) return null;
     }
     return removed;
   }
@@ -250,7 +287,9 @@ export class RelationEvidenceStore {
    * are short-lived resolver views; only original declarations are retained by the store.
    */
   *entries(): IterableIterator<[string, string, RelationEvidence[]]> {
-    for (const [key] of this.byPair) {
+    for (const key of this.allPairKeys()) {
+      const declarations = this.readPair(key);
+      if (!declarations?.length) continue;
       const [left, right] = splitPairKey(key);
       const leftEvidence = this.between(left, right);
       if (leftEvidence.length) yield [left, right, leftEvidence];
@@ -261,20 +300,49 @@ export class RelationEvidenceStore {
 
   /** Original declarations only. */
   *declarations(): IterableIterator<RelationEvidence> {
-    for (const list of this.byPair.values()) for (const item of list) yield item;
+    for (const key of this.allPairKeys()) {
+      const list = this.readPair(key);
+      if (list?.length) yield* list;
+    }
+  }
+
+  private readPair(key: string): RelationEvidence[] | undefined {
+    if (this.byPair.has(key)) return this.byPair.get(key);
+    return this.base?.readPair(key);
+  }
+
+  private allPairKeys(): Set<string> {
+    const keys = this.base ? this.base.allPairKeys() : new Set<string>();
+    for (const key of this.byPair.keys()) keys.add(key);
+    return keys;
+  }
+
+  private pairKeysForPath(path: string): Set<string> {
+    const keys = this.base ? this.base.pairKeysForPath(path) : new Set<string>();
+    for (const key of this.pairsByPath.get(path) ?? []) keys.add(key);
+    return keys;
   }
 
   private addDeclarationRecord(evidence: RelationEvidence): void {
     const key = pairKey(evidence.declaredByPath, evidence.declaredTargetPath);
-    const list = this.byPair.get(key) ?? [];
-    const isNewPair = list.length === 0;
-    list.push(evidence);
-    this.byPair.set(key, list);
-    this.declarationTotal += 1;
-    if (isNewPair) {
-      this.indexPairKey(evidence.declaredByPath, key);
-      this.indexPairKey(evidence.declaredTargetPath, key);
+    const current = this.readPair(key) ?? [];
+    const next = [...current, evidence];
+    this.writePair(key, next, current.length);
+  }
+
+  private writePair(key: string, next: RelationEvidence[], previousLength: number): void {
+    const [left, right] = splitPairKey(key);
+    if (!this.base && !next.length) {
+      this.byPair.delete(key);
+      this.unindexLocalPairKey(key);
+    } else {
+      this.byPair.set(key, next);
+      this.indexPairKey(left, key);
+      this.indexPairKey(right, key);
     }
+    this.declarationTotal += next.length - previousLength;
+    if (previousLength === 0 && next.length > 0) this.pairTotal += 1;
+    else if (previousLength > 0 && next.length === 0) this.pairTotal = Math.max(0, this.pairTotal - 1);
   }
 
   private indexPairKey(path: string, key: string): void {
@@ -283,7 +351,7 @@ export class RelationEvidenceStore {
     this.pairsByPath.set(path, keys);
   }
 
-  private unindexPairKey(key: string): void {
+  private unindexLocalPairKey(key: string): void {
     const [left, right] = splitPairKey(key);
     for (const path of [left, right]) {
       const keys = this.pairsByPath.get(path);

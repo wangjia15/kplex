@@ -118,6 +118,85 @@ function compactFingerprint(serialized: string): string {
   return [serialized.length, a, b, c, d].map((value) => value.toString(36)).join(":");
 }
 
+/** Small copy-on-write map used only while staging one incremental file patch. Reads fall through
+ * to the published map; writes/deletes stay private until commit. */
+class PatchOverlayMap<K, V> extends Map<K, V> {
+  private readonly local = new Map<K, V>();
+  private readonly removed = new Set<K>();
+
+  constructor(private readonly base: Map<K, V>, private cloneOnRead?: (value: V) => V) { super(); }
+
+  override get size(): number {
+    let size = this.base.size;
+    for (const key of this.removed) if (this.base.has(key)) size -= 1;
+    for (const key of this.local.keys()) if (!this.base.has(key) || this.removed.has(key)) size += 1;
+    return size;
+  }
+
+  override has(key: K): boolean { return !this.removed.has(key) && (this.local.has(key) || this.base.has(key)); }
+
+  override get(key: K): V | undefined {
+    if (this.removed.has(key)) return undefined;
+    const local = this.local.get(key);
+    if (local !== undefined || this.local.has(key)) return local;
+    const value = this.base.get(key);
+    if (value === undefined || !this.cloneOnRead) return value;
+    const clone = this.cloneOnRead(value);
+    this.local.set(key, clone);
+    return clone;
+  }
+
+  override set(key: K, value: V): this { this.removed.delete(key); this.local.set(key, value); return this; }
+  override delete(key: K): boolean {
+    const existed = this.has(key);
+    this.local.delete(key);
+    if (this.base.has(key)) this.removed.add(key);
+    return existed;
+  }
+  override clear(): void {
+    this.local.clear();
+    for (const key of this.base.keys()) this.removed.add(key);
+  }
+
+  override *keys(): IterableIterator<K> { for (const [key] of this.entries()) yield key; }
+  override *values(): IterableIterator<V> { for (const [, value] of this.entries()) yield value; }
+  override *entries(): IterableIterator<[K, V]> {
+    const emitted = new Set<K>();
+    for (const [key, value] of this.local) {
+      if (this.removed.has(key)) continue;
+      emitted.add(key);
+      yield [key, value];
+    }
+    for (const [key, value] of this.base) {
+      if (emitted.has(key) || this.removed.has(key)) continue;
+      yield [key, value];
+    }
+  }
+  override [Symbol.iterator](): IterableIterator<[K, V]> { return this.entries(); }
+  override forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: unknown): void {
+    for (const [key, value] of this.entries()) callbackfn.call(thisArg, value, key, this);
+  }
+
+  localEntries(): IterableIterator<[K, V]> { return this.local.entries(); }
+  removedKeys(): IterableIterator<K> { return this.removed.values(); }
+  hasLocal(key: K): boolean { return this.local.has(key); }
+  changeCount(): number { return this.local.size + this.removed.size; }
+  /** Published overlays must become read-only views over their base. Clone-on-read is a staging
+   * behavior only; leaving it enabled would make ordinary graph reads mutate the published map. */
+  seal(): this { this.cloneOnRead = undefined; return this; }
+}
+
+function cloneGraphPage(page: GraphPage): GraphPage {
+  return {
+    ...page,
+    neighbours: new Map(page.neighbours),
+    aliases: [...page.aliases],
+    tags: [...page.tags],
+    styleTags: [...page.styleTags],
+    transient: page.transient ? { ...page.transient } : undefined,
+  };
+}
+
 /**
  * Builds a complete graph snapshot from vault inputs. It does not publish state or service UI
  * queries; those responsibilities belong to GraphIndex. All collectors emit provenance-bearing
@@ -211,6 +290,111 @@ export class GraphBuilder {
     });
     const provenance = JSON.stringify(provenanceBody);
     return `v2:${compactFingerprint(topology)}~${compactFingerprint(provenance)}`;
+  }
+
+  private async compactFingerprintCooperative(serialized: string): Promise<string | null> {
+    let a = 2166136261 >>> 0;
+    let b = 3339675911 >>> 0;
+    let c = 374761393 >>> 0;
+    let d = 668265263 >>> 0;
+    for (let i = 0; i < serialized.length; i += 1) {
+      const code = serialized.charCodeAt(i);
+      a = Math.imul(a ^ code, 16777619) >>> 0;
+      b = Math.imul(b ^ (code + i), 2246822519) >>> 0;
+      c = Math.imul(c ^ (code + (i << 1)), 3266489917) >>> 0;
+      d = Math.imul(d ^ (code + (i >>> 1)), 2654435761) >>> 0;
+      if ((i & 2047) === 0 && !(await this.yieldToHost())) return null;
+    }
+    return [serialized.length, a, b, c, d].map((value) => value.toString(36)).join(":");
+  }
+
+  /** Same token as semanticSourceSignature(), but the potentially large body-derived arrays and
+   * hashes are built cooperatively for live edits. */
+  private async semanticSourceSignatureCooperative(file: TFile, body: ParsedBodyMetadata): Promise<string | null> {
+    const cache = this.app.metadataCache.getFileCache(file);
+    const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
+    delete frontmatter.position;
+    const semanticFrontmatter: Record<string, unknown> = {};
+    let processed = 0;
+    for (const [key, value] of Object.entries(frontmatter)) {
+      if (this.semanticFrontmatterFields.has(normalizeFieldName(key)) || this.isDateProperty(key)) {
+        semanticFrontmatter[key] = stableSemanticValue(value);
+      }
+      processed += 1;
+      if ((processed & 127) === 0 && !(await this.yieldToHost())) return null;
+    }
+
+    const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
+    const resolved = Object.entries(this.app.metadataCache.resolvedLinks[file.path] ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    const unresolved = Object.entries(this.app.metadataCache.unresolvedLinks[file.path] ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    const topologyFields: unknown[] = [];
+    const provenanceFields: unknown[] = [];
+    for (const item of body.inlineFieldOccurrences) {
+      if (!this.semanticInlineFields.has(item.normalizedName)) continue;
+      topologyFields.push([item.normalizedName, item.value]);
+      provenanceFields.push([item.normalizedName, item.value, item.syntax, item.line, item.start, item.end]);
+      if ((topologyFields.length & 127) === 0 && !(await this.yieldToHost())) return null;
+    }
+    const topologyUrls: unknown[] = [];
+    const provenanceUrls: unknown[] = [];
+    for (let i = 0; i < body.urls.length; i += 1) {
+      const item = body.urls[i];
+      topologyUrls.push([item.url, item.label ?? ""]);
+      provenanceUrls.push([item.url, item.label ?? "", item.line ?? 0]);
+      if ((i & 127) === 0 && !(await this.yieldToHost())) return null;
+    }
+    if (!(await this.yieldToHost())) return null;
+
+    const topology = JSON.stringify({
+      frontmatter: stableSemanticValue(semanticFrontmatter),
+      tags, resolved, unresolved,
+      body: { fields: topologyFields, urls: topologyUrls },
+    });
+    if (!(await this.yieldToHost())) return null;
+    const provenance = JSON.stringify({ fields: provenanceFields, urls: provenanceUrls });
+    if (!(await this.yieldToHost())) return null;
+    const topologyHash = await this.compactFingerprintCooperative(topology);
+    if (!topologyHash) return null;
+    const provenanceHash = await this.compactFingerprintCooperative(provenance);
+    return provenanceHash ? `v2:${topologyHash}~${provenanceHash}` : null;
+  }
+
+  private createPatchState(state: GraphState): GraphState {
+    return {
+      pages: new PatchOverlayMap(state.pages, cloneGraphPage),
+      lowercasePathMap: new PatchOverlayMap(state.lowercasePathMap),
+      evidence: state.evidence.fork(),
+      discoveredFields: new PatchOverlayMap(state.discoveredFields, (value) => ({ ...value })),
+    };
+  }
+
+  /** Publish a fully staged file patch. All expensive parsing/evidence/resolution work happens in
+   * the private overlay first; this short final section only preserves existing GraphPage identity
+   * and swaps the evidence transaction. */
+  private commitPatchState(live: GraphState, staged: GraphState): void {
+    const pages = staged.pages as PatchOverlayMap<string, GraphPage>;
+    const lowercase = staged.lowercasePathMap as PatchOverlayMap<string, string>;
+    const fields = staged.discoveredFields as PatchOverlayMap<string, { name: string; count: number }>;
+
+    // Very large edits (for example a note containing ten thousand distinct external URLs) can
+    // touch enough page keys that replaying every staged Map mutation would itself become the
+    // longest main-thread task. Publish sealed copy-on-write overlays in O(1) instead. Smaller
+    // patches are flattened into the existing maps to avoid building deep overlay chains during
+    // ordinary editing sessions. Evidence already uses the same copy-on-write publication model.
+    const bulkPublish = pages.changeCount() + lowercase.changeCount() + fields.changeCount() > 1024;
+    if (bulkPublish) {
+      live.pages = pages.seal();
+      live.lowercasePathMap = lowercase.seal();
+      live.discoveredFields = fields.seal();
+    } else {
+      for (const path of pages.removedKeys()) live.pages.delete(path);
+      for (const [path, stagedPage] of pages.localEntries()) live.pages.set(path, stagedPage);
+      for (const key of lowercase.removedKeys()) live.lowercasePathMap.delete(key);
+      for (const [key, value] of lowercase.localEntries()) live.lowercasePathMap.set(key, value);
+      for (const key of fields.removedKeys()) live.discoveredFields.delete(key);
+      for (const [key, value] of fields.localEntries()) live.discoveredFields.set(key, value);
+    }
+    live.evidence = staged.evidence;
   }
 
   private topologySignature(signature: string | undefined): string | null {
@@ -590,18 +774,32 @@ export class GraphBuilder {
       if (!this.fileRevisionMatches(file, revision)) {
         return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      const signature = this.semanticSourceSignature(file, body);
+      const signature = await this.semanticSourceSignatureCooperative(file, body);
+      if (!signature || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
+        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      }
       const previousSignature = this.semanticFingerprints.get(file.path) ?? previousEntry?.semanticSignature;
+      const stagedState = this.createPatchState(state);
+      const stagedPage = getGraphPage(stagedState, file.path);
+      if (!stagedPage) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+
       if (previousSignature === signature) {
-        // Drawing data / prose / arbitrary frontmatter changed, but nothing K-Plex consumes
-        // semantically or for provenance changed. Field-name discovery is deliberately separate
-        // from relationship invalidation so a newly introduced lens property never tears down
-        // and re-resolves evidence.
+        // Even semantic no-ops stage their small metadata/cache-visible mutations. Cancellation can
+        // therefore never leave a half-updated discovered-field table or mtime behind.
         const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
-        this.recordDiscoveredFields(state, meta, "patch");
+        if (!(await this.recordDiscoveredFieldsCooperative(stagedState, meta))) {
+          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        }
+        stagedPage.mtime = revision.mtime;
+        if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
+          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        }
+        if (!(await this.yieldToHost(true)) || !this.fileRevisionMatches(file, revision)) {
+          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        }
+        this.commitPatchState(state, stagedState);
         this.rememberFieldCache(file.path, { mtime: revision.mtime, body, semanticSignature: signature });
         this.semanticFingerprints.set(file.path, signature);
-        page.mtime = revision.mtime;
         semanticNoops += 1;
         publishFileCommit(false);
         if (!(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
@@ -613,60 +811,84 @@ export class GraphBuilder {
       const oldTagPaths = new Set<string>();
       const oldUrlPaths = new Set<string>();
       touchedPagePaths.add(file.path);
-      for (const item of state.evidence.declarationsTouching(file.path)) {
+      let processed = 0;
+      for (const item of stagedState.evidence.declarationsTouchingIterator(file.path)) {
         const ownedByFile = item.declaredByPath === file.path && FILE_OWNED_EVIDENCE.has(item.sourceKind);
         const tagMembership = item.sourceKind === "tag-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("tag:");
-        if (!ownedByFile && !tagMembership) continue;
-        affected.add(item.declaredByPath);
-        affected.add(item.declaredTargetPath);
-        if (tagMembership) oldTagPaths.add(item.declaredByPath);
-        if (item.sourceKind === "body-url") oldUrlPaths.add(item.declaredTargetPath);
+        if (ownedByFile || tagMembership) {
+          affected.add(item.declaredByPath);
+          affected.add(item.declaredTargetPath);
+          if (tagMembership) oldTagPaths.add(item.declaredByPath);
+          if (item.sourceKind === "body-url") oldUrlPaths.add(item.declaredTargetPath);
+        }
+        processed += 1;
+        if ((processed & 127) === 0 && !(await this.yieldToHost())) {
+          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        }
       }
-      state.evidence.removeDeclarationsTouching(file.path, (item) => {
+      const removed = await stagedState.evidence.removeDeclarationsTouchingCooperative(file.path, (item) => {
         if (item.declaredByPath === file.path && FILE_OWNED_EVIDENCE.has(item.sourceKind)) return true;
         return item.sourceKind === "tag-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("tag:");
-      });
+      }, () => this.yieldToHost());
+      if (removed === null) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
 
-      // Rebuild Obsidian's ordinary link declarations for this source note.
       for (const targetPath of Object.keys(this.app.metadataCache.resolvedLinks[file.path] ?? {})) {
-        const target = getGraphPage(state, targetPath);
-        if (!target) continue;
-        this.addInferredParentChild(state, page, target, "obsidian-link");
-        affected.add(target.path);
+        const target = getGraphPage(stagedState, targetPath);
+        if (target) {
+          this.addInferredParentChild(stagedState, stagedPage, target, "obsidian-link");
+          affected.add(target.path);
+        }
+        processed += 1;
+        if ((processed & 63) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       }
       for (const targetPath of Object.keys(this.app.metadataCache.unresolvedLinks[file.path] ?? {})) {
-        if (file.path === this.plugin.settings.excalibrainFilepath) continue;
-        const target = this.ensureVirtual(state, targetPath);
-        this.addInferredParentChild(state, page, target, "unresolved-link");
-        affected.add(target.path);
+        if (file.path !== this.plugin.settings.excalibrainFilepath) {
+          const target = this.ensureVirtual(stagedState, targetPath);
+          this.addInferredParentChild(stagedState, stagedPage, target, "unresolved-link");
+          affected.add(target.path);
+        }
+        processed += 1;
+        if ((processed & 63) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       }
 
-      this.rememberFieldCache(file.path, { mtime: revision.mtime, body, semanticSignature: signature });
-      this.semanticFingerprints.set(file.path, signature);
       const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
-      this.applyMetadata(state, page, file, meta, "patch");
-      page.mtime = revision.mtime;
-
-      // Capture new targets after applying metadata and resolve just the touched relationship
-      // pairs. resolveEvidencePair also removes a now-empty old relation from page.neighbours.
-      for (const item of state.evidence.declarationsTouching(file.path)) {
+      if (!(await this.applyMetadataPatchCooperative(stagedState, stagedPage, file, meta))) {
+        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      }
+      stagedPage.mtime = revision.mtime;
+      for (const item of stagedState.evidence.declarationsTouchingIterator(file.path)) {
         affected.add(item.declaredByPath);
         affected.add(item.declaredTargetPath);
         if (item.sourceKind === "body-url") oldUrlPaths.add(item.declaredTargetPath);
+        processed += 1;
+        if ((processed & 127) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      this.pruneEmptyTagNodes(state, oldTagPaths, affected);
-      this.refreshDerivedUrlOrigins(state, oldUrlPaths, affected);
+      if (!(await this.pruneEmptyTagNodesCooperative(stagedState, oldTagPaths, affected))) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!(await this.refreshDerivedUrlOriginsCooperative(stagedState, oldUrlPaths, affected))) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       for (const targetPath of affected) {
         fileTouchedPagePaths.add(targetPath);
-        if (targetPath === file.path) continue;
-        resolveEvidencePair(state.pages, state.evidence, file.path, targetPath);
-        resolveEvidencePair(state.pages, state.evidence, targetPath, file.path);
+        if (targetPath !== file.path) {
+          resolveEvidencePair(stagedState.pages, stagedState.evidence, file.path, targetPath);
+          resolveEvidencePair(stagedState.pages, stagedState.evidence, targetPath, file.path);
+        }
+        processed += 1;
+        if ((processed & 31) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      this.pruneUnusedUrlNodes(state, oldUrlPaths, affected);
+      if (!(await this.pruneUnusedUrlNodesCooperative(stagedState, oldUrlPaths, affected))) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
       for (const targetPath of affected) fileTouchedPagePaths.add(targetPath);
 
+      if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      // Start the atomic publication section at a fresh event-loop slice. The graph/search commit
+      // itself must remain synchronous for consistency, so do not let earlier staged work consume
+      // part of the same responsiveness budget.
+      if (!(await this.yieldToHost(true)) || !this.fileRevisionMatches(file, revision)) {
+        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      }
+      this.commitPatchState(state, stagedState);
+      this.rememberFieldCache(file.path, { mtime: revision.mtime, body, semanticSignature: signature });
+      this.semanticFingerprints.set(file.path, signature);
       if (topologyChanged) semanticChanges += 1;
-      else semanticNoops += 1; // provenance-only refresh; relationship topology is unchanged
+      else semanticNoops += 1;
       publishFileCommit(topologyChanged);
       if (!(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
     }
@@ -694,6 +916,125 @@ export class GraphBuilder {
     };
     Object.keys(meta.frontmatter).forEach(recordField);
     meta.inlineFieldOccurrences.forEach((occurrence) => recordField(occurrence.name));
+  }
+
+  private async recordDiscoveredFieldsCooperative(
+    state: GraphState,
+    meta: ParsedFileMetadata,
+  ): Promise<boolean> {
+    const recordField = (name: string): void => {
+      const normalized = normalizeFieldName(name);
+      if (!normalized) return;
+      const current = state.discoveredFields.get(normalized);
+      if (!current) state.discoveredFields.set(normalized, { name: name.trim(), count: 1 });
+    };
+    let processed = 0;
+    for (const name of Object.keys(meta.frontmatter)) {
+      recordField(name);
+      processed += 1;
+      if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+    }
+    for (const occurrence of meta.inlineFieldOccurrences) {
+      recordField(occurrence.name);
+      processed += 1;
+      if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+    }
+    return this.isCurrent();
+  }
+
+  /** Incremental metadata application runs against a private patch overlay. Every potentially large
+   * collection is checkpointed so parsing a note in a worker cannot simply move the UI stall into
+   * URL/tag/evidence construction on the main thread. */
+  private async applyMetadataPatchCooperative(
+    state: GraphState,
+    page: GraphPage,
+    file: TFile,
+    meta: ParsedFileMetadata,
+  ): Promise<boolean> {
+    page.aliases = meta.aliases;
+    page.tags = meta.tags;
+    if (!(await this.recordDiscoveredFieldsCooperative(state, meta))) return false;
+
+    const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
+    const frontmatterNoteType = getNormalizedFrontmatterValues(meta, noteTypeField)[0];
+    const inlineNoteType = getNormalizedInlineFieldValues(meta, noteTypeField)[0];
+    const unwrapNoteType = (value: unknown): string | null => {
+      const first: unknown = Array.isArray(value) ? (value as unknown[])[0] : value;
+      if (typeof first !== "string" && typeof first !== "number") return null;
+      let text = String(first).trim();
+      const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/);
+      if (wiki) text = wiki[1].trim();
+      text = text.replace(/^#/, "").trim();
+      return text || null;
+    };
+    page.noteType = unwrapNoteType(frontmatterNoteType ?? inlineNoteType);
+
+    const styleTags = page.tags.filter((tag) => this.plugin.settings.tagStyleList.some((prefix) => tag.startsWith(prefix)));
+    const primaryField = normalizeFieldName(this.plugin.settings.primaryTagField);
+    const primaryValues = getNormalizedFieldValues(meta, primaryField)
+      .flatMap((v) => typeof v === "string" ? v.match(/#[^\s\])$"'\\]+/g) ?? [] : []);
+    page.primaryStyleTag = primaryValues.find((tag) => styleTags.some((s) => s.startsWith(tag))) ?? styleTags[0] ?? null;
+    page.styleTags = styleTags.filter((tag) => tag !== page.primaryStyleTag);
+
+    let processed = 0;
+    for (const tag of page.tags) {
+      const tagPage = this.ensureTagPath(state, tag);
+      if (tagPage) this.addEvidencePair(state, tagPage, page, "child", RelationType.DEFINED, LinkDirection.TO, { sourceKind: "tag-tree", definition: "tag-tree" });
+      processed += 1;
+      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+    }
+
+    const hierarchy = this.plugin.settings.hierarchy;
+    const groups: Array<[string[], EvidenceRole]> = [
+      [hierarchy.hidden, "hidden"], [hierarchy.parents, "parent"], [hierarchy.children, "child"],
+      [hierarchy.leftFriends, "left"], [hierarchy.rightFriends, "right"],
+      [hierarchy.previous, "previous"], [hierarchy.next, "next"],
+    ];
+    for (const [fieldNames, role] of groups) {
+      for (const originalName of fieldNames) {
+        const field = normalizeFieldName(originalName);
+        for (const value of getNormalizedFrontmatterValues(meta, field)) {
+          for (const path of extractLinksFromValue(this.app, value, file)) {
+            const target = this.ensureTarget(state, path);
+            this.addOntologyEvidence(state, page, target, role, {
+              sourceKind: "frontmatter-ontology", definition: field, fieldName: originalName,
+              rawValue: typeof value === "string" ? value : JSON.stringify(value),
+            });
+            processed += 1;
+            if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+          }
+        }
+        for (const occurrence of getInlineFieldOccurrences(meta, field)) {
+          for (const path of extractLinksFromValue(this.app, occurrence.value, file)) {
+            const target = this.ensureTarget(state, path);
+            this.addOntologyEvidence(state, page, target, role, {
+              sourceKind: "inline-ontology", definition: field, fieldName: occurrence.name, rawValue: occurrence.value,
+              line: occurrence.line, start: occurrence.start, end: occurrence.end,
+            });
+            processed += 1;
+            if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+          }
+        }
+      }
+    }
+
+    this.addDatePropertyEvidence(state, page, meta);
+    if (!(await this.yieldToHost())) return false;
+    for (const reference of meta.urls) {
+      const urlPage = this.ensureUrl(state, reference.url, reference.label || reference.url);
+      this.addInferredParentChild(state, page, urlPage, "body-url", reference.line ? { line: reference.line } : undefined);
+      try {
+        const origin = new URL(reference.url).origin;
+        const originPage = this.ensureUrl(state, origin, origin);
+        const hasOriginEvidence = state.evidence.between(originPage.path, urlPage.path).some((item) => item.sourceKind === "url-origin");
+        if (!hasOriginEvidence) this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
+      } catch { /* malformed URL - keep the raw URL node */ }
+      processed += 1;
+      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+    }
+
+    this.suppressPresentationOnlyImageLinks(state, page, file, meta);
+    return this.yieldToHost();
   }
 
   private applyMetadata(
@@ -919,6 +1260,56 @@ export class GraphBuilder {
     }
   }
 
+  private async pruneEmptyTagNodesCooperative(
+    state: GraphState,
+    candidates: Iterable<string>,
+    affected: Set<string>,
+  ): Promise<boolean> {
+    const pending = new Set([...candidates].filter((path) => path.startsWith("tag:")));
+    let processed = 0;
+    for (;;) {
+      const paths = [...pending].sort((a, b) => b.split("/").length - a.split("/").length || b.length - a.length);
+      if (!paths.length) break;
+      pending.clear();
+      let removedAny = false;
+      for (const path of paths) {
+        const page = state.pages.get(path);
+        if (!page?.isTag) continue;
+        const local: ReturnType<typeof state.evidence.declarationsTouching> = [];
+        for (const item of state.evidence.declarationsTouchingIterator(path)) {
+          local.push(item);
+          processed += 1;
+          if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+        }
+        const hasOutgoing = local.some((item) => item.sourceKind === "tag-tree" && item.declaredByPath === path);
+        if (hasOutgoing) continue;
+        const parents = local
+          .filter((item) => item.sourceKind === "tag-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("tag:"))
+          .map((item) => item.declaredByPath);
+        const removed = await state.evidence.removeDeclarationsTouchingCooperative(
+          path,
+          (item) => item.sourceKind === "tag-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("tag:"),
+          () => this.yieldToHost(),
+        );
+        if (removed === null) return false;
+        for (const parentPath of parents) {
+          state.pages.get(parentPath)?.neighbours.delete(path);
+          affected.add(parentPath);
+          pending.add(parentPath);
+        }
+        for (const targetPath of page.neighbours.keys()) state.pages.get(targetPath)?.neighbours.delete(path);
+        state.pages.delete(path);
+        state.lowercasePathMap.delete(path.toLowerCase());
+        affected.add(path);
+        removedAny = true;
+        processed += 1;
+        if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+      }
+      if (!removedAny) break;
+    }
+    return this.isCurrent();
+  }
+
   /** URL-origin edges are derived from body URL references, not declarations owned by the origin
    * node. Recompute only the URL nodes touched by one edited Markdown file to prevent duplicate
    * declarations and stale derived relations from accumulating over long sessions. */
@@ -946,6 +1337,54 @@ export class GraphBuilder {
     }
   }
 
+  private async refreshDerivedUrlOriginsCooperative(
+    state: GraphState,
+    candidatePaths: Iterable<string>,
+    affected: Set<string>,
+  ): Promise<boolean> {
+    let processed = 0;
+    for (const urlPath of new Set(candidatePaths)) {
+      if (!/^https?:\/\//i.test(urlPath)) continue;
+      let origin: string;
+      try { origin = new URL(urlPath).origin; } catch { continue; }
+      if (origin === urlPath) continue;
+      let referenceCount = 0;
+      for (const item of state.evidence.declarationsTouchingIterator(urlPath)) {
+        if (item.sourceKind === "body-url" && item.declaredTargetPath === urlPath) referenceCount += 1;
+        processed += 1;
+        if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+      }
+      const existing = state.evidence.between(origin, urlPath).filter((item) => item.sourceKind === "url-origin");
+      if (!referenceCount) {
+        if (existing.length) {
+          const removed = await state.evidence.removeDeclarationsTouchingCooperative(
+            urlPath,
+            (item) => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath,
+            () => this.yieldToHost(),
+          );
+          if (removed === null) return false;
+        }
+      } else if (existing.length !== 1) {
+        const removed = await state.evidence.removeDeclarationsTouchingCooperative(
+          urlPath,
+          (item) => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath,
+          () => this.yieldToHost(),
+        );
+        if (removed === null) return false;
+        const urlPage = state.pages.get(urlPath);
+        const originPage = this.ensureUrl(state, origin, origin);
+        if (urlPage) this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
+      }
+      affected.add(urlPath);
+      affected.add(origin);
+      resolveEvidencePair(state.pages, state.evidence, origin, urlPath);
+      resolveEvidencePair(state.pages, state.evidence, urlPath, origin);
+      processed += 1;
+      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+    }
+    return this.isCurrent();
+  }
+
   /** Release URL nodes that became purely derived and no longer have any declaration touching
    * them. Shared origins survive as long as any URL/referrer still owns evidence. */
   private pruneUnusedUrlNodes(state: GraphState, candidatePaths: Iterable<string>, affected: Set<string>): void {
@@ -969,6 +1408,55 @@ export class GraphBuilder {
       state.lowercasePathMap.delete(path.toLowerCase());
       affected.add(path);
     }
+  }
+
+  private async pruneUnusedUrlNodesCooperative(
+    state: GraphState,
+    candidatePaths: Iterable<string>,
+    affected: Set<string>,
+  ): Promise<boolean> {
+    const children = new Set<string>();
+    const origins = new Set<string>();
+    let processed = 0;
+    for (const urlPath of candidatePaths) {
+      if (!/^https?:\/\//i.test(urlPath)) continue;
+      let origin: string | null = null;
+      try { origin = new URL(urlPath).origin; } catch { /* malformed external target */ }
+      if (origin && origin !== urlPath) {
+        children.add(urlPath);
+        origins.add(origin);
+      } else {
+        origins.add(urlPath);
+      }
+      processed += 1;
+      if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+    }
+
+    const removeIfUnused = async (path: string): Promise<boolean> => {
+      const page = state.pages.get(path);
+      let hasEvidence = false;
+      if (page?.url && !page.file) {
+        for (const _item of state.evidence.declarationsTouchingIterator(path)) { hasEvidence = true; break; }
+      }
+      if (page?.url && !page.file && !hasEvidence) {
+        for (const neighborPath of page.neighbours.keys()) {
+          state.pages.get(neighborPath)?.neighbours.delete(path);
+          affected.add(neighborPath);
+        }
+        state.pages.delete(path);
+        state.lowercasePathMap.delete(path.toLowerCase());
+        affected.add(path);
+      }
+      processed += 1;
+      if ((processed & 31) === 0) return this.yieldToHost();
+      return true;
+    };
+
+    // Child URL pages must be removed before origins so an origin can become unreferenced within
+    // the same patch. Two insertion-ordered passes avoid an O(n log n) synchronous sort.
+    for (const path of children) if (!(await removeIfUnused(path))) return false;
+    for (const path of origins) if (!(await removeIfUnused(path))) return false;
+    return this.isCurrent();
   }
 
   private addDatePropertyEvidence(state: GraphState, source: GraphPage, meta: ParsedFileMetadata): void {

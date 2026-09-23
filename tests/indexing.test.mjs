@@ -479,7 +479,7 @@ function expectNoRole(sourcePath, role, targetPath) {
 
 try {
   // Parser contract first: these cases failed in the old single-regex implementation.
-  const parsed = parseBodyMetadata([
+  const legacyParserFixture = [
     "---",
     "Parent: \"[[IgnoredFrontmatter]]\"",
     "---",
@@ -497,7 +497,9 @@ try {
     "```",
     "Hidden:: [[Ignored2]]",
     "```",
-  ].join("\n"));
+  ].join("\n");
+  const parsed = parseBodyMetadata(legacyParserFixture);
+  assert.deepEqual(await parseBodyMetadataCooperative(legacyParserFixture), parsed, "Legacy fixture must match cooperative fallback grammar");
   assert.deepEqual(parsed.inlineFields.parent, ["[[A]]"]);
   assert.deepEqual(parsed.inlineFields.source, ["[Alias](https://example.com/x)"]);
   assert.deepEqual(parsed.inlineFields.previous, ["[[P]]"]);
@@ -1044,7 +1046,88 @@ try {
   });
   assert(samples.at(-1) <= samples[0] * 12 + 5, `Malformed URL-label parser scaling regressed: ${samples.join(", ")}`);
 
+  // P13: cooperative checkpoints must exist in the expensive *post line-discovery* phases too.
+  // A huge budget prevents timer yields, while the phase-aware cancellation predicate proves the
+  // inline-field and list-marker whitespace loops themselves are observing cancellation.
+  let inlinePhaseChecks = 0;
+  await assert.rejects(
+    parseBodyMetadataCooperative(`${"(".repeat(512 * 1024)}x:: y)`, (phase) => {
+      if (phase !== "inline-field-scan") return true;
+      inlinePhaseChecks += 1;
+      return inlinePhaseChecks < 3;
+    }, 60_000),
+    /cancelled/,
+  );
+  assert(inlinePhaseChecks >= 3, "Inline-field scan must expose cooperative cancellation checkpoints");
+
+  let whitespacePhaseChecks = 0;
+  await assert.rejects(
+    parseBodyMetadataCooperative(`- ${" ".repeat(512 * 1024)}Parent:: [[A]]`, (phase) => {
+      if (phase !== "list-whitespace-scan") return true;
+      whitespacePhaseChecks += 1;
+      return whitespacePhaseChecks < 3;
+    }, 60_000),
+    /cancelled/,
+  );
+  assert(whitespacePhaseChecks >= 3, "List-marker whitespace scan must expose cooperative cancellation checkpoints");
+
+  const maxTimerGapDuring = async (work) => {
+    let running = true;
+    let maxGap = 0;
+    let last = performance.now();
+    const tick = () => {
+      const now = performance.now();
+      maxGap = Math.max(maxGap, now - last);
+      last = now;
+      if (running) window.setTimeout(tick, 0);
+    };
+    window.setTimeout(tick, 0);
+    await work();
+    running = false;
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    return maxGap;
+  };
+  const inlineGap = await maxTimerGapDuring(() => parseBodyMetadataCooperative(`${"(".repeat(4 * 1024 * 1024)}x:: y)`, () => true, 4));
+  const whitespaceGap = await maxTimerGapDuring(() => parseBodyMetadataCooperative(`- ${" ".repeat(4 * 1024 * 1024)}Parent:: [[A]]`, () => true, 4));
+  assert(inlineGap < 45, `Inline-field cooperative parser blocked timers for ${inlineGap.toFixed(1)} ms`);
+  assert(whitespaceGap < 45, `List-whitespace cooperative parser blocked timers for ${whitespaceGap.toFixed(1)} ms`);
+
+  // P14: worker/core and cooperative fallback deliberately share one malformed-input grammar.
+  // Incomplete schemes are not URLs; malformed empty list-field keys are ignored.
+  const grammarSamples = [
+    legacyParserFixture,
+    "https://",
+    "http://)",
+    "HTTPS://",
+    "- :: [[A]]",
+    "- Parent:: [[A]]",
+    "+ Friend:: [[C]]",
+    "* Child:: [[B]]\r\nhttps://example.com/path",
+    "\\(Parent:: [[A]]) https://example.com",
+    "\\[Parent:: [[A]]] https://example.com",
+    "(Parent:: [[A]])\n[Child:: [[B]]]",
+    "`Parent:: [[ignored]]`\nParent:: [[A]]",
+    "``Parent:: [[ignored]]``\r\nChild:: [[B]]",
+    "[label](https://example.com/path).",
+    "[ label ](https://example.com/path).",
+    "[label](https://)",
+    "[label](http://)",
+    "Parent:: [[A]]\nFriend:: [[B]]\n",
+    "Parent:: [[A]]\r\nFriend:: [[B]]\r\n",
+    "---\r\ntags: [x]\r\n---\r\nParent:: [[A]]\r\n",
+    "<!-- Parent:: [[ignored]] --> Child:: [[B]]",
+  ];
+  assert.deepEqual(parseBodyMetadataCore("https://").urls, [], "Incomplete https scheme is not a URL node");
+  assert.deepEqual(parseBodyMetadataCore("http://)").urls, [], "A scheme followed immediately by a Markdown closer is incomplete");
+  assert.equal(parseBodyMetadataCore("- :: [[A]]").inlineFieldOccurrences.length, 0, "A list marker without a field key is not a Dataview field");
+  for (const sample of grammarSamples) {
+    assert.deepEqual(await parseBodyMetadataCooperative(sample), parseBodyMetadataCore(sample), `Parser grammar differs for ${JSON.stringify(sample)}`);
+  }
+
   const fallbackParser = new MetadataParser();
+  for (const sample of grammarSamples) {
+    assert.deepEqual(await fallbackParser.parse(sample), parseBodyMetadataCore(sample), `Fallback parser differs for ${JSON.stringify(sample)}`);
+  }
   const cancellableInput = `${"[a".repeat(2 * 1024 * 1024)} https://example.com/cancel`;
   const fallbackPromise = fallbackParser.parse(cancellableInput);
   window.setTimeout(() => fallbackParser.cancelPending(), 0);
@@ -1065,6 +1148,9 @@ try {
   globalThis.Worker = FakeWorker;
   const workerParser = new MetadataParser();
   assert.deepEqual(await workerParser.parse(malformedUrlInput), malformedUrlCore);
+  for (const sample of grammarSamples) {
+    assert.deepEqual(await workerParser.parse(sample), parseBodyMetadataCore(sample), `Worker parser differs for ${JSON.stringify(sample)}`);
+  }
   workerParser.destroy();
   if (originalWorker === undefined) delete globalThis.Worker; else globalThis.Worker = originalWorker;
 
@@ -1141,34 +1227,75 @@ try {
     settings.showTagNodes = previousTagVisibility;
   }
 
-  // P9: expanded-section parsing is cached independently from visibility. Reprojecting an already
-  // expanded note must hide/reveal folder/tag nodes without another Markdown read or fold reset.
+  // P9/P16: expanded-section parsing is cached independently from presentation visibility. The
+  // cached projection must derive siblings from the current structural graph, not from an earlier
+  // filtered/truncated sibling list. Compare every projection to a fresh expansion while proving
+  // the projection itself performs zero Markdown reads and preserves the caller-owned fold set.
   const expandedForVisibility = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
   assert(expandedForVisibility);
   const priorFolderToggle = settings.showFolderNodes;
   const priorTagToggle = settings.showTagNodes;
+  const priorSiblingToggle = settings.renderSiblings;
   const expandedIdsForVisibility = new Set(expandedForVisibility.sections.filter((section) => section.childIds.length).map((section) => section.id));
+  const originalExpandedIds = [...expandedIdsForVisibility].sort();
   let projectionReads = 0;
   const originalCachedReadForProjection = app.vault.cachedRead;
   app.vault.cachedRead = async (file) => { projectionReads += 1; return originalCachedReadForProjection(file); };
+  const siblingPaths = (expansion) => expansion.centerNeighborhood.siblings.map((item) => item.page.path).sort();
   try {
+    settings.renderSiblings = true;
     settings.showFolderNodes = false;
     settings.showTagNodes = false;
+    const hiddenReadsBefore = projectionReads;
     const hiddenProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    assert.equal(projectionReads, hiddenReadsBefore, "Hidden visibility projection must not reread Markdown");
     const hiddenScene = buildSectionExpandedScene(hiddenProjection, index, settings, expandedIdsForVisibility);
     assert.equal(hiddenScene.nodes.some((node) => node.page.isFolder || node.page.isTag), false);
+    const hiddenFresh = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+    assert(hiddenFresh);
+    assert.deepEqual(siblingPaths(hiddenProjection), siblingPaths(hiddenFresh), "Cached hidden sibling projection must match a fresh expansion");
 
     settings.showFolderNodes = true;
     settings.showTagNodes = true;
+    const shownReadsBefore = projectionReads;
     const shownProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    assert.equal(projectionReads, shownReadsBefore, "Shown visibility projection must not reread Markdown");
     const shownScene = buildSectionExpandedScene(shownProjection, index, settings, expandedIdsForVisibility);
     assert(shownScene.nodes.some((node) => node.page.isFolder), "Folder node must reappear in expanded projection");
     assert(shownScene.nodes.some((node) => node.page.isTag), "Tag node must reappear in expanded projection");
-    assert.equal(projectionReads, 0, "Visibility reprojection must not reread Markdown");
+    const shownFresh = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+    assert(shownFresh);
+    assert.deepEqual(siblingPaths(shownProjection), siblingPaths(shownFresh), "Cached shown sibling projection must include newly eligible siblings");
+
+    settings.showFolderNodes = false;
+    settings.showTagNodes = true;
+    const tagOnlyReadsBefore = projectionReads;
+    const tagOnlyProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    assert.equal(projectionReads, tagOnlyReadsBefore);
+    const tagOnlyFresh = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+    assert(tagOnlyFresh);
+    assert.deepEqual(siblingPaths(tagOnlyProjection), siblingPaths(tagOnlyFresh), "Tag-only sibling projection must match fresh structural derivation");
+
+    settings.showFolderNodes = true;
+    settings.showTagNodes = false;
+    const folderOnlyReadsBefore = projectionReads;
+    const folderOnlyProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    assert.equal(projectionReads, folderOnlyReadsBefore);
+    const folderOnlyFresh = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+    assert(folderOnlyFresh);
+    assert.deepEqual(siblingPaths(folderOnlyProjection), siblingPaths(folderOnlyFresh), "Folder-only sibling projection must match fresh structural derivation");
+
+    settings.renderSiblings = false;
+    const siblingOffReadsBefore = projectionReads;
+    const siblingOffProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    assert.equal(projectionReads, siblingOffReadsBefore, "Sibling presentation toggle must not reread Markdown");
+    assert.deepEqual(siblingPaths(siblingOffProjection), [], "Sibling-off projection must remove cached siblings immediately");
+    assert.deepEqual([...expandedIdsForVisibility].sort(), originalExpandedIds, "Visibility reprojection must preserve section fold state owned by the view");
   } finally {
     app.vault.cachedRead = originalCachedReadForProjection;
     settings.showFolderNodes = priorFolderToggle;
     settings.showTagNodes = priorTagToggle;
+    settings.renderSiblings = priorSiblingToggle;
   }
 
   // Performance/correctness regression P6: with tag nodes enabled, a local tag edit stays on the
@@ -1273,6 +1400,44 @@ try {
     settings.showFolderNodes = oldFolderVisibilityForCreate;
   }
 
+  // P15: post-parse graph work for a URL-heavy note is staged and cooperatively sliced. Prime the
+  // parsed-body hot cache so this measures signature/evidence/URL/resolution/commit work rather
+  // than the parser itself. Cancelling after parsing must publish nothing; retry remains searchable.
+  const originalManagedContent = contents.get(managedFile.path);
+  const originalManagedSize = managedFile.stat.size;
+  const urlHeavyBody = Array.from({ length: 10_000 }, (_, i) => `https://perf-${i}.example/path/${i}`).join("\n");
+  const urlHeavyParsed = parseBodyMetadataCore(urlHeavyBody);
+  managedFile.stat.mtime += 1000;
+  managedFile.stat.size = urlHeavyBody.length;
+  contents.set(managedFile.path, urlHeavyBody);
+  index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: urlHeavyParsed });
+  const graphPatchGap = await maxTimerGapDuring(async () => {
+    assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+  });
+  assert(graphPatchGap < 50, `URL-heavy post-parse graph patch blocked timers for ${graphPatchGap.toFixed(1)} ms`);
+  assert(index.get("https://perf-9999.example/path/9999"), "URL-heavy staged patch must publish all URL nodes");
+
+  const cancelUrlBody = `${urlHeavyBody}\nhttps://cancel-after-parse.example/path`;
+  const cancelUrlParsed = parseBodyMetadataCore(cancelUrlBody);
+  managedFile.stat.mtime += 1000;
+  managedFile.stat.size = cancelUrlBody.length;
+  contents.set(managedFile.path, cancelUrlBody);
+  index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: cancelUrlParsed });
+  const cancelAfterParsePromise = index.patchMarkdownPaths([managedFile.path]);
+  window.setTimeout(() => index.cancelRebuild(), 0);
+  const cancelAfterParse = await cancelAfterParsePromise;
+  assert.equal(cancelAfterParse.outcome, "cancelled");
+  assert.equal(index.get("https://cancel-after-parse.example/path"), undefined, "Cancelled staged work must not leak into the published graph");
+  assert.equal(index.search("cancel-after-parse", 5).length, 0, "Cancelled staged work must not leak into search");
+  assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+  assert(index.search("cancel-after-parse", 5).some((page) => page.path === "https://cancel-after-parse.example/path"), "Retry must publish graph and search at one commit boundary");
+
+  managedFile.stat.mtime += 1000;
+  managedFile.stat.size = originalManagedSize;
+  contents.set(managedFile.path, originalManagedContent);
+  index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: parseBodyMetadataCore(originalManagedContent) });
+  assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+
   // P12: exercise the production rebuild coordinator. If the last visible K-Plex surface closes
   // while an incremental patch is awaiting work, cancellation must not fall through to a hidden
   // full rebuild. Reopening resumes the retained backlog exactly once.
@@ -1320,7 +1485,7 @@ try {
   assert.equal(coordinator.indexDirty, false);
   assert.equal(coordinator.dirtyMarkdownPaths.size, 0);
 
-  console.log("K-Plex indexing fixture: assertions 1–33 + P1–P12 PASS");
+  console.log("K-Plex indexing fixture: assertions 1–33 + P1–P16 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
   console.log("Immediate creation + lazy node imagery: assertions 60–66 PASS");

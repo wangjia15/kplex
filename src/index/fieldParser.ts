@@ -239,20 +239,35 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
     }
     visible = maskRanges(visible, commentRanges);
 
-    const claimed: Array<[number, number]> = [];
-    // No Dataview field can exist without `::`. Gate the delimiter work first so a multi-megabyte
-    // prose/paste line containing ordinary punctuation does not need bracket stacks or a second
-    // character-by-character scan at all.
-    const hasFieldSyntax = visible.includes("::");
-    // An inline field needs both an opening and closing delimiter of the same kind. Avoid building
-    // large delimiter stacks for malformed pasted lines made entirely of unmatched opens/closes.
-    const hasInlineFieldSyntax = hasFieldSyntax && (
-      (visible.includes("(") && visible.includes(")"))
-      || (visible.includes("[") && visible.includes("]"))
-    );
-    const delimiterCloses = hasInlineFieldSyntax ? matchingDelimiterCloses(visible) : null;
+    let firstFieldSeparator = -1;
+    let firstNonSpace = -1;
+    let hasRoundOpen = false;
+    let hasRoundClose = false;
+    let hasSquareOpen = false;
+    let hasSquareClose = false;
+    let hasHttp = false;
+    const isWhitespace = (ch: string | undefined): boolean => Boolean(ch && /\s/.test(ch));
+    const isWord = (ch: string | undefined): boolean => Boolean(ch && /[A-Za-z0-9_]/.test(ch));
+    const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()\[\]{}"']/.test(ch));
+    const isTrailingUrlPunctuation = (ch: string | undefined): boolean => Boolean(ch && ".,;:!?".includes(ch));
+    for (let i = 0; i < visible.length; i += 1) {
+      const ch = visible[i];
+      if (firstNonSpace < 0 && !isWhitespace(ch)) firstNonSpace = i;
+      if (firstFieldSeparator < 0 && ch === ":" && visible[i + 1] === ":") firstFieldSeparator = i;
+      if (ch === "(") hasRoundOpen = true;
+      else if (ch === ")") hasRoundClose = true;
+      else if (ch === "[") hasSquareOpen = true;
+      else if (ch === "]") hasSquareClose = true;
+      else if ((ch === "h" || ch === "H") && (visible.slice(i, i + 7).toLowerCase() === "http://" || visible.slice(i, i + 8).toLowerCase() === "https://")) hasHttp = true;
+    }
 
-    // Dataview's parenthesized and square-bracket inline forms can occur mid-sentence.
+    const hasFieldSyntax = firstFieldSeparator >= 0;
+    const hasInlineFieldSyntax = hasFieldSyntax && ((hasRoundOpen && hasRoundClose) || (hasSquareOpen && hasSquareClose));
+    const delimiterCloses = hasInlineFieldSyntax ? matchingDelimiterCloses(visible) : null;
+    let firstClaimed = false;
+
+    // Dataview's parenthesized and square-bracket inline forms can occur mid-sentence. Search at
+    // most the supported 120-character key span; do not materialize/rescan a giant balanced value.
     if (hasInlineFieldSyntax) {
       for (let i = 0; i < visible.length; i += 1) {
         const open = visible[i];
@@ -260,39 +275,43 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
         if (open === "[" && visible[i + 1] === "[") { i += 1; continue; }
         const balancedEnd = delimiterCloses?.get(i) ?? -1;
         if (balancedEnd < 0) continue;
-        const inside = visible.slice(i + 1, balancedEnd);
-        const separator = inside.indexOf("::");
+        let separator = -1;
+        const searchEnd = Math.min(balancedEnd, i + 1 + 122);
+        for (let cursor = i + 1; cursor + 1 < searchEnd; cursor += 1) {
+          if (visible[cursor] === ":" && visible[cursor + 1] === ":") { separator = cursor - (i + 1); break; }
+        }
         if (separator <= 0 || separator > 120) { i = balancedEnd; continue; }
-        const name = stripFieldFormatting(inside.slice(0, separator));
+        const name = stripFieldFormatting(visible.slice(i + 1, i + 1 + separator));
         if (!name || hasFieldDelimiter(name)) { i = balancedEnd; continue; }
         const valueStart = i + 1 + separator + 2;
         addField(name, originalLine.slice(valueStart, balancedEnd), open === "(" ? "parenthesized" : "bracketed", lineNumber, offset + i, offset + balancedEnd + 1);
-        claimed.push([i, balancedEnd + 1]);
+        if (i === firstNonSpace) firstClaimed = true;
         i = balancedEnd;
       }
     }
 
-    // Full-line Dataview fields. List markers and Markdown emphasis around the key are accepted.
-    if (hasFieldSyntax) {
-      const firstNonSpace = visible.search(/\S/);
-      const firstClaimed = claimed.some(([claimedStart]) => claimedStart === firstNonSpace);
-      if (!firstClaimed) {
-        const full = visible.match(/^\s*(?:[-*+]\s+)?(.{1,120}?)::\s*(.*)$/);
-        if (full) {
-          const name = stripFieldFormatting(full[1]);
-          if (name && !hasFieldDelimiter(name)) {
-            const separatorAt = visible.indexOf("::");
-            const value = originalLine.slice(separatorAt + 2);
-            addField(name, value, "line", lineNumber, offset + Math.max(0, firstNonSpace), offset + originalLine.length);
-          }
+    // Full-line Dataview fields. Parse this manually instead of a backtracking regex so malformed
+    // list markers are deterministic in worker and cooperative modes. A bare "-" / "*" / "+"
+    // is a list marker, never a valid field name.
+    if (hasFieldSyntax && !firstClaimed && firstNonSpace >= 0) {
+      let keyStart = firstNonSpace;
+      if ((visible[keyStart] === "-" || visible[keyStart] === "*" || visible[keyStart] === "+") && isWhitespace(visible[keyStart + 1])) {
+        keyStart += 2;
+        while (isWhitespace(visible[keyStart])) keyStart += 1;
+      }
+      const separatorAt = visible.indexOf("::", keyStart);
+      if (separatorAt > keyStart && separatorAt - keyStart <= 120) {
+        const name = stripFieldFormatting(visible.slice(keyStart, separatorAt));
+        if (name && !hasFieldDelimiter(name)) {
+          addField(name, originalLine.slice(separatorAt + 2), "line", lineNumber, offset + firstNonSpace, offset + originalLine.length);
         }
       }
     }
 
-    // External URLs use a linear Markdown-label scan. A regex of the form `[([^\]]+)](...)`
-    // retries the remainder of the line at every unmatched `[`, which makes pasted malformed text
-    // such as `[a[a[a... https://...` quadratic. Track the next closing bracket/paren once instead.
-    if (/https?:\/\//i.test(visible)) {
+    // External URLs use the same explicit scanner as the cooperative fallback. Incomplete schemes
+    // such as `https://` are deliberately ignored; a URL must contain at least one URL character
+    // after the scheme. This also keeps malformed partially typed Markdown grammar deterministic.
+    if (hasHttp) {
       const aliasByUrl = new Map<string, string>();
       let markdownCursor = 0;
       while (markdownCursor < visible.length) {
@@ -306,24 +325,46 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
         }
         const urlStart = closeLabel + 2;
         const scheme = visible.slice(urlStart, urlStart + 8).toLowerCase();
-        if (!scheme.startsWith("http://") && !scheme.startsWith("https://")) {
+        const schemeLength = scheme.startsWith("https://") ? 8 : scheme.startsWith("http://") ? 7 : 0;
+        if (!schemeLength) {
           markdownCursor = closeLabel + 1;
           continue;
         }
         const closeUrl = visible.indexOf(")", urlStart);
         if (closeUrl < 0) break;
-        const raw = visible.slice(urlStart, closeUrl).trim().replace(/[.,;:!?]+$/, "");
-        if (raw) aliasByUrl.set(raw, visible.slice(open + 1, closeLabel).trim());
+        let rawStart = urlStart;
+        let rawEnd = closeUrl;
+        while (rawStart < rawEnd && isWhitespace(visible[rawStart])) rawStart += 1;
+        while (rawEnd > rawStart && isWhitespace(visible[rawEnd - 1])) rawEnd -= 1;
+        while (rawEnd > rawStart && isTrailingUrlPunctuation(visible[rawEnd - 1])) rawEnd -= 1;
+        if (rawEnd - rawStart > schemeLength) {
+          const raw = visible.slice(rawStart, rawEnd);
+          let labelStart = open + 1;
+          let labelEnd = closeLabel;
+          while (labelStart < labelEnd && isWhitespace(visible[labelStart])) labelStart += 1;
+          while (labelEnd > labelStart && isWhitespace(visible[labelEnd - 1])) labelEnd -= 1;
+          aliasByUrl.set(raw, visible.slice(labelStart, labelEnd));
+        }
         markdownCursor = closeUrl + 1;
       }
-      const urlRe = /\bhttps?:\/\/[^\s<>()\u005B\u005D{}"']+/gi;
-      let urlMatch: RegExpExecArray | null;
-      while ((urlMatch = urlRe.exec(visible)) !== null) {
-        const raw = urlMatch[0].replace(/[.,;:!?]+$/, "");
-        if (!raw || seenUrls.has(raw)) continue;
-        seenUrls.add(raw);
-        const label = aliasByUrl.get(raw);
-        urls.push(label ? { url: raw, label, line: lineNumber } : { url: raw, line: lineNumber });
+
+      for (let i = 0; i < visible.length; i += 1) {
+        const lower = visible.slice(i, i + 8).toLowerCase();
+        const schemeLength = lower.startsWith("https://") ? 8 : lower.startsWith("http://") ? 7 : 0;
+        if (!schemeLength || isWord(visible[i - 1])) continue;
+        let end = i + schemeLength;
+        while (end < visible.length && isUrlChar(visible[end])) end += 1;
+        if (end === i + schemeLength) { i = Math.max(i, end - 1); continue; }
+        while (end > i + schemeLength && isTrailingUrlPunctuation(visible[end - 1])) end -= 1;
+        if (end > i + schemeLength) {
+          const raw = visible.slice(i, end);
+          if (!seenUrls.has(raw)) {
+            seenUrls.add(raw);
+            const label = aliasByUrl.get(raw);
+            urls.push(label ? { url: raw, label, line: lineNumber } : { url: raw, line: lineNumber });
+          }
+        }
+        i = Math.max(i, end - 1);
       }
     }
 
@@ -342,7 +383,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
  */
 export async function parseBodyMetadataCooperative(
   content: string,
-  shouldContinue: () => boolean = () => true,
+  shouldContinue: (phase?: string) => boolean = () => true,
   budgetMs = 4,
 ): Promise<ParsedBodyMetadata> {
   const normalize = (name: string): string => name.toLowerCase().replace(/\s+/g, "-").trim();
@@ -354,11 +395,11 @@ export async function parseBodyMetadataCooperative(
   const seenUrls = new Set<string>();
   let deadline = Date.now() + Math.max(1, budgetMs);
 
-  const yieldToHost = async (force = false): Promise<void> => {
-    if (!shouldContinue()) throw new Error("K-Plex cooperative metadata parse cancelled");
+  const yieldToHost = async (force = false, phase = "generic"): Promise<void> => {
+    if (!shouldContinue(phase)) throw new Error("K-Plex cooperative metadata parse cancelled");
     if (!force && Date.now() < deadline) return;
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-    if (!shouldContinue()) throw new Error("K-Plex cooperative metadata parse cancelled");
+    if (!shouldContinue(phase)) throw new Error("K-Plex cooperative metadata parse cancelled");
     deadline = Date.now() + Math.max(1, budgetMs);
   };
 
@@ -374,6 +415,50 @@ export async function parseBodyMetadataCooperative(
       await yieldToHost();
     }
     return -1;
+  };
+
+  const isWhitespace = (ch: string | undefined): boolean => Boolean(ch && /\s/.test(ch));
+  const isWord = (ch: string | undefined): boolean => Boolean(ch && /[A-Za-z0-9_]/.test(ch));
+  const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()\[\]{}"']/.test(ch));
+  const isTrailingUrlPunctuation = (ch: string | undefined): boolean => Boolean(ch && ".,;:!?".includes(ch));
+
+  const trimBounds = async (text: string, start = 0, end = text.length): Promise<[number, number]> => {
+    let left = Math.max(0, start);
+    let right = Math.min(text.length, end);
+    let scanned = 0;
+    while (left < right && isWhitespace(text[left])) {
+      left += 1;
+      scanned += 1;
+      if ((scanned & 2047) === 0) await yieldToHost();
+    }
+    scanned = 0;
+    while (right > left && isWhitespace(text[right - 1])) {
+      right -= 1;
+      scanned += 1;
+      if ((scanned & 2047) === 0) await yieldToHost();
+    }
+    return [left, right];
+  };
+
+  const trimmedEquals = async (text: string, token: string): Promise<boolean> => {
+    const [start, end] = await trimBounds(text);
+    return end - start === token.length && text.slice(start, end) === token;
+  };
+
+  const trimText = async (text: string): Promise<string> => {
+    const [start, end] = await trimBounds(text);
+    return text.slice(start, end);
+  };
+
+  const stripTrailingUrlPunctuation = async (text: string, start: number, end: number): Promise<number> => {
+    let right = end;
+    let scanned = 0;
+    while (right > start && isTrailingUrlPunctuation(text[right - 1])) {
+      right -= 1;
+      scanned += 1;
+      if ((scanned & 2047) === 0) await yieldToHost();
+    }
+    return right;
   };
 
   const stripFieldFormatting = (raw: string): string => {
@@ -393,26 +478,34 @@ export async function parseBodyMetadataCooperative(
     return text;
   };
 
-  const addField = (rawName: string, rawValue: string, syntax: InlineFieldOccurrence["syntax"], line: number, start: number, end: number): void => {
+  const addField = async (rawName: string, rawValue: string, syntax: InlineFieldOccurrence["syntax"], line: number, start: number, end: number): Promise<void> => {
     const name = stripFieldFormatting(rawName);
     const normalizedName = normalize(name);
-    const value = rawValue.trim();
+    const value = await trimText(rawValue);
     if (!normalizedName || !value || hasFieldDelimiter(name)) return;
     inlineFields[normalizedName] ??= [];
     inlineFields[normalizedName].push(value);
     inlineFieldOccurrences.push({ name, normalizedName, value, syntax, line, start, end });
   };
 
-  const maskRanges = (text: string, ranges: Array<[number, number]>): string => {
+  const maskRanges = async (text: string, ranges: Array<[number, number]>): Promise<string> => {
     if (!ranges.length) return text;
     const pieces: string[] = [];
     let cursor = 0;
     for (const [start, end] of ranges) {
       if (start > cursor) pieces.push(text.slice(cursor, start));
-      if (end > start) pieces.push(" ".repeat(end - start));
+      let remaining = Math.max(0, end - start);
+      while (remaining > 0) {
+        const chunk = Math.min(16 * 1024, remaining);
+        pieces.push(" ".repeat(chunk));
+        remaining -= chunk;
+        await yieldToHost();
+      }
       cursor = Math.max(cursor, end);
+      await yieldToHost();
     }
     if (cursor < text.length) pieces.push(text.slice(cursor));
+    await yieldToHost();
     return pieces.join("");
   };
 
@@ -445,26 +538,7 @@ export async function parseBodyMetadataCooperative(
     return maskRanges(text, ranges);
   };
 
-  const matchingDelimiterCloses = async (text: string): Promise<Map<number, number>> => {
-    const round: number[] = [];
-    const square: number[] = [];
-    const closes = new Map<number, number>();
-    for (let i = 0; i < text.length; i += 1) {
-      const ch = text[i];
-      if (ch === "\\") { i += 1; continue; }
-      if (ch === "(") round.push(i);
-      else if (ch === "[") square.push(i);
-      else if (ch === ")") {
-        const start = round.pop();
-        if (start !== undefined) closes.set(start, i);
-      } else if (ch === "]") {
-        const start = square.pop();
-        if (start !== undefined) closes.set(start, i);
-      }
-      if ((i & 4095) === 0) await yieldToHost();
-    }
-    return closes;
-  };
+
 
   const firstNewline = await findString(content, "\n", 0);
   const firstRawEnd = firstNewline < 0 ? content.length : firstNewline;
@@ -473,7 +547,7 @@ export async function parseBodyMetadataCooperative(
   let offset = 0;
   let lineStart = 0;
   let lineIndex = 0;
-  let inFrontmatter = firstLine.trim() === "---";
+  let inFrontmatter = await trimmedEquals(firstLine, "---");
   let frontmatterClosed = !inFrontmatter;
   let fence: string | null = null;
   let inHtmlComment = false;
@@ -497,8 +571,10 @@ export async function parseBodyMetadataCooperative(
 
     if (inFrontmatter && !frontmatterClosed) {
       const originalLine = content.slice(lineStart, logicalEnd);
-      const trimmed = originalLine.trim();
-      if (lineIndex > 0 && (trimmed === "---" || trimmed === "...")) {
+      const isClosingFrontmatter = lineIndex > 0 && (
+        await trimmedEquals(originalLine, "---") || await trimmedEquals(originalLine, "...")
+      );
+      if (isClosingFrontmatter) {
         frontmatterClosed = true;
         inFrontmatter = false;
       }
@@ -550,7 +626,7 @@ export async function parseBodyMetadataCooperative(
       commentCursor = commentEnd + 3;
       await yieldToHost();
     }
-    visible = maskRanges(visible, commentRanges);
+    visible = await maskRanges(visible, commentRanges);
 
     let firstFieldSeparator = -1;
     let firstNonSpace = -1;
@@ -559,60 +635,130 @@ export async function parseBodyMetadataCooperative(
     let hasSquareOpen = false;
     let hasSquareClose = false;
     let hasHttp = false;
+    let lineFeatureCheckpoint = 0;
     for (let i = 0; i < visible.length; i += 1) {
+      if (i >= lineFeatureCheckpoint) {
+        await yieldToHost(false, "line-feature-scan");
+        lineFeatureCheckpoint = i + 1024;
+      }
       const ch = visible[i];
-      if (firstNonSpace < 0 && !/\s/.test(ch)) firstNonSpace = i;
+      if (firstNonSpace < 0 && !isWhitespace(ch)) firstNonSpace = i;
       if (firstFieldSeparator < 0 && ch === ":" && visible[i + 1] === ":") firstFieldSeparator = i;
       if (ch === "(") hasRoundOpen = true;
       else if (ch === ")") hasRoundClose = true;
       else if (ch === "[") hasSquareOpen = true;
       else if (ch === "]") hasSquareClose = true;
       else if ((ch === "h" || ch === "H") && (visible.slice(i, i + 7).toLowerCase() === "http://" || visible.slice(i, i + 8).toLowerCase() === "https://")) hasHttp = true;
-      if ((i & 4095) === 0) await yieldToHost();
     }
 
-    const claimed: Array<[number, number]> = [];
     const hasFieldSyntax = firstFieldSeparator >= 0;
     const hasInlineFieldSyntax = hasFieldSyntax && ((hasRoundOpen && hasRoundClose) || (hasSquareOpen && hasSquareClose));
-    const delimiterCloses = hasInlineFieldSyntax ? await matchingDelimiterCloses(visible) : null;
+    let firstClaimed = false;
 
     if (hasInlineFieldSyntax) {
+      type RecentOpen = { type: "(" | "["; depth: number; pos: number; wiki: boolean };
+      type InlineCandidate = RecentOpen & { separator: number; name: string };
+      type InlineMatch = InlineCandidate & { close: number };
+      let roundDepth = 0;
+      let squareDepth = 0;
+      let recent: RecentOpen[] = [];
+      const activeRecent = new Map<string, RecentOpen>();
+      const candidates = new Map<string, InlineCandidate>();
+      const matches: InlineMatch[] = [];
+      const keyFor = (type: "(" | "[", depth: number): string => `${type}${depth}`;
+
+      let inlineCheckpoint = 0;
       for (let i = 0; i < visible.length; i += 1) {
-        const open = visible[i];
-        if (open !== "(" && open !== "[") continue;
-        if (open === "[" && visible[i + 1] === "[") { i += 1; continue; }
-        const balancedEnd = delimiterCloses?.get(i) ?? -1;
-        if (balancedEnd < 0) continue;
-        let separator = -1;
-        const searchEnd = Math.min(balancedEnd, i + 1 + 122);
-        for (let cursor = i + 1; cursor + 1 < searchEnd; cursor += 1) {
-          if (visible[cursor] === ":" && visible[cursor + 1] === ":") { separator = cursor - (i + 1); break; }
+        if (i >= inlineCheckpoint) {
+          await yieldToHost(false, "inline-field-scan");
+          inlineCheckpoint = i + 512;
+          const cutoff = i - 122;
+          if (recent.length > 256) {
+            const retained: RecentOpen[] = [];
+            for (const entry of recent) {
+              if (entry.pos >= cutoff && activeRecent.get(keyFor(entry.type, entry.depth)) === entry) retained.push(entry);
+              else if (entry.pos < cutoff && activeRecent.get(keyFor(entry.type, entry.depth)) === entry) activeRecent.delete(keyFor(entry.type, entry.depth));
+            }
+            recent = retained;
+          }
         }
-        if (separator <= 0 || separator > 120) { i = balancedEnd; continue; }
-        const name = stripFieldFormatting(visible.slice(i + 1, i + 1 + separator));
-        if (!name || hasFieldDelimiter(name)) { i = balancedEnd; continue; }
-        const valueStart = i + 1 + separator + 2;
-        addField(name, originalLine.slice(valueStart, balancedEnd), open === "(" ? "parenthesized" : "bracketed", lineNumber, offset + i, offset + balancedEnd + 1);
-        claimed.push([i, balancedEnd + 1]);
-        i = balancedEnd;
-        await yieldToHost();
+        const ch = visible[i];
+        if (ch === "\\") { i += 1; continue; }
+        if (ch === "(") {
+          roundDepth += 1;
+          const entry: RecentOpen = { type: "(", depth: roundDepth, pos: i, wiki: false };
+          recent.push(entry); activeRecent.set(keyFor("(", roundDepth), entry);
+          continue;
+        }
+        if (ch === "[") {
+          squareDepth += 1;
+          const entry: RecentOpen = { type: "[", depth: squareDepth, pos: i, wiki: visible[i + 1] === "[" || visible[i - 1] === "[" };
+          recent.push(entry); activeRecent.set(keyFor("[", squareDepth), entry);
+          continue;
+        }
+        if (ch === ":" && visible[i + 1] === ":") {
+          const cutoff = i - 121;
+          for (let r = recent.length - 1; r >= 0; r -= 1) {
+            const entry = recent[r];
+            if (entry.pos < cutoff) break;
+            const key = keyFor(entry.type, entry.depth);
+            if (entry.wiki || candidates.has(key) || activeRecent.get(key) !== entry) continue;
+            const rawName = visible.slice(entry.pos + 1, i);
+            const name = stripFieldFormatting(rawName);
+            if (!name || rawName.length > 120 || hasFieldDelimiter(name)) continue;
+            candidates.set(key, { ...entry, separator: i, name });
+          }
+          i += 1;
+          continue;
+        }
+        if (ch === ")") {
+          if (roundDepth > 0) {
+            const key = keyFor("(", roundDepth);
+            const candidate = candidates.get(key);
+            if (candidate) { matches.push({ ...candidate, close: i }); candidates.delete(key); }
+            activeRecent.delete(key);
+            roundDepth -= 1;
+          }
+          continue;
+        }
+        if (ch === "]") {
+          if (squareDepth > 0) {
+            const key = keyFor("[", squareDepth);
+            const candidate = candidates.get(key);
+            if (candidate) { matches.push({ ...candidate, close: i }); candidates.delete(key); }
+            activeRecent.delete(key);
+            squareDepth -= 1;
+          }
+        }
+      }
+
+      matches.sort((a, b) => a.pos - b.pos);
+      for (const match of matches) {
+        const valueStart = match.separator + 2;
+        await addField(match.name, originalLine.slice(valueStart, match.close), match.type === "(" ? "parenthesized" : "bracketed", lineNumber, offset + match.pos, offset + match.close + 1);
+        if (match.pos === firstNonSpace) firstClaimed = true;
+        await yieldToHost(false, "inline-field-value");
       }
     }
 
-    if (hasFieldSyntax) {
-      const firstClaimed = claimed.some(([claimedStart]) => claimedStart === firstNonSpace);
-      if (!firstClaimed && firstNonSpace >= 0) {
-        let keyStart = firstNonSpace;
-        if ((visible[keyStart] === "-" || visible[keyStart] === "*" || visible[keyStart] === "+") && /\s/.test(visible[keyStart + 1] ?? "")) {
-          keyStart += 2;
-          while (/\s/.test(visible[keyStart] ?? "")) keyStart += 1;
-        }
-        const separatorAt = visible.indexOf("::", keyStart);
-        if (separatorAt > keyStart && separatorAt - keyStart <= 120) {
-          const name = stripFieldFormatting(visible.slice(keyStart, separatorAt));
-          if (name && !hasFieldDelimiter(name)) {
-            addField(name, originalLine.slice(separatorAt + 2), "line", lineNumber, offset + firstNonSpace, offset + originalLine.length);
+    if (hasFieldSyntax && !firstClaimed && firstNonSpace >= 0) {
+      let keyStart = firstNonSpace;
+      if ((visible[keyStart] === "-" || visible[keyStart] === "*" || visible[keyStart] === "+") && isWhitespace(visible[keyStart + 1])) {
+        keyStart += 2;
+        let nextWhitespaceCheckpoint = keyStart + 512;
+        while (isWhitespace(visible[keyStart])) {
+          keyStart += 1;
+          if (keyStart >= nextWhitespaceCheckpoint) {
+            await yieldToHost(false, "list-whitespace-scan");
+            nextWhitespaceCheckpoint = keyStart + 512;
           }
+        }
+      }
+      const separatorAt = await findString(visible, "::", keyStart);
+      if (separatorAt > keyStart && separatorAt - keyStart <= 120) {
+        const name = stripFieldFormatting(visible.slice(keyStart, separatorAt));
+        if (name && !hasFieldDelimiter(name)) {
+          await addField(name, originalLine.slice(separatorAt + 2), "line", lineNumber, offset + firstNonSpace, offset + originalLine.length);
         }
       }
     }
@@ -627,39 +773,54 @@ export async function parseBodyMetadataCooperative(
         if (closeLabel < 0) break;
         if (visible[closeLabel + 1] !== "(") {
           markdownCursor = closeLabel + 1;
+          await yieldToHost();
           continue;
         }
         const urlStart = closeLabel + 2;
         const scheme = visible.slice(urlStart, urlStart + 8).toLowerCase();
-        if (!scheme.startsWith("http://") && !scheme.startsWith("https://")) {
+        const schemeLength = scheme.startsWith("https://") ? 8 : scheme.startsWith("http://") ? 7 : 0;
+        if (!schemeLength) {
           markdownCursor = closeLabel + 1;
+          await yieldToHost();
           continue;
         }
         const closeUrl = await findString(visible, ")", urlStart);
         if (closeUrl < 0) break;
-        const raw = visible.slice(urlStart, closeUrl).trim().replace(/[.,;:!?]+$/, "");
-        if (raw) aliasByUrl.set(raw, visible.slice(open + 1, closeLabel).trim());
+        let [rawStart, rawEnd] = await trimBounds(visible, urlStart, closeUrl);
+        rawEnd = await stripTrailingUrlPunctuation(visible, rawStart, rawEnd);
+        if (rawEnd - rawStart > schemeLength) {
+          const [labelStart, labelEnd] = await trimBounds(visible, open + 1, closeLabel);
+          aliasByUrl.set(visible.slice(rawStart, rawEnd), visible.slice(labelStart, labelEnd));
+        }
         markdownCursor = closeUrl + 1;
         await yieldToHost();
       }
 
-      const isWord = (ch: string | undefined): boolean => Boolean(ch && /[A-Za-z0-9_]/.test(ch));
-      const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()\[\]{}"']/.test(ch));
+      let urlCheckpoint = 0;
       for (let i = 0; i < visible.length; i += 1) {
-        if ((i & 4095) === 0) await yieldToHost();
+        if (i >= urlCheckpoint) {
+          await yieldToHost(false, "url-scan");
+          urlCheckpoint = i + 1024;
+        }
         const lower = visible.slice(i, i + 8).toLowerCase();
         const schemeLength = lower.startsWith("https://") ? 8 : lower.startsWith("http://") ? 7 : 0;
         if (!schemeLength || isWord(visible[i - 1])) continue;
         let end = i + schemeLength;
+        let scanned = 0;
         while (end < visible.length && isUrlChar(visible[end])) {
           end += 1;
-          if ((end & 4095) === 0) await yieldToHost();
+          scanned += 1;
+          if ((scanned & 2047) === 0) await yieldToHost();
         }
-        const raw = visible.slice(i, end).replace(/[.,;:!?]+$/, "");
-        if (raw && !seenUrls.has(raw)) {
-          seenUrls.add(raw);
-          const label = aliasByUrl.get(raw);
-          urls.push(label ? { url: raw, label, line: lineNumber } : { url: raw, line: lineNumber });
+        if (end === i + schemeLength) { i = Math.max(i, end - 1); continue; }
+        end = await stripTrailingUrlPunctuation(visible, i + schemeLength, end);
+        if (end > i + schemeLength) {
+          const raw = visible.slice(i, end);
+          if (!seenUrls.has(raw)) {
+            seenUrls.add(raw);
+            const label = aliasByUrl.get(raw);
+            urls.push(label ? { url: raw, label, line: lineNumber } : { url: raw, line: lineNumber });
+          }
         }
         i = Math.max(i, end - 1);
       }

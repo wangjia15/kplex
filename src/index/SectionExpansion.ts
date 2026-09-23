@@ -20,7 +20,6 @@ type EvidenceTargetMap = Map<string, { target: GraphPage; evidence: RelationEvid
 type SectionProjectionSource = {
   centerPage: GraphPage;
   centerEvidence: EvidenceTargetMap;
-  persistentSiblings: Neighbour[];
   sections: Array<{
     id: string;
     page: GraphPage;
@@ -393,7 +392,7 @@ export async function buildCentralSectionExpansion(
   return {
     centerPath: centerPage.path, centerNeighborhood, sections, explanations,
     projectionSource: {
-      centerPage, centerEvidence, persistentSiblings: [...centerNeighborhood.siblings], sections: projectionSections,
+      centerPage, centerEvidence, sections: projectionSections,
     },
   };
 }
@@ -407,7 +406,11 @@ export function projectCentralSectionExpansion(
   const source = expansion.projectionSource;
   const center = clonePage(source.centerPage);
   const centerNeighborhood = resolveNeighbourhood(plugin, index, center, source.centerEvidence);
-  centerNeighborhood.siblings = source.persistentSiblings.filter((item) => index.isVisiblePage(item.page));
+  // Siblings are structurally derived from the center's *currently visible* parents. Recompute
+  // them from the persistent graph on every presentation projection so showing/hiding folder/tag
+  // parents (or toggling sibling rendering) can both add and remove eligible siblings without
+  // rereading Markdown or rebuilding section evidence.
+  centerNeighborhood.siblings = index.getNeighborhood(source.centerPage.path)?.siblings ?? [];
   const explanations = new Map<string, RelationshipExplanation>();
   for (const { target, evidence: items } of source.centerEvidence.values()) {
     if (!center.neighbours.has(target.path)) continue;
