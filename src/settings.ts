@@ -1,6 +1,7 @@
 import { App, Modal, Notice, PluginSettingTab, getIcon, type SettingDefinitionItem } from "obsidian";
 import type ExcaliBrainPlugin from "./main";
 import type { Arrowhead, Hierarchy, LinkStyle, NodeStyle } from "./types";
+import { sanitizeGraphLensDefinitions, type GraphLensDefinition } from "./lens/GraphLens";
 
 export const DEFAULT_LINK_STYLE: LinkStyle = {
   strokeColor: "#696969ff",
@@ -171,6 +172,8 @@ export interface ExcaliBrainSettings {
   documentSyncMode: DocumentSyncMode;
   /** Animation speed multiplier: 0 disables motion; 1 is normal; 2 is very fast. */
   animationSpeed: number;
+  /** Named local Graph Lenses. Definitions are persisted; evaluation is limited to the visible Plex. */
+  graphLenses: GraphLensDefinition[];
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -263,7 +266,8 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sidecarCondensedBreakpoint: 560,
   relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger" },
   documentSyncMode: "off",
-  animationSpeed: 1
+  animationSpeed: 1,
+  graphLenses: []
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -399,6 +403,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     },
     documentSyncMode,
     animationSpeed: Math.max(0, Math.min(2, finite(old.animationSpeed, 1))),
+    graphLenses: sanitizeGraphLensDefinitions(old.graphLenses),
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",

@@ -123,9 +123,8 @@ export class GraphBuilder {
 
   /**
    * Fingerprint only metadata that can affect K-Plex graph semantics. Arbitrary frontmatter
-   * property values are intentionally excluded: lenses may read them lazily from MetadataCache,
-   * but changing such a value must not cause graph evidence/search churn. Property names remain in
-   * the signature because K-Plex exposes discovered fields in ontology settings.
+   * property names and values are intentionally excluded: lenses read them lazily from
+   * MetadataCache, while field discovery is maintained separately from relationship invalidation.
    */
   private semanticSourceSignature(file: TFile, body: ParsedBodyMetadata): string {
     const cache = this.app.metadataCache.getFileCache(file);
@@ -143,7 +142,6 @@ export class GraphBuilder {
     const resolved = Object.keys(this.app.metadataCache.resolvedLinks[file.path] ?? {}).sort();
     const unresolved = Object.keys(this.app.metadataCache.unresolvedLinks[file.path] ?? {}).sort();
     return JSON.stringify({
-      frontmatterFields: Object.keys(frontmatter).sort(),
       frontmatter: stableSemanticValue(semanticFrontmatter),
       tags,
       resolved,
@@ -436,8 +434,11 @@ export class GraphBuilder {
 
       const signature = this.semanticSourceSignature(file, body);
       if (previousEntry?.semanticSignature === signature) {
-        // Drawing data / prose changed, but nothing K-Plex consumes changed. Update only runtime
-        // freshness and the write-behind cache: no evidence mutation, search rebuild or UI emit.
+        // Drawing data / prose / arbitrary frontmatter changed, but nothing K-Plex consumes
+        // semantically changed. Field-name discovery is deliberately separate from relationship
+        // invalidation so a newly introduced lens property never tears down/re-resolves evidence.
+        const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
+        this.recordDiscoveredFields(state, meta, "patch");
         this.rememberFieldCache(file.path, { mtime: file.stat.mtime, body, semanticSignature: signature });
         page.mtime = file.stat.mtime;
         semanticNoops += 1;
@@ -498,16 +499,11 @@ export class GraphBuilder {
     return { ok: this.isCurrent(), touchedPagePaths, semanticChanges, semanticNoops };
   }
 
-  private applyMetadata(
+  private recordDiscoveredFields(
     state: GraphState,
-    page: GraphPage,
-    file: TFile,
     meta: ParsedFileMetadata,
-    discoveryMode: "rebuild" | "patch" = "rebuild",
+    discoveryMode: "rebuild" | "patch",
   ): void {
-    page.aliases = meta.aliases;
-    page.tags = meta.tags;
-
     const recordField = (name: string): void => {
       const normalized = normalizeFieldName(name);
       if (!normalized) return;
@@ -522,6 +518,18 @@ export class GraphBuilder {
     };
     Object.keys(meta.frontmatter).forEach(recordField);
     meta.inlineFieldOccurrences.forEach((occurrence) => recordField(occurrence.name));
+  }
+
+  private applyMetadata(
+    state: GraphState,
+    page: GraphPage,
+    file: TFile,
+    meta: ParsedFileMetadata,
+    discoveryMode: "rebuild" | "patch" = "rebuild",
+  ): void {
+    page.aliases = meta.aliases;
+    page.tags = meta.tags;
+    this.recordDiscoveredFields(state, meta, discoveryMode);
 
     const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
     const frontmatterNoteType = getNormalizedFrontmatterValues(meta, noteTypeField)[0];

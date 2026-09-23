@@ -13,6 +13,7 @@ import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 import { RenameNoteModal } from "./RenameNoteModal";
 import { buildCentralSectionExpansion, canExpandCentralSections, type CentralSectionExpansion } from "../index/SectionExpansion";
 import { GraphPredicateEngine, type CompiledGraphPredicate, type GraphPredicateEdgeContext } from "../lens/GraphPredicate";
+import { graphLensEdgeStyle, graphLensNodeStyle, matchesGraphLenses, type CompiledGraphLensSet } from "../lens/GraphLens";
 
 type Point = { x: number; y: number };
 type HoverState =
@@ -282,6 +283,92 @@ function matchesGraphPredicateNode(
   });
 }
 
+function matchesVisibleLensPage(
+  engine: GraphPredicateEngine,
+  index: GraphIndex,
+  lenses: CompiledGraphLensSet,
+  page: GraphPage,
+  label: string,
+  typeDefinition: string | undefined,
+  center: GraphPage | undefined,
+  edge: GraphPredicateEdgeContext = {},
+): boolean {
+  return matchesGraphLenses(engine, index, lenses, {
+    page,
+    label,
+    center,
+    edge: { ...edge, definition: typeDefinition ?? edge.definition },
+  });
+}
+
+function matchesVisibleLensNode(
+  engine: GraphPredicateEngine,
+  index: GraphIndex,
+  lenses: CompiledGraphLensSet,
+  node: PositionedNode,
+  center: GraphPage | undefined,
+): boolean {
+  return matchesVisibleLensPage(engine, index, lenses, node.page, node.label, node.typeDefinition, center, {
+    role: node.role,
+    relationType: node.relationType,
+    linkDirection: node.linkDirection,
+    sourcePath: center?.path,
+    targetPath: node.page.path,
+  });
+}
+
+function matchesVisibleCandidate(
+  engine: GraphPredicateEngine,
+  index: GraphIndex,
+  predicate: CompiledGraphPredicate | null,
+  lenses: CompiledGraphLensSet,
+  page: GraphPage,
+  label: string,
+  typeDefinition: string | undefined,
+  center: GraphPage | undefined,
+  edge: GraphPredicateEdgeContext = {},
+): boolean {
+  return matchesGraphPredicatePage(engine, predicate, page, label, typeDefinition, center, edge)
+    && matchesVisibleLensPage(engine, index, lenses, page, label, typeDefinition, center, edge);
+}
+
+function filterNeighborhoodForLenses(
+  neighborhood: Neighborhood,
+  contextCenter: GraphPage,
+  engine: GraphPredicateEngine,
+  index: GraphIndex,
+  predicate: CompiledGraphPredicate | null,
+  lenses: CompiledGraphLensSet,
+): Neighborhood {
+  const filter = (items: Neighbour[], displayedRole: Role) => items.filter((item) => matchesVisibleCandidate(
+    engine,
+    index,
+    predicate,
+    lenses,
+    item.page,
+    index.titleFor(item.page),
+    item.typeDefinition,
+    contextCenter,
+    {
+      // Match the same role users see in the rendered Plex. `previous`/`next` relationships are
+      // displayed in the left/right zones, so Keep layout and Reflow must evaluate identically.
+      role: displayedRole,
+      relationType: item.relationType,
+      linkDirection: item.linkDirection,
+      sourcePath: neighborhood.center.path,
+      targetPath: item.page.path,
+    },
+  ));
+  return {
+    ...neighborhood,
+    parents: filter(neighborhood.parents, "parent"),
+    children: filter(neighborhood.children, "child"),
+    leftFriends: filter(neighborhood.leftFriends, "left"),
+    rightFriends: filter(neighborhood.rightFriends, "right"),
+    siblings: filter(neighborhood.siblings, "sibling"),
+  };
+}
+
 function buildZoneDisplayLayout(
   zone: ScrollZone,
   panel: ZoneViewport,
@@ -444,13 +531,15 @@ function Edge({
   </g>;
 }
 
-export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicate, predicateRevision, activePath, renderRevision, onActivate, onOpen }: {
+export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicate, lenses, filterLayoutMode, predicateRevision, activePath, renderRevision, onActivate, onOpen }: {
   plugin: ExcaliBrainPlugin;
   index: GraphIndex;
   settings: ExcaliBrainSettings;
   surface: KplexViewSurface;
   hostLeaf: WorkspaceLeaf;
   predicate: CompiledGraphPredicate | null;
+  lenses: CompiledGraphLensSet;
+  filterLayoutMode: "keep" | "reflow";
   predicateRevision: number;
   activePath: string;
   renderRevision: number;
@@ -478,6 +567,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     ? { ...sectionExpansion, centerNeighborhood: applyOptimisticRelink(sectionExpansion.centerNeighborhood, optimisticRelink.targetPath, optimisticRelink.role) }
     : sectionExpansion, [sectionExpansion, optimisticRelink]);
   const neighborhood = effectiveSectionExpansion?.centerNeighborhood ?? effectivePersistentNeighborhood;
+  const globalFiltering = predicate !== null || lenses.lenses.some((lens) => lens.mode === "include" || lens.mode === "exclude");
 
   // Keep the optimistic role in place until the authoritative rebuilt graph actually agrees.
   // RelationModal awaits the metadata write/rebuild, but React may not have committed the new
@@ -493,9 +583,25 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     setOptimisticRelink(null);
     setRelationshipUpdating(false);
   }, [persistentNeighborhood, sectionExpanded, sectionExpansion, renderRevision, optimisticRelink, relationshipUpdating]);
-  const scene = useMemo(() => neighborhood
-    ? (effectiveSectionExpansion ? buildSectionExpandedScene(effectiveSectionExpansion, index, settings, expandedSectionIds) : buildScene(neighborhood, index, settings))
-    : { nodes: [], edges: [], zoneViewports: {} }, [neighborhood, effectiveSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
+  const layoutSectionExpansion = useMemo(() => {
+    if (!effectiveSectionExpansion || !globalFiltering || filterLayoutMode !== "reflow") return effectiveSectionExpansion;
+    const contextCenter = effectiveSectionExpansion.centerNeighborhood.center;
+    return {
+      ...effectiveSectionExpansion,
+      centerNeighborhood: filterNeighborhoodForLenses(effectiveSectionExpansion.centerNeighborhood, contextCenter, predicateEngine, index, predicate, lenses),
+      sections: effectiveSectionExpansion.sections.map((section) => ({
+        ...section,
+        neighborhood: filterNeighborhoodForLenses(section.neighborhood, contextCenter, predicateEngine, index, predicate, lenses),
+      })),
+    };
+  }, [effectiveSectionExpansion, globalFiltering, filterLayoutMode, predicateEngine, index, predicate, lenses, predicateRevision]);
+  const layoutNeighborhood = useMemo(() => {
+    if (!neighborhood || !globalFiltering || filterLayoutMode !== "reflow" || layoutSectionExpansion) return neighborhood;
+    return filterNeighborhoodForLenses(neighborhood, neighborhood.center, predicateEngine, index, predicate, lenses);
+  }, [neighborhood, globalFiltering, filterLayoutMode, layoutSectionExpansion, predicateEngine, index, predicate, lenses, predicateRevision]);
+  const scene = useMemo(() => layoutNeighborhood
+    ? (layoutSectionExpansion ? buildSectionExpandedScene(layoutSectionExpansion, index, settings, expandedSectionIds) : buildScene(layoutNeighborhood, index, settings))
+    : { nodes: [], edges: [], zoneViewports: {} }, [layoutNeighborhood, layoutSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
   const cameraFrame = useRef<number | null>(null);
@@ -904,18 +1010,34 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     }, 180);
   };
 
+  const filterMatchedNodePaths = useMemo(() => {
+    const matches = new Set<string>();
+    for (const node of scene.nodes) {
+      if (!globalFiltering || node.role === "center" || (matchesGraphPredicateNode(predicateEngine, predicate, node, neighborhood?.center) && matchesVisibleLensNode(predicateEngine, index, lenses, node, neighborhood?.center))) matches.add(node.page.path);
+    }
+    // Section headings are structural containers. If a section-level relationship matches the
+    // global filter, retain its heading node so the matching result is not visually orphaned.
+    if (sectionExpansion && globalFiltering) {
+      for (const edge of scene.edges) {
+        if (!matches.has(edge.targetPath)) continue;
+        const source = scene.nodes.find((node) => node.page.path === edge.sourcePath);
+        if (source?.page.transient?.kind === "section") matches.add(source.page.path);
+      }
+    }
+    return matches;
+  }, [scene.nodes, scene.edges, globalFiltering, predicate, lenses, predicateRevision, predicateEngine, index, neighborhood?.center, sectionExpansion]);
+
   const zoneDisplayLayouts = useMemo(() => {
     const layouts: Partial<Record<ScrollZone, ZoneDisplayLayout>> = {};
     for (const zone of ZONES) {
       const panel = scene.zoneViewports[zone];
       if (!panel) continue;
-      const globalFiltering = predicate !== null;
-      const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone && (!globalFiltering || matchesGraphPredicateNode(predicateEngine, predicate, node, neighborhood?.center)));
+      const nodes = scene.nodes.filter((node) => zoneForRole(node.role) === zone && filterMatchedNodePaths.has(node.page.path));
       const layout = buildZoneDisplayLayout(zone, panel, nodes, zoneFilters[zone] ?? "", settings, index, neighborhood?.center.path ?? activePath);
       layouts[zone] = layout;
     }
     return layouts;
-  }, [scene.nodes, scene.zoneViewports, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision, predicate, predicateRevision, predicateEngine, neighborhood?.center]);
+  }, [scene.nodes, scene.zoneViewports, filterMatchedNodePaths, zoneFilters, settings.parentColumns, settings.childColumns, layoutRevision, index, neighborhood?.center, activePath]);
 
   const renderedNodeMap = useMemo(() => {
     const map = new Map<string, PositionedNode>();
@@ -979,23 +1101,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
 
   const visibleNodePaths = useMemo(() => {
     const paths = new Set<string>();
-    const filtering = predicate !== null;
-    const filterMatches = new Set<string>();
     for (const node of scene.nodes) {
-      if (!filtering || node.role === "center" || matchesGraphPredicateNode(predicateEngine, predicate, node, neighborhood?.center)) filterMatches.add(node.page.path);
-    }
-    // Section headings are structural containers. If a section-level relationship matches the
-    // global filter, retain its heading node so the matching result is not visually orphaned.
-    if (sectionExpansion && filtering) {
-      for (const edge of scene.edges) {
-        if (!filterMatches.has(edge.targetPath)) continue;
-        const source = scene.nodes.find((node) => node.page.path === edge.sourcePath);
-        if (source?.page.transient?.kind === "section") filterMatches.add(source.page.path);
-      }
-    }
-
-    for (const node of scene.nodes) {
-      if (!filterMatches.has(node.page.path)) continue;
+      if (!filterMatchedNodePaths.has(node.page.path)) continue;
       if (nodeDrag?.path === node.page.path) {
         paths.add(node.page.path);
         continue;
@@ -1016,7 +1123,28 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       }
     }
     return paths;
-  }, [scene.nodes, scene.edges, scene.zoneViewports, zoneDisplayLayouts, renderedNodeMap, nodeDrag, predicate, predicateRevision, predicateEngine, sectionExpansion]);
+  }, [scene.nodes, scene.zoneViewports, filterMatchedNodePaths, zoneDisplayLayouts, renderedNodeMap, nodeDrag]);
+
+  const filteredGateCounts = useMemo(() => {
+    const counts = new Map<string, Record<GateSide, number>>();
+    if (!globalFiltering) return counts;
+    const ensure = (path: string) => {
+      let item = counts.get(path);
+      if (!item) {
+        item = { top: 0, bottom: 0, left: 0, right: 0 };
+        counts.set(path, item);
+      }
+      return item;
+    };
+    for (const node of scene.nodes) ensure(node.page.path);
+    for (const edge of scene.edges) {
+      if (!filterMatchedNodePaths.has(edge.sourcePath) || !filterMatchedNodePaths.has(edge.targetPath)) continue;
+      const gates = gatesForEdge(edge);
+      ensure(edge.sourcePath)[gates.source] += 1;
+      ensure(edge.targetPath)[gates.target] += 1;
+    }
+    return counts;
+  }, [globalFiltering, scene.nodes, scene.edges, filterMatchedNodePaths]);
 
   const expandedClusters = useMemo<ExpandedCluster[]>(() => {
     if (sectionExpansion || settings.graphDepth !== 2 || !neighborhood) return [];
@@ -1027,12 +1155,14 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       const parent = renderedNodeMap.get(baseNode.page.path);
       if (!parent) continue;
 
-      const globalFiltering = predicate !== null;
+      const visibilityFiltering = predicate !== null || lenses.lenses.some((lens) => lens.mode === "include" || lens.mode === "exclude");
       const relations = index.neighbours(baseNode.page, "child")
         .filter((child) => child.page.path !== neighborhood.center.path)
-        .filter((child) => !globalFiltering || matchesGraphPredicatePage(
+        .filter((child) => !visibilityFiltering || matchesVisibleCandidate(
           predicateEngine,
+          index,
           predicate,
+          lenses,
           child.page,
           index.titleFor(child.page),
           child.typeDefinition,
@@ -1062,8 +1192,15 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       const children: ExpandedMiniThought[] = relations.map((relation, indexValue) => {
         const col = indexValue % 3;
         const row = Math.floor(indexValue / 3);
-        const style = resolveNodeStyle(relation.page, relation, "child", settings);
+        const baseStyle = resolveNodeStyle(relation.page, relation, "child", settings);
         const label = index.titleFor(relation.page);
+        const lensStyle = graphLensNodeStyle(predicateEngine, index, lenses, {
+          page: relation.page,
+          label,
+          center: neighborhood.center,
+          edge: { role: relation.role, relationType: relation.relationType, definition: relation.typeDefinition, linkDirection: relation.linkDirection, sourcePath: baseNode.page.path, targetPath: relation.page.path },
+        });
+        const style = { ...baseStyle, ...lensStyle };
         const maxChars = Math.min(22, effectiveLabelLimit(settings, style.maxLabelLength ?? 30));
         const shownChars = Math.min(label.length, maxChars);
         const nodeWidth = Math.max(64, Math.min(cellWidth - 8, 34 + shownChars * 3.8));
@@ -1092,7 +1229,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     }
 
     return clusters;
-  }, [sectionExpansion, settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision, predicate, predicateRevision, predicateEngine]);
+  }, [sectionExpansion, settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision, predicate, lenses, predicateRevision, predicateEngine]);
 
   const expandedConnectors = useMemo(() => {
     if (settings.graphDepth !== 2) return [] as Array<{ key: string; d: string; stroke: string; width: number; dash?: string; markerStart?: string; markerEnd?: string }>;
@@ -1106,7 +1243,14 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         if (childTop < cluster.top || childBottom > cluster.top + cluster.viewportHeight) continue;
         const target = { x: cluster.left + child.localX, y: childTop - 2 };
         const geometry = edgeGeometry(source, target, "bottom", "top", settings.connectorStyle);
-        const style = resolveLinkStyle(child.relation, settings);
+        const baseStyle = resolveLinkStyle(child.relation, settings);
+        const lensStyle = neighborhood ? graphLensEdgeStyle(predicateEngine, index, lenses, {
+          page: child.relation.page,
+          label: child.label,
+          center: neighborhood.center,
+          edge: { role: child.relation.role, relationType: child.relation.relationType, definition: child.relation.typeDefinition, linkDirection: child.relation.linkDirection, sourcePath: cluster.parent.page.path, targetPath: child.relation.page.path },
+        }) : {};
+        const style = { ...baseStyle, ...lensStyle };
         const reverse = child.relation.linkDirection === (settings.inverseArrowDirection ? LinkDirection.TO : LinkDirection.FROM);
         connectors.push({
           key: child.key,
@@ -1120,9 +1264,24 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       }
     }
     return connectors;
-  }, [expandedClusters, settings.graphDepth, settings.connectorStyle, settings.inverseArrowDirection, settings.baseLinkStyle, settings.hierarchyLinkStyles]);
+  }, [expandedClusters, settings.graphDepth, settings.connectorStyle, settings.inverseArrowDirection, settings.baseLinkStyle, settings.hierarchyLinkStyles, neighborhood, predicateEngine, index, lenses, predicateRevision]);
 
-  const visibleEdges = useMemo(() => scene.edges.filter((edge) => visibleNodePaths.has(edge.sourcePath) && visibleNodePaths.has(edge.targetPath)), [scene.edges, visibleNodePaths]);
+  const visibleEdges = useMemo(() => scene.edges
+    .filter((edge) => visibleNodePaths.has(edge.sourcePath) && visibleNodePaths.has(edge.targetPath))
+    .map((edge) => {
+      const target = scene.nodes.find((node) => node.page.path === edge.targetPath);
+      if (!target || !neighborhood) return edge;
+      const lensStyle = graphLensEdgeStyle(predicateEngine, index, lenses, {
+        page: target.page,
+        label: target.label,
+        center: neighborhood.center,
+        edge: {
+          role: edge.role, relationType: edge.relationType, definition: edge.typeDefinition, linkDirection: edge.direction,
+          sourcePath: edge.explanationSourcePath ?? edge.sourcePath, targetPath: edge.explanationTargetPath ?? edge.targetPath,
+        },
+      });
+      return Object.keys(lensStyle).length ? { ...edge, style: { ...edge.style, ...lensStyle } } : edge;
+    }), [scene.edges, scene.nodes, visibleNodePaths, neighborhood, predicateEngine, index, lenses, predicateRevision]);
 
   const interaction = useMemo(() => {
     const edgeIds = new Set<string>();
@@ -1250,6 +1409,11 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (connectDrag || nodeDrag) return;
     const target = e.target as Element;
     if (target.closest(".excalibrain-zoom-controls, .kplex-zone-tools, .kplex-layout-controls, .kplex-filter-panel, input, select, textarea, button")) return;
+
+    // Empty-canvas click/touch is an explicit escape hatch for hover intent. Pointer-leave events
+    // can occasionally lag in Obsidian/WebView, leaving a node/gate/connector visually highlighted
+    // until the mouse moves again. Clicking the canvas should always clear that transient state.
+    if (!target.closest(".excalibrain-thought, .excalibrain-edge-hit, [data-kplex-gate]")) clearHoverIntent(true);
 
     if (e.pointerType === "touch") {
       // Empty bounded lists own one-finger vertical scrolling. A thought/edge inside such a list
@@ -1705,9 +1869,32 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     }
     if (connectDrag?.originPath === baseNode.page.path) highlightedGates.add(connectDrag.gate);
 
+    const lensNodeStyle = neighborhood ? graphLensNodeStyle(predicateEngine, index, lenses, {
+      page: baseNode.page,
+      label: baseNode.label,
+      center: neighborhood.center,
+      edge: baseNode.role === "center" ? undefined : {
+        role: baseNode.role, relationType: baseNode.relationType, definition: baseNode.typeDefinition, linkDirection: baseNode.linkDirection,
+        sourcePath: neighborhood.center.path, targetPath: baseNode.page.path,
+      },
+    }) : {};
+    const styledDisplayNode = Object.keys(lensNodeStyle).length ? { ...displayNode, style: { ...displayNode.style, ...lensNodeStyle } } : displayNode;
+    const gateCounts = filteredGateCounts.get(baseNode.page.path);
+    const nodeForDisplay = globalFiltering && gateCounts
+      ? {
+        ...styledDisplayNode,
+        gateStats: {
+          top: { ...displayNode.gateStats.top, shownCount: gateCounts.top },
+          bottom: { ...displayNode.gateStats.bottom, shownCount: gateCounts.bottom },
+          left: { ...displayNode.gateStats.left, shownCount: gateCounts.left },
+          right: { ...displayNode.gateStats.right, shownCount: gateCounts.right },
+        },
+      }
+      : styledDisplayNode;
+
     return <ThoughtNode
       key={baseNode.page.path}
-      node={displayNode}
+      node={nodeForDisplay}
       settings={settings}
       selected={baseNode.page.path === activePath}
       highlighted={!connectDrag && interaction.nodePaths.has(baseNode.page.path)}

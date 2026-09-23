@@ -42,6 +42,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly searchFocusListeners = new Map<WorkspaceLeaf, () => void>();
   private readonly relationshipFlairListeners = new Set<(path: string) => void>();
   private readonly indexStatusListeners = new Set<() => void>();
+  private readonly graphLensListeners = new Set<(lenses: ExcaliBrainSettings["graphLenses"]) => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
@@ -273,6 +274,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.sidecarLeaves.clear();
     this.relationshipFlairListeners.clear();
     this.indexStatusListeners.clear();
+    this.graphLensListeners.clear();
     this.linkedDocumentLeaf = null;
     this.index?.destroy();
   }
@@ -1019,6 +1021,17 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   private notifyIndexStatus(): void {
     for (const listener of this.indexStatusListeners) listener();
+  }
+
+  subscribeGraphLenses(listener: (lenses: ExcaliBrainSettings["graphLenses"]) => void): () => void {
+    this.graphLensListeners.add(listener);
+    return () => this.graphLensListeners.delete(listener);
+  }
+
+  async setGraphLenses(lenses: ExcaliBrainSettings["graphLenses"]): Promise<void> {
+    this.settings.graphLenses = lenses;
+    await this.saveSettings(false, false);
+    for (const listener of this.graphLensListeners) listener(lenses);
   }
 
   subscribeRelationshipFlair(listener: (path: string) => void): () => void {

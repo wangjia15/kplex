@@ -112,7 +112,7 @@ Desktop and Android additionally keep a per-file body parse cache keyed by file 
 
 ## Presentation predicates are not graph indexing
 
-The visible Plex can be filtered through a declarative predicate engine without broadening the persistent graph snapshot. The existing Keyword / Tag / Note type controls compile to that generic predicate representation. Future named lenses and style rules use the same selector layer.
+The visible Plex can be filtered through a declarative predicate engine without broadening the persistent graph snapshot. The existing Keyword / Tag / Note type controls compile to that generic predicate representation. Named Graph Lenses parse a safe Bases-inspired expression syntax into the same AST; style rules will reuse that selector layer.
 
 Predicate contexts are separated by meaning:
 
@@ -125,7 +125,12 @@ Predicate contexts are separated by meaning:
 
 Arbitrary frontmatter **values are not copied into `GraphPage`, graph snapshots or IndexedDB** for filtering. A predicate that references `note.status`, for example, reads that value from Obsidian's already-parsed metadata cache when evaluating the currently visible Plex. Predicate dependency tracking tells the UI when such cached metadata can affect the current view. That refresh path is separate from semantic graph reconstruction.
 
-The incremental semantic fingerprint likewise distinguishes graph-relevant frontmatter values from arbitrary presentation metadata. Ontology fields, aliases/tags, note type/style fields and Date properties remain semantic inputs. Unrelated property values do not cause relationship/search/UI churn merely because a lens may inspect them. Property names remain part of field discovery.
+The incremental semantic fingerprint likewise distinguishes graph-relevant frontmatter values from arbitrary presentation metadata. Ontology fields, aliases/tags, note type/style fields and Date properties remain semantic inputs. Unrelated property names and values do not participate in the semantic fingerprint. A newly seen non-semantic property name may update the lightweight discovered-field catalogue, but that bookkeeping does not emit a semantic graph change or re-resolve relationship evidence.
+
+
+Named lenses are persisted presentation rules with three target scopes: **node**, **edge**, and **evidence**. Include lenses are combined by union; exclude lenses subtract from that result. With no active include lens, the already-materialized Plex is the baseline. The central node remains visible. Evidence selectors evaluate retained relationship decisions, including `evidence.active` and `evidence.suppressionReason`, without discovering additional graph depth.
+
+The expression parser supports property comparisons, `and` / `or` / `not`, parentheses, bracket notation for property names with spaces, and safe helpers such as `file.hasTag("meeting")`, `file.inFolder("Projects")`, and `.contains(...)`. It produces the predicate AST directly and has no `eval`, `Function`, JavaScript callback, or Dataview execution path.
 
 This layer is intentionally not a whole-vault or arbitrary-depth graph query API. K-Plex keeps the bounded, structured Plex model; a separate graph-query API can be considered independently in the future.
 

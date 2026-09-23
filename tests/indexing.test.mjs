@@ -50,6 +50,9 @@ for (const file of [
   "src/index/SectionExpansion.ts",
   "src/index/style.ts",
   "src/lens/GraphPredicate.ts",
+  "src/lens/GraphPredicateParser.ts",
+  "src/lens/GraphLens.ts",
+  "src/lens/GraphLensSimple.ts",
   "src/lens/SimplePlexFilter.ts",
   "src/ui/layout.ts",
 ]) compile(file);
@@ -138,6 +141,13 @@ const {
   predicateProperty,
 } = require(join(temp, "src/lens/GraphPredicate.js"));
 const { compilePlexFilter } = require(join(temp, "src/lens/SimplePlexFilter.js"));
+const { compileGraphLensDefinitions, graphLensEdgeStyle, graphLensNodeStyle, matchesGraphLenses, sanitizeGraphLensDefinitions, validateGraphLensExpression } = require(join(temp, "src/lens/GraphLens.js"));
+const { tryParseGraphPredicateExpression } = require(join(temp, "src/lens/GraphPredicateParser.js"));
+const {
+  buildGraphLensSimpleExpression,
+  defaultGraphLensSimpleModel,
+  tryParseGraphLensSimpleExpression,
+} = require(join(temp, "src/lens/GraphLensSimple.js"));
 
 function walk(dir) {
   const result = [];
@@ -502,6 +512,27 @@ try {
   assert.equal(metadataPredicate.dependencies.usesFrontmatter, true);
   assert(metadataPredicate.dependencies.noteProperties.has("Lens Status"));
   assert.equal(predicateEngine.matches(metadataPredicate, { node: { page: A }, center: A }), true);
+  const simpleRelationshipLens = defaultGraphLensSimpleModel("edge");
+  simpleRelationshipLens.conditions[0].value = "working-on";
+  const simpleRelationshipExpression = buildGraphLensSimpleExpression(simpleRelationshipLens);
+  assert.equal(simpleRelationshipExpression, 'edge.definition.equals("working-on")');
+  assert.equal(tryParseGraphPredicateExpression(simpleRelationshipExpression).error, undefined);
+  const roundTrippedSimpleLens = tryParseGraphLensSimpleExpression(simpleRelationshipExpression);
+  assert(roundTrippedSimpleLens);
+  assert.equal(roundTrippedSimpleLens.conditions[0].field, "edge.definition");
+  assert.equal(roundTrippedSimpleLens.conditions[0].value, "working-on");
+  const currentTargetLens = defaultGraphLensSimpleModel("evidence");
+  currentTargetLens.conditions[0] = { ...currentTargetLens.conditions[0], field: "evidence.declaredTargetPath", operator: "is", value: "$this" };
+  const currentTargetExpression = buildGraphLensSimpleExpression(currentTargetLens);
+  assert.equal(currentTargetExpression, "evidence.declaredTargetPath == this.path");
+  assert.equal(tryParseGraphLensSimpleExpression(currentTargetExpression).conditions[0].value, "$this");
+
+  assert.match(validateGraphLensExpression('"working-on"') ?? "", /must reference/i, "A bare string selector must not silently hide the Plex");
+  assert.match(validateGraphLensExpression('edge.role == "working-on"') ?? "", /relationship property/i, "Invalid edge.role values should point users toward edge.definition");
+
+  assert.equal(sanitizeGraphLensDefinitions([{ id: "legacy", name: "Working-on", enabled: true, scope: "edge", mode: "include", expression: '"working-on"' }])[0].expression, 'edge.definition.equals("working-on")');
+  assert.equal(sanitizeGraphLensDefinitions([{ id: "legacy-role", name: "Working-on", enabled: true, scope: "edge", mode: "include", expression: 'edge.role == "working-on"' }])[0].expression, 'edge.definition.equals("working-on")');
+
   noteACacheForPredicate.frontmatter["Lens Status"] = "Archived";
   assert.equal(predicateEngine.matches(metadataPredicate, { node: { page: A }, center: A }), false, "Metadata-backed predicates must see cached property changes without a graph rebuild");
   delete noteACacheForPredicate.frontmatter["Lens Status"];
@@ -514,6 +545,50 @@ try {
     predicateLiteral("frontmatter-ontology"),
   ));
   assert.equal(predicateEngine.matches(evidencePredicate, { node: { page: noteBForPredicate }, center: A, evidence: evidenceForPredicate }), true);
+
+  // Named Graph Lens checkpoint: safe Bases-inspired expressions compile into the same predicate
+  // AST. Include lenses union together; excludes subtract; evidence lenses can query resolution
+  // decisions without traversing beyond the already materialized candidate relationship.
+  assert.equal(tryParseGraphPredicateExpression('file.hasTag("taxonomy") and note["Lens Status"] == "Active"').error, undefined);
+  noteACacheForPredicate.frontmatter["Lens Status"] = "Active";
+  const namedLensSet = compileGraphLensDefinitions([
+    { id: "project", name: "Projects", enabled: true, scope: "node", mode: "include", expression: 'node.noteType == "project"' },
+    { id: "parents", name: "Parents", enabled: true, scope: "edge", mode: "include", expression: 'edge.role == "parent"' },
+    { id: "meetings", name: "No meetings", enabled: true, scope: "node", mode: "exclude", expression: 'file.hasTag("meeting")' },
+  ]);
+  assert.equal(namedLensSet.errors.length, 0);
+  assert.equal(matchesGraphLenses(predicateEngine, index, namedLensSet, { page: A, label: index.titleFor(A), center: A }), true, "Include lenses must union: project note matches the first include lens");
+  assert.equal(matchesGraphLenses(predicateEngine, index, namedLensSet, {
+    page: noteBForPredicate,
+    label: index.titleFor(noteBForPredicate),
+    center: A,
+    edge: { role: "parent", sourcePath: A.path, targetPath: noteBForPredicate.path },
+  }), true, "Include lenses must union: a parent relationship can match even when the note lens does not");
+
+  const evidenceLensSet = compileGraphLensDefinitions([
+    { id: "yaml", name: "YAML evidence", enabled: true, scope: "evidence", mode: "include", expression: 'evidence.sourceKind == "frontmatter-ontology" and evidence.active == true' },
+  ]);
+  assert.equal(evidenceLensSet.errors.length, 0);
+  assert.equal(matchesGraphLenses(predicateEngine, index, evidenceLensSet, {
+    page: noteBForPredicate,
+    label: index.titleFor(noteBForPredicate),
+    center: A,
+    edge: { role: "parent", sourcePath: A.path, targetPath: noteBForPredicate.path },
+  }), true, "Evidence lenses must evaluate active relationship evidence for the candidate edge");
+
+  const styleLensSet = compileGraphLensDefinitions([
+    { id: "style-project", name: "Project style", enabled: true, scope: "node", mode: "style", expression: 'node.noteType == "project"', style: { node: { borderColor: "#ffb300", strokeWidth: 3 } } },
+    { id: "style-parent", name: "Parent style", enabled: true, scope: "edge", mode: "style", expression: 'edge.role == "parent"', style: { edge: { strokeColor: "#00aaff", strokeStyle: "dashed", strokeWidth: 2.5 } } },
+  ]);
+  assert.equal(styleLensSet.errors.length, 0);
+  assert.equal(matchesGraphLenses(predicateEngine, index, styleLensSet, { page: noteBForPredicate, label: index.titleFor(noteBForPredicate), center: A, edge: { role: "child", sourcePath: A.path, targetPath: noteBForPredicate.path } }), true, "Style-only lenses must never hide candidates");
+  assert.deepEqual(graphLensNodeStyle(predicateEngine, index, styleLensSet, { page: A, label: index.titleFor(A), center: A }), { borderColor: "#ffb300", strokeWidth: 3 });
+  assert.deepEqual(graphLensEdgeStyle(predicateEngine, index, styleLensSet, { page: noteBForPredicate, label: index.titleFor(noteBForPredicate), center: A, edge: { role: "parent", sourcePath: A.path, targetPath: noteBForPredicate.path } }), { strokeColor: "#00aaff", strokeStyle: "dashed", strokeWidth: 2.5 });
+  const sanitizedStyleLens = sanitizeGraphLensDefinitions([{ id: "safe-style", name: "Safe", enabled: true, scope: "node", mode: "style", expression: 'node.noteType == "project"', style: { node: { borderColor: "red", textColor: "#ffffff", strokeWidth: 99 } } }])[0];
+  assert.equal(sanitizedStyleLens.style.node.borderColor, undefined, "Lens style colors must be constrained rather than accepting arbitrary CSS");
+  assert.equal(sanitizedStyleLens.style.node.textColor, "#ffffff");
+  assert.equal(sanitizedStyleLens.style.node.strokeWidth, 8, "Lens style widths should be clamped to the supported range");
+  noteACacheForPredicate.frontmatter["Lens Status"] = "Archived";
   expectRole("Note A.md", "parent", "Note B.md", RelationType.DEFINED);
   expectRole("Note A.md", "parent", "https://source.com/ontology-full-line", RelationType.DEFINED);
   expectRole("Note A.md", "parent", "https://source.com/ontology-inline", RelationType.DEFINED);
@@ -784,20 +859,21 @@ try {
   assert.deepEqual(prosePatch, { patched: true, count: 1 });
   assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
 
-  // Assertions 57–58: arbitrary frontmatter values are lens data, not graph semantics. Adding a
-  // new property name still refreshes field discovery once; changing only that property's value
-  // afterwards must not emit a semantic graph update.
+  // Assertions 57–58: arbitrary frontmatter names/values are lens data, not graph semantics.
+  // A newly discovered property may update the lightweight field catalogue, but neither adding it
+  // nor changing its value may emit a semantic graph update.
   let semanticEmits = 0;
   const stopCountingEmits = index.subscribe(() => { semanticEmits += 1; });
+  const emitsBeforeLensProperty = semanticEmits;
   noteA.stat.mtime += 1000;
   noteACache.frontmatter["Lens Status"] = "Active";
   await index.patchMarkdownPaths(["Note A.md"]);
-  const emitsAfterPropertyDiscovery = semanticEmits;
   assert(index.discoveredFields().some((field) => field.normalized === "lens-status"));
+  assert.equal(semanticEmits, emitsBeforeLensProperty, "Adding a non-semantic property name must not emit a graph update");
   noteA.stat.mtime += 1000;
   noteACache.frontmatter["Lens Status"] = "Archived";
   await index.patchMarkdownPaths(["Note A.md"]);
-  assert.equal(semanticEmits, emitsAfterPropertyDiscovery, "Changing a non-semantic property value must not emit a graph update");
+  assert.equal(semanticEmits, emitsBeforeLensProperty, "Changing a non-semantic property value must not emit a graph update");
   stopCountingEmits();
 
   // Assertion 59: evidence storage is declaration-compact. One original fact is retained once,
@@ -811,7 +887,7 @@ try {
 
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
-  console.log("Warm cache + predicate foundation + incremental runtime patch: assertions 51–59 PASS");
+  console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

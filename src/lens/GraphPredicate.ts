@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import type { RelationEvidence } from "../index/RelationEvidence";
-import type { GraphPage, LinkDirection, RelationType, Role } from "../types";
+import { LinkDirection, RelationType, type GraphPage, type Role } from "../types";
 
 export type GraphPredicateNamespace = "node" | "edge" | "evidence" | "note" | "file" | "this";
 export type GraphPredicateComparison = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
@@ -287,8 +287,15 @@ export class GraphPredicateEngine {
     if (!edge) return undefined;
     if (key === "role") return edge.role;
     if (key === "relationType") return edge.relationType;
+    if (key === "kind") return edge.relationType === RelationType.DEFINED ? "defined" : edge.relationType === RelationType.INFERRED ? "inferred" : undefined;
     if (key === "definition") return edge.definition;
     if (key === "linkDirection") return edge.linkDirection;
+    if (key === "direction") {
+      if (edge.linkDirection === LinkDirection.TO) return "to";
+      if (edge.linkDirection === LinkDirection.FROM) return "from";
+      if (edge.linkDirection === LinkDirection.BOTH) return "both";
+      return undefined;
+    }
     if (key === "sourcePath") return edge.sourcePath;
     if (key === "targetPath") return edge.targetPath;
     return undefined;

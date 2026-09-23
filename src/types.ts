@@ -140,8 +140,10 @@ export type Neighborhood = {
 };
 
 export type GateStat = {
-  /** Connections currently visible after K-Plex visibility/inferred filters. */
+  /** Connections currently visible after K-Plex visibility/inferred filters, before a local Plex filter/lens. */
   visibleCount: number;
+  /** Connections surviving the currently active Quick Filter / Graph Lenses. Undefined when no global filter is active. */
+  shownCount?: number;
   /** True when the semantic gate has any relationship, even when its target is filtered out. */
   hasAny: boolean;
 };

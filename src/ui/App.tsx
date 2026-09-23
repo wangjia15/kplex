@@ -15,8 +15,9 @@ import type { DocumentSyncMode, KplexViewSurface, SidecarPosition } from "../set
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
-import { EMPTY_PLEX_FILTER, PlexFilter, type PlexFilterState } from "./PlexFilter";
+import { EMPTY_PLEX_FILTER, PlexFilter, type GraphFilterLayoutMode, type PlexFilterState } from "./PlexFilter";
 import { compilePlexFilter } from "../lens/SimplePlexFilter";
+import { compileGraphLensDefinitions, type GraphLensDefinition } from "../lens/GraphLens";
 
 type BooleanToolbarSetting =
   | "showAttachments"
@@ -57,7 +58,10 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const rootRef = useRef<HTMLDivElement>(null);
   const [renderRevision, forceRender] = useState(0);
   const [plexFilter, setPlexFilter] = useState<PlexFilterState>(EMPTY_PLEX_FILTER);
+  const [filterLayoutMode, setFilterLayoutMode] = useState<GraphFilterLayoutMode>("keep");
   const plexFilterPredicate = useMemo(() => compilePlexFilter(plexFilter), [plexFilter]);
+  const [graphLenses, setGraphLensesState] = useState<GraphLensDefinition[]>(() => plugin.settings.graphLenses);
+  const compiledGraphLenses = useMemo(() => compileGraphLensDefinitions(graphLenses), [graphLenses]);
   const [predicateRevision, refreshPredicates] = useState(0);
   const [hostWidth, setHostWidth] = useState(0);
   const [sidecarRevision, setSidecarRevision] = useState(0);
@@ -91,12 +95,13 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeIndexStatus(() => forceRender((value) => value + 1)), [plugin]);
   useEffect(() => {
-    if (!plexFilterPredicate?.dependencies.usesFrontmatter) return;
+    if (!plexFilterPredicate?.dependencies.usesFrontmatter && !compiledGraphLenses.usesFrontmatter) return;
     const ref = plugin.app.metadataCache.on("changed", (file) => {
       if (file.extension === "md") refreshPredicates((value) => value + 1);
     });
     return () => plugin.app.metadataCache.offref(ref);
-  }, [plugin, plexFilterPredicate]);
+  }, [plugin, plexFilterPredicate, compiledGraphLenses.usesFrontmatter]);
+  useEffect(() => plugin.subscribeGraphLenses((next) => setGraphLensesState(next)), [plugin]);
   useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeNavigation((path) => {
     const target = plugin.index.get(path);
@@ -155,6 +160,11 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   }, [page?.path, surface, hostLeaf, plugin]);
 
   const open = useCallback((target: GraphPage) => { void plugin.openPage(target); }, [plugin]);
+
+  const updateGraphLenses = useCallback((next: GraphLensDefinition[]) => {
+    setGraphLensesState(next);
+    void plugin.setGraphLenses(next);
+  }, [plugin]);
 
   const goHistory = (delta: number) => {
     const list = plugin.settings.navigationHistory;
@@ -311,7 +321,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
           <SearchBox index={plugin.index} onActivate={activate} focusRequest={searchFocusRequest} />
-          <PlexFilter index={plugin.index} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} />
+          <PlexFilter index={plugin.index} center={page} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} lenses={graphLenses} onLensesChange={updateGraphLenses} layoutMode={filterLayoutMode} onLayoutModeChange={setFilterLayoutMode} />
           <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
             <button
               className={`excalibrain-icon-button${syncMode !== "off" ? " is-on" : ""}`}
@@ -358,7 +368,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} predicate={plexFilterPredicate} predicateRevision={predicateRevision} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} predicate={plexFilterPredicate} lenses={compiledGraphLenses} filterLayoutMode={filterLayoutMode} predicateRevision={predicateRevision} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

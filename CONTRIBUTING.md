@@ -224,7 +224,7 @@ Preserve these rules:
 - gates sit outside node bounds
 - hollow gate = no relationships
 - filled gate = relationships exist even when hidden/filtered
-- count near gate reflects filtered/visible relationship count
+- without a global filter, the count near a gate shows the normal visible relationship count; with a Quick Filter / Graph Lens active, use `shown/total` (for example `0/12`) so filtering does not erase relationship context
 - connectors originate at the correct gate
 - connector setting is **Straight** or **Curved** in user-facing UI
 - curved lines should be broad and relatively flat
@@ -321,6 +321,8 @@ Before submitting a significant change, test the relevant subset of:
 - attachment / URL / virtual nodes
 - parent/child/friend/challenger/sibling layouts
 - scroll-zone filters and repacking
+- global quick filter plus named Graph Lenses: node/edge/evidence scopes, visual Simple builder and advanced Code view, obvious on/off toggles, relationship-property suggestions, multiple include lenses (union), excludes, style effects using the same selectors, Keep/Reflow filtered layout modes, lazy frontmatter refresh, persistence across K-Plex views, and safe handling of invalid selectors
+- empty-canvas click/touch clears transient connector/node/gate highlights
 - expanded view and overflow
 - straight and curved connectors
 - arrow direction

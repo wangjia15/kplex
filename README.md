@@ -164,6 +164,12 @@ When a first-level zone becomes taller than its configured maximum, it gets its 
 
 The toolbar also has a **Plex filter** that filters all visible graph elements by keyword, tag and note type. Keyword matching includes title, path, alias and relationship definition.
 
+The same panel now supports persistent **Graph Lenses**. A lens can show, hide, or style matches based on the visible note, the resolved relationship, or the retained relationship evidence. Multiple active include lenses are unioned; exclude lenses subtract from the result. Style lenses never change visibility and reuse the exact same selectors. Lenses evaluate only the currently materialized Plex—they do not scan the vault or expand graph depth.
+
+Lens editing defaults to a **Bases-style Simple builder**: choose a field, operator and value instead of typing query syntax. For example, to show only connections created by a `working-on` relationship property, choose **Relationship → Show matching → Relationship property → is → working-on**. Choose **Style matching** instead to color or restyle the same matched notes/relationships without hiding anything. Relevant values such as relationship properties, tags, note types and property names are suggested where possible. Each saved lens has an explicit eye toggle so it can be turned on/off without deleting it, and **Turn all off** disables every active lens at once.
+
+An optional **Code** view exposes the safe Bases-inspired expression language for advanced combinations, for example `edge.definition.equals("working-on")`, `file.hasTag("meeting")`, `evidence.fieldName == "activity-context-for"`, or `note["Status"] == "Active"`. No JavaScript is executed. Arbitrary note properties are read lazily from Obsidian's metadata cache rather than copied into the K-Plex graph index. While a visibility filter is active, gate counts use `shown/total` notation (for example `0/12`) so hidden relationships remain visible as context. The **Reflow** toggle controls presentation: off preserves the original Plex positions; on recomputes the structured Plex from the surviving relationships so the result is laid out as a compact filtered Plex.
+
 The Friend and Challenger regions are symmetrical. They may extend upward into otherwise unused parent-area space, but their lower edge stays above the child region with a small gap. Sparse Friend/Challenger lists remain bottom-aligned and grow upward as more nodes are added.
 
 Siblings occupy a separate peripheral region and are rendered slightly smaller than normal first-level nodes.

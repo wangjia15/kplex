@@ -153,7 +153,7 @@ export function ThoughtNode({
             ? `${gate} gate · drag linking is disabled for folder and tag thoughts`
             : `${gate} gate${stat.hasAny ? ` · ${stat.visibleCount} visible` : " · no relationships"}`}
         />
-        {settings.showNeighborCount && stat.visibleCount > 0 && <span className="excalibrain-gate-count">{stat.visibleCount}</span>}
+        {settings.showNeighborCount && stat.visibleCount > 0 && <span className="excalibrain-gate-count">{stat.shownCount === undefined ? stat.visibleCount : `${stat.shownCount}/${stat.visibleCount}`}</span>}
       </span>;
     })}
   </div>;
