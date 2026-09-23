@@ -29,6 +29,18 @@ The plugin ID is `k-plex`.
 
 Do not consider a change complete until it builds against the real installed Obsidian typings. A local stub harness is useful for fast checks but is not authoritative.
 
+## Documentation
+
+`README.md` is the public, end-user-facing introduction and usage guide. Keep build commands, internal architecture, performance invariants and implementation notes out of the README.
+
+- Put contributor workflow and development requirements in `CONTRIBUTING.md`.
+- Put durable technical/design documentation in `docs/`.
+- Put end-user feature guides in `docs/` when a README section would become too detailed.
+- Release notes should describe user-visible changes and workflows rather than internal implementation details.
+- Keep the first-start indexing notice and product screenshots near the top of the README.
+
+The detailed end-user lens guide lives in `docs/GRAPH_LENSES.md`.
+
 ## Before changing Obsidian integration
 
 Read the current Obsidian API/type declarations first.

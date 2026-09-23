@@ -309,6 +309,7 @@ const app = {
     getFiles() { return [...files.values()]; },
     cachedRead(file) { return Promise.resolve(contents.get(file.path) ?? ""); },
     getAbstractFileByPath(path) { return files.get(path) ?? folders.get(path) ?? null; },
+    getResourcePath(file) { return `app://local/${encodeURIComponent(file.path)}`; },
   },
   metadataCache,
   metadataTypeManager: {
@@ -389,6 +390,11 @@ const settings = {
   excludeFilepaths: [],
   maxItemCount: 500,
   renderSiblings: true,
+  thumbnailProperty: "thumbnail",
+  nodeImageProperty: "node-image",
+  attachmentImageDisplay: "thumbnail-label",
+  editNewNodeAfterCreate: false,
+  newNodeDefaultType: "markdown",
 };
 
 const plugin = { app, settings, recordDiagnostic() {}, manifest: { dir: "" } };
@@ -885,9 +891,81 @@ try {
   assert.equal(compactEvidence.between("A.md", "B.md")[0]?.role, "parent");
   assert.equal(compactEvidence.between("B.md", "A.md")[0]?.role, "child");
 
+  // Assertions 60–61: K-Plex-created pages/relationships can be published synchronously before
+  // Obsidian metadata reconciliation. This is the user-facing "new node appears immediately" path.
+  const immediateFile = new TFile("Immediate New.md", noteA.stat.mtime + 1000);
+  files.set(immediateFile.path, immediateFile);
+  contents.set(immediateFile.path, "# Immediate New\n");
+  caches.set(immediateFile.path, { frontmatter: {}, tags: [], links: [] });
+  const immediatePage = index.insertCreatedFile(immediateFile);
+  assert.equal(index.get(immediateFile.path), immediatePage);
+  assert(index.applyRelationshipEdit("Note A.md", immediateFile.path, "child", "Children"));
+  expectRole("Note A.md", "child", immediateFile.path, RelationType.DEFINED);
+
+  // Assertions 67–68: Connection details adds/specifies ontology without replacing existing
+  // frontmatter ontology evidence for the same pair, and repeating the same ontology is idempotent.
+  assert(index.applyAdditionalRelationshipEdit("Note A.md", immediateFile.path, "child", "Additional ontology"));
+  let additiveFields = index.evidenceBetween("Note A.md", immediateFile.path)
+    .filter((item) => item.sourceKind === "frontmatter-ontology")
+    .map((item) => item.fieldName);
+  assert(additiveFields.includes("Children"), "Existing ontology evidence must be preserved");
+  assert(additiveFields.includes("Additional ontology"), "Additional ontology evidence must be added");
+  const additiveCount = additiveFields.length;
+  assert(index.applyAdditionalRelationshipEdit("Note A.md", immediateFile.path, "child", "Additional ontology"));
+  additiveFields = index.evidenceBetween("Note A.md", immediateFile.path)
+    .filter((item) => item.sourceKind === "frontmatter-ontology")
+    .map((item) => item.fieldName);
+  assert.equal(additiveFields.length, additiveCount, "Adding the same ontology twice must not duplicate live evidence");
+
+  // Assertions 62–64: image metadata stays out of GraphPage. It is resolved lazily for requested
+  // visible nodes; replacement imagery takes precedence over thumbnails, and image attachments use
+  // the configured compact display mode.
+  noteA.stat.mtime += 1000;
+  noteACache.frontmatter.thumbnail = "https://example.com/thumb.png";
+  let visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
+  assert.equal(visuals.get("Note A.md")?.mode, "thumbnail");
+  assert.equal(visuals.get("Note A.md")?.src, "https://example.com/thumb.png");
+  assert.equal("visual" in index.get("Note A.md"), false, "Node visuals must not expand the semantic GraphPage index");
+
+  noteA.stat.mtime += 1000;
+  noteACache.frontmatter["node-image"] = "https://example.com/replacement.png";
+  visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
+  assert.equal(visuals.get("Note A.md")?.mode, "replace");
+  assert.equal(visuals.get("Note A.md")?.src, "https://example.com/replacement.png");
+
+  const imageFile = new TFile("Visuals/Picture.jpg", noteA.stat.mtime + 1000);
+  files.set(imageFile.path, imageFile);
+  const imagePage = index.insertCreatedFile(imageFile);
+  settings.attachmentImageDisplay = "thumbnail-label";
+  visuals = await index.resolveNodeVisuals([imagePage]);
+  assert.equal(visuals.get(imagePage.path)?.mode, "thumbnail");
+  settings.attachmentImageDisplay = "image";
+  visuals = await index.resolveNodeVisuals([imagePage]);
+  assert.equal(visuals.get(imagePage.path)?.mode, "replace");
+
+  // Assertions 65–66: thumbnail/node-image references are presentation metadata. If the image is
+  // referenced only by one of those fields, Obsidian's generic resolved-link evidence must not
+  // also render it as a child. A second ontology link makes it graph-semantic again.
+  noteA.stat.mtime += 1000;
+  noteACache.frontmatter.thumbnail = `[[${imageFile.path}]]`;
+  resolvedLinks["Note A.md"][imageFile.path] = 1;
+  await index.patchMarkdownPaths(["Note A.md"]);
+  expectNoRole("Note A.md", "child", imageFile.path);
+
+  noteA.stat.mtime += 1000;
+  const existingChildren = noteACache.frontmatter.Child;
+  noteACache.frontmatter.Child = Array.isArray(existingChildren)
+    ? [...existingChildren, `[[${imageFile.path}]]`]
+    : [existingChildren, `[[${imageFile.path}]]`].filter(Boolean);
+  resolvedLinks["Note A.md"][imageFile.path] = 2;
+  await index.patchMarkdownPaths(["Note A.md"]);
+  expectRole("Note A.md", "child", imageFile.path, RelationType.DEFINED);
+
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
+  console.log("Immediate creation + lazy node imagery: assertions 60–66 PASS");
+  console.log("Additive connection ontology: assertions 67–68 PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

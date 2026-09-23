@@ -613,6 +613,53 @@ export class GraphBuilder {
         this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
       } catch { /* malformed URL - keep the raw URL node */ }
     }
+
+    this.suppressPresentationOnlyImageLinks(state, page, file, meta);
+  }
+
+  /**
+   * `thumbnail` / `node-image` are presentation metadata, not graph semantics. Obsidian's
+   * resolvedLinks includes links stored in those fields, so without this small reconciliation an
+   * image used only to decorate a thought also appears as an inferred child. Compare Obsidian's
+   * occurrence count with the links K-Plex can account for inside the two visual fields: only when
+   * every occurrence is presentation-only do we remove the generic inferred-link declaration.
+   * A second prose/ontology link therefore keeps the attachment visible in the Plex as expected.
+   */
+  private suppressPresentationOnlyImageLinks(
+    state: GraphState,
+    page: GraphPage,
+    file: TFile,
+    meta: ParsedFileMetadata,
+  ): void {
+    const fields = [this.plugin.settings.thumbnailProperty, this.plugin.settings.nodeImageProperty]
+      .map(normalizeFieldName)
+      .filter(Boolean);
+    if (!fields.length) return;
+
+    const visualCounts = new Map<string, number>();
+    for (const field of new Set(fields)) {
+      const values = [
+        ...getNormalizedFrontmatterValues(meta, field),
+        ...getNormalizedInlineFieldValues(meta, field),
+      ];
+      for (const value of values) {
+        for (const targetPath of extractLinksFromValue(this.app, value, file)) {
+          visualCounts.set(targetPath, (visualCounts.get(targetPath) ?? 0) + 1);
+        }
+      }
+    }
+    if (!visualCounts.size) return;
+
+    const resolved = this.app.metadataCache.resolvedLinks[file.path] ?? {};
+    for (const [targetPath, visualCount] of visualCounts) {
+      const totalCount = resolved[targetPath] ?? 0;
+      if (totalCount <= 0 || totalCount > visualCount) continue;
+      state.evidence.removeDeclarationsTouching(file.path, (item) =>
+        item.declaredByPath === page.path &&
+        item.declaredTargetPath === targetPath &&
+        item.sourceKind === "obsidian-link",
+      );
+    }
   }
 
   private addOntologyEvidence(state: GraphState, source: GraphPage, target: GraphPage, role: EvidenceRole, provenance: EvidenceProvenance): void {

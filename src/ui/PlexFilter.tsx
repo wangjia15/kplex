@@ -476,7 +476,7 @@ export function PlexFilter({
         <span>Graph lenses</span>
         <div className="kplex-lens-heading-actions">
           {activeLensCount > 0 && <button className="kplex-lens-disable-all" onClick={() => onLensesChange(lenses.map((lens) => ({ ...lens, enabled: false })))}>Turn all off</button>}
-          <button className="excalibrain-icon-button" title="New graph lens" aria-label="New graph lens" onClick={() => { setDraft(EMPTY_DRAFT()); setDraftError(null); }}>
+          <button className="excalibrain-icon-button" aria-label="New graph lens" onClick={() => { setDraft(EMPTY_DRAFT()); setDraftError(null); }}>
             <ObsidianIcon name="plus" size={15} />
           </button>
         </div>
@@ -488,7 +488,6 @@ export function PlexFilter({
           return <div key={lens.id} className={`kplex-lens-row${lens.enabled ? " is-enabled" : ""}${expressionError ? " has-error" : ""}`}>
             <button
               className={`kplex-lens-enable-button${lens.enabled ? " is-on" : ""}`}
-              title={lens.enabled ? `Turn off ${lens.name}` : `Turn on ${lens.name}`}
               aria-label={lens.enabled ? `Turn off ${lens.name}` : `Turn on ${lens.name}`}
               aria-pressed={lens.enabled}
               onClick={() => onLensesChange(lenses.map((item) => item.id === lens.id ? { ...item, enabled: !item.enabled } : item))}
@@ -498,8 +497,8 @@ export function PlexFilter({
               <span className="kplex-lens-meta">{lens.enabled ? "On" : "Off"} · {modeLabel(lens.mode)} · {scopeLabel(lens.scope)}</span>
             </button>
             {expressionError && <span className="kplex-lens-error-dot" title={expressionError}>!</span>}
-            <button className="excalibrain-icon-button" title={`Edit ${lens.name}`} aria-label={`Edit ${lens.name}`} onClick={() => editLens(lens)}><ObsidianIcon name="pencil" size={13} /></button>
-            <button className="excalibrain-icon-button" title={`Delete ${lens.name}`} aria-label={`Delete ${lens.name}`} onClick={() => onLensesChange(lenses.filter((item) => item.id !== lens.id))}><ObsidianIcon name="trash-2" size={13} /></button>
+            <button className="excalibrain-icon-button" aria-label={`Edit ${lens.name}`} onClick={() => editLens(lens)}><ObsidianIcon name="pencil" size={13} /></button>
+            <button className="excalibrain-icon-button" aria-label={`Delete ${lens.name}`} onClick={() => onLensesChange(lenses.filter((item) => item.id !== lens.id))}><ObsidianIcon name="trash-2" size={13} /></button>
           </div>;
         })}
       </div>
@@ -552,7 +551,6 @@ export function PlexFilter({
               {renderConditionValue(condition)}
               <button
                 className="excalibrain-icon-button kplex-lens-condition-remove"
-                title="Remove condition"
                 aria-label="Remove condition"
                 disabled={draft.simple!.conditions.length <= 1}
                 onClick={() => updateSimple({ ...draft.simple!, conditions: draft.simple!.conditions.filter((item) => item.id !== condition.id) })}
@@ -597,7 +595,6 @@ export function PlexFilter({
     <button
       ref={triggerRef}
       className="excalibrain-icon-button kplex-filter-trigger"
-      title="Filter visible Plex / Graph Lenses"
       aria-label="Filter visible Plex / Graph Lenses"
       aria-expanded={open}
       onClick={() => setOpen((current) => !current)}

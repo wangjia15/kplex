@@ -33,7 +33,6 @@ type BooleanToolbarSetting =
 function IndexStatusIndicator({ upToDate, label }: { upToDate: boolean; label: string }) {
   return <span
     className={`kplex-index-status${upToDate ? " is-ready" : " is-updating"}`}
-    title={label}
     aria-label={label}
   />;
 }
@@ -47,7 +46,6 @@ function ToolButton({ icon, title, on, disabled, onClick }: {
 }) {
   return <button
     className={`excalibrain-icon-button${on ? " is-on" : ""}`}
-    title={title}
     aria-label={title}
     disabled={disabled}
     onClick={onClick}
@@ -278,14 +276,19 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const sidecarAvailable = surface !== "sidepanel";
   const sidecarPosition = sidecarAvailable ? plugin.getSidecarPosition(hostLeaf) : null;
   const sidecarOpen = Boolean(sidecarPosition);
-  const foldPlexIcon = sidecarPosition === "left" ? "panel-right-close"
-    : sidecarPosition === "above" ? "panel-bottom-close"
-      : sidecarPosition === "below" ? "panel-top-close"
+  const sidecarEdgePosition = sidecarPosition ?? plugin.settings.sidecarPosition;
+  const foldPlexIcon = sidecarEdgePosition === "left" ? "panel-right-close"
+    : sidecarEdgePosition === "above" ? "panel-bottom-close"
+      : sidecarEdgePosition === "below" ? "panel-top-close"
         : "panel-left-close";
-  const closeSidecarIcon = sidecarPosition === "left" ? "panel-left-close"
-    : sidecarPosition === "above" ? "panel-top-close"
-      : sidecarPosition === "below" ? "panel-bottom-close"
+  const closeSidecarIcon = sidecarEdgePosition === "left" ? "panel-left-close"
+    : sidecarEdgePosition === "above" ? "panel-top-close"
+      : sidecarEdgePosition === "below" ? "panel-bottom-close"
         : "panel-right-close";
+  const openSidecarIcon = sidecarEdgePosition === "left" ? "panel-left-open"
+    : sidecarEdgePosition === "above" ? "panel-top-open"
+      : sidecarEdgePosition === "below" ? "panel-bottom-open"
+        : "panel-right-open";
   const condensedBySidecar = sidecarAvailable && sidecarOpen && hostWidth > 0 && hostWidth <= plugin.settings.sidecarCondensedBreakpoint;
   const profileSurface: KplexViewSurface = condensedBySidecar ? "sidepanel" : surface;
   const viewSettings = plugin.getViewSettings(profileSurface);
@@ -325,12 +328,10 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
             <button
               className={`excalibrain-icon-button${syncMode !== "off" ? " is-on" : ""}`}
-              title={`${syncTitle}. Click for sync actions and link mode.`}
-              aria-label={`${syncTitle}. Note tab sync actions.`}
+              aria-label={`${syncTitle}. Click for sync actions and link mode.`}
               onClick={showDocumentSyncMenu}
             ><ObsidianIcon name={syncIcon} size={17} /></button>
             <ToolButton icon={isPinned ? "bookmark-check" : "bookmark"} title={isPinned ? "Unpin current node" : "Pin current node"} on={isPinned} onClick={() => void togglePinned()} />
-            {sidecarAvailable && <ToolButton icon={sidecarOpen ? "panel-right-close" : "panel-right-open"} title={sidecarOpen ? "Close companion sidecar" : "Open companion sidecar"} on={sidecarOpen} onClick={() => void plugin.toggleSidecar(hostLeaf, page)} />}
             {plugin.settings.toolbarExpanded && <>
               <span className="excalibrain-toolbar-divider" />
               <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
@@ -356,7 +357,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
             const title = plugin.index.titleFor(pinned);
             return <div key={pinned.path} className={`kplex-pinned-chip${pinned.path === page.path ? " is-active" : ""}`}>
               <button className="kplex-pinned-open" title={`${title}\n${pinned.path}`} onClick={() => activate(pinned)}><ObsidianIcon name="pin" size={12} /><span>{title}</span></button>
-              <button className="kplex-pinned-remove" title={`Unpin ${title}`} aria-label={`Unpin ${title}`} onClick={() => void unpin(pinned.path)}><ObsidianIcon name="x" size={11} /></button>
+              <button className="kplex-pinned-remove" aria-label={`Unpin ${title}`} onClick={() => void unpin(pinned.path)}><ObsidianIcon name="x" size={11} /></button>
             </div>;
           })}
         </div>}
@@ -372,11 +373,13 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
         </section>
       </main>
 
-      {sidecarOpen && sidecarPosition && <div className={`kplex-sidecar-controls is-${sidecarPosition}`} aria-label="Sidecar controls">
-        <button title="Fold K-Plex and give the companion document the full split" onClick={() => void plugin.collapsePlexForSidecar(hostLeaf)}><ObsidianIcon name={foldPlexIcon} size={15} /></button>
-        <button title="Close companion sidecar" onClick={() => void plugin.closeSidecar(hostLeaf)}><ObsidianIcon name={closeSidecarIcon} size={15} /></button>
-        <button title="Move sidecar" onClick={showSidecarMoveMenu}><ObsidianIcon name="move" size={15} /></button>
-        <button title="Detach sidecar — keep this tab open independently" onClick={() => void plugin.detachSidecar(hostLeaf)}><ObsidianIcon name="unlink" size={15} /></button>
+      {sidecarAvailable && <div className={`kplex-sidecar-controls is-${sidecarEdgePosition}${sidecarOpen ? " is-open" : " is-closed"}`} aria-label="Sidecar controls">
+        <button className="kplex-sidecar-primary" aria-label={sidecarOpen ? "Close companion Sidecar" : `Open Sidecar on the ${sidecarEdgePosition}`} onClick={() => void plugin.toggleSidecar(hostLeaf, page)}><ObsidianIcon name={sidecarOpen ? closeSidecarIcon : openSidecarIcon} size={16} /></button>
+        {sidecarOpen && <>
+          <button aria-label="Fold K-Plex and give the companion document the full split" onClick={() => void plugin.collapsePlexForSidecar(hostLeaf)}><ObsidianIcon name={foldPlexIcon} size={15} /></button>
+          <button aria-label="Move Sidecar" onClick={showSidecarMoveMenu}><ObsidianIcon name="move" size={15} /></button>
+          <button aria-label="Detach Sidecar — keep this tab open independently" onClick={() => void plugin.detachSidecar(hostLeaf)}><ObsidianIcon name="unlink" size={15} /></button>
+        </>}
       </div>}
 
       <footer className="excalibrain-history-bar">

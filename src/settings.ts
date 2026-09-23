@@ -58,6 +58,8 @@ export type KplexDeviceClass = "desktop" | "tablet" | "mobile";
 export type MouseInteractionMode = "smart" | "legacy" | "middle-only";
 export type SidecarPosition = "right" | "left" | "above" | "below";
 export type SidecarMarkdownMode = "preview" | "source";
+export type AttachmentImageDisplay = "label" | "thumbnail-label" | "image";
+export type NewNodeType = "markdown" | "excalidraw";
 export type DocumentSyncMode = "off" | "recent" | "pinned";
 export type KplexLayoutProfile = {
   compactingFactor: number;
@@ -174,6 +176,16 @@ export interface ExcaliBrainSettings {
   animationSpeed: number;
   /** Named local Graph Lenses. Definitions are persisted; evaluation is limited to the visible Plex. */
   graphLenses: GraphLensDefinition[];
+  /** Frontmatter/Dataview-style property used for a small image before the node label. */
+  thumbnailProperty: string;
+  /** Frontmatter/Dataview-style property whose image replaces the node label. */
+  nodeImageProperty: string;
+  /** How image attachment nodes are rendered. */
+  attachmentImageDisplay: AttachmentImageDisplay;
+  /** Remember the Create Note dialog toggle between invocations. */
+  editNewNodeAfterCreate: boolean;
+  /** Remember which create button Ctrl/Cmd+Enter should invoke next time. */
+  newNodeDefaultType: NewNodeType;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -267,7 +279,12 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger" },
   documentSyncMode: "off",
   animationSpeed: 1,
-  graphLenses: []
+  graphLenses: [],
+  thumbnailProperty: "thumbnail",
+  nodeImageProperty: "node-image",
+  attachmentImageDisplay: "thumbnail-label",
+  editNewNodeAfterCreate: false,
+  newNodeDefaultType: "markdown"
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -404,6 +421,11 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     documentSyncMode,
     animationSpeed: Math.max(0, Math.min(2, finite(old.animationSpeed, 1))),
     graphLenses: sanitizeGraphLensDefinitions(old.graphLenses),
+    thumbnailProperty: String(old.thumbnailProperty ?? DEFAULT_SETTINGS.thumbnailProperty).trim() || DEFAULT_SETTINGS.thumbnailProperty,
+    nodeImageProperty: String(old.nodeImageProperty ?? DEFAULT_SETTINGS.nodeImageProperty).trim() || DEFAULT_SETTINGS.nodeImageProperty,
+    attachmentImageDisplay: old.attachmentImageDisplay === "label" || old.attachmentImageDisplay === "image" ? old.attachmentImageDisplay : "thumbnail-label",
+    editNewNodeAfterCreate: Boolean(old.editNewNodeAfterCreate),
+    newNodeDefaultType: old.newNodeDefaultType === "excalidraw" ? "excalidraw" : "markdown",
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",
@@ -835,6 +857,15 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Primary tag field", desc: "Legacy primaryTagField used for tag-specific styles.", control: { type: "text", key: "primaryTagField" } },
               { name: "Custom node title script", desc: "Legacy setting retained for migration only. JavaScript expressions are not executed by K-Plex.", control: { type: "textarea", key: "nodeTitleScript", rows: 5 } },
               { name: "Excluded path prefixes", desc: "Comma separated; matches legacy excludeFilepaths behavior.", control: { type: "textarea", key: "excludeFilepathsCsv", rows: 4 } },
+            ]
+          },
+          {
+            type: "group",
+            heading: "Node images",
+            items: [
+              { name: "Thumbnail property", desc: "Image link shown as a small preview before the node label. Works with YAML or Dataview-style inline fields.", control: { type: "text", key: "thumbnailProperty" } },
+              { name: "Node image property", desc: "Image link that replaces the node label with a compact visual node. Works with YAML or Dataview-style inline fields.", control: { type: "text", key: "nodeImageProperty" } },
+              { name: "Image attachment nodes", desc: "How JPG, PNG, GIF, SVG, WebP and similar image attachments appear in the Plex.", control: { type: "dropdown", key: "attachmentImageDisplay", defaultValue: "thumbnail-label", options: { label: "File name", "thumbnail-label": "Thumbnail + file name", image: "Image only" } } },
             ]
           },
           {

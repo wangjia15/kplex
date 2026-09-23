@@ -6,21 +6,21 @@
 
 ![KPLEX Screenshot](docs/KPlex-Screenshot-3.png)
 
-**K-Plex (Knowledge Plex)** is a spatial knowledge navigator for Obsidian. It gives you a focused view around one active node and places related nodes in predictable directions, so the position of a node carries meaning.
+**K-Plex (Knowledge Plex)** is a spatial knowledge navigator for Obsidian. It keeps one note at the center and places related notes in predictable directions, so position carries meaning instead of constantly changing like a force-directed graph.
 
-K-Plex is the successor architecture to ExcaliBrain. It preserves the relationship model and much of the ontology/settings compatibility of classic ExcaliBrain, but it has its own React-based interface and does **not** require Excalidraw or Dataview at runtime.
+K-Plex is inspired by the navigation model of TheBrain and is the successor to ExcaliBrain. It preserves the relationship-oriented way of thinking that made ExcaliBrain useful, while providing its own interface and indexing system. **Excalidraw and Dataview are not required.**
 
-K-Plex is inspired by spatial knowledge interfaces such as TheBrain, but it is an independent implementation.
-
-Current builds add progressive IndexedDB-backed startup for large vaults, incremental per-file relationship/search indexing, a native companion sidecar, central-note section outlines with folding, provenance-based relationship explanation/unlinking, streamlined relationship creation with Markdown/Excalidraw support, and desktop/mobile interaction tuned for the same spatial model.
+K-Plex is designed for people who want to *move through* their notes rather than stare at an entire vault at once: follow a parent, compare challengers, see siblings, open a related document beside the graph, expand a note into sections, or temporarily reshape the Plex with Graph Lenses.
 
 > Warning: K-Plex is a new plugin and is still undergoing real-world testing. Bugs and unexpected behavior are possible. Before using K-Plex to create or modify relationships between important notes, I strongly recommend trying it first on a small set of test notes. As with any plugin that can modify your vault, keep a current backup of your data.
 
 ![KPlex overview](./docs/KPlex-Screenshot-1.png)
 
-## The Plex at a glance
+## Why K-Plex?
 
-K-Plex is deliberately **not** a force-directed graph. Relationships are arranged deterministically around the current node:
+Large graph views can quickly become dense and hard to navigate. K-Plex takes a different approach: it shows a **structured Plex around the current note** and keeps relationship directions stable.
+
+That makes the graph useful as a working surface:
 
 | Relationship | Position |
 | --- | --- |
@@ -28,258 +28,270 @@ K-Plex is deliberately **not** a force-directed graph. Relationships are arrange
 | Children | below |
 | Friends / Previous | left |
 | Challengers / Next | right |
-| Siblings | separate peripheral area on the right |
+| Siblings | separate peripheral area |
 
-Friends and challengers grow **upward from the bottom of their lateral area**. This keeps a sparse side — for example a single Challenger — close to the central working area instead of leaving it isolated near the top of the Plex.
+The same relationship keeps the same spatial meaning as you move from note to note. You can therefore build a mental map of your knowledge without depending on a force simulation.
 
 ## Requirements
 
 - Obsidian **1.13.0 or newer**
 - Desktop, tablet or mobile
-- Desktop for Obsidian pop-out windows
+- Desktop if you want to use Obsidian pop-out windows
 
-On phones and tablets, **Open K-Plex** opens the dedicated K-Plex sidepanel by default. The regular leaf and pop-out views remain available where supported.
-
-Excalidraw and Dataview are not required.
+K-Plex can coexist with classic ExcaliBrain because it uses its own plugin ID.
 
 ![KPLEX Screenshot](docs/KPlex-Screenshot-2.png)
 
-## Opening K-Plex
+## Getting started
 
-You can open K-Plex from the ribbon or from the Command Palette with **Open K-Plex**.
+1. Install and enable K-Plex.
+2. Open it from the ribbon or run **Open K-Plex** from the Command Palette.
+3. Allow the first index to complete. On later starts K-Plex restores its cached index and becomes usable much faster.
+4. Click a note in the Plex to make it the new center.
+5. Use the four relationship areas around the center to explore or build your knowledge structure.
 
-Other useful commands include:
+Useful commands include:
 
+- **Open K-Plex**
 - **Focus active note in K-Plex**
-- **Rebuild K-Plex index**
-- **Open K-Plex in pop-out window**
 - **Open K-Plex in side panel**
+- **Open K-Plex in pop-out window** (desktop)
+- **Rebuild K-Plex index**
+- **Add parent / child / friend / challenger**
 
-When K-Plex opens, it uses the active file when possible. Otherwise it restores the last displayed node, falling back to the vault root when needed. On phones, the normal **Open K-Plex** action routes to the sidepanel for a more natural navigation surface. On tablets, **Open graph** opens a normal K-Plex tab while **Open in side panel** remains available separately. Phone command palettes intentionally expose only the sidepanel opening action; pop-out windows remain desktop-only.
+On phones, K-Plex opens naturally in the side panel. Tablets can use either a normal K-Plex tab or the side panel.
 
-## Navigating
+## Navigating the Plex
 
-- **Single-click** a node to make it the center of the Plex.
+- **Single-click / tap** a node to make it the center.
 - **Double-click** a file-backed node to open it in Obsidian.
 - Double-clicking a URL opens it in the browser.
-- Double-clicking an unresolved/virtual node creates the corresponding Markdown note.
-- Folder and tag nodes can become the center of the Plex.
-- With the default **Smart** mouse controls, left-drag empty Plex space to pan, middle-drag anywhere to pan, and right-click nodes/connectors for context menus. A Legacy preset can restore all-button panning.
-- Use the mouse wheel or the zoom controls to zoom; no modifier key is required.
-- On touch devices, drag with **one finger** to pan and use **two-finger pinch** to zoom. K-Plex owns these gestures inside the graph so Obsidian Mobile does not interpret graph navigation as workspace edge/top swipes.
-- Long-press a node or connector on touch devices to open the same context menu available with right-click on desktop.
-- Use **Fit graph** to bring the visible Plex back into view.
+- Double-clicking an unresolved link can create the missing Markdown note.
+- Folder and tag nodes can also become the center.
+- Drag empty graph space to pan and use the mouse wheel or pinch gesture to zoom.
+- Long-press on touch devices opens the same context menus available with right-click on desktop.
+- Clicking or touching empty graph space clears temporary node, gate and connector highlights.
+- Use **Fit graph** whenever you want to bring the visible Plex back into view.
 
-K-Plex keeps a persistent **Past nodes** history at the bottom of the view. The back/forward buttons step through that navigation history.
+K-Plex uses positional animation when navigating: notes that exist in both scenes visibly move to their new location, while new notes enter from the direction of their relationship. Animation speed can be changed in **Settings → K-Plex → Graph**, including turning it off completely.
 
-## Search
+### Search, history and pins
 
-The search box finds nodes by title, alias and path. Matching is fuzzy, while stronger exact, prefix and substring matches are ranked ahead of looser matches.
+The search box finds notes by title, alias and path using fuzzy matching. Exact and prefix matches rank above looser matches.
 
-Keyboard controls:
+Keyboard shortcuts while K-Plex has focus:
 
-- **Up / Down** — move through results
+- **Up / Down** — move through search results
 - **Enter** — activate the selected result
 - **Escape** — close the result list
-- **F4** or **Ctrl/Cmd+F** — focus search while the Plex has keyboard focus
+- **F4** or **Ctrl/Cmd+F** — focus search
 
-Clicking elsewhere in the Plex also closes the search results.
+K-Plex also keeps a **Past nodes** history for back/forward navigation. Pins are separate from history and are useful for keeping a small number of important nodes available as stable shortcuts.
 
-The Command Palette also includes **Search** while a K-Plex view is open, so you can assign your own hotkey to focusing the search box.
+## Creating and editing relationships
 
-When the search field is empty, K-Plex prioritizes Obsidian **Bookmarks** (or legacy Starred entries), followed by K-Plex pins, before the normal node list.
+K-Plex lets you create Parent, Child, Friend and Challenger relationships directly from the Plex. You can start from a gate, use the Command Palette, or use node/connector context menus.
 
-## Note-tab synchronization
+The relationship dialog provides:
 
-K-Plex can be independent from Obsidian note tabs, linked to whichever note tab was used most recently, or pinned to one fixed note tab. The toolbar deliberately uses the same **tab** and **note** language as Obsidian rather than Workspace API terminology.
+- fuzzy search for existing notes;
+- fuzzy search for ontology fields;
+- creation of new Markdown notes;
+- optional Excalidraw note creation when Excalidraw is installed;
+- remembered ontology choices for each relationship type;
+- remembered Markdown/Excalidraw create action, including Ctrl/Cmd+Enter;
+- filename validation and duplicate-name checking;
+- an **Open for editing** toggle for new notes.
 
-Two one-shot actions are available both from the sync menu and the Command Palette:
+Newly created notes and their relationships appear in the Plex immediately instead of waiting for Obsidian's background indexing cycle. If **Open for editing** is enabled, the new note becomes the center and opens in the companion Sidecar in Obsidian's normal Markdown editor, ready for writing.
 
-- **Sync most recent note tab with K-Plex** — load the current central K-Plex note into the most recently used note tab.
-- **Sync K-Plex with most recent note tab** — make the note in the most recently used note tab the K-Plex center.
+You can also drag an existing related node to another relationship area to reclassify it. K-Plex updates the graph immediately while the underlying note change is written. When K-Plex needs to create a new YAML/document property for a relationship, it adds that property at the bottom of the property list.
 
-For persistent behavior choose **not linked**, **linked to most recent note tab**, or **pinned to one fixed note tab**. A pinned note tab is considered a companion sidecar whenever it is physically adjacent to K-Plex; moving it elsewhere hides the sidecar controls without breaking the pin, and moving it back beside K-Plex restores those controls. Opening the companion sidecar creates or reuses an adjacent visible note tab and switches K-Plex to pinned mode. Closing K-Plex itself releases that companion tab but deliberately leaves the user's document open.
+### Connection details and unlinking
 
+A visible connection may come from YAML properties, body fields, ordinary links, folder/tag structure, URLs, dates, or other supported sources. A single connection can also be supported by several different source occurrences.
+
+Right-click a connector to access two related workflows:
+
+- **Connection details…** explains why K-Plex resolved the relationship the way it did, shows the active ontology, deduplicates repeated evidence that points to the same physical source location, and lets you jump to each exact source occurrence. You can add another ontology without rewriting or removing existing body/property sources; for an inferred relationship, **Specify ontology…** adds its first explicit ontology.
+- **Unlink connection** removes a single unambiguous editable property source directly. If several sources contribute to the edge, K-Plex opens Connection details rather than guessing which source you intended to remove.
+
+**Go to source** opens the real Markdown note at the relevant location, using the Sidecar when it is available. Continue editing there with Obsidian's normal editor, wikilinks, suggestions and hotkeys. The source Markdown files remain the source of truth; K-Plex does not create a separate database of edge notes.
+
+## Quick Filter and Graph Lenses
+
+K-Plex offers two levels of filtering.
+
+### Quick Filter
+
+Use the funnel button for fast, temporary filtering by:
+
+- keyword;
+- tag;
+- note type.
+
+Keyword matching includes title, path, alias and relationship definition.
+
+### Graph Lenses
+
+**Graph Lenses** are reusable filters and styling rules for the Plex. They work only on the currently visible K-Plex neighborhood; they do not turn K-Plex into an arbitrary whole-vault graph query tool.
+
+A lens can match three kinds of things:
+
+- **Notes** — for example tags, note properties, paths or note types.
+- **Relationships** — for example Parent/Child/Friend/Challenger roles or a custom relationship property such as `working-on`.
+- **Relationship evidence** — the specific source that caused a relationship to exist, such as a particular property field.
+
+A lens can then:
+
+- **Show matching** items;
+- **Hide matching** items;
+- **Style matching** notes or connectors without hiding anything.
+
+The default lens editor is a visual builder inspired by Obsidian Bases: choose a field, operator and value rather than writing query syntax. Relevant values are suggested where possible.
+
+For example, to show only connections created with a `working-on` relationship property:
+
+**Relationship → Show matching → Relationship property → is → working-on**
+
+Saved lenses have an eye control, so you can turn them on and off without deleting them. Multiple lenses can be active together.
+
+### Keep layout or Reflow
+
+At the top of the filter panel you can choose how filtered results are displayed:
+
+- **Keep layout** — hide nonmatching elements but leave surviving nodes in their original positions.
+- **Reflow** — lay out the surviving relationships as though they were the only items in the Plex.
+
+Keep layout is useful when you want to preserve spatial context. Reflow is useful when a large Plex is reduced to a small focused subset.
+
+When a visibility filter is active, gate counts can show **shown/total**, such as `2/12`, so you can still see that hidden relationships exist.
+
+### Styling with lenses
+
+Style lenses use the same matching rules as filters. Depending on scope, they can change node fill/border/text appearance or connector color, width, line style and label presentation.
+
+This makes it possible to create temporary visual perspectives without changing your notes. For example, you might highlight all `working-on` relationships, dim a category of notes, or emphasize relationships backed by a specific ontology field.
+
+For a detailed walkthrough, see [Graph Lenses](docs/GRAPH_LENSES.md).
+
+## Expand a Markdown note into sections
+
+A Markdown note can be expanded from the center into its heading hierarchy. This gives you a temporary document outline directly inside the Plex without permanently adding headings to the vault graph.
+
+- Heading levels become a foldable tree.
+- Relationships found inside a section attach to that section.
+- YAML/frontmatter and content before the first heading stay attached to the central note.
+- Folded sections project hidden descendant relationships onto the nearest visible section while retaining their original source for explanation.
+- Double-click / tap a section to open the source note at that heading.
+- Use **Fold all sections** and **Unfold all sections** for larger documents.
+
+This is useful when a single long Markdown file contains several ideas or relationship-rich sections that you want to explore without permanently splitting the document into separate notes.
+
+## Expanded relationship view
+
+Expanded view can show children beneath visible first-level nodes, giving you one additional layer of context without turning the Plex into an arbitrary-depth graph.
+
+Expanded children are intentionally smaller and more subdued. Larger child groups scroll locally so the overall Plex remains readable.
 
 ## Companion sidecar
 
-K-Plex can manage a **companion sidecar** next to a normal K-Plex tab. The sidecar is a real adjacent Obsidian tab/pane, not a faux document surface mounted inside the graph. This keeps native Obsidian resizing, view persistence and third-party plugin rendering intact.
+K-Plex can keep a normal Obsidian note pane beside the graph as a **companion sidecar**.
 
-- The sidecar can be placed to the right, left, above or below K-Plex. Adjacency is measured from the containing workspace tab-group geometry rather than only the inner view body, so stacked panes remain recognizable even though Obsidian's tab header creates a visual gap between `ItemView.containerEl` rectangles.
-- Its native Obsidian divider controls the relative size of the two areas.
-- It stays hard-linked to the current K-Plex center and updates automatically as you navigate.
-- Markdown defaults to the configured **Reading view** or **Edit mode**; plugin-owned file views such as Excalidraw remain native.
-- URL centers are sent to Obsidian's built-in Web Viewer when available.
-- Edge controls beside the Plex can **fold K-Plex**, close the companion sidecar, move it, or **detach** it. Folding hides the entire K-Plex tab group from the split and leaves a small unfold control on the document-side edge, giving the companion document the available split area without detaching either leaf.
-- Detach stops K-Plex synchronization but leaves the native Obsidian tab open exactly where it is, so it becomes an ordinary independent document/view. Closing K-Plex also leaves the companion document open; only the explicit close-sidecar action closes that companion tab.
-- At workspace startup K-Plex prefers an already-visible adjacent document tab over Obsidian's sometimes misleading deferred “most recent” tab, so a restored sidecar reconnects to the pane the user actually sees.
-- If the remaining K-Plex width becomes smaller than the configured condensed breakpoint, K-Plex switches to the current device's sidepanel density/column profile.
-- The companion sidecar is unavailable when K-Plex itself is already running in an Obsidian sidepanel.
+The sidecar:
 
-This feature complements rather than replaces K-Plex pins and note-tab synchronization.
+- can be placed left, right, above or below K-Plex;
+- follows the current K-Plex center;
+- uses normal Obsidian Markdown reading/editing views;
+- supports plugin-owned file views such as Excalidraw;
+- can be folded so the document temporarily gets more space;
+- can be detached and turned back into an ordinary independent Obsidian pane.
 
-## Pins
+The small **Sidecar control lives on the corresponding edge of K-Plex**. If you close the Sidecar, the control stays on that edge so you always know where to reopen it. K-Plex remembers the last Sidecar position; if you have never positioned it before, the configured default side is used.
 
-The current node can be pinned from the toolbar. Pinned nodes are persistent quick-access bookmarks shown directly below the main toolbar.
+Closing K-Plex does not close the document you were reading.
 
-Pins are independent of Past nodes/history, so they are useful for a small set of stable reference points that you want to keep available while exploring. Nodes can also be pinned/unpinned from their context menu.
+### Note-tab synchronization
 
-## Toolbar visibility controls
+K-Plex can be:
 
-The toolbar provides quick toggles for the node types and relationship views that are most useful during exploration, including:
+- independent from note tabs;
+- linked to the most recently used note tab;
+- pinned to one fixed note tab.
 
-- attachments
-- unresolved/virtual nodes
-- inferred relationships
-- Markdown pages
-- aliases
-- folders
-- tags
-- web links
-- siblings
-- single-level vs expanded view
-- straight vs curved connectors
+There are also one-shot actions to send the current K-Plex note to the most recent note tab, or bring the most recent note tab into K-Plex.
 
-The toolbar also includes refresh, navigation synchronization, pinning and settings controls. The toolbar has two presentation modes: a compact mode with the core navigation/link/pin/sidecar/settings actions, and an expanded mode containing the full visibility/layout control suite. The mode is persisted.
+## Layout and appearance
 
-## Layout, scrolling and filtering
+K-Plex gives the major relationship regions their own space limits, so large Parents, Children, Friends, Challengers and Siblings areas can scroll independently instead of stretching the entire graph.
 
-K-Plex keeps the graph readable by giving the major regions independent size limits.
+You can configure:
 
-Density and parent/child column counts are stored as **per-view profiles**. K-Plex keeps separate values for desktop, tablet and mobile, and separately for normal leaves, pop-outs and sidepanels. Sidepanel/mobile profiles default to denser layouts with fewer columns, while the normal desktop leaf defaults to 2 parent / 5 child columns at density 2.
+- parent and child column counts;
+- separate height limits for the main relationship regions;
+- maximum nodes per zone;
+- density/compactness;
+- straight or curved connectors;
+- arrowheads and relationship labels;
+- animation speed;
+- visibility of attachments, folders, tags, URLs, unresolved links, inferred relationships and other node types;
+- Note type styling.
 
-Shared zone limits default to:
+Desktop, tablet, mobile, sidepanel and pop-out views can keep different density/column profiles, so a compact mobile layout does not have to change your desktop arrangement.
 
-| Setting | Default |
-| --- | ---: |
-| Parent maximum height | 300 px |
-| Friend / challenger maximum height | 350 px |
-| Sibling maximum height | 250 px |
-| Child maximum height | 400 px |
-| Maximum nodes per zone | 100 |
+### Images in nodes
 
-The maximum number of nodes per zone can be increased to **300**.
+K-Plex can use a note property or Dataview-style inline field to give a node a visual thumbnail. The default fields are:
 
-When a first-level zone becomes taller than its configured maximum, it gets its own scrollbar and a funnel control for filtering by name/path. Filtering repacks the matching nodes instead of leaving holes where hidden nodes used to be.
+```markdown
+thumbnail:: [[image.jpg]]
+node-image:: [[image.jpg]]
+```
 
-The toolbar also has a **Plex filter** that filters all visible graph elements by keyword, tag and note type. Keyword matching includes title, path, alias and relationship definition.
+- **thumbnail** shows a small image before the normal node label.
+- **node-image** replaces the visible label with a compact image while keeping the node's normal graph footprint and accessible file identity.
 
-The same panel now supports persistent **Graph Lenses**. A lens can show, hide, or style matches based on the visible note, the resolved relationship, or the retained relationship evidence. Multiple active include lenses are unioned; exclude lenses subtract from the result. Style lenses never change visibility and reuse the exact same selectors. Lenses evaluate only the currently materialized Plex—they do not scan the vault or expand graph depth.
+Images stay deliberately small so they do not make the Plex expand. On desktop, hover the image for a larger preview. The property names can be changed in **Settings → K-Plex → Appearance → Node images**.
 
-Lens editing defaults to a **Bases-style Simple builder**: choose a field, operator and value instead of typing query syntax. For example, to show only connections created by a `working-on` relationship property, choose **Relationship → Show matching → Relationship property → is → working-on**. Choose **Style matching** instead to color or restyle the same matched notes/relationships without hiding anything. Relevant values such as relationship properties, tags, note types and property names are suggested where possible. Each saved lens has an explicit eye toggle so it can be turned on/off without deleting it, and **Turn all off** disables every active lens at once.
+An image referenced only through the thumbnail/node-image fields is treated as presentation metadata, so it is not also shown as an inferred child. If the same image is linked independently through normal content or another ontology, it remains a normal graph node as well.
 
-An optional **Code** view exposes the safe Bases-inspired expression language for advanced combinations, for example `edge.definition.equals("working-on")`, `file.hasTag("meeting")`, `evidence.fieldName == "activity-context-for"`, or `note["Status"] == "Active"`. No JavaScript is executed. Arbitrary note properties are read lazily from Obsidian's metadata cache rather than copied into the K-Plex graph index. While a visibility filter is active, gate counts use `shown/total` notation (for example `0/12`) so hidden relationships remain visible as context. The **Reflow** toggle controls presentation: off preserves the original Plex positions; on recomputes the structured Plex from the surviving relationships so the result is laid out as a compact filtered Plex.
+Image attachments such as JPG, PNG, GIF, WebP and SVG files can also be shown directly as nodes. Choose whether attachment nodes display **file name**, **thumbnail + file name** (default), or **image only** in the same settings section.
 
-The Friend and Challenger regions are symmetrical. They may extend upward into otherwise unused parent-area space, but their lower edge stays above the child region with a small gap. Sparse Friend/Challenger lists remain bottom-aligned and grow upward as more nodes are added.
+### Note type styling
 
-Siblings occupy a separate peripheral region and are rendered slightly smaller than normal first-level nodes.
+A Markdown property can define a note's visual type. By default this property is **Note type**.
 
-The **Density** control changes spacing and label truncation and can be increased up to **4.0** for very compact layouts. The **Columns** control changes the parent/child column combination without changing relationship semantics.
+In **Settings → K-Plex → Appearance** you can assign styles to individual Note type values, including icon, background, text, border and font size.
 
-Scene changes use positional animation rather than a simple fade: thoughts that exist in both scenes visibly migrate to their new location, the newly selected center arrives a little faster, and genuinely new thoughts enter from the direction of their gate. **Settings → Graph → Animation speed** controls the effect from **0 (off)** through slow/normal to **2×** speed. Section fold/unfold is treated as an outline operation and deliberately preserves the current camera instead of auto-fitting the graph.
+Graph Lenses complement Note type styles when you want temporary, context-specific styling rather than a permanent visual identity.
 
-## Expanded view
+## Mobile and touch
 
-Expanded view shows children beneath visible first-level nodes.
+K-Plex has explicit touch interaction rather than relying on desktop mouse events translated by the browser.
 
-- expanded child nodes are approximately half normal node size
-- text is smaller and visually subdued
-- up to **3 columns × 2 visible rows** are shown below each first-level node
-- additional children scroll inside that node's local expanded area
-- nodes with no expanded children reserve no extra space
-- siblings and their expanded descendants remain visually smaller than normal nodes
+- one-finger pan;
+- two-finger pinch zoom;
+- tap navigation;
+- long-press context menus;
+- touch-safe relationship dragging.
 
-## Expanding the central note into sections
+Phone and tablet layouts can use their own density and column settings.
 
-For a Markdown central node, right-click (or long-press on touch) and choose **Expand note to sections**. K-Plex parses the current document on demand; headings become transient outline nodes and are **not** added to the persistent vault index.
+## Large vaults and startup behavior
 
-- Section nodes use compact theme-aware outline cards and a separate **solid orthogonal folder-tree connector**, so Markdown structure remains visually distinct from semantic K-Plex relationships.
-- The outline spine leaves a small square structural port near the lower-left of the parent and enters each child at its **left-center edge**. The resulting vertical-spine + horizontal-branch “L” geometry never routes through the normal top/bottom relationship gates.
-- Nested headings form a foldable tree. A small square fold handle shows whether a section with descendants is expanded or folded. The same square appears on the lower-left of a Markdown central note even while its sections are folded, so the outline can be opened directly without using the context menu. Non-Markdown central nodes do not show this control. Section spacing uses a deliberately steeper density curve than the ordinary Plex: density 1 is already compact, while density 4 reduces vertical gaps and tree-branch indentation to a very tight outline.
-- Folding a section hides its descendant headings and projects the hidden descendants' semantic relationships onto the nearest visible folded ancestor. Explainability still identifies the exact hidden section that originally declared each projected relationship.
-- Section context menus provide one-level and recursive fold/unfold actions; the central node also offers **Fold all sections** / **Unfold all sections** while expanded.
-- YAML/frontmatter relationships and links before the first heading stay attached to the central note.
-- Body relationships below a heading attach to that section's gates.
-- Section relationship connectors retain the same explainability/provenance model as normal graph links.
-- Double-clicking a section on desktop opens the source note focused on that heading using Obsidian's subpath state; a stationary touch tap performs the equivalent action on mobile.
-- Collapsing the note discards the transient section scene and restores the unchanged note-level index.
+K-Plex is designed to remain practical on large real-world vaults.
 
-## Gates and connectors
+After the first index has been created, K-Plex restores cached graph information on later starts so you can usually begin working quickly. The current neighborhood is prioritized first and the rest can continue loading in the background.
 
-Every visible node has four directional gates.
+While you work, changes are handled incrementally: editing one note does not normally require K-Plex to rebuild the entire vault. Background updates also preserve your current camera and scroll position rather than repeatedly recentering the graph.
 
-- **Top gate** — parent
-- **Bottom gate** — child
-- **Left gate** — friend
-- **Right gate** — challenger
+Version 0.0.3 substantially improved startup performance, incremental updates, large-vault behavior, iPad stability, mobile/touch interaction, graph animation, relationship editing, section expansion, provenance/explanation, sidecar behavior and search/navigation. These improvements form the foundation for the newer Graph Lens workflow.
 
-A hollow gate means there is no relationship through that gate. A filled gate means relationships exist, even when some related nodes are hidden by the current visibility settings. If gate counts are enabled, the number beside a gate reflects the currently visible relationships.
+If graph data ever appears stale, use the toolbar refresh button or run **Rebuild K-Plex index**.
 
-Connectors originate from the relevant gates rather than from node centers. They can be displayed as **Straight** or **Curved**, and optional arrowheads can show direction.
+## Ontology and ExcaliBrain compatibility
 
-Generic labels such as Parent, Child, Friend, Challenger and structural file/tag-tree labels are suppressed. Custom ontology labels can be shown on connectors when relationship labels are enabled.
-
-### Explain relationships
-
-Right-click a visible connector and choose **Explain relationship** to see why K-Plex placed that relationship where it did. The explanation shows the resolved role plus the underlying evidence, such as frontmatter ontology, body ontology, ordinary Obsidian links, folder/tag structure, URLs or Date-property links. Evidence that comes from a Markdown file also exposes **Navigate** actions. If that K-Plex view has an open companion sidecar, the evidence opens there; otherwise K-Plex opens a normal Markdown tab. In both cases K-Plex uses ephemeral line state to jump to the relevant property/link without changing the saved workspace scroll state. Sidecar provenance navigation is temporary inspection and does not recenter the Plex.
-
-Connector menus also include **Unlink connection**. When exactly one editable frontmatter ontology declaration is responsible for the relationship, K-Plex removes it directly. Obsidian link-cache entries located inside that same YAML property block—including indented list items—are treated as mirrors of the property rather than separate declarations. Some Obsidian builds do not expose a source position for YAML links in the generic link cache; K-Plex verifies the property block itself in that case before allowing direct unlinking. Ambiguous cases—multiple declarations, body/inline links, links in another property, or other evidence—open the same explanation dialog instead of guessing which source should be edited.
-
-When frontmatter deliberately overrides conflicting body ontology, the body evidence is retained and shown as **OVERRIDDEN** rather than discarded. This makes the visible result deterministic while keeping the source conflict inspectable.
-
-### Node context menu
-
-Right-click a node (or long-press on touch) for actions appropriate to that node. Markdown notes can **Link to note…** and **Set note type…**; every file-backed node can be **Renamed** using Obsidian's native `FileManager.renameFile()` path so links and vault bookkeeping follow Obsidian's normal rename behavior; persistent nodes can be pinned/unpinned; and the Markdown center node can expand/collapse its heading sections. Structural or virtual nodes do not offer write actions that would be invalid for them.
-
-## Hover and preview
-
-Relationship highlighting is intentionally delayed so the Plex does not flash while you move the pointer across a dense graph.
-
-To open Obsidian's hover preview immediately, hold:
-
-- **Cmd** on macOS, or
-- **Ctrl** on Windows/Linux
-
-while hovering a node.
-
-Normal hover does not open page preview.
-
-## Creating relationships
-
-Drag from a gate to create a relationship.
-
-If you release on empty Plex space, K-Plex opens one compact relationship dialog. Both fuzzy result lists start closed and only open after the user types. When there is room, the note and ontology result lists float outside the modal instead of making the modal itself taller; matching fragments are highlighted in the results. Pressing **Escape** while a result list is open closes only that list and leaves the typed filename/ontology intact; pressing Escape again closes the modal.
-
-Selecting an existing note keeps the dialog open so the ontology can still be changed; the create controls are replaced in-place by a **Link** button without changing the row width. **Ctrl/Cmd+Enter** always invokes the current primary action: Link for a selected existing note, or create Markdown for a valid new name. For a new note name, Markdown is the default create action. Markdown/Excalidraw creation stays disabled until the name is valid and no Markdown/Excalidraw note with that name already exists anywhere in the vault. K-Plex rejects cross-platform-invalid filename characters such as `< > : " / \ | ? *`, trailing periods/spaces, and reserved device names. New files use Obsidian's configured **Default location for new notes**, resolved relative to the current K-Plex center when Obsidian is configured to create notes beside the current file.
-
-The ontology field is fuzzy-searchable as well. It starts with the role's remembered default (Parent, Child, Friend, or Challenger initially). Choosing or typing a different field makes that field the default for the next relationship of the same role. A new field name is added to the matching K-Plex ontology list automatically. Command Palette actions **Add child**, **Add parent**, **Add friend**, and **Add challenger** open the same dialog and are only available while K-Plex is running, so users can assign their own hotkeys to any of them.
-
-After a new or newly linked note reaches the Plex, K-Plex gives it a brief visual **flair** so it is easy to spot. If the relationship lands inside a scrollable zone, K-Plex scrolls that zone to the new node first. If the zone filter currently hides the new relationship, the filter control receives the flair instead so the user can see why the node did not appear.
-
-The default direction follows the gate you started from:
-
-- top → Parent
-- bottom → Child
-- left → Friend
-- right → Challenger
-
-K-Plex writes editable relationships to YAML/frontmatter. It does not try to rewrite arbitrary prose or inline relationship text in a note body.
-
-If the origin is not a Markdown note, the target must be a Markdown note; K-Plex stores the inverse relationship on the Markdown side.
-
-Folder and tag relationships are structural, so drag-link creation involving folder/tag endpoints is disabled.
-
-## Reclassifying an existing relationship
-
-A node directly connected to the center can be dragged to another side of the Plex. Moving it between the top, bottom, left and right regions proposes changing the relationship class and opens the relationship dialog before committing the change. K-Plex applies the accepted move optimistically so the node changes position immediately. The YAML write is then patched directly into the live semantic pair—there is no full-vault rebuild for a one-relationship move—and a short **Updating relationship…** guard prevents accidental follow-up clicks while the write completes. If the write fails, the optimistic state is discarded.
-
-When both endpoints are Markdown notes, K-Plex ranks where the relationship should be stored by the existing provenance: an existing frontmatter declaration is preferred, then body ontology, then the note that supplied the ordinary link. The relationship dialog exposes **Write property to note** only when there is a meaningful choice, so the recommended source can still be overridden without forcing every move through an extra decision.
-
-When the same note contains conflicting ontology for the same target, a YAML/frontmatter ontology written by K-Plex takes precedence over the body ontology. The body declaration is not deleted from the index; it remains available to **Explain relationship** as overridden evidence. This keeps future layout deterministic without silently losing provenance or rewriting arbitrary prose.
-
-## Ontology
-
-K-Plex understands configurable field names for:
+K-Plex understands configurable relationship field names for:
 
 - Parent
 - Child
@@ -289,101 +301,35 @@ K-Plex understands configurable field names for:
 - Next
 - Hidden
 
-The ontology workflow also includes:
+It supports YAML/frontmatter relationships and compatible Dataview-style body fields without requiring the Dataview plugin.
 
-- configurable full-line and mid-sentence ontology suggester triggers
-- optional bold field insertion
-- editor context-menu **Add/change … in K-Plex ontology**
-- commands to assign the field at the cursor directly to Parent, Child, Friend, Challenger, Previous, Next, Hidden or Excluded
-- an Add-to-Ontology modal
-- discovery of unassigned YAML/Dataview-style field names in K-Plex settings
+If classic ExcaliBrain is installed and running, K-Plex can import compatible settings. You can also use **Import ExcaliBrain settings** manually from **Settings → K-Plex → Compatibility**.
 
-For example, a vault can use frontmatter such as:
-
-```yaml
-Parent: "[[Project]]"
-Children:
-  - "[[Task A]]"
-  - "[[Task B]]"
-Friend: "[[Related idea]]"
-Challenger: "[[Counterargument]]"
-```
-
-The exact field names are configurable in **Settings → K-Plex → Ontology**. K-Plex also understands legacy Dataview-style body fields without requiring the Dataview plugin, including full-line fields, parenthesized inline fields, square-bracket inline fields, Markdown emphasis around field names, list items and multiple inline fields on one physical line. Examples include `Field:: [[Link]]`, `(Friend:: [[A]], [[B]])`, `[Challenger:: [[C]]]` and `**Parent**:: [[D]]`. YAML/frontmatter, fenced code, inline code and HTML comments are excluded from body-field parsing.
-
-## Supported node types
-
-Depending on visibility settings, K-Plex can include:
-
-- Markdown notes
-- attachments
-- folders
-- tags
-- web URLs
-- unresolved/virtual links
-
-Normal Obsidian links can also be interpreted as inferred relationships according to your K-Plex settings.
-
-## Note type styling
-
-A Markdown document property can define the node's primary visual type. By default the property is **Note type**.
-
-In **Settings → K-Plex → Appearance** you can create styles for individual Note type values, including:
-
-- Lucide icon
-- background color
-- text color
-- border color
-- font size
-
-Legacy tag-specific styling remains part of the ExcaliBrain compatibility model.
-
-## Index lifecycle and startup cache
-
-K-Plex performs one initial index per Obsidian session. If a persisted semantic snapshot is still current, startup restores that snapshot instead of rereading every Markdown body. After the initial pass, K-Plex avoids continuously rebuilding a graph that nobody is viewing: vault/metadata changes are recorded as a dirty backlog while no K-Plex tab or sidepanel is open, and that backlog is reconciled when K-Plex is opened again. Later in-flight rebuilds are cancelled when the final K-Plex view closes; on iOS even a first cold build is cancelled when the user closes K-Plex, because keeping a large hidden WebView build alive is a poor memory tradeoff. Completed per-file cache checkpoints remain reusable on the next attempt.
-
-The durable index is stored in **IndexedDB**, not browser local storage. K-Plex persists three complementary cache layers: parsed body metadata keyed by file mtime **and parser version**, provenance-bearing graph evidence, and the already-resolved neighbour maps used by the renderer. The last layer means a warm 20k-note startup does not need to replay the complete relationship truth table before the graph can appear. Snapshot generations are written transactionally and become active only after all page/evidence records have completed. Relationship evidence is declaration-compact in memory and also path-indexed, so changing one note can remove/re-resolve only evidence touching that note instead of scanning the whole evidence store. Legacy local-storage and file-snapshot index payloads are not used as active restore backends and are removed opportunistically.
-
-Warm startup is **progressive**: K-Plex first restores the current note and its immediate neighborhood so the Plex can become usable before the complete snapshot is hydrated. The remainder of the cached graph/evidence is loaded in the background and then published without recentering the user's view. Ordinary metadata/sync updates also preserve the current camera/scroll position; new nodes are inserted and surrounding nodes may move to make room, but the Plex is not automatically recentered just because the index changed.
-
-When the physical vault structure is unchanged but a few Markdown files changed while K-Plex was closed, startup restores the semantic snapshot immediately and patches only those changed files. If files were created/deleted/renamed, or cached real files cannot yet bind to Obsidian `TFile` objects, K-Plex rejects the cached topology instead of briefly rendering a misleading half-stale/ghost graph while a second graph is built in memory. On iOS the hot in-memory parser cache is kept deliberately tiny. A large first-ever full rebuild is deferred until K-Plex is actually opened; before allocating the complete semantic graph, K-Plex prewarms parsed Markdown bodies into small transactional IndexedDB checkpoints. Native file reads are bounded and batched, the prewarm is cancellable when the last K-Plex view closes, and an interrupted run resumes from committed body records. Only after that low-memory prewarm does K-Plex allocate and atomically publish the complete graph. IndexedDB schema upgrades must bump the database version whenever a store/index changes so existing vault databases actually run `onupgradeneeded`.
-
-Live editing uses the same local-update philosophy. K-Plex reparses only changed Markdown files, updates only relationship evidence/pairs touched by those files, and patches only affected search-index entries instead of rebuilding search for the entire vault. Runtime body-cache writes are queued behind the interactive graph update so IndexedDB maintenance does not block a save. The parser scans fenced blocks without splitting megabyte-scale Excalidraw JSON payloads into thousands of temporary strings, and semantic fingerprints allow non-graph changes to avoid unnecessary graph/evidence work. This is especially important for large `.excalidraw.md` files and frequent autosaves.
-
-
+K-Plex and classic ExcaliBrain can coexist while you migrate.
 
 ## Settings
 
-K-Plex settings are organized into five pages, in this order:
+K-Plex settings are organized into:
 
-- **Graph** — navigation, layout, visibility and connector behavior
-- **Ontology** — relationship field names and ontology suggester triggers
-- **Appearance** — Plex, gate and Note type styling
-- **Sidecar** — companion position, default Markdown mode and sidecar presentation behavior
-- **Compatibility** — legacy ExcaliBrain import
+1. **Graph** — navigation, layout, visibility, animation and connector behavior
+2. **Ontology** — relationship field names and ontology helpers
+3. **Appearance** — graph, gate and Note type styling
+4. **Sidecar** — companion-pane behavior and Markdown mode
+5. **Compatibility** — ExcaliBrain import and legacy settings
 
-The three resource links at the top share one compact row whenever the settings width allows it.
+## Help, issues and contributing
 
-The Graph page also controls zone heights, parent/child columns, maximum nodes per zone, density, connector style, arrowheads and visibility of supported node types.
+If you find a bug, have a feature request, or want to suggest an improvement, please use the K-Plex GitHub repository:
 
-## ExcaliBrain migration
+- **Repository:** https://github.com/zsviczian/kplex
+- **Issues:** https://github.com/zsviczian/kplex/issues
 
-K-Plex uses the plugin ID **`k-plex`**, so it can coexist with classic ExcaliBrain during migration.
+Contributions are welcome, including bug fixes, documentation improvements, testing and code contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) before preparing a pull request.
 
-On the first K-Plex run in a vault, if legacy ExcaliBrain is installed and running, K-Plex automatically imports compatible settings. Existing K-Plex data takes precedence once K-Plex has been initialized.
+Community discussion and announcements are also available through the [Sketch Your Mind Community](https://community.sketch-your-mind.com).
 
-A manual **Import ExcaliBrain settings** action is also available on the Compatibility settings page for importing a backed-up ExcaliBrain `data.json`.
+## Support development
 
-Compatibility includes the classic hierarchy/ontology model, relationship reconciliation, visibility settings and a substantial portion of node/link styling. Some Excalidraw-specific rendering details are translated or approximated in the React renderer rather than reproduced exactly.
+K-Plex is developed independently. If it is useful to you and you would like to support continued development, you can do so here:
 
-## Large vaults
-
-K-Plex is designed for large Obsidian vaults. Parsed Markdown metadata is persisted per file/mtime/parser-version in IndexedDB on every platform so an interrupted cold build does not have to restart parsing at file zero. Desktop/Android can keep a larger hot parser cache and use a worker; iOS uses a tiny bounded in-memory hot cache and one-shot vault reads. Large collectors/resolvers use **time-budgeted cooperative slices** rather than yielding after an arbitrary tiny number of records; this avoids thousands of `setTimeout(0)` calls on iOS while still returning control to WebKit frequently enough to remain responsive. Deferred full-snapshot persistence is cancelled when the final K-Plex view closes, so hidden cache work cannot keep draining Obsidian after K-Plex has been dismissed. Normal navigation does not rescan the vault.
-
-If graph data appears stale, use the toolbar refresh button or the **Rebuild K-Plex index** command.
-
-## Project links
-
-[Buy me a coffee](https://ko-fi.com/zsolt) · [Read Sketch Your Mind](https://community.sketch-your-mind.com/sym) · [Join SYM Community](https://community.sketch-your-mind.com)
-
-For source development and contribution guidelines, see `CONTRIBUTING.md`.
+**[Support K-Plex on Ko-fi](https://ko-fi.com/zsolt)**

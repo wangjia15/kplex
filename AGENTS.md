@@ -43,6 +43,17 @@ Rules:
 6. Use the Obsidian declarative settings API for settings UI.
 7. All plugin UI icons must be Lucide icons obtained through Obsidian `getIcon()` (or a thin React wrapper around it). Do not ship hand-coded icon SVGs or unrelated icon libraries.
 8. Moment is host-provided by Obsidian. Do not runtime-import `moment` or call the `moment` export from `obsidian`; production code should use Obsidian's `window.moment` through narrow local typing. Tests may install a Moment test double on `window`.
+9. When a vault path is known and a specific type is expected, prefer the narrow synchronous Vault API (`getFileByPath()` / `getFolderByPath()`) over `getAbstractFileByPath()` or adapter-level existence checks.
+10. Register long-lived Obsidian/DOM/timer resources through plugin lifecycle helpers where practical, or provide an equally explicit cleanup path. Reload/unload must not leak listeners, timers or detached UI.
+
+## Host UX, privacy and accessibility
+
+- K-Plex is local/offline by default. Do not add telemetry, remote-code loading or network calls without an explicit user-facing reason, opt-in where appropriate, and clear documentation.
+- Keep UI copy short, sentence-case and action-oriented. Prefer established Obsidian classes/components before inventing a parallel visual language.
+- Use semantic interactive elements. Link-like navigation should behave as navigation; buttons should represent actions.
+- A control with an Obsidian/styled tooltip must use `aria-label` for its accessible name and **must not also set an HTML `title` attribute**. Native Chromium/Electron `title` tooltips otherwise stack on top of the styled tooltip.
+- Portaled menus/popovers must carry portal-safe classes and an explicit stacking level when needed; validate main window, pop-out, click-outside and Escape behavior.
+- Desktop mobile emulation is useful for layout only. Validate touch targets, synthesized clicks, scrolling, long-press and focus on a physical phone/tablet before considering mobile interaction work complete.
 
 ## Non-negotiable compatibility rules
 
@@ -56,6 +67,16 @@ Rules:
 8. If legacy ExcaliBrain is installed and running, automatically import compatible settings the first time K-Plex runs in that vault. Keep a manual import path as well.
 9. Folder and tag nodes may be central nodes, but drag-link creation/relinking involving folder/tag endpoints is disabled.
 10. A Markdown document property overrides an equivalent relationship discovered in body text. This rule is important for deterministic relinking.
+
+## Documentation contract
+
+`README.md` is strictly end-user-facing. It should explain what K-Plex is, why it exists, how to get started, how to use major features, where to report issues/contribute, and how to support development. Do not add Node/npm build steps, source architecture, cache internals, performance implementation details or developer-only invariants to the README.
+
+- Contributor workflow belongs in `CONTRIBUTING.md`.
+- Durable architecture/design notes belong under `docs/`.
+- Feature-specific end-user guides may live under `docs/` and be linked from the README.
+- Keep the README's first-start indexing notice and existing product screenshots unless deliberately replacing them with newer user-facing imagery.
+- Release notes should be written in product language and focus on observable behavior.
 
 ## Architecture boundaries
 
@@ -310,9 +331,9 @@ Use a wide dropdown and do not allow long paths/titles to make results unreadabl
 
 ### Add-relationship composer
 
-The create-relationship path uses one React modal and the shared `FuzzySearchInput`; do not reintroduce a second note picker or a separate “create note” modal. Both suggesters are closed until the user actually types. Selecting an existing note is a two-step flow: retain the selection, allow ontology edits, then commit with the fixed-width Link action. New-note buttons stay disabled unless the filename is valid and globally unused; Markdown is the default action and Ctrl/Cmd+Enter is its shortcut. Command-palette actions for Parent/Child/Friend/Challenger are gated by a running K-Plex view and are intended to be user-hotkeyable. New Markdown/Excalidraw files must resolve their parent through the public `app.fileManager.getNewFileParent(sourcePath, newFilePath?)` API using the current K-Plex center as `sourcePath`. Ontology input is fuzzy-searchable, remembers one default per gate role, and a newly typed ontology field becomes a real hierarchy item in settings before the relationship is written.
+The create-relationship path uses one React modal and the shared `FuzzySearchInput`; do not reintroduce a second note picker or a separate “create note” modal. Both suggesters are closed until the user actually types. Selecting an existing note is a two-step flow: retain the selection, allow ontology edits, then commit with the fixed-width Link action. New-note buttons stay disabled unless the filename is valid and globally unused. The last successfully used Markdown/Excalidraw create button becomes the next primary CTA and the Ctrl/Cmd+Enter action; fall back to Markdown when Excalidraw is unavailable. Command-palette actions for Parent/Child/Friend/Challenger are gated by a running K-Plex view and are intended to be user-hotkeyable. New Markdown/Excalidraw files must resolve their parent through the public `app.fileManager.getNewFileParent(sourcePath, newFilePath?)` API using the current K-Plex center as `sourcePath`. Ontology input is fuzzy-searchable, remembers one default per gate role, and a newly typed ontology field becomes a real hierarchy item in settings before the relationship is written.
 
-Connector unlinking is provenance-safe. Direct deletion is allowed only when one frontmatter ontology declaration is the sole editable source of the visible pair; Obsidian `resolvedLinks` entries whose source positions fall inside that same YAML property block (including indented list items below the property key) are mirrored cache views, not additional user declarations. Obsidian may omit source positions for YAML links in `CachedMetadata.links`; in that case, verify that the relevant property block itself resolves to the same target before treating the generic resolved-link evidence as a mirror. Any body link, link in another property, inline ontology, or other competing evidence must fall back to the explanation dialog. Explanation rows for Markdown-backed evidence should provide line navigation in a **new Markdown tab** via ephemeral state rather than mutating the user's existing document leaf or persisted scroll state.
+Connector unlinking is provenance-safe. Direct deletion is allowed only when one frontmatter ontology declaration is the sole editable source of the visible pair; Obsidian `resolvedLinks` entries whose source positions fall inside that same YAML property block (including indented list items below the property key) are mirrored cache views, not additional user declarations. Obsidian may omit source positions for YAML links in `CachedMetadata.links`; in that case, verify that the relevant property block itself resolves to the same target before treating the generic resolved-link evidence as a mirror. Any body link, link in another property, inline ontology, or other competing evidence must fall back to Connection details. Markdown-backed source rows provide line navigation via ephemeral state; reuse the owning K-Plex Sidecar when available, otherwise open a Markdown tab, without mutating unrelated document leaves or persisted scroll state.
 
 ### Extension-resolution compatibility
 
@@ -414,6 +435,7 @@ Treat the Obsidian code scanner as a release gate, not as post-release cleanup. 
 
 - Do not assign static styles with `element.style.foo = ...`; prefer semantic CSS classes, `setCssStyles`, or `setCssProps`. Dynamic per-frame transforms may remain direct only when they are genuinely runtime values and the scanner accepts them.
 - Use Obsidian DOM helpers (`createEl`, `createDiv`, `createSpan`, etc.) rather than `document.createElement` / `ownerDocument.createElement`.
+- When a control already exposes an accessible/styled tooltip through `aria-label`, never add `title` as a second tooltip source.
 - Do not use `!important` or broad `:has(...)` selectors in plugin CSS. Prefer explicit state classes and normal selector specificity.
 - Command names shown in the Command Palette must not repeat the plugin name; Obsidian already displays the owning plugin.
 - Keep strict TypeScript boundaries: avoid unnecessary assertions, `any`-typed member access/calls/arguments, and unsafe `JSON.parse`/IndexedDB assignments. Narrow `unknown` with type guards instead.
@@ -436,6 +458,29 @@ Before returning a patch:
 8. package only requested modified/new files when the user asks for a patch ZIP
 
 ### Relationship explanation navigation and sidecars
-- Provenance navigation from **Explain relationship** should reuse the sidecar belonging to the K-Plex view that opened the explanation when that sidecar is currently available. Do not pick an arbitrary global sidecar or unrelated recent tab.
+- Provenance navigation from **Connection details** should reuse the sidecar belonging to the K-Plex view that opened the dialog when that sidecar is currently available. Do not pick an arbitrary global sidecar or unrelated recent tab.
 - Opening provenance in a pinned sidecar is a temporary inspection action; suppress the corresponding sidecar-to-Plex follow event so the graph center does not unexpectedly change.
 - Keep the provenance location ephemeral (`setViewState(..., { line })`) and force Markdown source for `.excalidraw.md` evidence.
+
+## Connection editing and optimistic creation
+
+- Connection provenance remains sourced from Markdown/frontmatter evidence. Expose one **Connection details** context-menu entry rather than parallel Explain/Edge Properties commands; do not create a parallel edge-note database.
+- Connection details is a read/inspect surface plus an additive ontology-property action. Do not implement a custom inline Markdown editor. **Go to source** hands editing to the real native Obsidian Markdown leaf/editor. Never present this action as changing or overriding an existing ontology source: if explicit ontology already exists, label it **Add ontology…** and preserve every existing body/frontmatter source; if the connection is only inferred, label it **Specify ontology…**.
+- Multiple evidence records that resolve to the same physical source occurrence must render once in Connection details, with their evidence signals combined. Generic resolved-link ranges may overlap a narrower frontmatter/body ontology range; in that case prefer the specific ontology range and merge the generic evidence into that block rather than displaying duplicate source text.
+- Each displayed source block must show its own evidence evaluation (role + Defined/Inferred, and overridden state where relevant) so users can see how the individual occurrence participates in resolution.
+- Connector hover summaries are delayed/on-demand UI. Do not precompute provenance tooltip strings for every rendered edge; resolve the concise evidence summary only after the pointer has remained on a connector for about one second.
+- A frontmatter ontology move removes only the selected target from the old property, preserves all other values, then appends to/creates the destination property. Newly created document properties must be inserted at the bottom of the YAML property order.
+- K-Plex-created notes are materialized optimistically in the live GraphIndex, together with the new relationship, before awaiting MetadataCache. Persist the Markdown change immediately afterward and let the ordinary incremental metadata path reconcile/enrich the optimistic page. On persistence failure, roll back the optimistic relationship.
+- The Create New Node **Open for editing** preference centers the new node and opens the actual file in the native Sidecar source editor after creation.
+
+## Node imagery
+
+- Node imagery is presentation metadata, not semantic graph state. Never add thumbnail/image values or decoded image data to persisted `GraphPage` snapshots.
+- Resolve imagery only for currently materialized Plex nodes. Frontmatter comes from MetadataCache; Dataview-style inline fields may reuse the existing parsed-body cache/IndexedDB. Cache only lightweight `{src,path,mode}` results keyed by file mtime/settings.
+- Images must load lazily and must not enlarge node layout boxes by default. Image hover previews are a UI concern only and must not invalidate graph layout/indexing.
+- A link whose every Obsidian resolved-link occurrence is accounted for solely by the configured thumbnail/node-image fields is presentation-only and must not create an inferred graph child. If another prose/ontology occurrence exists, preserve normal graph semantics.
+- Image attachment display is configurable independently from Markdown note image properties.
+
+## Sidecar edge-control invariant
+
+The native companion Sidecar's primary open/close control lives on the K-Plex edge corresponding to the remembered sidecar position (left/right/above/below). It remains present while the Sidecar is closed so reopening does not require returning to the toolbar. The Sidecar itself remains a native Obsidian WorkspaceLeaf.

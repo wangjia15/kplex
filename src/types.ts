@@ -150,6 +150,15 @@ export type GateStat = {
 
 export type GateStats = Record<GateSide, GateStat>;
 
+
+export type NodeVisual = {
+  /** Small preview before the node label, or an image-only node. */
+  mode: "thumbnail" | "replace";
+  src: string;
+  path: string;
+  alt: string;
+};
+
 export type PositionedNode = {
   page: GraphPage;
   role: Role | "center";

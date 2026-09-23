@@ -1,5 +1,5 @@
 import { type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { GateSide, PositionedNode } from "../types";
+import type { GateSide, NodeVisual, PositionedNode } from "../types";
 import { alphaHexToCss } from "../index/style";
 import type { ExcaliBrainSettings } from "../settings";
 import { effectiveLabelLimit, gateDiameter } from "./layout";
@@ -28,6 +28,7 @@ export function ThoughtNode({
   onNodePointerDown,
   onContextMenu,
   sectionFold,
+  visual,
 }: {
   node: PositionedNode;
   settings: ExcaliBrainSettings;
@@ -47,6 +48,7 @@ export function ThoughtNode({
   onGatePointerDown: (node: PositionedNode, gate: GateSide, event: ReactPointerEvent<HTMLSpanElement>) => void;
   onNodePointerDown: (node: PositionedNode, event: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (node: PositionedNode, event: MouseEvent<HTMLDivElement>) => void;
+  visual?: NodeVisual;
   sectionFold?: {
     hasChildren: boolean;
     expanded: boolean;
@@ -100,6 +102,8 @@ export function ThoughtNode({
     connectionState !== "normal" ? `is-connect-${connectionState}` : "",
     node.page.isFolder || node.page.isTag ? "is-structural-thought" : "",
     isSection ? "is-kplex-section" : "",
+    visual ? "has-node-visual" : "",
+    visual?.mode === "replace" ? "is-node-image-only" : "",
   ].filter(Boolean).join(" ");
 
   return <div
@@ -126,14 +130,22 @@ export function ThoughtNode({
           const level = node.page.transient?.level ?? 1;
           return level <= 3 ? "#".repeat(level) : `H${level}`;
         })()}</span>
-        : style.icon && <ObsidianIcon name={style.icon} size={node.role === "center" ? 18 : 13} className="excalibrain-node-icon" />}
-      <span>{display}</span>
+        : <>
+          {visual?.mode === "thumbnail" && <span className="kplex-node-visual is-thumbnail" title={visual.alt}>
+            <img src={visual.src} alt="" loading="lazy" decoding="async" draggable={false} />
+          </span>}
+          {!visual || visual.mode !== "replace" ? (style.icon && <ObsidianIcon name={style.icon} size={node.role === "center" ? 18 : 13} className="excalibrain-node-icon" />) : null}
+        </>}
+      {visual?.mode === "replace"
+        ? <span className="kplex-node-visual is-replace" title={visual.alt}>
+          <img src={visual.src} alt={visual.alt} loading="lazy" decoding="async" draggable={false} />
+        </span>
+        : <span>{display}</span>}
     </span>
     {sectionFold?.hasChildren && <button
       type="button"
       className={`kplex-section-fold-handle${sectionFold.expanded ? " is-expanded" : " is-folded"}`}
-      aria-label={sectionFold.expanded ? (sectionFold.expandedTitle ?? "Fold section children") : (sectionFold.foldedTitle ?? "Unfold section children")}
-      title={sectionFold.expanded
+      aria-label={sectionFold.expanded
         ? (sectionFold.expandedTitle ?? "Fold section children")
         : `${sectionFold.foldedTitle ?? "Unfold section children"}${sectionFold.hiddenDescendantCount ? ` · ${sectionFold.hiddenDescendantCount} hidden` : ""}`}
       onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); }}

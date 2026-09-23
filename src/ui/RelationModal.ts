@@ -1,9 +1,13 @@
-import { Modal, Notice, TFile, getIcon } from "obsidian";
+import { Modal, Notice, TFile, getIcon, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GateRole, GateSide, GraphPage, LinkDirection } from "../types";
 
 export type RelationModalOptions = {
   mode: "create" | "relink";
+  /** Relink is also reused by Connection details to add/specify an ontology property. */
+  purpose?: "move" | "ontology-add" | "ontology-specify";
+  initialField?: string;
+  initialStoragePath?: string;
   origin: GraphPage;
   semanticRole: GateRole;
   fixedTarget?: GraphPage;
@@ -12,6 +16,7 @@ export type RelationModalOptions = {
   onCommitStart?: (role: GateRole) => void;
   onCommitEnd?: (success: boolean) => void;
   allowRoleSelection?: boolean;
+  hostLeaf?: WorkspaceLeaf;
 };
 
 const ROLE_LABEL: Record<GateRole, string> = {
@@ -51,9 +56,12 @@ export class RelationModal extends Modal {
   constructor(private plugin: ExcaliBrainPlugin, private options: RelationModalOptions) {
     super(plugin.app);
     this.semanticRole = options.semanticRole;
-    this.selectedField = plugin.defaultOntologyField(this.semanticRole);
+    this.selectedField = options.initialField?.trim() || plugin.defaultOntologyField(this.semanticRole);
     if (options.mode === "relink" && options.fixedTarget) {
-      this.selectedStoragePath = plugin.index.relationshipStorageCandidates(options.origin.path, options.fixedTarget.path)[0] ?? null;
+      const candidates = plugin.index.relationshipStorageCandidates(options.origin.path, options.fixedTarget.path);
+      this.selectedStoragePath = options.initialStoragePath && candidates.includes(options.initialStoragePath)
+        ? options.initialStoragePath
+        : candidates[0] ?? null;
     }
   }
 
@@ -153,14 +161,24 @@ export class RelationModal extends Modal {
       if (this.options.mode === "relink") {
         const target = this.options.fixedTarget;
         if (!target) return;
-        await this.plugin.relinkCentralNeighbour(
-          this.options.origin,
-          target,
-          this.semanticRole,
-          this.selectedField,
-          this.options.existingDirection ?? null,
-          this.selectedStoragePath,
-        );
+        if (this.options.purpose === "ontology-add" || this.options.purpose === "ontology-specify") {
+          await this.plugin.addOntologyToConnection(
+            this.options.origin,
+            target,
+            this.semanticRole,
+            this.selectedField,
+            this.selectedStoragePath,
+          );
+        } else {
+          await this.plugin.relinkCentralNeighbour(
+            this.options.origin,
+            target,
+            this.semanticRole,
+            this.selectedField,
+            this.options.existingDirection ?? null,
+            this.selectedStoragePath,
+          );
+        }
       } else if (this.options.fixedTarget) {
         await this.plugin.createRelationToPage(
           this.options.origin,
@@ -187,7 +205,15 @@ export class RelationModal extends Modal {
 
   onOpen(): void {
     let roleName = ROLE_LABEL[this.semanticRole];
-    this.titleEl.setText(this.options.mode === "relink" ? "Move relationship" : `Add ${roleName.toLowerCase()}`);
+    this.titleEl.setText(
+      this.options.mode === "relink"
+        ? (this.options.purpose === "ontology-specify"
+            ? "Specify connection ontology"
+            : this.options.purpose === "ontology-add"
+              ? "Add connection ontology"
+              : "Move relationship")
+        : `Add ${roleName.toLowerCase()}`,
+    );
     this.modalEl.addClass("kplex-relation-modal");
     this.contentEl.addClass("kplex-relation-modal-content");
 
@@ -195,8 +221,12 @@ export class RelationModal extends Modal {
     const repopulateFields = () => {
       if (!fieldSelect) return;
       fieldSelect.empty();
-      for (const field of this.plugin.ontologyFieldsForRole(this.semanticRole)) fieldSelect.createEl("option", { text: field, attr: { value: field } });
-      this.selectedField = this.plugin.defaultOntologyField(this.semanticRole);
+      const fields = [...this.plugin.ontologyFieldsForRole(this.semanticRole)];
+      const ontologyAction = this.options.purpose === "ontology-add" || this.options.purpose === "ontology-specify";
+      const preferred = ontologyAction ? this.options.initialField?.trim() : "";
+      if (preferred && !fields.some((field) => field.toLocaleLowerCase() === preferred.toLocaleLowerCase())) fields.unshift(preferred);
+      for (const field of fields) fieldSelect.createEl("option", { text: field, attr: { value: field } });
+      this.selectedField = preferred || this.plugin.defaultOntologyField(this.semanticRole);
       fieldSelect.value = this.selectedField;
     };
     if (this.options.allowRoleSelection) {
@@ -283,15 +313,28 @@ export class RelationModal extends Modal {
           ? this.selectedStoragePath : storageCandidates[0];
         storageSelect.value = this.selectedStoragePath ?? storageCandidates[0];
         storageHint = this.contentEl.createDiv({ cls: "kplex-relation-hint" });
-        storageHint.setText(rankFor(storageCandidates[0]) < 9
-          ? "K-Plex recommends the note that already contains the strongest relationship evidence. You can deliberately move the defining property to the other note."
-          : "Either Markdown note can own the relationship property. K-Plex recommends the current note by default.");
+        const ontologyAction = this.options.purpose === "ontology-add" || this.options.purpose === "ontology-specify";
+        storageHint.setText(ontologyAction
+          ? (rankFor(storageCandidates[0]) < 9
+              ? "K-Plex recommends the note that already contains the strongest relationship evidence. The new ontology is added there; existing ontology sources are kept."
+              : "Either Markdown note can store the new ontology. Existing ontology sources are kept.")
+          : (rankFor(storageCandidates[0]) < 9
+              ? "K-Plex recommends the note that already contains the strongest relationship evidence. You can deliberately move the defining property to the other note."
+              : "Either Markdown note can own the relationship property. K-Plex recommends the current note by default."));
         storageSelect.addEventListener("change", () => {
           this.selectedStoragePath = storageSelect.value;
           updateStorageHint();
         });
       } else if (storageCandidates[0]) {
         this.selectedStoragePath = storageCandidates[0];
+      }
+      if (this.options.purpose === "ontology-add" || this.options.purpose === "ontology-specify") {
+        this.contentEl.createDiv({
+          cls: "kplex-relation-hint",
+          text: this.options.purpose === "ontology-specify"
+            ? "K-Plex adds the selected ontology as a document property so this inferred connection has an explicit ontology. Existing links and source text are kept."
+            : "K-Plex adds the selected ontology as an additional document property. Existing ontology properties and Markdown-body relationship text are kept; use Connection details → Go to source to edit an existing source.",
+        });
       }
     }
 
@@ -300,7 +343,10 @@ export class RelationModal extends Modal {
       const storingOnOrigin = this.selectedStoragePath === this.options.origin.path;
       const page = this.plugin.index.get(this.selectedStoragePath);
       const effectiveField = storingOnOrigin ? this.selectedField : this.plugin.inverseOntologyField(this.selectedField, this.semanticRole);
-      storageHint.setText(`K-Plex will write ${effectiveField} in ${page ? this.plugin.index.titleFor(page) : this.selectedStoragePath}.`);
+      const ontologyAction = this.options.purpose === "ontology-add" || this.options.purpose === "ontology-specify";
+      storageHint.setText(ontologyAction
+        ? `K-Plex will add ${effectiveField} in ${page ? this.plugin.index.titleFor(page) : this.selectedStoragePath}. Existing ontology sources are kept.`
+        : `K-Plex will write ${effectiveField} in ${page ? this.plugin.index.titleFor(page) : this.selectedStoragePath}.`);
     };
 
     this.contentEl.createEl("label", { cls: "kplex-relation-label", text: "Note property", attr: { for: "kplex-relation-modal-field" } });
@@ -324,11 +370,13 @@ export class RelationModal extends Modal {
     updateStorageHint();
 
     const actions = this.contentEl.createDiv({ cls: "kplex-relation-actions" });
-    const cancel = actions.createEl("button", { attr: { type: "button", title: "Cancel", "aria-label": "Cancel" } });
+    const cancel = actions.createEl("button", { attr: { type: "button", "aria-label": "Cancel" } });
     addIcon(cancel, "x");
     cancel.addEventListener("click", () => this.close());
 
-    const saveButton = actions.createEl("button", { cls: "mod-cta", attr: { type: "button", title: "Save relationship", "aria-label": "Save relationship" } });
+    const ontologySave = this.options.purpose === "ontology-add" || this.options.purpose === "ontology-specify";
+    const saveLabel = ontologySave ? (this.options.purpose === "ontology-specify" ? "Specify ontology" : "Add ontology") : "Save relationship";
+    const saveButton = actions.createEl("button", { cls: "mod-cta", attr: { type: "button", "aria-label": saveLabel } });
     this.saveButton = saveButton;
     addIcon(saveButton, "check");
     saveButton.addEventListener("click", () => void this.confirm());

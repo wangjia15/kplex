@@ -1,4 +1,4 @@
-import { Modal, Notice } from "obsidian";
+import { Modal, Notice, type WorkspaceLeaf } from "obsidian";
 import { createElement, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type ExcaliBrainPlugin from "../main";
@@ -25,6 +25,7 @@ function RelatedNoteComposer({
   allowRoleSelection,
   onCommitted,
   onClose,
+  hostLeaf,
 }: {
   plugin: ExcaliBrainPlugin;
   origin: GraphPage;
@@ -32,6 +33,7 @@ function RelatedNoteComposer({
   allowRoleSelection: boolean;
   onCommitted?: () => void;
   onClose: () => void;
+  hostLeaf?: WorkspaceLeaf;
 }) {
   const [role, setRole] = useState<GateRole>(initialRole);
   const [query, setQuery] = useState("");
@@ -40,6 +42,11 @@ function RelatedNoteComposer({
   const [ontology, setOntology] = useState(() => plugin.defaultOntologyField(initialRole));
   const [ontologyTyped, setOntologyTyped] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editAfterCreate, setEditAfterCreate] = useState(() => plugin.settings.editNewNodeAfterCreate);
+  const excalidrawAvailable = plugin.isExcalidrawAvailable();
+  const [defaultCreateType, setDefaultCreateType] = useState<"markdown" | "excalidraw">(() =>
+    plugin.settings.newNodeDefaultType === "excalidraw" && excalidrawAvailable ? "excalidraw" : "markdown",
+  );
 
   const noteResults = useMemo(() => {
     const trimmed = query.trim();
@@ -97,10 +104,13 @@ function RelatedNoteComposer({
       if (!field) return;
       const file = await plugin.createNewRelatedFileForOrigin(origin, nameValidation.stem, kind);
       if (!file) return;
-      await plugin.linkNewRelatedFile(origin, role, file, field);
+      setDefaultCreateType(kind);
+      void plugin.rememberNewNodeDefaultType(kind);
+      const page = await plugin.linkNewRelatedFile(origin, role, file, field);
       plugin.requestRelationshipFlair(file.path);
       onCommitted?.();
       onClose();
+      if (editAfterCreate) await plugin.finishNewRelatedNode(page, hostLeaf, true);
     } catch (error) {
       new Notice(`Could not create related note: ${error instanceof Error ? error.message : String(error)}`, 5000);
     } finally {
@@ -125,8 +135,6 @@ function RelatedNoteComposer({
   };
 
   const createAvailable = !selectedTarget && nameValidation.valid && !nameValidation.existing;
-  const excalidrawAvailable = plugin.isExcalidrawAvailable();
-
   const roleRow = allowRoleSelection
     ? createElement(
         "div",
@@ -164,7 +172,7 @@ function RelatedNoteComposer({
     maxFloatingHeight: 320,
     onCtrlEnter: () => {
       if (selectedTarget) void linkExisting();
-      else if (createAvailable) void createNew("markdown");
+      else if (createAvailable) void createNew(defaultCreateType);
     },
   });
 
@@ -190,14 +198,14 @@ function RelatedNoteComposer({
     "button",
     {
       type: "button",
-      className: "kplex-add-related-type-button is-default",
+      className: `kplex-add-related-type-button${defaultCreateType === "markdown" ? " is-default" : ""}`,
       title: createAvailable
-        ? "Create Markdown note and link it (Ctrl/Cmd+Enter)"
+        ? `Create Markdown note and link it${defaultCreateType === "markdown" ? " (Ctrl/Cmd+Enter)" : ""}`
         : nameValidation.error ?? (nameValidation.existing ? "A note with this name already exists." : "Type a valid new note name."),
       "aria-label": "Create Markdown note",
       "aria-keyshortcuts": "Control+Enter Meta+Enter",
       disabled: !createAvailable || busy,
-      "data-kplex-primary-action": "true",
+      "data-kplex-primary-action": defaultCreateType === "markdown" ? "true" : undefined,
       onClick: () => { void createNew("markdown"); },
     },
     createElement(ObsidianIcon, { name: "text-initial", size: 20 }),
@@ -208,12 +216,14 @@ function RelatedNoteComposer({
         "button",
         {
           type: "button",
-          className: "kplex-add-related-type-button",
+          className: `kplex-add-related-type-button${defaultCreateType === "excalidraw" ? " is-default" : ""}`,
           title: createAvailable
-            ? "Create Excalidraw drawing and link it"
+            ? `Create Excalidraw drawing and link it${defaultCreateType === "excalidraw" ? " (Ctrl/Cmd+Enter)" : ""}`
             : nameValidation.error ?? (nameValidation.existing ? "A note with this name already exists." : "Type a valid new note name."),
           "aria-label": "Create Excalidraw drawing",
+          "aria-keyshortcuts": "Control+Enter Meta+Enter",
           disabled: !createAvailable || busy,
+          "data-kplex-primary-action": defaultCreateType === "excalidraw" ? "true" : undefined,
           onClick: () => { void createNew("excalidraw"); },
         },
         createElement(ObsidianIcon, { name: "palette", size: 20 }),
@@ -252,13 +262,37 @@ function RelatedNoteComposer({
     actionArea,
   );
 
+  const editToggle = !selectedTarget ? createElement(
+    "label",
+    { className: "kplex-create-edit-toggle" },
+    createElement("span", { className: "kplex-create-edit-copy" },
+      createElement("strong", null, "Open for editing"),
+      createElement("small", null, "Center the new note and open it in the Sidecar."),
+    ),
+    createElement(
+      "span",
+      { className: `checkbox-container${editAfterCreate ? " is-enabled" : ""}` },
+      createElement("input", {
+        type: "checkbox",
+        checked: editAfterCreate,
+        disabled: busy,
+        onChange: (event: { currentTarget: HTMLInputElement }) => {
+          const enabled = event.currentTarget.checked;
+          setEditAfterCreate(enabled);
+          plugin.settings.editNewNodeAfterCreate = enabled;
+          void plugin.saveSettings(false, false);
+        },
+      }),
+    ),
+  ) : null;
+
   let statusText: string | null = null;
   if (selectedTarget) {
     statusText = `Selected existing note: ${selectedTarget.path}`;
   } else if (noteTyped && query.trim()) {
     if (nameValidation.error) statusText = nameValidation.error;
     else if (nameValidation.existing) statusText = "A note with this name already exists. Select it from the search results to link it.";
-    else statusText = `Create “${nameValidation.stem}” as Markdown${excalidrawAvailable ? " or Excalidraw" : ""}. Ctrl/Cmd+Enter creates Markdown.`;
+    else statusText = `Create “${nameValidation.stem}” as Markdown${excalidrawAvailable ? " or Excalidraw" : ""}. Ctrl/Cmd+Enter creates ${defaultCreateType === "excalidraw" ? "Excalidraw" : "Markdown"}.`;
   }
 
   const status = statusText
@@ -271,6 +305,7 @@ function RelatedNoteComposer({
     roleRow,
     noteSearch,
     bottomRow,
+    editToggle,
     status,
   );
 }
@@ -284,6 +319,7 @@ export class NewRelatedNoteModal extends Modal {
     private role: GateRole,
     private onCommitted?: () => void,
     private allowRoleSelection = false,
+    private hostLeaf?: WorkspaceLeaf,
   ) {
     super(plugin.app);
   }
@@ -334,6 +370,7 @@ export class NewRelatedNoteModal extends Modal {
       allowRoleSelection: this.allowRoleSelection,
       onCommitted: this.onCommitted,
       onClose: () => this.close(),
+      hostLeaf: this.hostLeaf,
     }));
   }
 

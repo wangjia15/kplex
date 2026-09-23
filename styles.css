@@ -611,16 +611,37 @@
 }
 .kplex-relation-modal select { width: 100%; }
 
-/* Ontology lists need enough horizontal room to edit long legacy field sets. */
-.kplex-settings .kplex-ontology-fields .setting-item-control {
-  flex: 1 1 72%;
-  min-width: min(680px, 70vw);
-}
-.kplex-settings .kplex-ontology-fields .setting-item-control textarea,
-.kplex-settings .setting-item-control textarea {
+/* Ontology lists use one shared label/editor grid so every textarea has the same width.
+   Scope directly to the setting group: Obsidian settings pages do not provide a
+   stable .kplex-settings ancestor. */
+.kplex-ontology-fields > .setting-items {
   width: 100%;
-  min-width: min(680px, 70vw);
-  max-width: 1120px;
+}
+.kplex-ontology-fields > .setting-items > .setting-item {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(420px, 1.35fr);
+  column-gap: 32px;
+  align-items: start;
+  width: 100%;
+}
+.kplex-ontology-fields > .setting-items > .setting-item > .setting-item-info,
+.kplex-ontology-fields > .setting-items > .setting-item > .setting-item-control {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.kplex-ontology-fields > .setting-items > .setting-item > .setting-item-control {
+  display: block;
+  justify-self: stretch;
+}
+.kplex-ontology-fields > .setting-items > .setting-item > .setting-item-control textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  resize: vertical;
 }
 
 .kplex-import-file-row { margin: 10px 0 7px; }
@@ -629,12 +650,16 @@
 
 @media (max-width: 900px) {
   .excalibrain-top-actions { flex-basis: 100%; justify-content: flex-start; }
-  .kplex-settings .kplex-ontology-fields .setting-item-control,
-  .kplex-settings .kplex-ontology-fields .setting-item-control textarea,
-  .kplex-settings .setting-item-control textarea {
+  .kplex-ontology-fields > .setting-items > .setting-item {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 8px;
+  }
+  .kplex-ontology-fields > .setting-items > .setting-item > .setting-item-info,
+  .kplex-ontology-fields > .setting-items > .setting-item > .setting-item-control,
+  .kplex-ontology-fields > .setting-items > .setting-item > .setting-item-control textarea {
     min-width: 0;
     width: 100%;
-    max-width: none;
+    max-width: 100%;
   }
 }
 
@@ -1792,11 +1817,17 @@
   width: 100%;
 }
 
-/* Markdown is the default create action in the add-related modal; Ctrl/Cmd+Enter invokes it. */
+/* The last-used create type is the primary action; Ctrl/Cmd+Enter invokes it next time. */
 .kplex-add-related-type-button.is-default:not(:disabled) {
-  color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
   border-color: var(--interactive-accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-on-accent) 18%, transparent);
+}
+.kplex-add-related-type-button.is-default:not(:disabled):hover {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent-hover);
+  border-color: var(--interactive-accent-hover);
 }
 
 /* Fuzzy results shown from modals are portalled to the viewport so they are never clipped by
@@ -2064,8 +2095,8 @@
   justify-content: space-between;
   gap: 10px;
 }
-.kplex-filter-layout-toggle {
-  display: inline-flex !important;
+.kplex-filter-heading-row .kplex-filter-layout-toggle {
+  display: inline-flex;
   align-items: center;
   gap: 7px;
   margin: 0;
@@ -2161,3 +2192,150 @@
   .kplex-lens-style-grid { grid-template-columns: 1fr; }
   .kplex-filter-layout-toggle > span:first-child { display: none; }
 }
+
+/* Edge imagery is resolved only for the currently visible Plex. The preview never changes the
+   layout box: visual recognition improves without making dense graphs grow around images. */
+.excalibrain-thought.has-node-visual .excalibrain-thought-label {
+  overflow: visible;
+  gap: 5px;
+}
+.kplex-node-visual {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  overflow: visible;
+}
+.excalibrain-role-center .kplex-node-visual { width: 24px; height: 24px; }
+.kplex-node-visual img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  background: var(--background-secondary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-muted) 28%, transparent);
+  transition: transform .12s ease, box-shadow .12s ease;
+  transform-origin: center;
+}
+.kplex-node-visual.is-replace { width: 26px; height: 22px; }
+.excalibrain-role-center .kplex-node-visual.is-replace { width: 38px; height: 30px; }
+.kplex-node-visual.is-replace img { object-fit: contain; }
+.excalibrain-thought-label > .kplex-node-visual:last-child { overflow: visible; text-overflow: clip; }
+@media (hover: hover) and (pointer: fine) {
+  .excalibrain-thought.has-node-visual:hover { z-index: 40; }
+  .kplex-node-visual:hover { z-index: 70; }
+  .kplex-node-visual:hover img {
+    transform: scale(7);
+    box-shadow: 0 7px 28px rgba(0,0,0,.58), 0 0 0 1px var(--background-modifier-border-hover);
+  }
+}
+
+/* New-note creation uses the host's native checkbox-container styling so the preference looks and
+   behaves like an Obsidian toggle instead of introducing a second switch visual language. */
+.kplex-create-edit-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  cursor: pointer;
+}
+.kplex-create-edit-copy { display: grid; gap: 2px; min-width: 0; }
+.kplex-create-edit-copy small { color: var(--text-muted); font-size: var(--font-ui-smaller); line-height: 1.25; }
+.kplex-create-edit-toggle .checkbox-container { flex: 0 0 auto; }
+
+/* Connection details is optimized for skimming provenance occurrences and hands actual editing
+   off to the native Markdown source view. */
+.kplex-edge-properties-modal { width: min(860px, calc(100vw - 36px)); max-width: min(860px, calc(100vw - 36px)); }
+.kplex-edge-ontology-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 12px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+.kplex-edge-ontology-copy { min-width: 0; display: grid; gap: 2px; }
+.kplex-edge-ontology-value { color: var(--text-muted); overflow-wrap: anywhere; }
+.kplex-edge-why { margin-bottom: 14px; }
+.kplex-edge-source-intro { margin: -3px 0 10px; color: var(--text-muted); line-height: 1.4; font-size: var(--font-ui-small); }
+.kplex-edge-source-list { display: grid; gap: 9px; }
+.kplex-edge-source-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+.kplex-edge-source-card.is-overridden { opacity: .74; }
+.kplex-edge-source-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
+.kplex-edge-source-title { min-width: 0; overflow-wrap: anywhere; }
+.kplex-edge-source-title span { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.kplex-edge-source-status { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px; max-width: 55%; }
+.kplex-edge-source-evaluations { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.kplex-edge-source-evaluation {
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-primary-alt);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.kplex-edge-source-evaluation.is-active {
+  color: var(--text-normal);
+  border-color: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-modifier-border));
+}
+.kplex-edge-source-evaluation.is-overridden { opacity: .72; }
+.kplex-edge-source-state { flex: 0 0 auto; padding: 2px 5px; border-radius: 4px; font-size: 9px; font-weight: 700; letter-spacing: .07em; }
+.kplex-edge-source-state.is-used { color: var(--text-success); background: color-mix(in srgb, var(--text-success) 12%, transparent); }
+.kplex-edge-source-state.is-overridden { color: var(--text-muted); background: var(--background-modifier-hover); }
+.kplex-edge-source-text {
+  max-height: 180px;
+  margin: 8px 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-smaller);
+}
+.kplex-edge-source-reason { margin: 5px 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.kplex-edge-source-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.kplex-edge-source-action { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 8px; font-size: var(--font-ui-smaller); }
+.kplex-edge-source-action svg { width: 14px; height: 14px; }
+
+.kplex-edge-hover-tooltip {
+  position: absolute;
+  z-index: 95;
+  max-width: min(360px, calc(100% - 24px));
+  padding: 7px 9px;
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: var(--shadow-s);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
+  white-space: pre-line;
+  pointer-events: none;
+}
+
+/* The companion control remains on the remembered side even when the native sidecar is closed. */
+.kplex-sidecar-controls.is-closed { padding: 2px; border-color: color-mix(in srgb, var(--interactive-accent) 35%, var(--background-modifier-border)); }
+.kplex-sidecar-controls .kplex-sidecar-primary { color: var(--text-accent); }
+.kplex-sidecar-controls.is-open .kplex-sidecar-primary { color: var(--text-normal); }

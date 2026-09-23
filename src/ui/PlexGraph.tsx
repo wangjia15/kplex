@@ -3,8 +3,8 @@ import { Menu, Platform, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
-import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
-import { LinkDirection } from "../types";
+import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, NodeVisual, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import { LinkDirection, RelationType } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
@@ -21,6 +21,13 @@ type HoverState =
   | { kind: "gate"; path: string; gate: GateSide }
   | { kind: "edge"; id: string }
   | null;
+
+type EdgeHoverTooltip = {
+  edgeId: string;
+  left: number;
+  top: number;
+  text: string;
+} | null;
 
 type EdgeGates = { source: GateSide; target: GateSide };
 type ConnectDrag = {
@@ -62,6 +69,63 @@ const GENERIC_RELATION_LABELS = new Set([
   "sibling", "url", "attachment",
 ].map((label) => label.toLowerCase()));
 const gateKey = (path: string, gate: GateSide) => `${path}::${gate}`;
+
+const EVIDENCE_ROLE_LABEL: Record<string, string> = {
+  parent: "Parent",
+  child: "Child",
+  left: "Friend",
+  right: "Challenger",
+  previous: "Previous",
+  next: "Next",
+  hidden: "Hidden",
+};
+const EVIDENCE_SOURCE_LABEL: Record<string, string> = {
+  "obsidian-link": "Resolved link",
+  "unresolved-link": "Unresolved link",
+  "frontmatter-ontology": "Document property",
+  "inline-ontology": "Body property",
+  "body-url": "Body URL",
+  "date-property": "Date property",
+  "file-tree": "Folder tree",
+  "tag-tree": "Tag tree",
+  "url-origin": "URL origin",
+};
+const relationTypeText = (type: RelationType): string => type === RelationType.DEFINED ? "Defined" : "Inferred";
+
+function edgeEvidenceTooltipText(index: GraphIndex, edge: PositionedEdge): string | null {
+  const sourcePath = edge.explanationSourcePath ?? edge.sourcePath;
+  const targetPath = edge.explanationTargetPath ?? edge.targetPath;
+  const explanation = index.explainRelationship(sourcePath, targetPath);
+  if (!explanation) return null;
+
+  const lines: string[] = [];
+  if (explanation.resolvedRoles.length) {
+    const resolved = explanation.resolvedRoles
+      .map((item) => `${EVIDENCE_ROLE_LABEL[item.role] ?? item.role} · ${relationTypeText(item.relationType)}`)
+      .join(", ");
+    lines.push(`Resolved: ${resolved}`);
+  } else if (explanation.hidden) {
+    lines.push("Resolved: Hidden");
+  }
+
+  const seen = new Set<string>();
+  let evidenceShown = 0;
+  for (const decision of explanation.decisions) {
+    const evidence = decision.evidence;
+    const source = (evidence.fieldName ?? evidence.definition ?? EVIDENCE_SOURCE_LABEL[evidence.sourceKind] ?? evidence.sourceKind).trim();
+    const resolution = `${EVIDENCE_ROLE_LABEL[evidence.role] ?? evidence.role} · ${relationTypeText(evidence.relationType)}`;
+    const text = `${source} — ${resolution}${decision.active ? "" : " · overridden"}`;
+    if (!seen.has(text)) {
+      seen.add(text);
+      lines.push(text);
+      evidenceShown += 1;
+    }
+    if (evidenceShown >= 4) break;
+  }
+  const remaining = Math.max(0, explanation.decisions.length - evidenceShown);
+  if (remaining > 0) lines.push(`+${remaining} more evidence item${remaining === 1 ? "" : "s"}`);
+  return lines.length ? lines.join("\n") : null;
+}
 
 type EdgeGeometry = { d: string; midpoint: Point };
 type ZoneDisplayLayout = {
@@ -450,6 +514,7 @@ function Edge({
   highlighted,
   dimmed,
   onHover,
+  onMove,
   onLeave,
   onContextMenu,
 }: {
@@ -460,7 +525,8 @@ function Edge({
   labelBackground: string;
   highlighted: boolean;
   dimmed: boolean;
-  onHover: () => void;
+  onHover: (event: PointerEvent<SVGPathElement>) => void;
+  onMove: (event: PointerEvent<SVGPathElement>) => void;
   onLeave: () => void;
   onContextMenu: (event: MouseEvent<SVGPathElement>) => void;
 }) {
@@ -506,6 +572,7 @@ function Edge({
       strokeWidth={Math.max(14, baseWidth + 12)}
       vectorEffect="non-scaling-stroke"
       onPointerEnter={onHover}
+      onPointerMove={onMove}
       onPointerLeave={onLeave}
       onContextMenu={onContextMenu}
     />
@@ -602,6 +669,54 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const scene = useMemo(() => layoutNeighborhood
     ? (layoutSectionExpansion ? buildSectionExpandedScene(layoutSectionExpansion, index, settings, expandedSectionIds) : buildScene(layoutNeighborhood, index, settings))
     : { nodes: [], edges: [], zoneViewports: {} }, [layoutNeighborhood, layoutSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
+  const [nodeVisuals, setNodeVisuals] = useState<Map<string, NodeVisual>>(new Map());
+  const visualRefreshTimers = useRef(new Map<string, number>());
+  const visualPages = useMemo(() => [...new Map(
+    scene.nodes.filter((node) => !node.page.transient).map((node) => [node.page.path, node.page]),
+  ).values()], [scene.nodes]);
+  const visualPageByPath = useMemo(() => new Map(visualPages.map((page) => [page.path, page])), [visualPages]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!visualPages.length) {
+      setNodeVisuals(new Map());
+      return () => { cancelled = true; };
+    }
+    void index.resolveNodeVisuals(visualPages).then((resolved) => { if (!cancelled) setNodeVisuals(resolved); });
+    return () => { cancelled = true; };
+  }, [index, visualPages, settings.thumbnailProperty, settings.nodeImageProperty, settings.attachmentImageDisplay, renderRevision]);
+  useEffect(() => {
+    const refreshVisibleVisual = (page: GraphPage) => {
+      index.invalidateNodeVisual(page.path);
+      void index.resolveNodeVisuals([page]).then((resolved) => {
+        setNodeVisuals((current) => {
+          const next = new Map(current);
+          const visual = resolved.get(page.path);
+          if (visual) next.set(page.path, visual); else next.delete(page.path);
+          return next;
+        });
+      });
+    };
+    const ref = plugin.app.metadataCache.on("changed", (file) => {
+      const page = visualPageByPath.get(file.path);
+      if (!page) return;
+      // Frontmatter is already in MetadataCache, so refresh immediately. Dataview-style inline
+      // fields reach K-Plex's parsed-body cache through the normal incremental patch shortly after;
+      // one debounced follow-up catches that state without forcing a file read or semantic emit.
+      refreshVisibleVisual(page);
+      const pending = visualRefreshTimers.current.get(page.path);
+      if (pending !== undefined) window.clearTimeout(pending);
+      visualRefreshTimers.current.set(page.path, window.setTimeout(() => {
+        visualRefreshTimers.current.delete(page.path);
+        const currentPage = visualPageByPath.get(page.path);
+        if (currentPage) refreshVisibleVisual(currentPage);
+      }, 3500));
+    });
+    return () => {
+      plugin.app.metadataCache.offref(ref);
+      for (const timer of visualRefreshTimers.current.values()) window.clearTimeout(timer);
+      visualRefreshTimers.current.clear();
+    };
+  }, [plugin, index, visualPageByPath, settings.thumbnailProperty, settings.nodeImageProperty, settings.attachmentImageDisplay]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
   const cameraFrame = useRef<number | null>(null);
@@ -609,6 +724,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const camera = useRef({ x: 0, y: 0, scale: 1 });
   const [hover, setHover] = useState<HoverState>(null);
   const hoverIntentTimer = useRef<number | null>(null);
+  const edgeTooltipTimer = useRef<number | null>(null);
+  const edgeTooltipPoint = useRef<Point>({ x: 0, y: 0 });
+  const [edgeHoverTooltip, setEdgeHoverTooltip] = useState<EdgeHoverTooltip>(null);
   const [zoneScrollTop, setZoneScrollTop] = useState<ScrollValues>({ ...EMPTY_SCROLLS });
   const [zoneFilterOpen, setZoneFilterOpen] = useState<ZoneBooleanMap>({});
   const [zoneFilters, setZoneFilters] = useState<ZoneStringMap>({});
@@ -677,9 +795,16 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (flairPendingTimer.current !== null) window.clearTimeout(flairPendingTimer.current);
   }, []);
 
+  const clearEdgeTooltip = () => {
+    if (edgeTooltipTimer.current !== null) window.clearTimeout(edgeTooltipTimer.current);
+    edgeTooltipTimer.current = null;
+    setEdgeHoverTooltip(null);
+  };
+
   const clearHoverIntent = (clearActive = false) => {
     if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
     hoverIntentTimer.current = null;
+    clearEdgeTooltip();
     if (clearActive) setHover(null);
   };
 
@@ -689,6 +814,38 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       hoverIntentTimer.current = null;
       setHover(next);
     }, 750);
+  };
+
+  const edgeTooltipPosition = (clientX: number, clientY: number): Point => {
+    const el = viewport.current;
+    if (!el) return { x: 12, y: 12 };
+    const rect = el.getBoundingClientRect();
+    return {
+      x: Math.max(8, Math.min(el.clientWidth - 260, clientX - rect.left + 14)),
+      y: Math.max(8, Math.min(el.clientHeight - 110, clientY - rect.top + 14)),
+    };
+  };
+
+  const scheduleEdgeHover = (edge: PositionedEdge, event: PointerEvent<SVGPathElement>) => {
+    if (event.pointerType === "touch") return;
+    scheduleHoverIntent({ kind: "edge", id: edge.id });
+    edgeTooltipPoint.current = edgeTooltipPosition(event.clientX, event.clientY);
+    edgeTooltipTimer.current = window.setTimeout(() => {
+      edgeTooltipTimer.current = null;
+      const text = edgeEvidenceTooltipText(index, edge);
+      if (!text) return;
+      const point = edgeTooltipPoint.current;
+      setEdgeHoverTooltip({ edgeId: edge.id, left: point.x, top: point.y, text });
+    }, 1000);
+  };
+
+  const moveEdgeHover = (edge: PositionedEdge, event: PointerEvent<SVGPathElement>) => {
+    if (event.pointerType === "touch") return;
+    const point = edgeTooltipPosition(event.clientX, event.clientY);
+    edgeTooltipPoint.current = point;
+    setEdgeHoverTooltip((current) => current?.edgeId === edge.id
+      ? { ...current, left: point.x, top: point.y }
+      : current);
   };
 
   useEffect(() => {
@@ -993,6 +1150,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   useEffect(() => () => {
     if (layoutSaveTimer.current !== null) window.clearTimeout(layoutSaveTimer.current);
     if (hoverIntentTimer.current !== null) window.clearTimeout(hoverIntentTimer.current);
+    if (edgeTooltipTimer.current !== null) window.clearTimeout(edgeTooltipTimer.current);
     if (sceneTransitionTimer.current !== null) window.clearTimeout(sceneTransitionTimer.current);
     if (cameraFrame.current !== null) window.cancelAnimationFrame(cameraFrame.current);
     viewport.current?.classList.remove("is-touch-gesturing", "is-pinch-gesturing");
@@ -1563,6 +1721,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       suppressActivateUntil.current = Date.now() + 180;
       if (origin && !disabledTarget) {
         plugin.openRelationModal({
+          hostLeaf,
           mode: "create",
           origin,
           semanticRole,
@@ -1584,6 +1743,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           const currentRole = normalizedRole(original.role);
           if (currentRole && nextRole !== currentRole) {
             plugin.openRelationModal({
+              hostLeaf,
               mode: "relink",
               origin: center,
               fixedTarget: original.page,
@@ -1721,6 +1881,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         .setTitle("Link to note…")
         .setIcon("link-2")
         .onClick(() => plugin.openRelationModal({
+          hostLeaf,
           mode: "create", origin: persistent, semanticRole: "child", allowRoleSelection: true,
           onCommitted: () => clearHoverIntent(true),
         })));
@@ -1831,18 +1992,19 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     const targetNode = renderedNodeMap.get(edge.targetPath) ?? scene.nodes.find((node) => node.page.path === edge.targetPath);
     const explanationSection = sectionExpansion?.sections.find((section) => section.page.path === explanationSourcePath);
     const explanationTargetSection = sectionExpansion?.sections.find((section) => section.page.path === explanationTargetPath);
-    const openExplanation = () => new RelationshipExplanationModal(plugin, explanation, {
+    const openDetails = (initialFocus: "why" | "sources" = "sources") => new RelationshipExplanationModal(plugin, explanation, {
       role: edge.role,
       centerPath: neighborhood?.center.path,
       sourceTitle: explanationSection?.page.name ?? sourceNode?.label,
       targetTitle: explanationTargetSection?.page.name ?? targetNode?.label,
       hostLeaf,
+      initialFocus,
     }).open();
 
     menu.addItem((item) => item
-      .setTitle("Explain relationship")
-      .setIcon("circle-help")
-      .onClick(openExplanation));
+      .setTitle("Connection details…")
+      .setIcon("list-tree")
+      .onClick(() => openDetails("sources")));
 
     menu.addItem((item) => item
       .setTitle("Unlink connection")
@@ -1850,13 +2012,13 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       .onClick(() => {
         void plugin.directFrontmatterUnlinkCandidate(explanation.decisions.map((decision) => decision.evidence)).then(async (candidate) => {
           if (!candidate) {
-            openExplanation();
+            openDetails("sources");
             return;
           }
           const removed = await plugin.unlinkFrontmatterEvidence(candidate);
-          if (!removed) openExplanation();
+          if (!removed) openDetails("sources");
           else clearHoverIntent(true);
-        }).catch(() => openExplanation());
+        }).catch(() => openDetails("sources"));
       }));
     const doc = viewport.current?.ownerDocument ?? document;
     menu.showAtPosition({ x: clientX, y: clientY }, doc);
@@ -1895,6 +2057,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     return <ThoughtNode
       key={baseNode.page.path}
       node={nodeForDisplay}
+      visual={nodeVisuals.get(baseNode.page.path)}
       settings={settings}
       selected={baseNode.page.path === activePath}
       highlighted={!connectDrag && interaction.nodePaths.has(baseNode.page.path)}
@@ -1986,7 +2149,6 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           <span className="kplex-zone-count" aria-label={`${layout.count} ${zoneTitle(zone).toLowerCase()}`}>{layout.count}</span>
           <button
             className={`kplex-zone-filter-button${zoneFilterOpen[zone] ? " is-on" : ""}`}
-            title={`Filter ${zoneTitle(zone)}`}
             aria-label={`Filter ${zoneTitle(zone)}`}
             onPointerDown={(event: PointerEvent<HTMLButtonElement>) => event.stopPropagation()}
             onClick={(event: MouseEvent<HTMLButtonElement>) => {
@@ -2141,7 +2303,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           labelBackground={alphaHexToCss(settings.backgroundColor, "#0c3e6a")}
           highlighted={!connectDrag && interaction.edgeIds.has(edge.id)}
           dimmed={connectDrag ? connectBlockedEdgeIds.has(edge.id) : hover !== null && !interaction.edgeIds.has(edge.id)}
-          onHover={() => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "edge", id: edge.id }); }}
+          onHover={(event) => { if (!connectDrag && !nodeDrag) scheduleEdgeHover(edge, event); }}
+          onMove={(event) => { if (!connectDrag && !nodeDrag) moveEdgeHover(edge, event); }}
           onLeave={() => { if (!connectDrag && !nodeDrag) clearHoverIntent(true); }}
           onContextMenu={(event) => {
             event.preventDefault();
@@ -2174,6 +2337,12 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         {draggedBaseNode && renderNode(draggedBaseNode, renderedNodeMap.get(draggedBaseNode.page.path) ?? draggedBaseNode)}
       </div>
     </div>
+
+    {edgeHoverTooltip && <div
+      className="kplex-edge-hover-tooltip"
+      role="tooltip"
+      style={{ left: edgeHoverTooltip.left, top: edgeHoverTooltip.top }}
+    >{edgeHoverTooltip.text}</div>}
 
     <div className="kplex-layout-controls" onPointerDown={(event: PointerEvent<HTMLDivElement>) => event.stopPropagation()}>
       <label className="kplex-density-control" title={`Compactness ${settings.compactingFactor.toFixed(2)}`}>
@@ -2221,9 +2390,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     </div>
 
     <div className="excalibrain-zoom-controls">
-      <button title="Zoom in" aria-label="Zoom in" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.min(Platform.isIosApp ? IOS_MAX_ZOOM : MAX_ZOOM, c.scale * 1.15) })); }}><ObsidianIcon name="zoom-in" size={16} /></button>
-      <button title="Zoom out" aria-label="Zoom out" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.max(.3, c.scale / 1.15) })); }}><ObsidianIcon name="zoom-out" size={16} /></button>
-      <button title="Fit graph" aria-label="Fit graph" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); fit(); }}><ObsidianIcon name="focus" size={16} /></button>
+      <button aria-label="Zoom in" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.min(Platform.isIosApp ? IOS_MAX_ZOOM : MAX_ZOOM, c.scale * 1.15) })); }}><ObsidianIcon name="zoom-in" size={16} /></button>
+      <button aria-label="Zoom out" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); applyCamera((c) => ({ ...c, scale: Math.max(.3, c.scale / 1.15) })); }}><ObsidianIcon name="zoom-out" size={16} /></button>
+      <button aria-label="Fit graph" onClick={(e: MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); fit(); }}><ObsidianIcon name="focus" size={16} /></button>
     </div>
   </div>;
 }

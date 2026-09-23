@@ -5,6 +5,7 @@ import {
   LinkDirection,
   RelationType,
   type GraphPage,
+  type NodeVisual,
   type GateSide,
   type GateStats,
   type Neighbour,
@@ -13,7 +14,7 @@ import {
   type Role,
 } from "../types";
 import { GraphBuilder, type FieldCacheEntry } from "./GraphBuilder";
-import type { ParsedBodyMetadata } from "./fieldParser";
+import { extractLinksFromValue, normalizeFieldName, type ParsedBodyMetadata } from "./fieldParser";
 import { KplexIndexedDbCache, type IndexedDbSnapshotMeta } from "./IndexedDbCache";
 import { createGraphState, getGraphPage } from "./GraphState";
 import type { EvidenceRole, RelationEvidence } from "./RelationEvidence";
@@ -122,6 +123,7 @@ export class GraphIndex {
   private fullSnapshotFresh = false;
   private previewSnapshotPublished = false;
   private activeSnapshotGeneration: string | null = null;
+  private nodeVisualCache = new Map<string, { signature: string; visual: NodeVisual | null }>();
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {
     this.indexedDb = new KplexIndexedDbCache(app.vault.getName());
@@ -146,6 +148,99 @@ export class GraphIndex {
   get size(): number { return this.state.pages.size; }
   get(path: string): GraphPage | undefined { return getGraphPage(this.state, path); }
   allPages(): GraphPage[] { return [...this.state.pages.values()]; }
+
+  private static readonly IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"]);
+
+  private imageVisualFromValue(value: unknown, hostFile: TFile, mode: NodeVisual["mode"]): NodeVisual | null {
+    for (const target of extractLinksFromValue(this.app, value, hostFile)) {
+      if (/^https?:\/\//i.test(target)) {
+        return { mode, src: target, path: target, alt: target };
+      }
+      const file = this.app.vault.getAbstractFileByPath(target);
+      if (!(file instanceof TFile) || !GraphIndex.IMAGE_EXTENSIONS.has(file.extension.toLowerCase())) continue;
+      return { mode, src: this.app.vault.getResourcePath(file), path: file.path, alt: file.basename };
+    }
+    return null;
+  }
+
+  /**
+   * Resolve imagery only for the nodes a Plex is about to render. This deliberately stays outside
+   * GraphPage/persisted snapshots: frontmatter comes from Obsidian's metadata cache and Dataview-
+   * style inline fields come from K-Plex's existing parsed-body cache in one batched IndexedDB read.
+   */
+  invalidateNodeVisual(path: string): void {
+    this.nodeVisualCache.delete(path);
+  }
+
+  async resolveNodeVisuals(pages: readonly GraphPage[]): Promise<Map<string, NodeVisual>> {
+    const result = new Map<string, NodeVisual>();
+    const thumbnailField = normalizeFieldName(this.plugin.settings.thumbnailProperty);
+    const replaceField = normalizeFieldName(this.plugin.settings.nodeImageProperty);
+    const bodyRequests: Array<{ page: GraphPage; file: TFile; signature: string }> = [];
+
+    const frontmatterValue = (file: TFile, normalized: string): unknown => {
+      if (!normalized) return undefined;
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter as Record<string, unknown> | undefined;
+      if (!frontmatter) return undefined;
+      for (const [key, value] of Object.entries(frontmatter)) {
+        if (key !== "position" && normalizeFieldName(key) === normalized) return value;
+      }
+      return undefined;
+    };
+
+    for (const page of pages) {
+      const file = page.file;
+      if (!file) continue;
+      const signature = [file.stat.mtime, thumbnailField, replaceField, this.plugin.settings.attachmentImageDisplay].join("\u0001");
+      const cached = this.nodeVisualCache.get(page.path);
+      if (cached?.signature === signature) { if (cached.visual) result.set(page.path, cached.visual); continue; }
+
+      if (file.extension !== "md" && GraphIndex.IMAGE_EXTENSIONS.has(file.extension.toLowerCase())) {
+        const display = this.plugin.settings.attachmentImageDisplay;
+        const visual = display === "label" ? null : {
+          mode: display === "image" ? "replace" as const : "thumbnail" as const,
+          src: this.app.vault.getResourcePath(file), path: file.path, alt: file.basename,
+        };
+        this.nodeVisualCache.set(page.path, { signature, visual });
+        if (visual) result.set(page.path, visual);
+        continue;
+      }
+      if (file.extension !== "md") { this.nodeVisualCache.set(page.path, { signature, visual: null }); continue; }
+
+      const replacement = this.imageVisualFromValue(frontmatterValue(file, replaceField), file, "replace");
+      const thumbnail = replacement ? null : this.imageVisualFromValue(frontmatterValue(file, thumbnailField), file, "thumbnail");
+      const visual = replacement ?? thumbnail;
+      if (visual) {
+        this.nodeVisualCache.set(page.path, { signature, visual });
+        result.set(page.path, visual);
+        continue;
+      }
+
+      const hot = this.fieldCache.get(page.path);
+      if (hot && hot.mtime === file.stat.mtime) {
+        const inlineReplacement = this.imageVisualFromValue(hot.body.inlineFields[replaceField], file, "replace");
+        const inlineThumbnail = inlineReplacement ? null : this.imageVisualFromValue(hot.body.inlineFields[thumbnailField], file, "thumbnail");
+        const inlineVisual = inlineReplacement ?? inlineThumbnail;
+        this.nodeVisualCache.set(page.path, { signature, visual: inlineVisual });
+        if (inlineVisual) result.set(page.path, inlineVisual);
+      } else {
+        bodyRequests.push({ page, file, signature });
+      }
+    }
+
+    if (bodyRequests.length) {
+      const bodies = await this.indexedDb.getBodies(bodyRequests.map(({ file }) => ({ path: file.path, mtime: file.stat.mtime })));
+      for (const { page, file, signature } of bodyRequests) {
+        const body = bodies.get(file.path);
+        const replacement = body ? this.imageVisualFromValue(body.inlineFields[replaceField], file, "replace") : null;
+        const thumbnail = body && !replacement ? this.imageVisualFromValue(body.inlineFields[thumbnailField], file, "thumbnail") : null;
+        const visual = replacement ?? thumbnail;
+        this.nodeVisualCache.set(page.path, { signature, visual });
+        if (visual) result.set(page.path, visual);
+      }
+    }
+    return result;
+  }
 
   setSearchEntryPoints(paths: string[]): void {
     this.searchEntryPointPaths = [...new Set(paths)];
@@ -808,6 +903,7 @@ export class GraphIndex {
       this.fullSnapshotFresh = true;
       this.previewSnapshotPublished = false;
       this.titleCache.clear();
+      this.nodeVisualCache.clear();
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
         this.rebuildSearchIndex();
         this.emit();
@@ -863,6 +959,7 @@ export class GraphIndex {
   private invalidatePatchedPages(paths: Iterable<string>): void {
     for (const path of paths) {
       this.titleCache.delete(path);
+      this.nodeVisualCache.delete(path);
       const page = this.get(path);
       if (page) this.relationViewCache.delete(page);
     }
@@ -912,6 +1009,30 @@ export class GraphIndex {
   }
 
   /**
+   * Optimistically materialize a file K-Plex itself just created. The normal Obsidian metadata
+   * event remains authoritative and may enrich this page later, but UI rendering no longer waits
+   * for that asynchronous round trip.
+   */
+  insertCreatedFile(file: TFile): GraphPage {
+    const existing = this.get(file.path);
+    if (existing) return existing;
+    const page: GraphPage = {
+      path: file.path, file, name: file.basename, url: null, isFolder: false, isTag: false,
+      mtime: file.stat.mtime, neighbours: new Map(), aliases: [], tags: [], noteType: null,
+      primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
+    };
+    this.state.pages.set(page.path, page);
+    this.state.lowercasePathMap.set(page.path.toLowerCase(), page.path);
+    this.patchSearchIndex([page.path]);
+    this.titleCache.delete(page.path);
+    this.nodeVisualCache.delete(page.path);
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return page;
+  }
+
+  /**
    * Apply a relationship frontmatter edit directly to the live semantic graph. The subsequent
    * Obsidian metadata event is only a consistency signal; a one-property move must not rebuild a
    * 20k-note index or make the optimistic node jump back while a full scan runs.
@@ -932,6 +1053,39 @@ export class GraphIndex {
       definition: field.toLowerCase().replaceAll(" ", "-").trim(),
       fieldName: field,
     });
+    resolveEvidencePair(this.state.pages, this.state.evidence, storagePath, targetPath);
+    resolveEvidencePair(this.state.pages, this.state.evidence, targetPath, storagePath);
+    if (source.file) source.mtime = source.file.stat.mtime;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return true;
+  }
+
+  /**
+   * Add another frontmatter ontology declaration for an already-connected pair without replacing
+   * any existing ontology evidence. Connection details uses this for Add/Specify ontology.
+   */
+  applyAdditionalRelationshipEdit(storagePath: string, targetPath: string, role: Exclude<EvidenceRole, "hidden">, field: string): boolean {
+    const source = this.get(storagePath);
+    const target = this.get(targetPath);
+    if (!source || !target) return false;
+
+    const normalizedField = field.toLowerCase().replace(/\s+/g, "-").trim();
+    const alreadyPresent = this.state.evidence.between(storagePath, targetPath).some((item) =>
+      item.sourceKind === "frontmatter-ontology" &&
+      item.declaredByPath === storagePath &&
+      item.declaredTargetPath === targetPath &&
+      (item.fieldName ?? item.definition ?? "").toLowerCase().replace(/\s+/g, "-").trim() === normalizedField
+    );
+    if (!alreadyPresent) {
+      this.state.evidence.addPair(storagePath, targetPath, role, RelationType.DEFINED, LinkDirection.FROM, {
+        sourceKind: "frontmatter-ontology",
+        definition: normalizedField,
+        fieldName: field,
+      });
+    }
+
     resolveEvidencePair(this.state.pages, this.state.evidence, storagePath, targetPath);
     resolveEvidencePair(this.state.pages, this.state.evidence, targetPath, storagePath);
     if (source.file) source.mtime = source.file.stat.mtime;

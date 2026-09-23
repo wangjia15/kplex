@@ -15,6 +15,16 @@ import { perfNow } from "./util/perf";
 
 type LoadAwareView = FileView & { _loaded?: boolean };
 
+export type RelationshipSourceSection = {
+  id: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  label: string;
+  text: string;
+  sourceKind: RelationEvidence["sourceKind"];
+};
+
 export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
   index!: GraphIndex;
@@ -44,6 +54,8 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly indexStatusListeners = new Set<() => void>();
   private readonly graphLensListeners = new Set<(lenses: ExcaliBrainSettings["graphLenses"]) => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
+  /** Files created by K-Plex and already inserted optimistically into GraphIndex. */
+  private readonly managedCreatedPaths = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
 
@@ -284,13 +296,19 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (until > now) continue;
       this.managedMetadataWrites.delete(path);
     }
+    for (const [path, until] of this.managedCreatedPaths) {
+      if (until > now) continue;
+      this.managedCreatedPaths.delete(path);
+    }
   }
 
   private registerReactiveIndexListeners(): void {
     if (this.reactiveIndexListenersRegistered) return;
     this.reactiveIndexListenersRegistered = true;
 
-    this.registerEvent(this.app.vault.on("create", () => {
+    this.registerEvent(this.app.vault.on("create", (created) => {
+      this.pruneManagedMetadataWrites();
+      if (created instanceof TFile && (this.managedCreatedPaths.get(created.path) ?? 0) > Date.now()) return;
       this.scheduleRebuild("vault:create");
     }));
     this.registerEvent(this.app.vault.on("delete", () => {
@@ -302,13 +320,14 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
       this.pruneManagedMetadataWrites();
       const until = this.managedMetadataWrites.get(file.path) ?? 0;
-      if (until > Date.now()) {
-        return;
-      }
+      if (until > Date.now()) return;
       this.managedMetadataWrites.delete(file.path);
       if (file.extension === "md") {
         this.dirtyMarkdownPaths.add(file.path);
       }
+      // A file created by K-Plex is already present optimistically, but normal metadata changes are
+      // still allowed through the incremental patch path. This reconciles aliases/body fields and
+      // plugin-generated content without waiting for, or triggering, a whole-vault rebuild.
       this.scheduleRebuild("metadata:changed");
     }));
     // metadataCache.resolved fires in large waves during startup and after a single link edit.
@@ -1105,6 +1124,44 @@ export default class ExcaliBrainPlugin extends Plugin {
     return this.app.workspace.createLeafBySplit(hostLeaf, direction, before);
   }
 
+  private ensureSidecarLeaf(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return null;
+    let leaf = this.validateSidecarLeaf(hostLeaf);
+    if (!leaf && this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)) {
+      leaf = this.linkedDocumentLeaf;
+    }
+    if (!leaf) leaf = this.findVisibleAdjacentDocumentLeaf(hostLeaf);
+    if (!leaf) leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
+    this.sidecarLeaves.set(hostLeaf, leaf);
+    this.settings.sidecarOpen = true;
+    this.settings.documentSyncMode = "pinned";
+    this.linkedDocumentLeaf = leaf;
+    this.lastDocumentLeaf = leaf;
+    const actualPosition = this.adjacentPosition(hostLeaf, leaf);
+    if (actualPosition) this.settings.sidecarPosition = actualPosition;
+    return leaf;
+  }
+
+  async openMarkdownInSidecar(hostLeaf: WorkspaceLeaf, file: TFile, line = 0, sourceMode = true): Promise<void> {
+    const leaf = this.ensureSidecarLeaf(hostLeaf);
+    if (!leaf) {
+      await this.openInDocumentLeaf(file);
+      return;
+    }
+    this.transientDocumentFollowSuppression = { path: file.path, until: Date.now() + 1800 };
+    await leaf.openFile(file, { active: false });
+    const state = leaf.getViewState();
+    if (state.type === "markdown") {
+      await leaf.setViewState({
+        ...state,
+        active: false,
+        state: { ...state.state, mode: sourceMode ? "source" : (this.settings.sidecarMarkdownMode === "preview" ? "preview" : "source") },
+      }, { line: Math.max(0, Math.floor(line)) });
+    }
+    await this.saveSettings(false, false);
+    this.notifySidecar();
+  }
+
   private async openPageInSidecarLeaf(leaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
     if (page.url) {
       try {
@@ -1130,26 +1187,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async openSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
-    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
-    let leaf = this.validateSidecarLeaf(hostLeaf);
-    if (!leaf && this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)) {
-      leaf = this.linkedDocumentLeaf;
-    }
-    // On workspace restore prefer the already-visible adjacent document pane. This avoids binding
-    // to Obsidian's arbitrary deferred "most recent" first tab and recreates the prior sidecar.
-    if (!leaf) leaf = this.findVisibleAdjacentDocumentLeaf(hostLeaf);
-    if (!leaf) leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
-    // Once a leaf is being used as a sidecar, remember that ownership regardless of whether it was
-    // newly created or an existing adjacent native tab. This gives close/detach/fold one consistent
-    // lifecycle and avoids geometry heuristics becoming the source of truth later.
-    this.sidecarLeaves.set(hostLeaf, leaf);
-    this.settings.sidecarOpen = true;
-    this.settings.documentSyncMode = "pinned";
-    this.linkedDocumentLeaf = leaf;
-    this.lastDocumentLeaf = leaf;
+    const leaf = this.ensureSidecarLeaf(hostLeaf);
+    if (!leaf) return;
     await this.openPageInSidecarLeaf(leaf, page);
-    const actualPosition = this.adjacentPosition(hostLeaf, leaf);
-    if (actualPosition) this.settings.sidecarPosition = actualPosition;
     await this.saveSettings(false, false);
     this.notifySidecar();
   }
@@ -1528,7 +1568,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   openRelationModal(options: RelationModalOptions): void {
     if (options.mode === "create" && !options.fixedTarget) {
-      new NewRelatedNoteModal(this, options.origin, options.semanticRole, options.onCommitted, options.allowRoleSelection === true).open();
+      new NewRelatedNoteModal(this, options.origin, options.semanticRole, options.onCommitted, options.allowRoleSelection === true, options.hostLeaf).open();
       return;
     }
     new RelationModal(this, options).open();
@@ -1739,6 +1779,34 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
   }
 
+  private async addRelationshipOntology(storageFile: TFile, target: GraphPage, field: string): Promise<void> {
+    // Connection details adds an additional ontology; it must not remove the same target from
+    // other ontology properties or rewrite Markdown-body evidence.
+    this.pruneManagedMetadataWrites();
+    this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
+    const desiredNormalized = normalizeFieldName(field);
+    const reference = this.referenceForPage(target, storageFile);
+
+    await this.app.fileManager.processFrontMatter(storageFile, (frontmatter: Record<string, unknown>) => {
+      let desiredKey = field;
+      for (const key of Object.keys(frontmatter)) {
+        if (normalizeFieldName(key) === desiredNormalized) {
+          desiredKey = key;
+          break;
+        }
+      }
+
+      const current = frontmatter[desiredKey];
+      if (current === undefined || current === null || current === "") {
+        frontmatter[desiredKey] = [reference];
+        return;
+      }
+      if (this.valueContainsTarget(current, storageFile, target)) return;
+      if (Array.isArray(current)) frontmatter[desiredKey] = [...(current as unknown[]), reference];
+      else frontmatter[desiredKey] = [current, reference];
+    });
+  }
+
   private async clearFrontmatterRelationship(storageFile: TFile, target: GraphPage): Promise<void> {
     this.pruneManagedMetadataWrites();
     this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
@@ -1788,6 +1856,45 @@ export default class ExcaliBrainPlugin extends Plugin {
     } else {
       new Notice("When the drag origin is not a Markdown note, the target must be a Markdown note.", 2800);
       return;
+    }
+  }
+
+  async addOntologyToConnection(
+    center: GraphPage,
+    neighbour: GraphPage,
+    semanticRole: GateRole,
+    selectedField: string,
+    storagePathOverride: string | null = null,
+  ): Promise<void> {
+    const centerFile = center.file?.extension === "md" ? center.file : null;
+    const neighbourFile = neighbour.file?.extension === "md" ? neighbour.file : null;
+    if (!centerFile && !neighbourFile) {
+      new Notice("At least one side of the relationship must be a Markdown note.", 2600);
+      return;
+    }
+
+    const candidates = this.index.relationshipStorageCandidates(center.path, neighbour.path);
+    let storagePath: string | null = storagePathOverride && candidates.includes(storagePathOverride)
+      ? storagePathOverride
+      : (candidates.length > 0 ? candidates[0] : null);
+    if (!storagePath) storagePath = centerFile?.path ?? neighbourFile?.path ?? null;
+
+    if (storagePath === centerFile?.path && centerFile) {
+      await this.addRelationshipOntology(centerFile, neighbour, selectedField);
+      this.index.applyAdditionalRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
+    } else if (storagePath === neighbourFile?.path && neighbourFile) {
+      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseField = this.inverseOntologyField(selectedField, semanticRole);
+      await this.addRelationshipOntology(neighbourFile, center, inverseField);
+      this.index.applyAdditionalRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
+    } else if (centerFile) {
+      await this.addRelationshipOntology(centerFile, neighbour, selectedField);
+      this.index.applyAdditionalRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
+    } else if (neighbourFile) {
+      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseField = this.inverseOntologyField(selectedField, semanticRole);
+      await this.addRelationshipOntology(neighbourFile, center, inverseField);
+      this.index.applyAdditionalRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
     }
   }
 
@@ -1886,10 +1993,18 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   isExcalidrawAvailable(): boolean {
-    type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile> };
+    type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile | string> };
     type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
     const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
-    return typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
+    const automate = (globalThis as unknown as { ExcalidrawAutomate?: { create?: unknown; getAPI?: unknown } }).ExcalidrawAutomate;
+    return typeof automate?.create === "function" || typeof automate?.getAPI === "function" ||
+      typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
+  }
+
+  async rememberNewNodeDefaultType(kind: "markdown" | "excalidraw"): Promise<void> {
+    if (this.settings.newNodeDefaultType === kind) return;
+    this.settings.newNodeDefaultType = kind;
+    await this.saveSettings(false, false);
   }
 
   private async frontmatterPropertyLineRange(file: TFile, fieldName: string): Promise<{ start: number; end: number } | null> {
@@ -1970,9 +2085,9 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async unlinkFrontmatterEvidence(evidence: RelationEvidence): Promise<boolean> {
     if (evidence.sourceKind !== "frontmatter-ontology" || !evidence.fieldName) return false;
-    const storage = this.app.vault.getAbstractFileByPath(evidence.declaredByPath);
+    const storage = this.app.vault.getFileByPath(evidence.declaredByPath);
     const target = this.index.get(evidence.declaredTargetPath);
-    if (!(storage instanceof TFile) || storage.extension !== "md" || !target) return false;
+    if (!storage || storage.extension !== "md" || !target) return false;
 
     this.pruneManagedMetadataWrites();
     this.managedMetadataWrites.set(storage.path, Date.now() + 15000);
@@ -1996,8 +2111,8 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async relationshipEvidenceLocations(evidence: RelationEvidence): Promise<Array<{ path: string; line: number; label: string }>> {
-    const file = this.app.vault.getAbstractFileByPath(evidence.declaredByPath);
-    if (!(file instanceof TFile) || file.extension !== "md") return [];
+    const file = this.app.vault.getFileByPath(evidence.declaredByPath);
+    if (!file || file.extension !== "md") return [];
 
     const positions: Array<{ path: string; line: number; label: string }> = [];
     const add = (line: number, label: string) => {
@@ -2043,12 +2158,112 @@ export default class ExcaliBrainPlugin extends Plugin {
     return positions;
   }
 
+  async relationshipEvidenceSectionsBatch(evidences: readonly RelationEvidence[]): Promise<Map<string, RelationshipSourceSection[]>> {
+    const result = new Map<string, RelationshipSourceSection[]>();
+    for (const evidence of evidences) result.set(evidence.id, []);
+
+    const groups = new Map<string, { file: TFile; evidences: RelationEvidence[] }>();
+    for (const evidence of evidences) {
+      const file = this.app.vault.getFileByPath(evidence.declaredByPath);
+      if (!file || file.extension !== "md") continue;
+      const group = groups.get(file.path) ?? { file, evidences: [] };
+      group.evidences.push(evidence);
+      groups.set(file.path, group);
+    }
+
+    await Promise.all([...groups.values()].map(async ({ file, evidences: fileEvidences }) => {
+      // One source read/split per document, even if a connection has dozens of evidence records in
+      // the same long note. Edge Properties is on-demand, but it should still stay cheap to skim.
+      const content = await this.app.vault.cachedRead(file);
+      const lines = content.split(/\r?\n/);
+      const keyPattern = /^(\s*)(?:"([^"]+)"|'([^']+)'|([^:#][^:]*?))\s*:/;
+      const frontmatterPropertyRanges = (): Array<{ start: number; end: number; key: string }> => {
+        if (lines[0]?.trim() !== "---") return [];
+        const ranges: Array<{ start: number; end: number; key: string }> = [];
+        for (let line = 1; line < lines.length; line += 1) {
+          const text = lines[line];
+          const trimmed = text.trim();
+          if (trimmed === "---" || trimmed === "...") break;
+          const match = text.match(keyPattern);
+          if (!match || match[1].length !== 0) continue;
+          const key = (match[2] ?? match[3] ?? match[4] ?? "").trim();
+          if (!key) continue;
+          let rangeEnd = line;
+          for (let nextLine = line + 1; nextLine < lines.length; nextLine += 1) {
+            const nextText = lines[nextLine];
+            const nextTrimmed = nextText.trim();
+            if (nextTrimmed === "---" || nextTrimmed === "...") break;
+            const nextKey = nextText.match(keyPattern);
+            if (nextKey && nextKey[1].length === 0) break;
+            rangeEnd = nextLine;
+          }
+          ranges.push({ start: line, end: rangeEnd, key });
+          line = rangeEnd;
+        }
+        return ranges;
+      };
+      const propertyRanges = frontmatterPropertyRanges();
+      const paragraphRange = (line: number): { start: number; end: number } => {
+        const clamped = Math.max(0, Math.min(lines.length - 1, line));
+        const frontmatterRange = propertyRanges.find((range) => range.start <= clamped && clamped <= range.end);
+        if (frontmatterRange) return { start: frontmatterRange.start, end: frontmatterRange.end };
+        let start = clamped;
+        let end = clamped;
+        const isBoundary = (text: string): boolean => {
+          const trimmed = text.trim();
+          return trimmed === "" || trimmed === "---" || trimmed === "..." || /^#{1,6}\s+/.test(trimmed);
+        };
+        while (start > 0 && !isBoundary(lines[start - 1])) start -= 1;
+        while (end + 1 < lines.length && !isBoundary(lines[end + 1])) end += 1;
+        return { start, end };
+      };
+      const propertyRange = (fieldName: string): { start: number; end: number } | null => {
+        const wanted = normalizeFieldName(fieldName);
+        const range = propertyRanges.find((candidate) => normalizeFieldName(candidate.key) === wanted);
+        return range ? { start: range.start, end: range.end } : null;
+      };
+
+      for (const evidence of fileEvidences) {
+        const make = (startLine: number, endLine: number, label: string): RelationshipSourceSection => ({
+          id: `${file.path}:${startLine}:${endLine}:${evidence.id}`,
+          path: file.path, startLine, endLine, label,
+          text: lines.slice(startLine, endLine + 1).join("\n"),
+          sourceKind: evidence.sourceKind,
+        });
+        let sections: RelationshipSourceSection[] = [];
+        if ((evidence.sourceKind === "frontmatter-ontology" || evidence.sourceKind === "date-property") && evidence.fieldName) {
+          const range = propertyRange(evidence.fieldName);
+          sections = range ? [make(range.start, range.end, `Property “${evidence.fieldName}”`)] : [];
+        } else if ((evidence.sourceKind === "inline-ontology" || evidence.sourceKind === "body-url") && evidence.line) {
+          const range = paragraphRange(evidence.line - 1);
+          sections = [make(range.start, range.end, `Paragraph around line ${evidence.line}`)];
+        } else if (evidence.sourceKind === "obsidian-link" || evidence.sourceKind === "unresolved-link") {
+          const locations = await this.relationshipEvidenceLocations(evidence);
+          const seen = new Set<string>();
+          for (const location of locations) {
+            const range = paragraphRange(location.line);
+            const key = `${range.start}:${range.end}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            sections.push(make(range.start, range.end, locations.length > 1 ? `Link occurrence · line ${location.line + 1}` : `Link · line ${location.line + 1}`));
+          }
+        }
+        result.set(evidence.id, sections);
+      }
+    }));
+    return result;
+  }
+
+  async relationshipEvidenceSections(evidence: RelationEvidence): Promise<RelationshipSourceSection[]> {
+    return (await this.relationshipEvidenceSectionsBatch([evidence])).get(evidence.id) ?? [];
+  }
+
   async openRelationshipEvidenceLocation(
     location: { path: string; line: number },
     hostLeaf?: WorkspaceLeaf,
   ): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(location.path);
-    if (!(file instanceof TFile) || file.extension !== "md") return;
+    const file = this.app.vault.getFileByPath(location.path);
+    if (!file || file.extension !== "md") return;
 
     const sidecarLeaf = hostLeaf ? this.availableSidecarLeaf(hostLeaf) : null;
     const leaf = sidecarLeaf ?? this.app.workspace.getLeaf("tab");
@@ -2111,47 +2326,134 @@ export default class ExcaliBrainPlugin extends Plugin {
       return null;
     }
 
+    // Mark the predicted path before creation because Obsidian may emit vault:create synchronously
+    // inside create()/the Excalidraw API. K-Plex will materialize the page itself as soon as the
+    // returned TFile is available, so that event must not schedule a redundant whole-vault build.
+    this.managedCreatedPaths.set(destination, Date.now() + 4000);
+    const alternateExcalidrawPath = kind === "excalidraw"
+      ? normalizePath(configuredFolder ? `${configuredFolder}/${leafName}.md` : `${leafName}.md`)
+      : null;
+    if (alternateExcalidrawPath) this.managedCreatedPaths.set(alternateExcalidrawPath, Date.now() + 4000);
+
     if (kind === "excalidraw") {
-      type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile> };
+      type Automate = {
+        reset?: () => void;
+        getAPI?: () => Automate;
+        create?: (params?: { filename?: string; foldername?: string; onNewPane?: boolean; silent?: boolean }) => Promise<string>;
+      };
+      const globalEA = (globalThis as unknown as { ExcalidrawAutomate?: Automate }).ExcalidrawAutomate;
+      const ea = typeof globalEA?.getAPI === "function" ? globalEA.getAPI() : globalEA;
+      if (ea?.create) {
+        try {
+          ea.reset?.();
+          const createdPath = normalizePath(await ea.create({
+            filename: leafName,
+            foldername: configuredFolder || undefined,
+            onNewPane: false,
+            silent: true,
+          }));
+          const created = this.app.vault.getAbstractFileByPath(createdPath);
+          if (!(created instanceof TFile)) throw new Error("Excalidraw did not return a created file.");
+          this.managedCreatedPaths.set(created.path, Date.now() + 4000);
+          if (created.extension !== "md") {
+            this.managedCreatedPaths.delete(destination);
+            if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
+            new Notice("Excalidraw created a legacy non-Markdown drawing. Enable Markdown Excalidraw files in Excalidraw settings to use it as a K-Plex note.", 5000);
+            return null;
+          }
+          return created;
+        } catch (error) {
+          this.managedCreatedPaths.delete(destination);
+          if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
+          throw error;
+        }
+      }
+
+      type RuntimePlugin = Plugin & { createDrawing?: (filename: string, foldername?: string) => Promise<TFile | string> };
       type PluginManagerBridge = { plugins?: Record<string, RuntimePlugin> };
       const manager = (this.app as unknown as { plugins?: PluginManagerBridge }).plugins;
       const excalidraw = manager?.plugins?.["obsidian-excalidraw-plugin"];
       if (!excalidraw?.createDrawing) {
+        this.managedCreatedPaths.delete(destination);
+        if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
         new Notice("Excalidraw is not available.", 2200);
         return null;
       }
-      return excalidraw.createDrawing(leafName, configuredFolder || undefined);
+      try {
+        const created = await excalidraw.createDrawing(leafName, configuredFolder || undefined);
+        const file = typeof created === "string" ? this.app.vault.getAbstractFileByPath(normalizePath(created)) : created;
+        if (!(file instanceof TFile)) throw new Error("Excalidraw did not return a created file.");
+        if (file.extension !== "md") {
+          this.managedCreatedPaths.delete(destination);
+          if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
+          new Notice("Excalidraw created a legacy non-Markdown drawing. Enable Markdown Excalidraw files in Excalidraw settings to use it as a K-Plex note.", 5000);
+          return null;
+        }
+        this.managedCreatedPaths.set(file.path, Date.now() + 4000);
+        return file;
+      } catch (error) {
+        this.managedCreatedPaths.delete(destination);
+        if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
+        throw error;
+      }
     }
 
-    return this.app.vault.create(destination, `# ${leafName}
+    try {
+      const file = await this.app.vault.create(destination, `# ${leafName}
 `);
+      this.managedCreatedPaths.set(file.path, Date.now() + 4000);
+      return file;
+    } catch (error) {
+      this.managedCreatedPaths.delete(destination);
+      throw error;
+    }
   }
 
-  async linkNewRelatedFile(origin: GraphPage, semanticRole: GateRole, file: TFile, selectedField: string): Promise<void> {
-    const indexed = this.index.get(file.path);
-    if (indexed) {
-      await this.createRelationToPage(origin, semanticRole, indexed, selectedField);
-      return;
-    }
-
-    // Vault creation is asynchronous with respect to MetadataCache/K-Plex indexing. Persist the
-    // requested relationship immediately using the real TFile and let the normal create/metadata
-    // events materialize the new graph node afterwards; do not block this simple modal on a full
-    // graph rebuild just to obtain a temporary GraphPage.
-    const target: GraphPage = {
-      path: file.path, file, name: file.basename, url: null, isFolder: false, isTag: false,
-      mtime: file.stat.mtime, neighbours: new Map(), aliases: [], tags: [], noteType: null,
-      primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
-    };
+  async linkNewRelatedFile(origin: GraphPage, semanticRole: GateRole, file: TFile, selectedField: string): Promise<GraphPage> {
+    // K-Plex already knows the complete minimum fact set for a newly created node. Publish both the
+    // page and relationship before awaiting processFrontMatter/MetadataCache, then let the normal
+    // incremental path reconcile richer metadata in the background.
+    const target = this.index.insertCreatedFile(file);
     if (origin.file?.extension === "md") {
-      await this.writeRelationship(origin.file, target, selectedField);
+      this.index.applyRelationshipEdit(origin.path, target.path, semanticRole, selectedField);
+      try {
+        await this.writeRelationship(origin.file, target, selectedField);
+      } catch (error) {
+        this.index.applyFrontmatterRelationshipRemoval(origin.path, target.path, selectedField);
+        throw error;
+      }
+      return target;
+    }
+    if (target.file?.extension === "md") {
+      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseField = this.inverseOntologyField(selectedField, semanticRole);
+      this.index.applyRelationshipEdit(target.path, origin.path, inverseRole, inverseField);
+      try {
+        await this.writeRelationship(target.file, origin, inverseField);
+      } catch (error) {
+        this.index.applyFrontmatterRelationshipRemoval(target.path, origin.path, inverseField);
+        throw error;
+      }
+      return target;
+    }
+    throw new Error("A new K-Plex relationship requires at least one Markdown endpoint.");
+  }
+
+  async finishNewRelatedNode(
+    page: GraphPage,
+    hostLeaf: WorkspaceLeaf | undefined,
+    openForEditing: boolean,
+  ): Promise<void> {
+    this.notifyNavigation(page.path);
+    if (!openForEditing || !page.file) return;
+    const host = hostLeaf && hostLeaf.view.getViewType() !== KPLEX_SIDEPANEL_VIEW_TYPE
+      ? hostLeaf
+      : this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)[0];
+    if (host) {
+      await this.openMarkdownInSidecar(host, page.file, 0, true);
       return;
     }
-    if (file.extension === "md") {
-      await this.writeRelationship(file, origin, this.inverseOntologyField(selectedField, semanticRole));
-      return;
-    }
-    new Notice("At least one side of the relationship must be a Markdown note.", 2600);
+    await this.openInDocumentLeaf(page.file);
   }
 
   async createGhostNote(rawPath: string): Promise<void> {

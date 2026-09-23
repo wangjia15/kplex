@@ -87,7 +87,7 @@ export function RelationPopover({
   >
     <div className="kplex-relation-popover-title">
       <strong>{fixedTarget ? "Move relationship" : `Add ${relationName.toLowerCase()}`}</strong>
-      <button className="kplex-popover-icon" title="Cancel" aria-label="Cancel" onClick={onClose}><ObsidianIcon name="x" size={16} /></button>
+      <button className="kplex-popover-icon" aria-label="Cancel" onClick={onClose}><ObsidianIcon name="x" size={16} /></button>
     </div>
 
     {fixedTarget ? <div className="kplex-relation-summary">
@@ -129,8 +129,8 @@ export function RelationPopover({
     </div>}
 
     <div className="kplex-relation-actions">
-      <button title="Cancel" aria-label="Cancel" onClick={onClose}><ObsidianIcon name="x" size={17} /></button>
-      <button className="mod-cta" disabled={busy || (!fixedTarget && !selectedFile)} title="Save relationship" aria-label="Save relationship" onClick={() => void confirm()}>
+      <button aria-label="Cancel" onClick={onClose}><ObsidianIcon name="x" size={17} /></button>
+      <button className="mod-cta" disabled={busy || (!fixedTarget && !selectedFile)} aria-label="Save relationship" onClick={() => void confirm()}>
         <ObsidianIcon name="check" size={17} />
       </button>
     </div>
