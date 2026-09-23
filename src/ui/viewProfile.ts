@@ -21,10 +21,32 @@ export function layoutProfileKey(surface: KplexViewSurface, device = currentDevi
   return `${device}:${surface}`;
 }
 
+type EffectiveSettingsCacheEntry = {
+  profile: KplexLayoutProfile;
+  value: ExcaliBrainSettings;
+};
+
+const effectiveSettingsCache = new WeakMap<ExcaliBrainSettings, Map<string, EffectiveSettingsCacheEntry>>();
+
 export function effectiveViewSettings(settings: ExcaliBrainSettings, surface: KplexViewSurface): ExcaliBrainSettings {
-  const profile = settings.layoutProfiles[layoutProfileKey(surface)];
+  const key = layoutProfileKey(surface);
+  const profile = settings.layoutProfiles[key];
   if (!profile) return settings;
-  return { ...settings, ...profile };
+
+  let bySurface = effectiveSettingsCache.get(settings);
+  if (!bySurface) {
+    bySurface = new Map();
+    effectiveSettingsCache.set(settings, bySurface);
+  }
+  const cached = bySurface.get(key);
+  if (cached?.profile === profile) return cached.value;
+
+  // Layout profiles override only a small subset of settings. Inherit the rest from the live base
+  // settings object instead of spreading it on every React render: base-setting mutations remain
+  // immediately visible while the effective object's identity changes only when the profile does.
+  const value = Object.assign(Object.create(settings) as ExcaliBrainSettings, profile);
+  bySurface.set(key, { profile, value });
+  return value;
 }
 
 export function activeLayoutProfile(settings: ExcaliBrainSettings, surface: KplexViewSurface): KplexLayoutProfile {

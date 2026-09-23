@@ -196,18 +196,15 @@ export function PlexFilter({
   const [draftError, setDraftError] = useState<string | null>(null);
 
   const suggestions = useMemo(() => {
-    const tagSet = new Set<string>();
-    const typeSet = new Set<string>();
-    const folderSet = new Set<string>();
-    for (const page of index.allPages()) {
-      page.tags.forEach((tag) => tagSet.add(tag));
-      if (page.noteType) typeSet.add(page.noteType);
-      const slash = page.path.lastIndexOf("/");
-      if (slash > 0) folderSet.add(page.path.slice(0, slash));
-    }
-
+    // The editor is normally closed. Avoid touching the whole index until the user asks for it;
+    // GraphIndex keeps the global catalogs cached by semantic publication revision.
+    if (!open) return {
+      tags: [] as string[], noteTypes: [] as string[], folders: [] as string[], properties: [] as string[],
+      relationshipDefinitions: [] as string[], evidenceFields: [] as string[], relatedPaths: [] as string[],
+    };
+    const catalog = index.suggestionCatalog();
     const definitions = new Set<string>();
-    const evidenceFields = new Set<string>();
+    const evidenceFields = new Set<string>(catalog.properties);
     const relatedPaths = new Set<string>();
     if (center) {
       relatedPaths.add(center.path);
@@ -226,18 +223,13 @@ export function PlexFilter({
         }
       }
     }
-    const properties = index.discoveredFields().map((field) => field.name);
-    properties.forEach((property) => evidenceFields.add(property));
     return {
-      tags: uniqueSorted(tagSet),
-      noteTypes: uniqueSorted(typeSet),
-      folders: uniqueSorted(folderSet),
-      properties: uniqueSorted(properties),
+      ...catalog,
       relationshipDefinitions: uniqueSorted(definitions),
       evidenceFields: uniqueSorted(evidenceFields),
       relatedPaths: uniqueSorted(relatedPaths),
     };
-  }, [index, center?.path, revision]);
+  }, [open, index, center?.path, revision]);
 
   const activeLensCount = lenses.filter((lens) => lens.enabled).length;
   const active = isPlexFilterActive(value) || activeLensCount > 0;

@@ -1,5 +1,5 @@
 import { Platform } from "obsidian";
-import { parseBodyMetadata, parseBodyMetadataCore, type ParsedBodyMetadata } from "./fieldParser";
+import { parseBodyMetadataCooperative, parseBodyMetadataCore, type ParsedBodyMetadata } from "./fieldParser";
 
 type Pending = {
   resolve: (value: ParsedBodyMetadata) => void;
@@ -13,25 +13,36 @@ type WorkerResponse = {
   error?: string;
 };
 
+export class MetadataParseCancelledError extends Error {
+  constructor() { super("K-Plex metadata parse cancelled"); this.name = "MetadataParseCancelledError"; }
+}
+
 /**
- * Single parsing boundary for GraphBuilder. When Web Workers are available, parsing runs off the
- * renderer thread using the exact same self-contained parser function as the fallback path.
- * There is deliberately no second parser grammar to keep synchronized.
+ * Single parsing boundary for GraphBuilder. Workers execute the self-contained synchronous core;
+ * worker-less hosts use the grammar-equivalent cooperative parser so long lines can yield and
+ * observe cancellation on the renderer thread. Regression tests keep both paths equivalent.
  */
 export class MetadataParser {
   private worker: Worker | null = null;
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private disabled = false;
+  private disposed = false;
+  private fallbackGeneration = 0;
 
   constructor() {
     // WebKit/WebView worker message passing clones whole Markdown strings and parsed payloads.
     // On iOS this transient duplication can be more expensive than parsing one file at a time
-    // on the renderer thread with GraphBuilder's cooperative yields, so prefer the low-memory path.
+    // on the renderer thread, so prefer the low-memory fallback path there.
     if (Platform.isIosApp || typeof Worker === "undefined" || typeof Blob === "undefined") {
       this.disabled = true;
       return;
     }
+    this.createWorker();
+  }
+
+  private createWorker(): void {
+    if (this.disposed || this.disabled || this.worker) return;
     try {
       const parserSource = parseBodyMetadataCore.toString();
       const source = `
@@ -64,23 +75,67 @@ export class MetadataParser {
   }
 
   async parse(content: string): Promise<ParsedBodyMetadata> {
-    if (this.disabled || !this.worker) return parseBodyMetadata(content);
-    const id = this.nextId++;
-    return new Promise<ParsedBodyMetadata>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+    if (this.disposed) throw new MetadataParseCancelledError();
+    if (this.disabled || !this.worker) {
+      const generation = this.fallbackGeneration;
       try {
-        this.worker!.postMessage({ id, content });
+        return await parseBodyMetadataCooperative(
+          content,
+          () => !this.disposed && generation === this.fallbackGeneration,
+        );
       } catch (error) {
-        this.pending.delete(id);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        if (this.disposed || generation !== this.fallbackGeneration) throw new MetadataParseCancelledError();
+        throw error;
       }
-    }).catch(() => parseBodyMetadata(content));
+    }
+    const id = this.nextId++;
+    try {
+      return await new Promise<ParsedBodyMetadata>((resolve, reject) => {
+        this.pending.set(id, { resolve, reject });
+        try {
+          this.worker!.postMessage({ id, content });
+        } catch (error) {
+          this.pending.delete(id);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    } catch (error) {
+      if (error instanceof MetadataParseCancelledError || this.disposed) throw error;
+      // A genuine worker failure degrades to the cooperative renderer-thread parser; cancellation
+      // never does. The fallback has the same grammar but yields within long lines.
+      const generation = this.fallbackGeneration;
+      try {
+        return await parseBodyMetadataCooperative(
+          content,
+          () => !this.disposed && generation === this.fallbackGeneration,
+        );
+      } catch (fallbackError) {
+        if (this.disposed || generation !== this.fallbackGeneration) throw new MetadataParseCancelledError();
+        throw fallbackError;
+      }
+    }
+  }
+
+  /** Stop obsolete work immediately. Terminating the worker is required because a synchronous
+   * parser job cannot observe a cancel message until after that job has already finished. */
+  cancelPending(): void {
+    if (this.disposed) return;
+    this.fallbackGeneration += 1;
+    this.worker?.terminate();
+    this.worker = null;
+    const error = new MetadataParseCancelledError();
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
+    if (!this.disabled) this.createWorker();
   }
 
   destroy(): void {
+    this.disposed = true;
+    this.fallbackGeneration += 1;
     this.worker?.terminate();
     this.worker = null;
-    for (const pending of this.pending.values()) pending.reject(new Error("K-Plex metadata parser stopped"));
+    const error = new MetadataParseCancelledError();
+    for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
   }
 
@@ -88,6 +143,7 @@ export class MetadataParser {
     this.disabled = true;
     this.worker?.terminate();
     this.worker = null;
+    // These are genuine failures, so parse() is allowed to fall back for the affected jobs.
     for (const pending of this.pending.values()) pending.reject(new Error("K-Plex metadata parser worker disabled"));
     this.pending.clear();
   }

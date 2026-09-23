@@ -283,7 +283,7 @@ K-Plex is designed to remain practical on large real-world vaults.
 
 After the first index has been created, K-Plex restores cached graph information on later starts so you can usually begin working quickly. The current neighborhood is prioritized first and the rest can continue loading in the background.
 
-While you work, changes are handled incrementally: editing one note does not normally require K-Plex to rebuild the entire vault. Background updates also preserve your current camera and scroll position rather than repeatedly recentering the graph.
+While you work, changes are handled incrementally: editing one note does not normally require K-Plex to rebuild the entire vault. If every K-Plex tab or side panel is hidden, automatic indexing pauses and K-Plex coalesces the pending changes; showing a K-Plex surface catches up once. Background updates also preserve your current camera and scroll position rather than repeatedly recentering the graph.
 
 Version 0.0.3 substantially improved startup performance, incremental updates, large-vault behavior, iPad stability, mobile/touch interaction, graph animation, relationship editing, section expansion, provenance/explanation, sidecar behavior and search/navigation. These improvements form the foundation for the newer Graph Lens workflow.
 

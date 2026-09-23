@@ -30,10 +30,12 @@ type BooleanToolbarSetting =
   | "showURLNodes"
   | "renderSiblings";
 
-function IndexStatusIndicator({ upToDate, label }: { upToDate: boolean; label: string }) {
+function IndexStatusIndicator({ plugin }: { plugin: ExcaliBrainPlugin }) {
+  const [status, setStatus] = useState(() => plugin.getIndexStatus());
+  useEffect(() => plugin.subscribeIndexStatus(() => setStatus(plugin.getIndexStatus())), [plugin]);
   return <span
-    className={`kplex-index-status${upToDate ? " is-ready" : " is-updating"}`}
-    aria-label={label}
+    className={`kplex-index-status${status.upToDate ? " is-ready" : " is-updating"}`}
+    aria-label={status.label}
   />;
 }
 
@@ -90,15 +92,25 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     void plugin.syncSidecarToPage(hostLeaf, target);
   }, [plugin, hostLeaf]);
 
-  useEffect(() => plugin.index.subscribe(() => forceRender((value) => value + 1)), [plugin]);
-  useEffect(() => plugin.subscribeIndexStatus(() => forceRender((value) => value + 1)), [plugin]);
+  useEffect(() => plugin.index.subscribe(() => {
+    // Hidden tabs/sidebars stay mounted in Obsidian. Do not run the graph React tree for a shared
+    // index publication unless this surface is actually visible; it catches up on reveal.
+    if (plugin.isKplexLeafVisible(hostLeaf)) forceRender((value) => value + 1);
+  }), [plugin, hostLeaf]);
+  useEffect(() => plugin.subscribeKplexVisibility(() => {
+    // A hidden mounted view may have skipped one or more shared index publications while another
+    // K-Plex surface was visible. Re-render exactly once when this leaf becomes visible again.
+    if (plugin.isKplexLeafVisible(hostLeaf)) forceRender((value) => value + 1);
+  }), [plugin, hostLeaf]);
   useEffect(() => {
     if (!plexFilterPredicate?.dependencies.usesFrontmatter && !compiledGraphLenses.usesFrontmatter) return;
     const ref = plugin.app.metadataCache.on("changed", (file) => {
-      if (file.extension === "md") refreshPredicates((value) => value + 1);
+      if (file.extension === "md" && plugin.isKplexLeafVisible(hostLeaf)) {
+        refreshPredicates((value) => value + 1);
+      }
     });
     return () => plugin.app.metadataCache.offref(ref);
-  }, [plugin, plexFilterPredicate, compiledGraphLenses.usesFrontmatter]);
+  }, [plugin, hostLeaf, plexFilterPredicate, compiledGraphLenses.usesFrontmatter]);
   useEffect(() => plugin.subscribeGraphLenses((next) => setGraphLensesState(next)), [plugin]);
   useEffect(() => plugin.subscribeSidecar(() => setSidecarRevision((value) => value + 1)), [plugin]);
   useEffect(() => plugin.subscribeNavigation((path) => {
@@ -122,6 +134,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   useEffect(() => {
     const followFile = (file: TFile | null) => {
+      if (!plugin.isKplexLeafVisible(hostLeaf)) return;
       if (!file || !plugin.shouldFollowDocumentFile(file) || !plugin.index.get(file.path)) return;
       const target = plugin.index.get(file.path);
       if (target) activate(target, true);
@@ -129,6 +142,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
     const fileRef = plugin.app.workspace.on("file-open", followFile);
     const leafRef = plugin.app.workspace.on("active-leaf-change", () => {
+      if (!plugin.isKplexLeafVisible(hostLeaf)) return;
       forceRender((value) => value + 1);
       followFile(plugin.app.workspace.getActiveFile());
     });
@@ -136,7 +150,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
       plugin.app.workspace.offref(fileRef);
       plugin.app.workspace.offref(leafRef);
     };
-  }, [plugin, activate]);
+  }, [plugin, hostLeaf, activate]);
 
   const page = plugin.index.get(activePath)
     ?? (plugin.settings.lastActivePath ? plugin.index.get(plugin.settings.lastActivePath) : undefined)
@@ -175,8 +189,10 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   const toggleToolbarSetting = async (key: BooleanToolbarSetting) => {
     plugin.settings[key] = !plugin.settings[key];
-    const requiresGraphRebuild = key === "showFolderNodes" || key === "showTagNodes";
-    await plugin.saveSettings(requiresGraphRebuild, !requiresGraphRebuild);
+    // Visibility controls are presentation-only. Folder/tag topology is maintained in the
+    // structural index regardless of whether those node classes are currently rendered, so
+    // showing or hiding them must never invalidate or rebuild the semantic graph.
+    await plugin.saveSettings(false, true);
     forceRender((value) => value + 1);
   };
 
@@ -254,10 +270,9 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     rootRef.current?.focus({ preventScroll: true });
   };
 
-  const indexStatus = plugin.getIndexStatus();
 
   if (!page) return <div className="excalibrain-app excalibrain-empty">
-    <div className="kplex-index-status-empty"><IndexStatusIndicator {...indexStatus} /></div>
+    <div className="kplex-index-status-empty"><IndexStatusIndicator plugin={plugin} /></div>
     <span>Building K-Plex index…</span>
   </div>;
 
@@ -319,7 +334,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     <div className="excalibrain-main-column">
       <div className="excalibrain-top-stack">
         <header className="excalibrain-topbar">
-          <IndexStatusIndicator {...indexStatus} />
+          <IndexStatusIndicator plugin={plugin} />
           <div className="excalibrain-brand"><ObsidianIcon name="brain-circuit" size={20} className="excalibrain-brand-mark" /><strong>K-Plex</strong></div>
           <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />

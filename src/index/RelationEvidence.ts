@@ -179,9 +179,12 @@ export class RelationEvidenceStore {
 
   from(sourcePath: string): Array<{ targetPath: string; evidence: RelationEvidence[] }> {
     const output: Array<{ targetPath: string; evidence: RelationEvidence[] }> = [];
-    for (const [key] of this.byPair) {
+    const keys = this.pairsByPath.get(sourcePath);
+    if (!keys?.size) return output;
+    // Keep deterministic pair insertion order while visiting only evidence local to this node.
+    // The previous global byPair scan made every neighborhood/explanation query O(vault evidence).
+    for (const key of keys) {
       const [left, right] = splitPairKey(key);
-      if (left !== sourcePath && right !== sourcePath) continue;
       const targetPath = left === sourcePath ? right : left;
       const evidence = this.between(sourcePath, targetPath);
       if (evidence.length) output.push({ targetPath, evidence });

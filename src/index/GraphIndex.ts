@@ -55,6 +55,29 @@ type SearchEntry = {
   path: string;
 };
 
+type PreparedSearchIndex = {
+  entries: SearchEntry[];
+  byPath: Map<string, SearchEntry>;
+};
+
+type FileRevision = { mtime: number; size: number };
+
+const captureFileRevision = (file: TFile): FileRevision => ({ mtime: file.stat.mtime, size: file.stat.size });
+const fileRevisionMatches = (file: TFile, revision: FileRevision): boolean =>
+  file.stat.mtime === revision.mtime && file.stat.size === revision.size;
+
+export type SuggestionCatalog = {
+  tags: string[];
+  noteTypes: string[];
+  folders: string[];
+  properties: string[];
+};
+
+export type PatchMarkdownPathsResult =
+  | { outcome: "patched"; count: number }
+  | { outcome: "cancelled"; count: number; pendingPaths: string[] }
+  | { outcome: "needs-rebuild"; count: number };
+
 const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const naturalCompare = (a: string, b: string) => naturalCollator.compare(a, b);
 const SNAPSHOT_EDIT_IDLE_MS = 5 * 60 * 1000;
@@ -99,12 +122,15 @@ export class GraphIndex {
   private state = createGraphState();
   private listeners = new Set<() => void>();
   private fieldCache = new Map<string, FieldCacheEntry>();
+  /** Compact semantic fingerprints survive hot-body LRU eviction so prose-only edits stay cheap. */
+  private semanticFingerprints = new Map<string, string>();
   private generation = 0;
   private building = false;
   private rebuildQueued = false;
   private searchEntries: SearchEntry[] = [];
   private searchEntryByPath = new Map<string, SearchEntry>();
   private searchCandidateCache = new Map<string, SearchEntry[]>();
+  private suggestionCatalogCache: SuggestionCatalog | null = null;
   private titleCache = new Map<string, { signature: string; title: string }>();
   private relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
   private metadataParser = new MetadataParser();
@@ -124,6 +150,7 @@ export class GraphIndex {
   private previewSnapshotPublished = false;
   private activeSnapshotGeneration: string | null = null;
   private nodeVisualCache = new Map<string, { signature: string; visual: NodeVisual | null }>();
+  private unpublishedPatchChanges = false;
 
   constructor(private plugin: ExcaliBrainPlugin, private app: App = plugin.app) {
     this.indexedDb = new KplexIndexedDbCache(app.vault.getName());
@@ -242,8 +269,34 @@ export class GraphIndex {
     return result;
   }
 
-  setSearchEntryPoints(paths: string[]): void {
-    this.searchEntryPointPaths = [...new Set(paths)];
+  setSearchEntryPoints(paths: string[]): boolean {
+    const next = [...new Set(paths)];
+    if (next.length === this.searchEntryPointPaths.length && next.every((path, index) => path === this.searchEntryPointPaths[index])) return false;
+    this.searchEntryPointPaths = next;
+    return true;
+  }
+
+  /** Whole-vault catalogs used by the filter/lens editor. They are derived once per published
+   * semantic revision instead of rescanning every page on each React render/status update. */
+  suggestionCatalog(): SuggestionCatalog {
+    if (this.suggestionCatalogCache) return this.suggestionCatalogCache;
+    const tags = new Set<string>();
+    const noteTypes = new Set<string>();
+    const folders = new Set<string>();
+    for (const page of this.state.pages.values()) {
+      for (const tag of page.tags) tags.add(tag);
+      if (page.noteType) noteTypes.add(page.noteType);
+      const slash = page.path.lastIndexOf("/");
+      if (slash > 0) folders.add(page.path.slice(0, slash));
+    }
+    const sort = (values: Iterable<string>) => [...new Set(values)].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    this.suggestionCatalogCache = {
+      tags: sort(tags),
+      noteTypes: sort(noteTypes),
+      folders: sort(folders),
+      properties: sort([...this.state.discoveredFields.values()].map((field) => field.name)),
+    };
+    return this.suggestionCatalogCache;
   }
 
   evidenceFrom(sourcePath: string): Array<{ targetPath: string; evidence: RelationEvidence[] }> {
@@ -271,6 +324,7 @@ export class GraphIndex {
 
   cancelRebuild(): void {
     this.bodyWarmGeneration += 1;
+    this.metadataParser.cancelPending();
     if (!this.building) return;
     this.generation += 1;
     this.rebuildQueued = false;
@@ -297,6 +351,7 @@ export class GraphIndex {
 
     const lookupBatchSize = Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 384;
     const readConcurrency = Platform.isIosApp ? 4 : Platform.isMobile ? 4 : 8;
+    const readByteBudget = Platform.isIosApp ? 1.5 * 1024 * 1024 : Platform.isMobile ? 3 * 1024 * 1024 : 8 * 1024 * 1024;
     const writeBatchSize = Platform.isIosApp ? 24 : Platform.isMobile ? 64 : 160;
     const pendingWrites: Array<{ path: string; mtime: number; body: ParsedBodyMetadata }> = [];
 
@@ -309,36 +364,79 @@ export class GraphIndex {
     for (let batchStart = 0; batchStart < files.length; batchStart += lookupBatchSize) {
       if (!current()) return false;
       const batch = files.slice(batchStart, batchStart + lookupBatchSize);
+      const revisions = new Map(batch.map((file) => [file.path, captureFileRevision(file)] as const));
       const lookupRequests: Array<{ path: string; mtime: number }> = [];
       const needsLookup: TFile[] = [];
       for (const file of batch) {
+        const revision = revisions.get(file.path)!;
         const hot = this.fieldCache.get(file.path);
-        if (hot?.mtime === file.stat.mtime) continue;
+        if (hot?.mtime === revision.mtime) continue;
         needsLookup.push(file);
-        lookupRequests.push({ path: file.path, mtime: file.stat.mtime });
+        lookupRequests.push({ path: file.path, mtime: revision.mtime });
       }
 
       const durable = await this.indexedDb.getBodies(lookupRequests);
       if (!current()) return false;
-      const misses = needsLookup.filter((file) => !durable.has(file.path));
+      // Prewarm is an optimization, so a file edited during this pass is simply skipped. The
+      // authoritative builder will read its latest revision; never cache stale content as current.
+      const misses = needsLookup.filter((file) => fileRevisionMatches(file, revisions.get(file.path)!) && !durable.has(file.path));
 
-      for (let readStart = 0; readStart < misses.length; readStart += readConcurrency) {
+      const readGroups: TFile[][] = [];
+      let group: TFile[] = [];
+      let groupBytes = 0;
+      for (const file of misses) {
+        const size = Math.max(1, revisions.get(file.path)!.size || 0);
+        if (group.length && (group.length >= readConcurrency || groupBytes + size > readByteBudget)) {
+          readGroups.push(group);
+          group = [];
+          groupBytes = 0;
+        }
+        group.push(file);
+        groupBytes += size;
+        if (group.length >= readConcurrency || groupBytes >= readByteBudget) {
+          readGroups.push(group);
+          group = [];
+          groupBytes = 0;
+        }
+      }
+      if (group.length) readGroups.push(group);
+
+      for (const readGroup of readGroups) {
         if (!current()) return false;
-        const group = misses.slice(readStart, readStart + readConcurrency);
         // Parallelize only native file reads. Parsing remains sequential and low-memory on iOS.
-        const contents = await Promise.all(group.map(async (file) => ({ file, content: await this.app.vault.read(file) })));
+        const contents = await Promise.all(readGroup.map(async (file) => ({
+          file,
+          revision: revisions.get(file.path)!,
+          content: await this.app.vault.read(file),
+        })));
         if (!current()) return false;
-        for (const { file, content } of contents) {
-          const body = await this.metadataParser.parse(content);
+        for (const { file, revision, content } of contents) {
+          if (!fileRevisionMatches(file, revision)) continue;
+          let body: ParsedBodyMetadata;
+          try {
+            body = await this.metadataParser.parse(content);
+          } catch (error) {
+            if (!current()) return false;
+            throw error;
+          }
           if (!current()) return false;
-          pendingWrites.push({ path: file.path, mtime: file.stat.mtime, body });
+          if (!fileRevisionMatches(file, revision)) continue;
+          pendingWrites.push({ path: file.path, mtime: revision.mtime, body });
           if (pendingWrites.length >= writeBatchSize && !(await flush())) return false;
+        }
+
+        // Extremely large native reads can leave substantial temporary strings behind in WebKit.
+        // Yield once for those waves without imposing a timer on every ordinary four-file group.
+        const retainedBytes = contents.reduce((sum, item) => sum + item.content.length * 2, 0);
+        if (Platform.isIosApp && retainedBytes >= 1024 * 1024) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+          if (!current()) return false;
         }
       }
 
       // Give WebKit a real paint/autorelease opportunity between native I/O waves rather than
       // one long chain of micro-yields. This is intentionally longer than setTimeout(0).
-      if (Platform.isIosApp) await new Promise<void>((resolve) => window.setTimeout(resolve, 24));
+      if (Platform.isIosApp) await new Promise<void>((resolve) => window.setTimeout(resolve, 8));
       else if (Platform.isMobile) await new Promise<void>((resolve) => window.setTimeout(resolve, 8));
     }
 
@@ -352,17 +450,24 @@ export class GraphIndex {
       window.clearTimeout(this.snapshotPersistTimer);
       this.snapshotPersistTimer = null;
     }
+    if (this.orphanCleanupTimer !== null) {
+      window.clearTimeout(this.orphanCleanupTimer);
+      this.orphanCleanupTimer = null;
+    }
     this.snapshotPersistGeneration += 1;
   }
 
   destroy(): void {
     this.bodyWarmGeneration += 1;
     this.snapshotHydrationRun += 1;
+    this.snapshotPersistGeneration += 1;
     this.snapshotHydrationTask = null;
     if (this.snapshotPersistTimer !== null) window.clearTimeout(this.snapshotPersistTimer);
     if (this.orphanCleanupTimer !== null) window.clearTimeout(this.orphanCleanupTimer);
     this.searchCandidateCache.clear();
     this.searchEntryByPath.clear();
+    this.semanticFingerprints.clear();
+    this.suggestionCatalogCache = null;
     this.titleCache.clear();
     this.listeners.clear();
     this.indexedDb.close();
@@ -389,12 +494,51 @@ export class GraphIndex {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
   }
 
-  private publishRestoredState(next: ReturnType<typeof createGraphState>, rebuildSearch = true): void {
+  private publishRestoredState(
+    next: ReturnType<typeof createGraphState>,
+    preparedSearch: PreparedSearchIndex | null = null,
+    keepExistingSearch = false,
+  ): void {
     this.state = next;
     this.titleCache.clear();
+    this.suggestionCatalogCache = null;
     this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
-    if (rebuildSearch) this.rebuildSearchIndex();
+    if (preparedSearch) this.installSearchIndex(preparedSearch);
+    else if (!keepExistingSearch) this.rebuildSearchIndex();
     this.emit();
+  }
+
+  private installSearchIndex(prepared: PreparedSearchIndex): void {
+    this.searchCandidateCache.clear();
+    this.searchEntries = prepared.entries;
+    this.searchEntryByPath = prepared.byPath;
+  }
+
+  private async prepareSearchIndex(
+    state: ReturnType<typeof createGraphState>,
+    isCurrent: () => boolean,
+  ): Promise<PreparedSearchIndex | null> {
+    const entries: SearchEntry[] = [];
+    const byPath = new Map<string, SearchEntry>();
+    const budgetMs = Platform.isIosApp ? 5 : Platform.isMobile ? 7 : 10;
+    let sliceStartedAt = Date.now();
+    let processed = 0;
+
+    for (const page of state.pages.values()) {
+      if (!isCurrent()) return null;
+      const entry = this.makeSearchEntry(page);
+      entries.push(entry);
+      byPath.set(page.path, entry);
+      processed += 1;
+
+      if ((processed & 255) === 0 && Date.now() - sliceStartedAt >= budgetMs) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (!isCurrent()) return null;
+        sliceStartedAt = Date.now();
+      }
+    }
+
+    return { entries, byPath };
   }
 
   private async publishSnapshotPreview(meta: IndexedDbSnapshotMeta, seedPaths: readonly string[]): Promise<boolean> {
@@ -459,6 +603,7 @@ export class GraphIndex {
     const persistedPhysicalPaths = new Set<string>();
     const modifiedMarkdownPaths = new Set<string>();
     const missingFileBindings = new Set<string>();
+    const restoredFingerprints = new Map<string, string>();
     // Old schema-2 desktop snapshots use one slow page cursor. Retain those decoded records so we
     // do not pay the same cursor cost twice. Chunked snapshots are cheap to stream a second time,
     // so avoid retaining 100k+ duplicate serialized page objects in memory.
@@ -467,6 +612,7 @@ export class GraphIndex {
     const pagesOk = await this.indexedDb.iterateSnapshotPages(meta, (page) => {
       retainedPages?.push(page);
       addPersistedPageToState(next, page, this.app);
+      if (page.semanticSignature) restoredFingerprints.set(page.path, page.semanticSignature);
       if (page.filePath) {
         persistedPhysicalPaths.add(page.filePath);
         const rebound = next.pages.get(page.path)?.file;
@@ -474,7 +620,7 @@ export class GraphIndex {
           if (rebound.extension === "md" && typeof page.mtime === "number" && rebound.stat.mtime !== page.mtime) modifiedMarkdownPaths.add(rebound.path);
         } else missingFileBindings.add(page.path);
       }
-    });
+    }, isCurrent);
     if (!pagesOk || !isCurrent()) return { restored: false, fresh: false, createdAt: meta.createdAt };
 
     if (missingFileBindings.size) {
@@ -501,6 +647,18 @@ export class GraphIndex {
       }
     }
 
+    // A bounded startup preview may already be visible, but never promote/retain a known-invalid
+    // full snapshot. Hydrating its relations + evidence only to immediately build a replacement
+    // doubles peak memory on iOS and delays the authoritative cold build on every platform.
+    if (structuralMismatch || missingFileBindings.size > 0) {
+      this.fullSnapshotHydrated = false;
+      this.fullSnapshotFresh = false;
+      this.restoredModifiedMarkdownPaths = [];
+      this.restoredStructuralMismatch = true;
+      this.restoredPatchPlanAvailable = false;
+      return { restored: false, fresh: false, createdAt: meta.createdAt };
+    }
+
     // Persisted page records already carry resolved neighbour relations. Hydrate those before the
     // much larger evidence store so a complete navigable graph can be published as soon as the
     // page snapshot is available. Evidence/provenance continues loading in the background.
@@ -514,7 +672,7 @@ export class GraphIndex {
       } else {
         const relationPassOk = await this.indexedDb.iterateSnapshotPages(meta, (saved) => {
           if (!hydratePersistedPageRelations(next, saved)) relationsComplete = false;
-        });
+        }, isCurrent);
         relationsHydrated = relationPassOk && relationsComplete;
       }
       if (retainedPages) relationsHydrated = relationsComplete;
@@ -535,10 +693,12 @@ export class GraphIndex {
       this.fullSnapshotFresh = false;
       this.previewSnapshotPublished = true;
       this.restoredPatchPlanAvailable = false;
-      this.publishRestoredState(pagePreview);
+      const previewSearch = await this.prepareSearchIndex(pagePreview, isCurrent);
+      if (!previewSearch) return { restored: false, fresh: false, createdAt: meta.createdAt };
+      this.publishRestoredState(pagePreview, previewSearch);
     }
 
-    const evidenceOk = await this.indexedDb.iterateSnapshotEvidence(meta, (item) => addPersistedEvidenceToState(next, item));
+    const evidenceOk = await this.indexedDb.iterateSnapshotEvidence(meta, (item) => addPersistedEvidenceToState(next, item), isCurrent);
     if (!evidenceOk || !isCurrent()) return { restored: false, fresh: false, createdAt: meta.createdAt };
     next.discoveredFields = new Map(meta.discoveredFields);
 
@@ -558,9 +718,16 @@ export class GraphIndex {
     // The earlier page-only publication uses this same `next.pages` map. Evidence hydration does
     // not alter searchable page metadata, so avoid allocating/sorting the 100k+ search index a
     // second time when promoting the fully hydrated state.
-    this.publishRestoredState(next, !relationsHydrated);
+    if (relationsHydrated) {
+      this.publishRestoredState(next, null, true);
+    } else {
+      const restoredSearch = await this.prepareSearchIndex(next, isCurrent);
+      if (!restoredSearch) return { restored: false, fresh: false, createdAt: meta.createdAt };
+      this.publishRestoredState(next, restoredSearch);
+    }
     this.fullSnapshotHydrated = true;
     this.fullSnapshotFresh = authoritativeFresh;
+    this.semanticFingerprints = restoredFingerprints;
     this.previewSnapshotPublished = false;
     this.restoredModifiedMarkdownPaths = [...modifiedMarkdownPaths];
     this.restoredStructuralMismatch = structuralMismatch || missingFileBindings.size > 0;
@@ -652,14 +819,25 @@ export class GraphIndex {
         this.metadataParser,
         this.indexedDb,
         () => run === this.generation,
+        this.semanticFingerprints,
       );
-      const result = await builder.patchMarkdownFiles(this.state, files, { useDurableCache: true, awaitBodyWrite: false });
+      const result = await builder.patchMarkdownFiles(this.state, files, {
+        useDurableCache: true,
+        awaitBodyWrite: false,
+        onFileCommitted: (commit) => {
+          this.invalidatePatchedPages(commit.touchedPagePaths);
+          this.patchSearchIndex(commit.touchedPagePaths);
+          if (commit.semanticChanged) this.unpublishedPatchChanges = true;
+        },
+      });
       if (!result.ok || run !== this.generation) return { reconciled: false, patched: 0 };
-      this.invalidatePatchedPages(result.touchedPagePaths);
-      this.patchSearchIndex(result.touchedPagePaths);
+      this.suggestionCatalogCache = null;
       this.restoredModifiedMarkdownPaths = [];
       this.restoredPatchPlanAvailable = false;
-      if (result.semanticChanges > 0) this.emit();
+      if (result.semanticChanges > 0 || this.unpublishedPatchChanges) {
+        this.unpublishedPatchChanges = false;
+        this.emit();
+      }
       this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
       this.deferOrphanCleanup();
         return { reconciled: true, patched: files.length };
@@ -670,35 +848,57 @@ export class GraphIndex {
 
   /** Incrementally replace declarations owned by already-indexed Markdown files.
    * Used for normal metadataCache.changed events so editing one note does not rebuild a large vault. */
-  async patchMarkdownPaths(paths: readonly string[]): Promise<{ patched: boolean; count: number }> {
-    if (this.building || !paths.length) return { patched: false, count: 0 };
-    // User activity outranks background snapshot maintenance. Incomplete snapshot generations are
-    // unreachable and are removed later during a long quiet period instead of blocking this edit.
+  async patchMarkdownPaths(paths: readonly string[]): Promise<PatchMarkdownPathsResult> {
+    if (!paths.length) return { outcome: "patched", count: 0 };
+    if (this.building) return { outcome: "cancelled", count: 0, pendingPaths: [...paths] };
     this.cancelPendingPersistence();
     this.deferOrphanCleanup();
     const files: TFile[] = [];
     for (const path of [...new Set(paths)]) {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (!(file instanceof TFile) || file.extension !== "md" || !this.get(path)) return { patched: false, count: 0 };
+      if (!(file instanceof TFile) || file.extension !== "md" || !this.get(path)) {
+        return { outcome: "needs-rebuild", count: 0 };
+      }
       files.push(file);
     }
-    if (!files.length) return { patched: true, count: 0 };
+    if (!files.length) return { outcome: "patched", count: 0 };
 
     this.building = true;
     const run = ++this.generation;
+    let committed = 0;
+    const committedPaths = new Set<string>();
     try {
       const builder = new GraphBuilder(
         this.plugin, this.app, this.fieldCache, this.metadataParser, this.indexedDb,
-        () => run === this.generation,
+        () => run === this.generation, this.semanticFingerprints,
       );
-      const result = await builder.patchMarkdownFiles(this.state, files, { useDurableCache: false, awaitBodyWrite: false });
-      if (!result.ok || run !== this.generation) return { patched: false, count: 0 };
-      this.invalidatePatchedPages(result.touchedPagePaths);
-      this.patchSearchIndex(result.touchedPagePaths);
-      if (result.semanticChanges > 0) this.emit();
+      const result = await builder.patchMarkdownFiles(this.state, files, {
+        useDurableCache: false,
+        awaitBodyWrite: false,
+        onFileCommitted: (commit) => {
+          committed += 1;
+          committedPaths.add(commit.sourcePath);
+          this.invalidatePatchedPages(commit.touchedPagePaths);
+          this.patchSearchIndex(commit.touchedPagePaths);
+          this.suggestionCatalogCache = null;
+          if (commit.semanticChanged) this.unpublishedPatchChanges = true;
+        },
+      });
+      if (!result.ok || run !== this.generation) {
+        return {
+          outcome: "cancelled",
+          count: committed,
+          pendingPaths: files.map((file) => file.path).filter((path) => !committedPaths.has(path)),
+        };
+      }
+      this.suggestionCatalogCache = null;
+      if (result.semanticChanges > 0 || this.unpublishedPatchChanges) {
+        this.unpublishedPatchChanges = false;
+        this.emit();
+      }
       this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
       this.deferOrphanCleanup();
-        return { patched: true, count: files.length };
+      return { outcome: "patched", count: files.length };
     } finally {
       this.building = false;
     }
@@ -742,7 +942,9 @@ export class GraphIndex {
         Platform.isIosApp ? 50 : Platform.isMobile ? 100 : 240,
       );
       if (!resolved) return { restored: false, fresh: false, createdAt: manifest.createdAt };
-      this.publishRestoredState(next);
+      const restoredSearch = await this.prepareSearchIndex(next, () => true);
+      if (!restoredSearch) return { restored: false, fresh: false, createdAt: manifest.createdAt };
+      this.publishRestoredState(next, restoredSearch);
       const fresh = manifest.vaultSignature === computeVaultSignature(this.app);
       // A previous iOS/WebView termination may have interrupted a new generation after some
       // chunks were written but before its manifest became authoritative. Remove those orphaned
@@ -825,9 +1027,10 @@ export class GraphIndex {
   private async persistIndexedDbSnapshot(run: number): Promise<void> {
     if (run !== this.snapshotPersistGeneration || this.state.pages.size === 0) return;
     const state = this.state;
+    const semanticFingerprints = this.semanticFingerprints;
     function* pageRecords(): IterableIterator<PersistedPage> {
       for (const page of state.pages.values()) {
-        if (!page.transient) yield persistedPageFromGraphPage(page);
+        if (!page.transient) yield persistedPageFromGraphPage(page, semanticFingerprints.get(page.path));
       }
     }
     function* evidenceRecords(): IterableIterator<PersistedEvidenceDeclaration> {
@@ -884,6 +1087,7 @@ export class GraphIndex {
     this.building = true;
     const run = ++this.generation;
     try {
+      const nextFingerprints = new Map<string, string>();
       const builder = new GraphBuilder(
         this.plugin,
         this.app,
@@ -891,24 +1095,30 @@ export class GraphIndex {
         this.metadataParser,
         this.indexedDb,
         () => run === this.generation,
+        nextFingerprints,
       );
       const next = await builder.build();
       if (!next || run !== this.generation) {
         return false;
       }
 
+      const preparedSearch = await this.prepareSearchIndex(next, () => run === this.generation);
+      if (!preparedSearch || run !== this.generation) return false;
+
       // Atomic graph-state swap: readers never observe a half-built graph.
       this.state = next;
+      this.semanticFingerprints = nextFingerprints;
       this.fullSnapshotHydrated = true;
       this.fullSnapshotFresh = true;
       this.previewSnapshotPublished = false;
       this.titleCache.clear();
       this.nodeVisualCache.clear();
+      this.suggestionCatalogCache = null;
       this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
-        this.rebuildSearchIndex();
-        this.emit();
-        this.scheduleSnapshotPersist();
-        return true;
+      this.installSearchIndex(preparedSearch);
+      this.emit();
+      this.scheduleSnapshotPersist();
+      return true;
     } finally {
       this.building = false;
       this.rebuildQueued = false;
@@ -925,22 +1135,26 @@ export class GraphIndex {
   }
 
   private rebuildSearchIndex(): void {
-    this.searchCandidateCache.clear();
-    this.searchEntryByPath.clear();
-    this.searchEntries = [];
+    const entries: SearchEntry[] = [];
+    const byPath = new Map<string, SearchEntry>();
     for (const page of this.state.pages.values()) {
       const entry = this.makeSearchEntry(page);
-      this.searchEntries.push(entry);
-      this.searchEntryByPath.set(page.path, entry);
+      entries.push(entry);
+      byPath.set(page.path, entry);
     }
+    this.installSearchIndex({ entries, byPath });
   }
 
   /** Update only entries whose source/target page may have changed during a Markdown patch. */
   private patchSearchIndex(paths: Iterable<string>): void {
     this.searchCandidateCache.clear();
+    const removed = new Set<string>();
     for (const path of new Set(paths)) {
       const page = this.get(path);
-      if (!page) continue;
+      if (!page) {
+        if (this.searchEntryByPath.delete(path)) removed.add(path);
+        continue;
+      }
       const existing = this.searchEntryByPath.get(page.path);
       if (existing) {
         const next = this.makeSearchEntry(page);
@@ -954,6 +1168,7 @@ export class GraphIndex {
         this.searchEntryByPath.set(page.path, entry);
       }
     }
+    if (removed.size) this.searchEntries = this.searchEntries.filter((entry) => !removed.has(entry.page.path));
   }
 
   private invalidatePatchedPages(paths: Iterable<string>): void {
@@ -968,14 +1183,19 @@ export class GraphIndex {
   private scheduleOrphanCleanup(activeGeneration: string): void {
     this.activeSnapshotGeneration = activeGeneration;
     if (this.orphanCleanupTimer !== null) window.clearTimeout(this.orphanCleanupTimer);
+    const run = this.snapshotPersistGeneration;
     this.orphanCleanupTimer = window.setTimeout(() => {
       this.orphanCleanupTimer = null;
+      if (run !== this.snapshotPersistGeneration) return;
       const generation = this.activeSnapshotGeneration;
       if (!generation || this.building || this.snapshotPersistTimer !== null) {
         if (generation) this.scheduleOrphanCleanup(generation);
         return;
       }
-      void this.indexedDb.cleanupOrphanGenerations(generation);
+      void this.indexedDb.cleanupOrphanGenerations(
+        generation,
+        () => run === this.snapshotPersistGeneration && this.activeSnapshotGeneration === generation,
+      );
     }, SNAPSHOT_MAINTENANCE_IDLE_MS);
   }
 
@@ -1008,6 +1228,64 @@ export class GraphIndex {
     return [...editable].sort((a, b) => (rank.get(a) ?? 9) - (rank.get(b) ?? 9) || (a === sourcePath ? -1 : 1));
   }
 
+  private reconcileFileTreeMembership(file: TFile): Set<string> {
+    const touched = new Set<string>();
+    const ensureFolder = (folderPath: string, name: string): GraphPage => {
+      const path = folderPath ? `folder:${folderPath}` : "folder:/";
+      let page = this.state.pages.get(path);
+      if (!page) {
+        page = {
+          path, file: null, name, url: null, isFolder: true, isTag: false, mtime: null,
+          neighbours: new Map(), aliases: [], tags: [], noteType: null, primaryStyleTag: null,
+          styleTags: [], maxLabelLength: this.plugin.settings.baseNodeStyle.maxLabelLength ?? 30,
+        };
+        this.state.pages.set(path, page);
+        this.state.lowercasePathMap.set(path.toLowerCase(), path);
+        touched.add(path);
+      }
+      return page;
+    };
+    const ensureTreeEdge = (parent: GraphPage, child: GraphPage): void => {
+      const exists = this.state.evidence.between(parent.path, child.path).some((item) =>
+        item.sourceKind === "file-tree" && item.declaredByPath === parent.path && item.declaredTargetPath === child.path,
+      );
+      if (!exists) {
+        this.state.evidence.addPair(parent.path, child.path, "child", RelationType.DEFINED, LinkDirection.FROM, {
+          sourceKind: "file-tree", definition: "file-tree",
+        });
+      }
+      resolveEvidencePair(this.state.pages, this.state.evidence, parent.path, child.path);
+      resolveEvidencePair(this.state.pages, this.state.evidence, child.path, parent.path);
+      touched.add(parent.path);
+      touched.add(child.path);
+    };
+
+    const filePage = this.state.pages.get(file.path);
+    if (!filePage) return touched;
+    const oldParents = this.state.evidence.declarationsTouching(file.path)
+      .filter((item) => item.sourceKind === "file-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("folder:"))
+      .map((item) => item.declaredByPath);
+    this.state.evidence.removeDeclarationsTouching(file.path, (item) =>
+      item.sourceKind === "file-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("folder:"));
+    for (const parentPath of oldParents) {
+      resolveEvidencePair(this.state.pages, this.state.evidence, parentPath, file.path);
+      resolveEvidencePair(this.state.pages, this.state.evidence, file.path, parentPath);
+      touched.add(parentPath);
+    }
+
+    let parent = ensureFolder("", "/");
+    const folderParts = file.path.split("/").slice(0, -1).filter(Boolean);
+    let currentPath = "";
+    for (const part of folderParts) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const folder = ensureFolder(currentPath, part);
+      ensureTreeEdge(parent, folder);
+      parent = folder;
+    }
+    ensureTreeEdge(parent, filePage);
+    return touched;
+  }
+
   /**
    * Optimistically materialize a file K-Plex itself just created. The normal Obsidian metadata
    * event remains authoritative and may enrich this page later, but UI rendering no longer waits
@@ -1015,7 +1293,26 @@ export class GraphIndex {
    */
   insertCreatedFile(file: TFile): GraphPage {
     const existing = this.get(file.path);
-    if (existing) return existing;
+    if (existing) {
+      // A K-Plex-created note can materialize a previously unresolved/virtual graph page. Promote
+      // that page immediately instead of waiting for the managed Obsidian create event (which is
+      // intentionally suppressed), then reconcile file-tree ancestry from the actual TFile.
+      existing.file = file;
+      existing.name = file.basename;
+      existing.url = null;
+      existing.isFolder = false;
+      existing.isTag = false;
+      existing.mtime = file.stat.mtime;
+      const touched = this.reconcileFileTreeMembership(file);
+      touched.add(existing.path);
+      this.invalidatePatchedPages(touched);
+      this.patchSearchIndex(touched);
+      this.suggestionCatalogCache = null;
+      this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+      this.emit();
+      this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+      return existing;
+    }
     const page: GraphPage = {
       path: file.path, file, name: file.basename, url: null, isFolder: false, isTag: false,
       mtime: file.stat.mtime, neighbours: new Map(), aliases: [], tags: [], noteType: null,
@@ -1023,9 +1320,11 @@ export class GraphIndex {
     };
     this.state.pages.set(page.path, page);
     this.state.lowercasePathMap.set(page.path.toLowerCase(), page.path);
-    this.patchSearchIndex([page.path]);
-    this.titleCache.delete(page.path);
-    this.nodeVisualCache.delete(page.path);
+    const touched = this.reconcileFileTreeMembership(file);
+    touched.add(page.path);
+    this.invalidatePatchedPages(touched);
+    this.patchSearchIndex(touched);
+    this.suggestionCatalogCache = null;
     this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
     this.emit();
     this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
@@ -1100,7 +1399,7 @@ export class GraphIndex {
     const target = this.get(targetPath);
     if (!source || !target) return false;
     const normalizedField = field.toLowerCase().replace(/\s+/g, "-").trim();
-    const removed = this.state.evidence.removeDeclarations((item) =>
+    const removed = this.state.evidence.removeDeclarationsTouching(storagePath, (item) =>
       item.sourceKind === "frontmatter-ontology" &&
       item.declaredByPath === storagePath &&
       item.declaredTargetPath === targetPath &&

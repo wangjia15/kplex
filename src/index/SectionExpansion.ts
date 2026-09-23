@@ -1,7 +1,7 @@
 import type { App, CachedMetadata } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neighborhood, type Relation, type Role } from "../types";
-import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./fieldParser";
+import { extractLinksFromValue, normalizeFieldName, parseBodyMetadataCooperative, type ParsedBodyMetadata } from "./fieldParser";
 import type { GraphIndex } from "./GraphIndex";
 import { applyEvidenceToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
@@ -15,11 +15,28 @@ export type ExpandedSection = {
   childIds: string[];
 };
 
+type EvidenceTargetMap = Map<string, { target: GraphPage; evidence: RelationEvidence[] }>;
+
+type SectionProjectionSource = {
+  centerPage: GraphPage;
+  centerEvidence: EvidenceTargetMap;
+  persistentSiblings: Neighbour[];
+  sections: Array<{
+    id: string;
+    page: GraphPage;
+    evidenceByTarget: EvidenceTargetMap;
+    level: number;
+    parentId: string | null;
+    childIds: string[];
+  }>;
+};
+
 export type CentralSectionExpansion = {
   centerPath: string;
   centerNeighborhood: Neighborhood;
   sections: ExpandedSection[];
   explanations: Map<string, RelationshipExplanation>;
+  projectionSource: SectionProjectionSource;
 };
 
 type HeadingRange = { id: string; heading: string; level: number; line: number; start: number; end: number; subpath: string; parentId: string | null };
@@ -201,21 +218,49 @@ function sourceLinks(cache: CachedMetadata | null): CacheLink[] {
  * Expand exactly one Markdown center note into transient heading nodes. No section is added to the
  * persistent GraphIndex; the file body is parsed on demand and discarded when the view collapses.
  */
-export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, index: GraphIndex, centerPage: GraphPage): Promise<CentralSectionExpansion | null> {
+export async function buildCentralSectionExpansion(
+  plugin: ExcaliBrainPlugin,
+  index: GraphIndex,
+  centerPage: GraphPage,
+  shouldContinue: () => boolean = () => true,
+): Promise<CentralSectionExpansion | null> {
   const file = centerPage.file;
   if (!file || file.extension !== "md") return null;
   const content = await plugin.app.vault.cachedRead(file);
+  if (!shouldContinue()) return null;
   const headings = scanHeadings(content);
   if (!headings.length) return null;
   const firstHeadingLine = headings[0].line;
   const cache = plugin.app.metadataCache.getFileCache(file);
   const links = sourceLinks(cache);
   const preambleTargets = new Set<string>();
+  const linksBySection = new Map<string, CacheLink[]>();
+  const headingForLine = (line: number): HeadingRange | null => {
+    let low = 0;
+    let high = headings.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (headings[mid].line <= line) low = mid + 1;
+      else high = mid;
+    }
+    return low > 0 ? headings[low - 1] : null;
+  };
+  // Assign cached links to heading ranges once. The previous per-heading full link scan made an
+  // expanded document with H headings and L links do O(H x L) projection work.
   for (const link of links) {
     const line = (link.position?.start.line ?? Number.MAX_SAFE_INTEGER) + 1;
-    if (line >= firstHeadingLine) continue;
-    const target = resolveTarget(plugin.app, index, link.link, file.path);
-    if (target) preambleTargets.add(target.path);
+    if (line < firstHeadingLine) {
+      const target = resolveTarget(plugin.app, index, link.link, file.path);
+      if (target) preambleTargets.add(target.path);
+      continue;
+    }
+    const heading = headingForLine(line);
+    if (!heading) continue;
+    const offset = link.position?.start.offset;
+    if (typeof offset === "number" && offset >= heading.end) continue;
+    const bucket = linksBySection.get(heading.id) ?? [];
+    bucket.push(link);
+    linksBySection.set(heading.id, bucket);
   }
 
   // Preserve inbound/structural/frontmatter evidence on the real center, but move outgoing body
@@ -240,6 +285,7 @@ export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, in
   // Preserve the persistent index result while section expansion only redistributes direct body evidence.
   centerNeighborhood.siblings = index.getNeighborhood(centerPage.path)?.siblings ?? [];
   const sections: ExpandedSection[] = [];
+  const projectionSections: SectionProjectionSource["sections"] = [];
   const explanations = new Map<string, RelationshipExplanation>();
   for (const { target, evidence: items } of centerEvidence.values()) {
     if (!center.neighbours.has(target.path)) continue;
@@ -259,15 +305,20 @@ export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, in
       subpath: heading.subpath, line: heading.line, start: heading.start, end: heading.end,
     };
     const sectionText = content.slice(heading.start, heading.end);
-    const parsed = parseBodyMetadata(sectionText);
+    let parsed: ParsedBodyMetadata;
+    try {
+      parsed = await parseBodyMetadataCooperative(sectionText, shouldContinue);
+    } catch (error) {
+      if (!shouldContinue()) return null;
+      throw error;
+    }
     const byTarget = new Map<string, { target: GraphPage; evidence: RelationEvidence[] }>();
     let counter = 0;
 
     // Ordinary body wikilinks/Markdown links are still inferred evidence, even when the same text
     // also participates in a Dataview ontology field.
-    for (const link of links) {
+    for (const link of linksBySection.get(heading.id) ?? []) {
       const line = (link.position?.start.line ?? -1) + 1;
-      if (line < heading.line || (heading.end < content.length && (link.position?.start.offset ?? 0) >= heading.end)) continue;
       const actual = resolveTarget(plugin.app, index, link.link, file.path);
       if (!actual) continue;
       const target = sectionTarget(actual, heading.id);
@@ -309,11 +360,19 @@ export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, in
       explanations.set(`${sectionPage.path}\u0000${target.path}`, explainResolvedRelationship(sectionPage, target, items, plugin.settings.inferAllLinksAsFriends));
     }
     sections.push({ id: heading.id, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [] });
+    projectionSections.push({
+      id: heading.id, page: sectionPage, evidenceByTarget: byTarget, level: heading.level,
+      parentId: heading.parentId, childIds: [],
+    });
   }
 
   const byId = new Map(sections.map((section) => [section.id, section] as const));
+  const projectionById = new Map(projectionSections.map((section) => [section.id, section] as const));
   for (const section of sections) {
-    if (section.parentId) byId.get(section.parentId)?.childIds.push(section.id);
+    if (section.parentId) {
+      byId.get(section.parentId)?.childIds.push(section.id);
+      projectionById.get(section.parentId)?.childIds.push(section.id);
+    }
   }
 
   // Section headings themselves remain transient defined children in the compatibility
@@ -331,5 +390,54 @@ export async function buildCentralSectionExpansion(plugin: ExcaliBrainPlugin, in
     });
   }
 
-  return { centerPath: centerPage.path, centerNeighborhood, sections, explanations };
+  return {
+    centerPath: centerPage.path, centerNeighborhood, sections, explanations,
+    projectionSource: {
+      centerPage, centerEvidence, persistentSiblings: [...centerNeighborhood.siblings], sections: projectionSections,
+    },
+  };
+}
+
+/** Recompute only the visible section projection from cached evidence. No Markdown is read or parsed. */
+export function projectCentralSectionExpansion(
+  plugin: ExcaliBrainPlugin,
+  index: GraphIndex,
+  expansion: CentralSectionExpansion,
+): CentralSectionExpansion {
+  const source = expansion.projectionSource;
+  const center = clonePage(source.centerPage);
+  const centerNeighborhood = resolveNeighbourhood(plugin, index, center, source.centerEvidence);
+  centerNeighborhood.siblings = source.persistentSiblings.filter((item) => index.isVisiblePage(item.page));
+  const explanations = new Map<string, RelationshipExplanation>();
+  for (const { target, evidence: items } of source.centerEvidence.values()) {
+    if (!center.neighbours.has(target.path)) continue;
+    explanations.set(`${center.path}\u0000${target.path}`, explainResolvedRelationship(center, target, items, plugin.settings.inferAllLinksAsFriends));
+  }
+
+  const sections: ExpandedSection[] = source.sections.map((raw) => {
+    const page = clonePage(raw.page, raw.page.path);
+    const neighborhood = resolveNeighbourhood(plugin, index, page, raw.evidenceByTarget);
+    for (const { target, evidence: items } of raw.evidenceByTarget.values()) {
+      if (!page.neighbours.has(target.path)) continue;
+      explanations.set(`${page.path}\u0000${target.path}`, explainResolvedRelationship(page, target, items, plugin.settings.inferAllLinksAsFriends));
+    }
+    return {
+      id: raw.id, page, neighborhood, level: raw.level, parentId: raw.parentId, childIds: [...raw.childIds],
+    };
+  });
+
+  for (const section of sections) {
+    centerNeighborhood.children.push({
+      page: section.page, role: "child", relationType: RelationType.DEFINED,
+      typeDefinition: "section", linkDirection: LinkDirection.FROM,
+    });
+    explanations.set(`${center.path}\u0000${section.page.path}`, {
+      sourcePath: center.path, targetPath: section.page.path,
+      resolvedRoles: [{ role: "child", relationType: RelationType.DEFINED }], hidden: false,
+      summary: "This is a transient heading section of the expanded central Markdown note. It is parsed on demand and is not stored in the persistent K-Plex index.",
+      decisions: [],
+    });
+  }
+
+  return { centerPath: expansion.centerPath, centerNeighborhood, sections, explanations, projectionSource: source };
 }

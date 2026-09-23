@@ -101,13 +101,21 @@ Obsidian properties configured as type **Date** are mapped through the enabled D
 
 This is different from interpreting every ISO-looking string as a date: K-Plex checks the Obsidian property type registry first.
 
-## Snapshot publication and startup persistence
+## Snapshot publication, demand gating, and startup persistence
 
 `GraphBuilder` constructs a graph privately. `GraphIndex` publishes only a fully collected and resolved state. Rebuilds are generation-scoped and cancellable, so stale partial work cannot replace the live graph. `main.ts` tracks a dirty revision and clears the backlog only when a build actually publishes the revision it started from.
 
-The resolved semantic graph is also persisted as a **transactional chunked snapshot** in the K-Plex plugin directory. Pages and original evidence declarations are written to generation-scoped chunk files; the manifest is written last. If Obsidian/WebKit terminates during persistence, the previous manifest remains authoritative and any orphan chunks are removed after the next successful restore. A cheap vault signature plus semantic-settings signature decides whether the restored snapshot is already fresh.
+Automatic edit indexing is **visibility-demand gated**. An Obsidian K-Plex tab can remain mounted while hidden behind another tab; that does not count as visible demand. Hidden surfaces retain the dirty backlog but do not automatically parse/build, persist a new snapshot, or run the graph React subscription. Revealing a K-Plex surface catches up from the accumulated dirty revision. Explicit commands and the documented once-per-session startup path are separate from this automatic edit policy.
 
-Desktop and Android additionally keep a per-file body parse cache keyed by file path + mtime. That lower-level cache is an optimization only and does not contain resolved graph semantics. On iOS it is intentionally neither restored nor retained across all files: each body is parsed, reduced to graph evidence, then released to reduce WebKit memory pressure. Worker parsing is also disabled on iOS to avoid structured-clone duplication.
+Folder and tag **node visibility is presentation state, not an index mode**. Their structural topology is maintained from Obsidian's in-memory `Vault` tree and `MetadataCache`, without Markdown body reads. `showFolderNodes` and `showTagNodes` must therefore never participate in the semantic-settings signature or schedule a rebuild; hiding them only filters already-materialized nodes, and revealing them reuses the same graph immediately.
+
+The resolved semantic graph is persisted in **IndexedDB as a transactional, generation-scoped chunked snapshot**. The active metadata record is written only after the new page/evidence generation is complete, so interrupted writes cannot make a partial generation authoritative. A cheap vault signature plus semantic-settings signature decides whether the restored snapshot is already fresh. A full restored generation whose physical file bindings/tree no longer match the vault is rejected before evidence/relation hydration instead of being retained beside a replacement build; an already-published bounded preview may remain non-authoritative while the rebuild starts.
+
+IndexedDB is always treated as an optimization. Opening the database has a short deadline and bounded retry backoff: if WebView storage is blocked or slow, startup proceeds using vault reads rather than waiting indefinitely, and a late stale connection is closed. Page/evidence hydration is chunked, time-sliced, and generation checked. Deferred snapshot/orphan maintenance is cancelled when there is no visible K-Plex demand.
+
+A durable per-file body parse cache is keyed by file path + mtime. On large iOS cold starts K-Plex can prewarm that compact cache in bounded checkpoints before retaining the full graph, so an interrupted first run resumes rather than rereading every body. Desktop cold builds overlap a small, byte-capped number of native file reads; parsing remains bounded and publication is still atomic. Worker parsing is disabled on iOS to avoid structured-clone duplication.
+
+Semantic no-op detection uses a compact per-file fingerprint kept independently of the hot parsed-body LRU and persisted with page snapshot records. This allows prose-only or unrelated frontmatter edits to stay no-ops even after a warm restore or after the hot body entry has been evicted.
 
 
 ## Presentation predicates are not graph indexing
@@ -144,6 +152,6 @@ npm test
 
 The golden fixture is `tests/fixtures/excalibrain-indexing`.
 
-The current automated baseline covers README assertions **1–33 plus P1–P2**, including parsing, explicit/inferred reconciliation, K-Plex frontmatter precedence, Previous/Next, Hidden, note type, folders, tags, URLs, Date → Daily Notes, placeholders, and explanation provenance.
+The current automated baseline covers README assertions **1–33 plus P1–P6**, including parsing, explicit/inferred reconciliation, K-Plex frontmatter precedence, Previous/Next, Hidden, note type, folders, tags, URLs, Date → Daily Notes, placeholders, explanation provenance, malformed-delimiter parser regression, idempotent/shared-lifetime derived URL-origin patching, stale derived-node search cleanup, and tag-aware incremental patch equivalence.
 
 Assertions **34–50** cover the runtime-only central-note section outline, including nested heading structure, folding, projection of hidden descendant relationships to the nearest visible folded section, and restoration of the unchanged note-level persistent index after collapse.

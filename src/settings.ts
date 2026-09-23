@@ -654,8 +654,6 @@ const REINDEX_SETTING_KEYS = new Set<string>([
   "inferAllLinksAsFriends",
   "inverseInfer",
   "showFullTagName",
-  "showFolderNodes",
-  "showTagNodes",
   "primaryTagField",
   "noteTypeField",
   ...Object.keys(HIERARCHY_KEY_MAP)

@@ -45,6 +45,8 @@ export type PersistedPage = {
   primaryStyleTag: string | null;
   styleTags: string[];
   maxLabelLength: number;
+  /** Compact semantic fingerprint for edit no-op detection after a warm restore. Optional for old snapshots. */
+  semanticSignature?: string;
   /** Cached resolved neighbours. Optional so v1/early IndexedDB snapshots still migrate cleanly. */
   relations?: PersistedRelation[];
 };
@@ -125,8 +127,6 @@ export function computeIndexSettingsSignature(settings: ExcaliBrainSettings): st
     inverseInfer: settings.inverseInfer,
     excalibrainFilepath: settings.excalibrainFilepath,
     showFullTagName: settings.showFullTagName,
-    showFolderNodes: settings.showFolderNodes,
-    showTagNodes: settings.showTagNodes,
     noteTypeField: settings.noteTypeField,
     primaryTagField: settings.primaryTagField,
     tagStyleList: settings.tagStyleList,
@@ -178,7 +178,7 @@ const persistedRelationFromRelation = (targetPath: string, relation: Relation): 
   previousFriendTypeDefinition: relation.previousFriendTypeDefinition,
 });
 
-export function persistedPageFromGraphPage(page: GraphPage): PersistedPage {
+export function persistedPageFromGraphPage(page: GraphPage, semanticSignature?: string): PersistedPage {
   return {
     path: page.path,
     filePath: page.file?.path ?? null,
@@ -193,6 +193,7 @@ export function persistedPageFromGraphPage(page: GraphPage): PersistedPage {
     primaryStyleTag: page.primaryStyleTag,
     styleTags: [...page.styleTags],
     maxLabelLength: page.maxLabelLength,
+    ...(semanticSignature ? { semanticSignature } : {}),
     relations: [...page.neighbours.entries()].map(([targetPath, relation]) => persistedRelationFromRelation(targetPath, relation)),
   };
 }

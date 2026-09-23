@@ -38,6 +38,7 @@ function compile(relativePath) {
 for (const file of [
   "src/types.ts",
   "src/util/perf.ts",
+  "src/main.ts",
   "src/index/fieldParser.ts",
   "src/index/MetadataParser.ts",
   "src/index/RelationEvidence.ts",
@@ -116,7 +117,25 @@ function moment(value, inputFormat, strict) {
   };
 }
 const Platform = { isMobile: false };
-module.exports = { TAbstractFile, TFile, TFolder, getAllTags, moment, Platform };
+class Plugin {
+  constructor() { this.app = null; }
+  async saveData() {}
+  async loadData() { return {}; }
+  registerEvent() {}
+  registerView() {}
+  addCommand() {}
+  addSettingTab() {}
+}
+class FileView { constructor() { this.containerEl = null; } }
+class MarkdownView extends FileView {}
+class Menu {}
+class Notice { constructor() {} }
+function normalizePath(path) { return path; }
+function setIcon() {}
+module.exports = {
+  TAbstractFile, TFile, TFolder, getAllTags, moment, Platform, Plugin, FileView, MarkdownView,
+  Menu, Notice, normalizePath, setIcon,
+};
 `);
 
 const obsidianTestApi = require(join(obsidianModuleDir, "index.js"));
@@ -124,11 +143,46 @@ const { TFile, TFolder } = obsidianTestApi;
 // Production K-Plex uses Obsidian's host-provided `window.moment`, just like the Tasks plugin.
 // Install the test double on the fake window instead of pretending Moment is a production import.
 globalThis.window.moment = obsidianTestApi.moment;
+
+// main.ts is compiled too so the coordinator cancellation regression exercises the production
+// performRebuild method. Its unrelated UI/settings dependencies are inert stubs in this fixture.
+function writeRuntimeStub(relativePath, source) {
+  const path = join(temp, relativePath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, source);
+}
+writeRuntimeStub("src/settings.js", `
+exports.DEFAULT_SETTINGS = {};
+exports.ExcaliBrainSettingTab = class {};
+exports.migrateAndMergeSettings = (_legacy, own) => own ?? {};
+`);
+writeRuntimeStub("src/ui/ExcaliBrainView.js", `
+exports.EXCALIBRAIN_VIEW_TYPE = "kplex";
+exports.KPLEX_SIDEPANEL_VIEW_TYPE = "kplex-sidepanel";
+exports.ExcaliBrainView = class {};
+exports.KplexSidepanelView = class {};
+`);
+for (const [path, name] of [
+  ["src/ui/RelationModal.js", "RelationModal"],
+  ["src/ui/NewRelatedNoteModal.js", "NewRelatedNoteModal"],
+  ["src/editor/OntologySuggester.js", "OntologySuggester"],
+  ["src/ui/AddToOntologyModal.js", "AddToOntologyModal"],
+  ["src/ui/NoteTypeModal.js", "NoteTypeModal"],
+]) writeRuntimeStub(path, `exports.${name} = class {};`);
+writeRuntimeStub("src/ui/viewProfile.js", `
+exports.activeLayoutProfile = () => null;
+exports.currentDeviceClass = () => "desktop";
+exports.effectiveViewSettings = (_settings, view) => view ?? {};
+exports.layoutProfileKey = () => "desktop";
+`);
+
 const { GraphIndex } = require(join(temp, "src/index/GraphIndex.js"));
-const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedRelations } = require(join(temp, "src/index/IndexSnapshot.js"));
+const ExcaliBrainPlugin = require(join(temp, "src/main.js")).default;
+const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedRelations, computeIndexSettingsSignature } = require(join(temp, "src/index/IndexSnapshot.js"));
 const { createGraphState } = require(join(temp, "src/index/GraphState.js"));
-const { buildCentralSectionExpansion, canExpandCentralSections } = require(join(temp, "src/index/SectionExpansion.js"));
-const { parseBodyMetadata, parseBodyMetadataCore } = require(join(temp, "src/index/fieldParser.js"));
+const { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSectionExpansion } = require(join(temp, "src/index/SectionExpansion.js"));
+const { parseBodyMetadata, parseBodyMetadataCore, parseBodyMetadataCooperative } = require(join(temp, "src/index/fieldParser.js"));
+const { MetadataParser, MetadataParseCancelledError } = require(join(temp, "src/index/MetadataParser.js"));
 const { RelationType, LinkDirection } = require(join(temp, "src/types.js"));
 const { RelationEvidenceStore } = require(join(temp, "src/index/RelationEvidence.js"));
 const { buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
@@ -841,7 +895,7 @@ try {
   assert.equal(hydratePersistedRelations(warmState, savedPages), true);
   assert.equal(warmState.pages.get("Note A.md")?.neighbours.get("Note B.md")?.isParent, true);
   const runtimePatch = await index.patchMarkdownPaths(["Note A.md"]);
-  assert.deepEqual(runtimePatch, { patched: true, count: 1 });
+  assert.deepEqual(runtimePatch, { outcome: "patched", count: 1 });
   expectRole("Note A.md", "parent", "Note B.md", RelationType.DEFINED);
 
   // Assertions 54–56: a semantic edit refreshes only the changed search entry; a prose-only edit
@@ -853,7 +907,7 @@ try {
   noteA.stat.mtime += 1000;
   noteACache.frontmatter.aliases = "RuntimeAliasZZZ";
   const aliasPatch = await index.patchMarkdownPaths(["Note A.md"]);
-  assert.deepEqual(aliasPatch, { patched: true, count: 1 });
+  assert.deepEqual(aliasPatch, { outcome: "patched", count: 1 });
   assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
   const aliasesCountAfter = index.discoveredFields().find((field) => field.normalized === "aliases")?.count ?? 0;
   assert.equal(aliasesCountAfter, aliasesCountBefore, "Incremental saves must not inflate discovered-field counts");
@@ -862,7 +916,7 @@ try {
   contents.set("Note A.md", `${proseBefore}\nPlain prose that does not affect K-Plex semantics.`);
   noteA.stat.mtime += 1000;
   const prosePatch = await index.patchMarkdownPaths(["Note A.md"]);
-  assert.deepEqual(prosePatch, { patched: true, count: 1 });
+  assert.deepEqual(prosePatch, { outcome: "patched", count: 1 });
   assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
 
   // Assertions 57–58: arbitrary frontmatter names/values are lens data, not graph semantics.
@@ -961,7 +1015,312 @@ try {
   await index.patchMarkdownPaths(["Note A.md"]);
   expectRole("Note A.md", "child", imageFile.path, RelationType.DEFINED);
 
-  console.log("K-Plex indexing fixture: assertions 1–33 + P1–P2 PASS");
+  // Performance regression P3: malformed pasted text with thousands of unmatched delimiters must
+  // retain parser semantics without the historical repeated suffix scan. Complexity is benchmarked
+  // separately; the fixture deliberately avoids a brittle wall-clock threshold.
+  const malformedRound = parseBodyMetadataCore("(".repeat(64 * 1024));
+  const malformedSquare = parseBodyMetadataCore("[a".repeat(32 * 1024));
+  assert.deepEqual(malformedRound, { inlineFields: {}, inlineFieldOccurrences: [], urls: [] });
+  assert.deepEqual(malformedSquare, { inlineFields: {}, inlineFieldOccurrences: [], urls: [] });
+
+  // P8: malformed Markdown-label text remains linear even when a real URL is present. Compare
+  // worker-core and cooperative fallback grammar, then verify the fallback can be cancelled while
+  // it is still scanning one long physical line.
+  const malformedUrlInput = `${"[a".repeat(64 * 1024)} https://example.com/path`;
+  const malformedUrlCore = parseBodyMetadataCore(malformedUrlInput);
+  assert.deepEqual(malformedUrlCore.urls, [{ url: "https://example.com/path", line: 1 }]);
+  assert.deepEqual(await parseBodyMetadataCooperative(malformedUrlInput), malformedUrlCore);
+
+  const samples = [4_000, 8_000, 16_000, 32_000].map((size) => {
+    const input = `${"[a".repeat(size / 2)} https://example.com`;
+    const values = [];
+    for (let i = 0; i < 5; i += 1) {
+      const started = performance.now();
+      parseBodyMetadataCore(input);
+      values.push(performance.now() - started);
+    }
+    values.sort((a, b) => a - b);
+    return values[2];
+  });
+  assert(samples.at(-1) <= samples[0] * 12 + 5, `Malformed URL-label parser scaling regressed: ${samples.join(", ")}`);
+
+  const fallbackParser = new MetadataParser();
+  const cancellableInput = `${"[a".repeat(2 * 1024 * 1024)} https://example.com/cancel`;
+  const fallbackPromise = fallbackParser.parse(cancellableInput);
+  window.setTimeout(() => fallbackParser.cancelPending(), 0);
+  await assert.rejects(fallbackPromise, MetadataParseCancelledError);
+  fallbackParser.destroy();
+
+  const originalWorker = globalThis.Worker;
+  class FakeWorker {
+    constructor() { this.onmessage = null; this.onerror = null; this.terminated = false; }
+    postMessage(message) {
+      const result = parseBodyMetadataCore(message.content);
+      window.setTimeout(() => {
+        if (!this.terminated) this.onmessage?.({ data: { id: message.id, ok: true, result } });
+      }, 0);
+    }
+    terminate() { this.terminated = true; }
+  }
+  globalThis.Worker = FakeWorker;
+  const workerParser = new MetadataParser();
+  assert.deepEqual(await workerParser.parse(malformedUrlInput), malformedUrlCore);
+  workerParser.destroy();
+  if (originalWorker === undefined) delete globalThis.Worker; else globalThis.Worker = originalWorker;
+
+  // Performance/correctness regression P4: url-origin is derived shared evidence. Repeated semantic
+  // patches of the declaring note must neither accumulate duplicate declarations nor leave the
+  // origin pair unresolved.
+  const repeatUrl = "https://repeat.example/path";
+  const repeatOrigin = "https://repeat.example";
+  contents.set("Note A.md", `${contents.get("Note A.md")}\n${repeatUrl}\n`);
+  for (let i = 0; i < 3; i += 1) {
+    noteA.stat.mtime += 1000;
+    noteACache.frontmatter.aliases = `RuntimeAliasRepeat${i}`;
+    const repeatedPatch = await index.patchMarkdownPaths(["Note A.md"]);
+    assert.deepEqual(repeatedPatch, { outcome: "patched", count: 1 });
+    const origins = index.evidenceBetween(repeatOrigin, repeatUrl).filter((item) => item.sourceKind === "url-origin");
+    assert.equal(origins.length, 1, "Derived URL origin evidence must remain idempotent across patches");
+    assert(index.get(repeatOrigin)?.neighbours.has(repeatUrl), "Derived URL origin relationship must be resolved after a patch");
+  }
+
+  // P5: shared URL ownership survives one referrer disappearing, then releases both derived URL
+  // nodes (and their search entries) after the final referrer disappears.
+  const noteB = files.get("Note B.md");
+  assert(noteB);
+  contents.set("Note B.md", `${contents.get("Note B.md")}\n${repeatUrl}\n`);
+  noteB.stat.mtime += 1000;
+  assert.deepEqual(await index.patchMarkdownPaths(["Note B.md"]), { outcome: "patched", count: 1 });
+  contents.set("Note A.md", contents.get("Note A.md").replace(`\n${repeatUrl}\n`, "\n"));
+  noteA.stat.mtime += 1000;
+  assert.deepEqual(await index.patchMarkdownPaths(["Note A.md"]), { outcome: "patched", count: 1 });
+  assert.equal(index.evidenceBetween(repeatOrigin, repeatUrl).filter((item) => item.sourceKind === "url-origin").length, 1);
+  assert(index.get(repeatUrl), "Shared URL node must survive while another note still references it");
+
+  contents.set("Note B.md", contents.get("Note B.md").replace(`\n${repeatUrl}\n`, "\n"));
+  noteB.stat.mtime += 1000;
+  assert.deepEqual(await index.patchMarkdownPaths(["Note B.md"]), { outcome: "patched", count: 1 });
+  assert.equal(index.get(repeatUrl), undefined, "Unreferenced derived URL node must be released");
+  assert.equal(index.get(repeatOrigin), undefined, "Unreferenced derived URL origin must be released");
+  assert.equal(index.search("repeat.example").some((page) => page.path === repeatUrl || page.path === repeatOrigin), false, "Released URL nodes must leave the incremental search table");
+
+  // P7: folder/tag visibility is presentation-only. The semantic snapshot signature must not
+  // change, and a graph built while both classes are hidden must still contain their structural
+  // nodes so revealing them is immediate and requires no rebuild.
+  const visibilitySignature = computeIndexSettingsSignature(settings);
+  const previousFolderVisibility = settings.showFolderNodes;
+  const previousTagVisibility = settings.showTagNodes;
+  settings.showFolderNodes = false;
+  settings.showTagNodes = false;
+  assert.equal(computeIndexSettingsSignature(settings), visibilitySignature, "Folder/tag visibility must not invalidate the semantic index");
+  const hiddenStructuralIndex = new GraphIndex(plugin, app);
+  try {
+    assert.equal(await hiddenStructuralIndex.rebuild(), true);
+    const hiddenFolder = hiddenStructuralIndex.get("folder:Daily");
+    const hiddenTag = hiddenStructuralIndex.get("tag:project");
+    assert(hiddenFolder, "Folder topology must be maintained while folder nodes are hidden");
+    assert(hiddenTag, "Tag topology must be maintained while tag nodes are hidden");
+    assert.equal(hiddenStructuralIndex.isVisiblePage(hiddenFolder), false);
+    assert.equal(hiddenStructuralIndex.isVisiblePage(hiddenTag), false);
+
+    settings.showFolderNodes = true;
+    settings.showTagNodes = true;
+    assert.equal(hiddenStructuralIndex.isVisiblePage(hiddenFolder), true);
+    assert.equal(hiddenStructuralIndex.isVisiblePage(hiddenTag), true);
+    assert(
+      hiddenStructuralIndex.neighbours(hiddenStructuralIndex.get("folder:/"), "child").some((item) => item.page.path === "folder:Daily"),
+      "Folder relationships must become visible immediately after the presentation toggle",
+    );
+    assert(
+      hiddenStructuralIndex.neighbours(hiddenTag, "child").some((item) => item.page.path === "Note A.md" || item.page.path === "Note C.md"),
+      "Tag relationships must become visible immediately after the presentation toggle",
+    );
+  } finally {
+    hiddenStructuralIndex.destroy();
+    settings.showFolderNodes = previousFolderVisibility;
+    settings.showTagNodes = previousTagVisibility;
+  }
+
+  // P9: expanded-section parsing is cached independently from visibility. Reprojecting an already
+  // expanded note must hide/reveal folder/tag nodes without another Markdown read or fold reset.
+  const expandedForVisibility = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+  assert(expandedForVisibility);
+  const priorFolderToggle = settings.showFolderNodes;
+  const priorTagToggle = settings.showTagNodes;
+  const expandedIdsForVisibility = new Set(expandedForVisibility.sections.filter((section) => section.childIds.length).map((section) => section.id));
+  let projectionReads = 0;
+  const originalCachedReadForProjection = app.vault.cachedRead;
+  app.vault.cachedRead = async (file) => { projectionReads += 1; return originalCachedReadForProjection(file); };
+  try {
+    settings.showFolderNodes = false;
+    settings.showTagNodes = false;
+    const hiddenProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    const hiddenScene = buildSectionExpandedScene(hiddenProjection, index, settings, expandedIdsForVisibility);
+    assert.equal(hiddenScene.nodes.some((node) => node.page.isFolder || node.page.isTag), false);
+
+    settings.showFolderNodes = true;
+    settings.showTagNodes = true;
+    const shownProjection = projectCentralSectionExpansion(plugin, index, expandedForVisibility);
+    const shownScene = buildSectionExpandedScene(shownProjection, index, settings, expandedIdsForVisibility);
+    assert(shownScene.nodes.some((node) => node.page.isFolder), "Folder node must reappear in expanded projection");
+    assert(shownScene.nodes.some((node) => node.page.isTag), "Tag node must reappear in expanded projection");
+    assert.equal(projectionReads, 0, "Visibility reprojection must not reread Markdown");
+  } finally {
+    app.vault.cachedRead = originalCachedReadForProjection;
+    settings.showFolderNodes = priorFolderToggle;
+    settings.showTagNodes = priorTagToggle;
+  }
+
+  // Performance/correctness regression P6: with tag nodes enabled, a local tag edit stays on the
+  // incremental path. New hierarchy edges are resolved immediately and unreachable old tag nodes
+  // are pruned. Compare the affected relationships to a clean rebuild over the same metadata.
+  contents.set("Note A.md", contents.get("Note A.md").replaceAll("#body-tag", "#runtime/perf"));
+  noteACache.tags = noteACache.tags.filter((item) => item.tag !== "#body-tag");
+  if (!noteACache.tags.some((item) => item.tag === "#runtime/perf")) noteACache.tags.push({ tag: "#runtime/perf" });
+  noteA.stat.mtime += 1000;
+  const tagPatch = await index.patchMarkdownPaths(["Note A.md"]);
+  assert.deepEqual(tagPatch, { outcome: "patched", count: 1 });
+  expectRole("tag:runtime", "child", "tag:runtime/perf", RelationType.DEFINED);
+  expectRole("tag:runtime/perf", "child", "Note A.md", RelationType.DEFINED);
+  assert.equal(index.get("tag:body-tag"), undefined, "Unreferenced tag nodes must be pruned after an incremental edit");
+
+  const cleanIndex = new GraphIndex(plugin, app);
+  try {
+    assert.equal(await cleanIndex.rebuild(), true);
+    const relationShape = (candidate, sourcePath, targetPath) => {
+      const relation = candidate.get(sourcePath)?.neighbours.get(targetPath);
+      return relation ? {
+        isParent: relation.isParent, isChild: relation.isChild,
+        isLeftFriend: relation.isLeftFriend, isRightFriend: relation.isRightFriend,
+        isNextFriend: relation.isNextFriend, isPreviousFriend: relation.isPreviousFriend,
+        direction: relation.direction,
+      } : null;
+    };
+    for (const [sourcePath, targetPath] of [["tag:runtime", "tag:runtime/perf"], ["tag:runtime/perf", "Note A.md"]]) {
+      assert.deepEqual(relationShape(index, sourcePath, targetPath), relationShape(cleanIndex, sourcePath, targetPath));
+      assert.equal(
+        index.evidenceBetween(sourcePath, targetPath).filter((item) => item.sourceKind === "tag-tree").length,
+        cleanIndex.evidenceBetween(sourcePath, targetPath).filter((item) => item.sourceKind === "tag-tree").length,
+      );
+    }
+  } finally {
+    cleanIndex.destroy();
+  }
+
+  // P10: cancellation after file A commits but while file B is awaiting input preserves A's search
+  // publication, starts no snapshot, and a retry completes the retained backlog without repair build.
+  index.cancelPendingPersistence();
+  const originalCachedReadForCancel = app.vault.cachedRead;
+  const cancelAliasA = "CancelledBatchAliasA";
+  const cancelAliasB = "CancelledBatchAliasB";
+  noteACache.frontmatter.aliases = cancelAliasA;
+  const noteBCache = caches.get("Note B.md");
+  noteBCache.frontmatter.aliases = cancelAliasB;
+  noteA.stat.mtime += 1000;
+  noteB.stat.mtime += 1000;
+  let releaseB;
+  let sawB;
+  const bStarted = new Promise((resolve) => { sawB = resolve; });
+  const bGate = new Promise((resolve) => { releaseB = resolve; });
+  app.vault.cachedRead = async (file) => {
+    if (file.path === "Note B.md") { sawB(); await bGate; }
+    return contents.get(file.path) ?? "";
+  };
+  const cancelledBatchPromise = index.patchMarkdownPaths(["Note A.md", "Note B.md"]);
+  await bStarted;
+  index.cancelRebuild();
+  releaseB();
+  const cancelledBatch = await cancelledBatchPromise;
+  assert.equal(cancelledBatch.outcome, "cancelled");
+  assert.equal(cancelledBatch.count, 1);
+  assert.deepEqual(cancelledBatch.pendingPaths, ["Note B.md"], "Cancellation must retain only uncommitted files");
+  assert.equal(index.search(cancelAliasA.toLowerCase(), 5)[0]?.path, "Note A.md", "Committed file A search entry must survive cancellation");
+  assert.equal(index.snapshotPersistTimer ?? null, null, "Cancelled patch must not schedule a snapshot");
+  app.vault.cachedRead = originalCachedReadForCancel;
+  assert.deepEqual(await index.patchMarkdownPaths(["Note A.md", "Note B.md"]), { outcome: "patched", count: 2 });
+  assert.equal(index.search(cancelAliasA.toLowerCase(), 5)[0]?.path, "Note A.md");
+  assert.equal(index.search(cancelAliasB.toLowerCase(), 5)[0]?.path, "Note B.md");
+
+  // P11: K-Plex-created files get complete folder ancestry immediately, even while folders are
+  // hidden. Revealing folders is presentation-only and matches a clean authoritative build.
+  const createdFolder = ensureFolder("Created/Sub");
+  const managedFile = new TFile("Created/Sub/Managed.md", noteA.stat.mtime + 5000);
+  managedFile.parent = createdFolder;
+  createdFolder.children.push(managedFile);
+  files.set(managedFile.path, managedFile);
+  contents.set(managedFile.path, "# Managed\n");
+  caches.set(managedFile.path, { frontmatter: {}, tags: [], links: [] });
+  resolvedLinks[managedFile.path] = {};
+  unresolvedLinks[managedFile.path] = {};
+  const oldFolderVisibilityForCreate = settings.showFolderNodes;
+  settings.showFolderNodes = false;
+  index.insertCreatedFile(managedFile);
+  assert(index.evidenceBetween("folder:Created/Sub", managedFile.path).some((item) => item.sourceKind === "file-tree"));
+  assert(index.evidenceBetween("folder:Created", "folder:Created/Sub").some((item) => item.sourceKind === "file-tree"));
+  assert(index.evidenceBetween("folder:/", "folder:Created").some((item) => item.sourceKind === "file-tree"));
+  assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
+  settings.showFolderNodes = true;
+  assert(index.neighbours(index.get("folder:Created/Sub"), "child").some((item) => item.page.path === managedFile.path));
+  const cleanCreatedIndex = new GraphIndex(plugin, app);
+  try {
+    assert.equal(await cleanCreatedIndex.rebuild(), true);
+    assert.equal(
+      index.evidenceBetween("folder:Created/Sub", managedFile.path).filter((item) => item.sourceKind === "file-tree").length,
+      cleanCreatedIndex.evidenceBetween("folder:Created/Sub", managedFile.path).filter((item) => item.sourceKind === "file-tree").length,
+    );
+  } finally {
+    cleanCreatedIndex.destroy();
+    settings.showFolderNodes = oldFolderVisibilityForCreate;
+  }
+
+  // P12: exercise the production rebuild coordinator. If the last visible K-Plex surface closes
+  // while an incremental patch is awaiting work, cancellation must not fall through to a hidden
+  // full rebuild. Reopening resumes the retained backlog exactly once.
+  const coordinator = new ExcaliBrainPlugin();
+  let coordinatorVisible = true;
+  let coordinatorFullBuilds = 0;
+  const coordinatorPatchCalls = [];
+  let releaseCoordinatorPatch;
+  let signalCoordinatorPatch;
+  const coordinatorPatchStarted = new Promise((resolve) => { signalCoordinatorPatch = resolve; });
+  const coordinatorPatchGate = new Promise((resolve) => { releaseCoordinatorPatch = resolve; });
+  coordinator.index = {
+    size: 1,
+    patchMarkdownPaths: async (paths) => {
+      coordinatorPatchCalls.push([...paths]);
+      if (coordinatorPatchCalls.length === 1) {
+        signalCoordinatorPatch();
+        await coordinatorPatchGate;
+        return { outcome: "cancelled", count: 0, pendingPaths: [...paths] };
+      }
+      return { outcome: "patched", count: paths.length };
+    },
+    rebuild: async () => { coordinatorFullBuilds += 1; return true; },
+  };
+  coordinator.hasVisibleKplexSurface = () => coordinatorVisible;
+  coordinator.refreshBookmarkedEntryPoints = async () => {};
+  coordinator.notifyIndexStatus = () => {};
+  coordinator.initialIndexComplete = true;
+  coordinator.indexDirty = true;
+  coordinator.indexDirtyRevision = 1;
+  coordinator.indexBacklogReasons.add("metadata:changed");
+  coordinator.dirtyMarkdownPaths.add("Note A.md");
+  const hiddenCancellation = coordinator.performRebuild(false, false, "metadata:changed", false);
+  await coordinatorPatchStarted;
+  coordinatorVisible = false;
+  releaseCoordinatorPatch();
+  await hiddenCancellation;
+  assert.equal(coordinatorFullBuilds, 0, "Hidden cancellation must not start a fallback full rebuild");
+  assert.equal(coordinator.indexDirty, true);
+  assert.deepEqual([...coordinator.dirtyMarkdownPaths], ["Note A.md"], "Uncommitted path must remain queued while hidden");
+  coordinatorVisible = true;
+  await coordinator.performRebuild(false, false, "view-open", false);
+  assert.equal(coordinatorFullBuilds, 0);
+  assert.equal(coordinatorPatchCalls.length, 2, "Revealing K-Plex must resume the backlog exactly once");
+  assert.equal(coordinator.indexDirty, false);
+  assert.equal(coordinator.dirtyMarkdownPaths.size, 0);
+
+  console.log("K-Plex indexing fixture: assertions 1–33 + P1–P12 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
   console.log("Immediate creation + lazy node imagery: assertions 60–66 PASS");

@@ -11,7 +11,7 @@ import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 import { RenameNoteModal } from "./RenameNoteModal";
-import { buildCentralSectionExpansion, canExpandCentralSections, type CentralSectionExpansion } from "../index/SectionExpansion";
+import { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSectionExpansion, type CentralSectionExpansion } from "../index/SectionExpansion";
 import { GraphPredicateEngine, type CompiledGraphPredicate, type GraphPredicateEdgeContext } from "../lens/GraphPredicate";
 import { graphLensEdgeStyle, graphLensNodeStyle, matchesGraphLenses, type CompiledGraphLensSet } from "../lens/GraphLens";
 
@@ -619,7 +619,35 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   // actually changes. This removes the largest source of wasted work in dense Plex scenes.
   const persistentNeighborhood = useMemo(() => index.getNeighborhood(activePath), [index, activePath, renderRevision]);
   const [sectionExpanded, setSectionExpanded] = useState(false);
+  const sectionEvidenceRevision = useMemo(() => {
+    if (!sectionExpanded || !persistentNeighborhood?.center.file || persistentNeighborhood.center.file.extension !== "md") return "";
+    const center = persistentNeighborhood.center;
+    const localEvidence = index.evidenceFrom(center.path);
+    return [
+      center.path,
+      center.mtime ?? 0,
+      ...localEvidence.map((entry) => {
+        const target = index.get(entry.targetPath);
+        const evidenceIds = entry.evidence.map((item) => item.id).join(",");
+        return `${entry.targetPath}:${target?.mtime ?? 0}:${target?.name ?? ""}:${evidenceIds}`;
+      }),
+    ].join("|");
+  }, [index, sectionExpanded, persistentNeighborhood?.center.path, persistentNeighborhood?.center.mtime, renderRevision]);
   const [sectionExpansion, setSectionExpansion] = useState<CentralSectionExpansion | null>(null);
+  const sectionProjectionRevision = [
+    settings.showFolderNodes ? "1" : "0",
+    settings.showTagNodes ? "1" : "0",
+    settings.showPageNodes ? "1" : "0",
+    settings.showURLNodes ? "1" : "0",
+    settings.showAttachments ? "1" : "0",
+    settings.showVirtualNodes ? "1" : "0",
+    settings.showInferredNodes ? "1" : "0",
+    settings.inferAllLinksAsFriends ? "1" : "0",
+    settings.maxItemCount,
+  ].join("|");
+  const projectedSectionExpansion = useMemo(() => sectionExpansion
+    ? projectCentralSectionExpansion(plugin, index, sectionExpansion)
+    : null, [sectionExpansion, plugin, index, sectionProjectionRevision]);
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(new Set());
   const sectionFoldCenter = useRef<string | null>(null);
   const [sceneTransitioning, setSceneTransitioning] = useState(false);
@@ -630,9 +658,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const effectivePersistentNeighborhood = useMemo(() => persistentNeighborhood && optimisticRelink
     ? applyOptimisticRelink(persistentNeighborhood, optimisticRelink.targetPath, optimisticRelink.role)
     : persistentNeighborhood, [persistentNeighborhood, optimisticRelink]);
-  const effectiveSectionExpansion = useMemo(() => sectionExpansion && optimisticRelink
-    ? { ...sectionExpansion, centerNeighborhood: applyOptimisticRelink(sectionExpansion.centerNeighborhood, optimisticRelink.targetPath, optimisticRelink.role) }
-    : sectionExpansion, [sectionExpansion, optimisticRelink]);
+  const effectiveSectionExpansion = useMemo(() => projectedSectionExpansion && optimisticRelink
+    ? { ...projectedSectionExpansion, centerNeighborhood: applyOptimisticRelink(projectedSectionExpansion.centerNeighborhood, optimisticRelink.targetPath, optimisticRelink.role) }
+    : projectedSectionExpansion, [projectedSectionExpansion, optimisticRelink]);
   const neighborhood = effectiveSectionExpansion?.centerNeighborhood ?? effectivePersistentNeighborhood;
   const globalFiltering = predicate !== null || lenses.lenses.some((lens) => lens.mode === "include" || lens.mode === "exclude");
 
@@ -868,7 +896,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       setSectionExpansion(null);
       return () => { cancelled = true; };
     }
-    void buildCentralSectionExpansion(plugin, index, persistentNeighborhood.center).then((expanded) => {
+    void buildCentralSectionExpansion(plugin, index, persistentNeighborhood.center, () => !cancelled).then((expanded) => {
       if (cancelled) return;
       if (!expanded) {
         setSectionExpansion(null);
@@ -892,7 +920,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       }, settings.animationSpeed <= 0 ? 0 : Math.max(140, Math.round(620 / Math.max(0.25, settings.animationSpeed))));
     });
     return () => { cancelled = true; };
-  }, [sectionExpanded, persistentNeighborhood?.center.path, renderRevision, plugin, index, settings.animationSpeed]);
+  }, [sectionExpanded, persistentNeighborhood?.center.path, sectionEvidenceRevision, plugin, index, settings.animationSpeed]);
   const applyCamera = (nextOrUpdater: { x: number; y: number; scale: number } | ((current: { x: number; y: number; scale: number }) => { x: number; y: number; scale: number })) => {
     const next = typeof nextOrUpdater === "function" ? nextOrUpdater(camera.current) : nextOrUpdater;
     camera.current = next;

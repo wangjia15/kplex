@@ -52,6 +52,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly searchFocusListeners = new Map<WorkspaceLeaf, () => void>();
   private readonly relationshipFlairListeners = new Set<(path: string) => void>();
   private readonly indexStatusListeners = new Set<() => void>();
+  private readonly kplexVisibilityListeners = new Set<() => void>();
+  private visibleKplexLeaves = new Set<WorkspaceLeaf>();
+  private lastIndexStatusKey = "";
   private readonly graphLensListeners = new Set<(lenses: ExcaliBrainSettings["graphLenses"]) => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
   /** Files created by K-Plex and already inserted optimistically into GraphIndex. */
@@ -176,6 +179,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       this.rememberDocumentLeaf(leaf);
       this.validateLinkedDocumentLeaf();
+      this.onKplexVisibilityMayHaveChanged();
     }));
     this.registerEvent(this.app.workspace.on("layout-change", () => {
       let changed = false;
@@ -208,6 +212,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       // Adjacency itself is UI state. Moving a pinned tab away must hide sidecar controls without
       // breaking the pin, and moving it back beside K-Plex must make them reappear immediately.
       if (changed || this.settings.documentSyncMode === "pinned") this.notifySidecar();
+      this.onKplexVisibilityMayHaveChanged();
     }));
 
     if (this.settings.indexUpdateInterval > 0) {
@@ -216,7 +221,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         // Event-driven dirty tracking is authoritative. The legacy interval may flush a pending
         // backlog while a Plex is open, but it must never make a closed/clean index dirty merely
         // because a minute passed.
-        if (this.openKplexViews > 0 && this.indexDirty) void this.rebuildIndex(false, false, "interval");
+        if (this.hasVisibleKplexSurface() && this.indexDirty) void this.rebuildIndex(false, false, "interval");
       }, interval));
     }
 
@@ -286,6 +291,8 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.sidecarLeaves.clear();
     this.relationshipFlairListeners.clear();
     this.indexStatusListeners.clear();
+    this.kplexVisibilityListeners.clear();
+    this.visibleKplexLeaves.clear();
     this.graphLensListeners.clear();
     this.linkedDocumentLeaf = null;
     this.index?.destroy();
@@ -392,7 +399,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.indexDirtyRevision += 1;
     this.indexBacklogReasons.add(reason);
     this.notifyIndexStatus();
-    if (this.openKplexViews <= 0 || !this.initialIndexComplete || this.rebuildTask) return;
+    if (!this.hasVisibleKplexSurface() || !this.initialIndexComplete || this.rebuildTask) return;
     if (this.rebuildTimer !== null) {
       window.clearTimeout(this.rebuildTimer);
     }
@@ -503,8 +510,8 @@ export default class ExcaliBrainPlugin extends Plugin {
       const noteCount = this.app.vault.getMarkdownFiles().length;
       const needsIosBodyPrewarm = Platform.isIosApp && this.index.size === 0 && noteCount > 5000;
       if (needsIosBodyPrewarm) {
-        const warmed = await this.index.prewarmBodyCache(() => this.openKplexViews > 0);
-        if (!warmed && this.openKplexViews <= 0) {
+        const warmed = await this.index.prewarmBodyCache(() => this.hasVisibleKplexSurface());
+        if (!warmed && !this.hasVisibleKplexSurface()) {
           return;
         }
       }
@@ -517,7 +524,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
       // Changes that arrived while the initial build was running are coalesced. Only reconcile
       // them immediately when the user currently has a Plex open; otherwise keep the backlog.
-      if (this.indexDirty && this.openKplexViews > 0) this.scheduleRebuild("startup:post-initial-backlog");
+      if (this.indexDirty && this.hasVisibleKplexSurface()) this.scheduleRebuild("startup:post-initial-backlog");
     })().finally(() => {
       // Keep the resolved promise only after a complete initial index. If iOS work was cancelled
       // because the last K-Plex view closed, reopening must be able to resume the durable prewarm.
@@ -538,7 +545,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   private async performRebuild(showNotice: boolean, force: boolean, reason: string, allowClosed: boolean): Promise<void> {
     const explicitlyRequested = showNotice;
-    if (this.openKplexViews <= 0 && !allowClosed && !explicitlyRequested) {
+    if (!this.hasVisibleKplexSurface() && !allowClosed && !explicitlyRequested) {
       return;
     }
 
@@ -567,11 +574,11 @@ export default class ExcaliBrainPlugin extends Plugin {
       // rebuilding the vault. Folder/tag topology and explicit/manual rebuilds remain full scans.
       const structuralDirty = [...this.indexBacklogReasons].some((item) => item !== "metadata:changed" && item !== "coalesced-backlog" && item !== "interval");
       const canIncrementalPatch = !force && !showNotice && this.index.size > 0 && !structuralDirty &&
-        !this.settings.showTagNodes && this.dirtyMarkdownPaths.size > 0;
+        this.dirtyMarkdownPaths.size > 0;
       if (canIncrementalPatch) {
         const paths = [...this.dirtyMarkdownPaths];
         const result = await this.index.patchMarkdownPaths(paths);
-        if (result.patched) {
+        if (result.outcome === "patched") {
           if (this.indexDirtyRevision === startRevision) {
             for (const path of paths) this.dirtyMarkdownPaths.delete(path);
           } else {
@@ -586,7 +593,34 @@ export default class ExcaliBrainPlugin extends Plugin {
           await this.refreshBookmarkedEntryPoints();
           return;
         }
-        // Any uncertainty falls back to the authoritative full builder below.
+        if (result.outcome === "cancelled") {
+          // Cancellation/supersession is not evidence that the semantic graph needs a full scan.
+          // If no newer metadata event arrived, retain only files that did not reach the per-file
+          // commit boundary; already-published files need not be reparsed when the view reopens.
+          // A concurrent metadata event wins: keep the conservative backlog because a committed
+          // file may already have changed again.
+          if (this.indexDirtyRevision === startRevision) {
+            for (const path of paths) this.dirtyMarkdownPaths.delete(path);
+            for (const path of result.pendingPaths) this.dirtyMarkdownPaths.add(path);
+            if (result.pendingPaths.length === 0) {
+              this.indexDirty = false;
+              this.indexBacklogReasons.clear();
+            } else {
+              this.indexDirty = true;
+            }
+          } else {
+            this.indexDirty = true;
+          }
+          return;
+        }
+        // Only a structural/unsupported patch result may fall through to the authoritative builder.
+      }
+      // Awaited patch/read work may have outlived the last visible Plex. Never turn that cancellation
+      // into a hidden full-vault rebuild. Explicit user rebuilds and startup allowClosed work remain
+      // separate from this demand-driven guard.
+      if (!this.hasVisibleKplexSurface() && !allowClosed && !explicitlyRequested) {
+        this.indexDirty = true;
+        return;
       }
       if (showNotice) new Notice("Rebuilding K-Plex index…", 1200);
       const published = await this.index.rebuild();
@@ -618,7 +652,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
 
-    if (this.indexDirty && this.initialIndexComplete && this.openKplexViews > 0 && this.rebuildTimer === null) {
+    if (this.indexDirty && this.initialIndexComplete && this.hasVisibleKplexSurface() && this.rebuildTimer === null) {
       this.rebuildTimer = window.setTimeout(() => {
         this.rebuildTimer = null;
         void this.rebuildIndex(false, false, "coalesced-backlog");
@@ -747,7 +781,64 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private leafIsVisible(leaf: WorkspaceLeaf | null): boolean {
-    return Boolean(this.leafRect(leaf));
+    if (!leaf) return false;
+    // Do not use leafRect() here: that helper intentionally falls back to the containing tab-group
+    // chrome for sidecar geometry, but a hidden tab shares the same visible tab-group rectangle.
+    // Demand gating must inspect the leaf/view surface itself so background tabs remain dormant.
+    const workspaceLeaf = leaf as WorkspaceLeaf & { containerEl?: HTMLElement };
+    for (const element of [workspaceLeaf.containerEl, leaf.view?.containerEl]) {
+      if (!element?.isConnected) continue;
+      const view = element.ownerDocument.defaultView ?? window;
+      const style = view.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 8 && rect.height > 8) return true;
+    }
+    return false;
+  }
+
+  isKplexLeafVisible(leaf: WorkspaceLeaf | null): boolean {
+    return this.isKplexLeaf(leaf) && this.leafIsVisible(leaf);
+  }
+
+  private hasVisibleKplexSurface(): boolean {
+    return this.currentVisibleKplexLeaves().size > 0;
+  }
+
+  private currentVisibleKplexLeaves(): Set<WorkspaceLeaf> {
+    return new Set([
+      ...this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE),
+      ...this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE),
+    ].filter((leaf) => this.leafIsVisible(leaf)));
+  }
+
+  subscribeKplexVisibility(listener: () => void): () => void {
+    this.kplexVisibilityListeners.add(listener);
+    return () => this.kplexVisibilityListeners.delete(listener);
+  }
+
+  private onKplexVisibilityMayHaveChanged(): void {
+    if (!this.layoutReady) return;
+    const nextVisible = this.currentVisibleKplexLeaves();
+    const visibilityChanged = nextVisible.size !== this.visibleKplexLeaves.size ||
+      [...nextVisible].some((leaf) => !this.visibleKplexLeaves.has(leaf));
+    this.visibleKplexLeaves = nextVisible;
+    if (visibilityChanged) {
+      for (const listener of this.kplexVisibilityListeners) listener();
+    }
+    if (nextVisible.size > 0) {
+      if (this.indexDirty || !this.initialIndexComplete) void this.ensureIndexReady("view-visible");
+      return;
+    }
+    if (this.rebuildTimer !== null) {
+      window.clearTimeout(this.rebuildTimer);
+      this.rebuildTimer = null;
+      this.notifyIndexStatus();
+    }
+    // Preserve the once-per-session desktop/Android startup policy, but once an authoritative
+    // index exists there is no reason to keep an automatic edit patch running for a hidden tab.
+    if (this.initialIndexComplete || Platform.isIosApp) this.index.cancelRebuild();
+    this.index.cancelPendingPersistence();
   }
 
   private leafViewIsLoaded(leaf: WorkspaceLeaf | null): boolean {
@@ -1039,6 +1130,10 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   private notifyIndexStatus(): void {
+    const status = this.getIndexStatus();
+    const key = `${status.upToDate ? "1" : "0"}:${status.label}`;
+    if (key === this.lastIndexStatusKey) return;
+    this.lastIndexStatusKey = key;
     for (const listener of this.indexStatusListeners) listener();
   }
 
@@ -1548,8 +1643,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       console.warn("K-Plex: unable to load Obsidian bookmarks", error);
     }
 
-    this.index.setSearchEntryPoints([...new Set(paths)]);
-    this.index.notify();
+    if (this.index.setSearchEntryPoints([...new Set(paths)])) this.index.notify();
   }
 
   openSettings(): void {
