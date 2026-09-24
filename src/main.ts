@@ -15,6 +15,13 @@ import { perfNow } from "./util/perf";
 
 type LoadAwareView = FileView & { _loaded?: boolean };
 
+type SidecarFootprint = {
+  width: number;
+  height: number;
+  hostShare: number;
+  ownerDocument: Document;
+};
+
 export type RelationshipSourceSection = {
   id: string;
   path: string;
@@ -45,6 +52,18 @@ export default class ExcaliBrainPlugin extends Plugin {
   private initialIndexComplete = false;
   private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> | null = null;
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
+  private sidecarRestoreTask: Promise<void> | null = null;
+  private readonly sidecarMovingHosts = new Set<WorkspaceLeaf>();
+  private readonly sidecarRestoreAttemptedHosts = new Set<WorkspaceLeaf>();
+  /**
+   * Obsidian restores workspace leaves asynchronously. During that short window its
+   * "most recent" leaf can be the first serialized tab rather than the tab the user
+   * actually had linked to K-Plex. Suppress normal recent-tab following until the
+   * persisted sidecar/link ownership has had time to reconnect.
+   */
+  private startupInitializing = true;
+  private startupInitializationTimer: number | null = null;
+  private readonly linkedLeafHighlightTimers = new Map<HTMLElement, { viewWindow: Window; timer: number }>();
   private readonly collapsedPlexHosts = new Map<WorkspaceLeaf, { sidecarLeaf: WorkspaceLeaf; position: SidecarPosition; hostGroup: HTMLElement; unfoldButton: HTMLButtonElement }>();
   private readonly sidecarListeners = new Set<() => void>();
   private transientDocumentFollowSuppression: { path: string; until: number } | null = null;
@@ -61,6 +80,8 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly managedCreatedPaths = new Map<string, number>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
+  /** Rename-only metadata notifications are semantic no-ops when mtime/size are unchanged. */
+  private readonly renameMetadataSuppressions = new Map<string, { mtime: number; size: number; until: number }>();
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -177,7 +198,10 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
 
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
-      this.rememberDocumentLeaf(leaf);
+      // During workspace hydration Obsidian can report the first serialized tab as the most
+      // recent leaf. Do not let that transient ordering replace the persisted K-Plex/sidecar
+      // relationship before startup re-association has completed.
+      if (!this.startupInitializing) this.rememberDocumentLeaf(leaf);
       this.validateLinkedDocumentLeaf();
       this.onKplexVisibilityMayHaveChanged();
     }));
@@ -189,29 +213,48 @@ export default class ExcaliBrainPlugin extends Plugin {
         changed = true;
       }
       for (const [host, sidecar] of [...this.sidecarLeaves.entries()]) {
-        if (!this.leafIsAttached(host) || !this.leafIsAttached(sidecar)) {
+        const hostAttached = this.leafIsAttached(host);
+        const sidecarAttached = this.leafIsAttached(sidecar);
+        if (!hostAttached || !sidecarAttached) {
           this.restoreCollapsedPlex(host);
           this.sidecarLeaves.delete(host);
-          if (this.linkedDocumentLeaf === sidecar && !this.leafIsAttached(sidecar)) {
+          if (this.linkedDocumentLeaf === sidecar) {
             this.linkedDocumentLeaf = null;
             this.settings.documentSyncMode = "off";
           }
+          // A closing K-Plex view is not the same action as closing its sidecar. Keep the persisted
+          // restore intent when only the host disappears, but clear it when the user closes the
+          // managed companion leaf itself.
+          if (hostAttached && !sidecarAttached && this.settings.sidecarOpen) {
+            this.settings.sidecarOpen = false;
+          }
+          changed = true;
+          continue;
+        }
+
+        // A managed companion that the user drags away becomes an ordinary document tab. Release
+        // ownership and synchronization, but never move or close that user-positioned tab.
+        if (!this.collapsedPlexHosts.has(host) && this.adjacentPosition(host, sidecar) === null) {
+          // createLeafBySplit/openFile can emit layout-change before the replacement split has a
+          // settled DOMRect. During an explicit move, ownership is authoritative until the move
+          // completes; otherwise a transient zero-width rect would make K-Plex orphan its own new
+          // companion before Obsidian finishes laying it out.
+          if (this.sidecarMovingHosts.has(host) || this.startupInitializing) continue;
+          this.sidecarLeaves.delete(host);
+          if (this.linkedDocumentLeaf === sidecar) {
+            this.linkedDocumentLeaf = null;
+            this.settings.documentSyncMode = "off";
+          }
+          this.lastDocumentLeaf = sidecar;
+          if (this.settings.sidecarOpen) this.settings.sidecarOpen = false;
           changed = true;
         }
       }
       this.validateLinkedDocumentLeaf();
-      if (this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf) {
-        const folded = [...this.collapsedPlexHosts.values()].some((state) => state.sidecarLeaf === this.linkedDocumentLeaf);
-        const adjacent = folded || this.isLeafAdjacentToAnyKplex(this.linkedDocumentLeaf);
-        if (this.settings.sidecarOpen !== adjacent) {
-          this.settings.sidecarOpen = adjacent;
-          changed = true;
-        }
-      }
       if (changed) void this.saveSettings(false, false);
-      // Adjacency itself is UI state. Moving a pinned tab away must hide sidecar controls without
-      // breaking the pin, and moving it back beside K-Plex must make them reappear immediately.
-      if (changed || this.settings.documentSyncMode === "pinned") this.notifySidecar();
+      // Sidecar controls belong only to leaves K-Plex explicitly manages. A separately pinned or
+      // adjacent document tab remains ordinary Obsidian content and is never promoted to sidecar UI.
+      if (changed || this.sidecarLeaves.size > 0) this.notifySidecar();
       this.onKplexVisibilityMayHaveChanged();
     }));
 
@@ -228,8 +271,6 @@ export default class ExcaliBrainPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
-        this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
-
         if (!alreadyKplex) {
           const legacySettings = this.runningExcaliBrainSettings();
           if (legacySettings) {
@@ -239,6 +280,33 @@ export default class ExcaliBrainPlugin extends Plugin {
           this.settings.kplexInitialized = true;
           await this.saveData(this.settings);
         }
+
+        this.layoutReady = true;
+
+        // Re-associate a persisted sidecar before normal recent-tab synchronization is allowed to
+        // run. This uses only Obsidian's restored workspace geometry/view state; it must not wait
+        // for the semantic graph or create a new split.
+        if (this.settings.sidecarOpen) {
+          const restoredHost = this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)[0];
+          if (restoredHost) {
+            try {
+              await this.restorePersistedSidecar(restoredHost);
+            } catch (error) {
+              console.error("K-Plex sidecar restore failed", error);
+            }
+          }
+        }
+
+        // Keep the startup guard alive for a little longer than the sidecar polling window so
+        // trailing file-open/active-leaf events from Obsidian cannot immediately undo the restored
+        // relationship. This is intentionally session-only state, never a persisted setting.
+        if (this.startupInitializationTimer !== null) window.clearTimeout(this.startupInitializationTimer);
+        this.startupInitializationTimer = window.setTimeout(() => {
+          this.startupInitializing = false;
+          this.startupInitializationTimer = null;
+          this.rememberDocumentLeaf(this.linkedDocumentLeaf ?? this.app.workspace.getMostRecentLeaf());
+          this.notifySidecar();
+        }, 3000);
 
         // Restore only after Obsidian's workspace/vault layout is ready. Restoring earlier can
         // temporarily hydrate real files as virtual nodes on mobile while the vault tree is still
@@ -255,7 +323,6 @@ export default class ExcaliBrainPlugin extends Plugin {
           this.indexBacklogReasons.add(restored.restored ? "startup:stale-snapshot" : "startup:no-snapshot");
         }
 
-        this.layoutReady = true;
         this.registerReactiveIndexListeners();
         this.registerOntologyContextMenu();
         // Prewarm exactly once per Obsidian session when it is safe to do so. A fresh persisted
@@ -285,6 +352,8 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   onunload(): void {
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
+    if (this.startupInitializationTimer !== null) window.clearTimeout(this.startupInitializationTimer);
+    for (const element of [...this.linkedLeafHighlightTimers.keys()]) this.clearLinkedLeafHighlight(element);
     for (const host of [...this.collapsedPlexHosts.keys()]) this.restoreCollapsedPlex(host);
     // A managed sidecar is still an ordinary Obsidian content tab. Plugin unload/disable must not
     // close the user's note; simply release K-Plex ownership and leave workspace leaves intact.
@@ -307,6 +376,10 @@ export default class ExcaliBrainPlugin extends Plugin {
       if (until > now) continue;
       this.managedCreatedPaths.delete(path);
     }
+    for (const [path, suppression] of this.renameMetadataSuppressions) {
+      if (suppression.until > now) continue;
+      this.renameMetadataSuppressions.delete(path);
+    }
   }
 
   private registerReactiveIndexListeners(): void {
@@ -321,14 +394,58 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("delete", () => {
       this.scheduleRebuild("vault:delete");
     }));
-    this.registerEvent(this.app.vault.on("rename", () => {
-      this.scheduleRebuild("vault:rename");
+    this.registerEvent(this.app.vault.on("rename", (renamed, oldPath) => {
+      if (!(renamed instanceof TFile)) {
+        // Folder renames can rewrite many canonical file paths at once and remain structural.
+        this.scheduleRebuild("vault:rename-folder");
+        return;
+      }
+
+      const newPath = renamed.path;
+      let changed = false;
+      if (this.settings.lastActivePath === oldPath) {
+        this.settings.lastActivePath = newPath;
+        changed = true;
+      }
+      if (this.settings.sidecarLastFilePath === oldPath) {
+        this.settings.sidecarLastFilePath = newPath;
+        changed = true;
+      }
+      const history = this.settings.navigationHistory.map((path) => path === oldPath ? newPath : path);
+      if (history.some((path, index) => path !== this.settings.navigationHistory[index])) {
+        this.settings.navigationHistory = [...new Set(history)];
+        changed = true;
+      }
+      const pinned = this.settings.pinnedNodes.map((path) => path === oldPath ? newPath : path);
+      if (pinned.some((path, index) => path !== this.settings.pinnedNodes[index])) {
+        this.settings.pinnedNodes = [...new Set(pinned)];
+        changed = true;
+      }
+
+      // Preserve a genuinely dirty file across the path change, but a clean rename is not itself a
+      // re-index trigger. GraphIndex remaps path-keyed graph/evidence/search state in O(degree).
+      if (this.dirtyMarkdownPaths.delete(oldPath)) this.dirtyMarkdownPaths.add(newPath);
+      this.index?.renameFile(oldPath, renamed);
+      this.renameMetadataSuppressions.set(newPath, {
+        mtime: renamed.stat.mtime,
+        size: renamed.stat.size,
+        until: Date.now() + 5000,
+      });
+      if (changed) void this.saveSettings(false, false);
     }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
       this.pruneManagedMetadataWrites();
       const until = this.managedMetadataWrites.get(file.path) ?? 0;
       if (until > Date.now()) return;
       this.managedMetadataWrites.delete(file.path);
+      const renameSuppression = this.renameMetadataSuppressions.get(file.path);
+      if (renameSuppression && renameSuppression.until > Date.now() &&
+          renameSuppression.mtime === file.stat.mtime && renameSuppression.size === file.stat.size) {
+        // Obsidian commonly emits metadataCache.changed after a pure rename. The TFile and contents
+        // are unchanged, and GraphIndex already remapped the path synchronously above.
+        return;
+      }
+      if (renameSuppression) this.renameMetadataSuppressions.delete(file.path);
       if (file.extension === "md") {
         this.dirtyMarkdownPaths.add(file.path);
       }
@@ -410,14 +527,15 @@ export default class ExcaliBrainPlugin extends Plugin {
     }, delayMs);
   }
 
-  async onKplexViewOpened(): Promise<void> {
+  async onKplexViewOpened(hostLeaf?: WorkspaceLeaf): Promise<void> {
     this.openKplexViews += 1;
     if (!this.layoutReady) return;
     await this.ensureIndexReady("view-open");
+    if (hostLeaf) await this.restorePersistedSidecar(hostLeaf);
   }
 
   onKplexViewClosed(hostLeaf?: WorkspaceLeaf): void {
-    if (hostLeaf) void this.releaseSidecar(hostLeaf, true);
+    if (hostLeaf) void this.releaseSidecar(hostLeaf, true, true);
     this.openKplexViews = Math.max(0, this.openKplexViews - 1);
     if (this.openKplexViews > 0) return;
     if (this.rebuildTimer !== null) {
@@ -703,6 +821,176 @@ export default class ExcaliBrainPlugin extends Plugin {
     return workspaceLeaf.parent?.containerEl ?? workspaceLeaf.containerEl ?? leaf.view?.containerEl ?? null;
   }
 
+  /** Capture the exact workspace rectangle currently owned by K-Plex plus its managed sidecar.
+   * The individual host/sidecar ratio is retained so a left/right pair can move above/below (or
+   * vice versa) without donating part of its combined footprint to an unrelated third pane. */
+  private sidecarFootprint(hostLeaf: WorkspaceLeaf, sidecarLeaf: WorkspaceLeaf): SidecarFootprint | null {
+    const hostGroup = this.leafGroupElement(hostLeaf);
+    const sidecarGroup = this.leafGroupElement(sidecarLeaf);
+    if (!hostGroup || !sidecarGroup || hostGroup.ownerDocument !== sidecarGroup.ownerDocument) return null;
+    const host = hostGroup.getBoundingClientRect();
+    const sidecar = sidecarGroup.getBoundingClientRect();
+    if (host.width <= 8 || host.height <= 8 || sidecar.width <= 8 || sidecar.height <= 8) return null;
+    const position = this.adjacentPosition(hostLeaf, sidecarLeaf);
+    if (!position) return null;
+    const horizontalPair = position === "left" || position === "right";
+    const hostExtent = horizontalPair ? host.width : host.height;
+    const sidecarExtent = horizontalPair ? sidecar.width : sidecar.height;
+    const totalExtent = hostExtent + sidecarExtent;
+    return {
+      width: Math.max(host.right, sidecar.right) - Math.min(host.left, sidecar.left),
+      height: Math.max(host.bottom, sidecar.bottom) - Math.min(host.top, sidecar.top),
+      hostShare: totalExtent > 0 ? Math.max(0.1, Math.min(0.9, hostExtent / totalExtent)) : 0.5,
+      ownerDocument: hostGroup.ownerDocument,
+    };
+  }
+
+  private commonElementAncestor(a: HTMLElement, b: HTMLElement): HTMLElement | null {
+    const ancestors = new Set<HTMLElement>();
+    for (let current: HTMLElement | null = a; current; current = current.parentElement) ancestors.add(current);
+    for (let current: HTMLElement | null = b; current; current = current.parentElement) {
+      if (ancestors.has(current)) return current;
+    }
+    return null;
+  }
+
+  private splitAxis(element: HTMLElement): "width" | "height" | null {
+    if (!element.classList.contains("workspace-split")) return null;
+    const view = element.ownerDocument.defaultView ?? window;
+    const direction = view.getComputedStyle(element).flexDirection;
+    if (direction === "row" || direction === "row-reverse") return "width";
+    if (direction === "column" || direction === "column-reverse") return "height";
+    return null;
+  }
+
+  private visibleWorkspaceChildren(parent: HTMLElement): HTMLElement[] {
+    const view = parent.ownerDocument.defaultView ?? window;
+    return Array.from(parent.children)
+      .map((child) => child as HTMLElement)
+      .filter((child) => {
+        if (!child.classList.contains("workspace-tabs") && !child.classList.contains("workspace-split")) return false;
+        const style = view.getComputedStyle(child);
+        const rect = child.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 8 && rect.height > 8;
+      });
+  }
+
+  private directChildContaining(parent: HTMLElement, descendant: HTMLElement): HTMLElement | null {
+    let current: HTMLElement | null = descendant;
+    while (current && current.parentElement && current.parentElement !== parent) current = current.parentElement;
+    return current?.parentElement === parent ? current : null;
+  }
+
+  private setWorkspaceBasis(element: HTMLElement, pixels: number): void {
+    if (!Number.isFinite(pixels) || pixels <= 8) return;
+    // Dynamic split geometry is still expressed through Obsidian's DOM helper rather than direct
+    // style mutation so this remains CodeScanner-friendly.
+    element.setCssStyles({ flexBasis: `${Math.max(8, Math.round(pixels))}px` });
+  }
+
+  private rebalanceWorkspaceSplit(
+    split: HTMLElement,
+    primary: Array<{ element: HTMLElement; pixels: number }>,
+  ): void {
+    const axis = this.splitAxis(split);
+    if (!axis) return;
+    const children = this.visibleWorkspaceChildren(split);
+    const primaryElements = new Set(primary.map(({ element }) => element));
+    if (primary.some(({ element }) => !children.includes(element))) return;
+    const size = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect();
+      return axis === "width" ? rect.width : rect.height;
+    };
+    const total = children.reduce((sum, child) => sum + size(child), 0);
+    if (total <= 16) return;
+    const peers = children.filter((child) => !primaryElements.has(child));
+    const minimumPeerTotal = peers.length * 48;
+    const requestedPrimary = primary.reduce((sum, item) => sum + item.pixels, 0);
+    const primaryTotal = Math.max(48 * primary.length, Math.min(requestedPrimary, total - minimumPeerTotal));
+    const requestScale = requestedPrimary > 0 ? primaryTotal / requestedPrimary : 1;
+    for (const item of primary) this.setWorkspaceBasis(item.element, item.pixels * requestScale);
+
+    if (!peers.length) return;
+    const remaining = Math.max(minimumPeerTotal, total - primaryTotal);
+    const currentPeerTotal = peers.reduce((sum, peer) => sum + size(peer), 0);
+    for (const peer of peers) {
+      const share = currentPeerTotal > 0 ? size(peer) / currentPeerTotal : 1 / peers.length;
+      this.setWorkspaceBasis(peer, remaining * share);
+    }
+  }
+
+  /** Re-establish the pre-move K-Plex+sidecar bounding rectangle using only the workspace branches
+   * that participate in the move. Unlike the earlier workaround, this does not repeatedly rebalance
+   * arbitrary ancestors: it freezes current peer sizes once and restores the pair's own allocation. */
+  private applySidecarFootprint(hostLeaf: WorkspaceLeaf, sidecarLeaf: WorkspaceLeaf, footprint: SidecarFootprint): void {
+    const hostGroup = this.leafGroupElement(hostLeaf);
+    const sidecarGroup = this.leafGroupElement(sidecarLeaf);
+    if (!hostGroup || !sidecarGroup || hostGroup.ownerDocument !== footprint.ownerDocument || sidecarGroup.ownerDocument !== footprint.ownerDocument) return;
+
+    let common = this.commonElementAncestor(hostGroup, sidecarGroup);
+    while (common && !common.classList.contains("workspace-split")) common = common.parentElement;
+    if (!common) return;
+
+    const hostBranch = this.directChildContaining(common, hostGroup);
+    const sidecarBranch = this.directChildContaining(common, sidecarGroup);
+    const axis = this.splitAxis(common);
+    if (!hostBranch || !sidecarBranch || hostBranch === sidecarBranch || !axis) return;
+
+    const children = this.visibleWorkspaceChildren(common);
+    const pairIsWholeSplit = children.length === 2 && children.includes(hostBranch) && children.includes(sidecarBranch);
+    const targetPairExtent = axis === "width" ? footprint.width : footprint.height;
+    const currentPairExtent = (() => {
+      const a = hostBranch.getBoundingClientRect();
+      const b = sidecarBranch.getBoundingClientRect();
+      return axis === "width" ? a.width + b.width : a.height + b.height;
+    })();
+
+    // Keep the host/sidecar split ratio stable. If the pair shares this split with unrelated panes,
+    // restore the exact old pair extent and give the remaining pixels back to those peers in their
+    // current proportions. Making all flex bases sum to the settled split extent avoids flex-grow
+    // immediately undoing the correction.
+    const ratioExtent = pairIsWholeSplit ? currentPairExtent : targetPairExtent;
+    this.rebalanceWorkspaceSplit(common, [
+      { element: hostBranch, pixels: ratioExtent * footprint.hostShare },
+      { element: sidecarBranch, pixels: ratioExtent * (1 - footprint.hostShare) },
+    ]);
+    if (!pairIsWholeSplit) return;
+
+    // A dedicated pair split may itself compete with an unrelated third pane higher in the tree.
+    // Restore the pair branch against each outer split axis, which preserves the old bounding box
+    // even when the sidecar changes from left/right to above/below.
+    let branch: HTMLElement = common;
+    for (let parent = branch.parentElement; parent; branch = parent, parent = parent.parentElement) {
+      if (!parent.classList.contains("workspace-split")) continue;
+      const parentAxis = this.splitAxis(parent);
+      if (!parentAxis) continue;
+      const directBranch = this.directChildContaining(parent, branch);
+      if (!directBranch) continue;
+      const peers = this.visibleWorkspaceChildren(parent);
+      if (!peers.includes(directBranch) || peers.length < 2) continue;
+      const desired = parentAxis === "width" ? footprint.width : footprint.height;
+      this.rebalanceWorkspaceSplit(parent, [{ element: directBranch, pixels: desired }]);
+      break;
+    }
+  }
+
+  private async waitForWorkspaceLayout(hostLeaf: WorkspaceLeaf, frames = 2): Promise<void> {
+    const hostGroup = this.leafGroupElement(hostLeaf);
+    const viewWindow = hostGroup?.ownerDocument.defaultView ?? window;
+    for (let i = 0; i < frames; i += 1) {
+      await new Promise<void>((resolve) => viewWindow.requestAnimationFrame(() => resolve()));
+    }
+  }
+
+  private async restoreSidecarFootprint(hostLeaf: WorkspaceLeaf, sidecarLeaf: WorkspaceLeaf, footprint: SidecarFootprint): Promise<void> {
+    // Obsidian may collapse/reparent a now-single-child split one frame after detach. Re-apply after
+    // each of two settle points, but do not create a resize loop or touch the workspace afterward.
+    await this.waitForWorkspaceLayout(hostLeaf, 2);
+    this.applySidecarFootprint(hostLeaf, sidecarLeaf, footprint);
+    await this.waitForWorkspaceLayout(hostLeaf, 2);
+    this.applySidecarFootprint(hostLeaf, sidecarLeaf, footprint);
+  }
+
   private restoreCollapsedPlex(hostLeaf: WorkspaceLeaf): void {
     const collapsed = this.collapsedPlexHosts.get(hostLeaf);
     if (!collapsed) return;
@@ -720,7 +1008,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   async collapsePlexForSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
     if (this.collapsedPlexHosts.has(hostLeaf)) return;
     const position = this.getSidecarPosition(hostLeaf);
-    const sidecarLeaf = this.validateSidecarLeaf(hostLeaf) ?? (position ? this.linkedDocumentLeaf : null);
+    const sidecarLeaf = this.validateSidecarLeaf(hostLeaf);
     if (!position || !sidecarLeaf) return;
     const hostGroup = this.leafGroupElement(hostLeaf);
     const sidecarGroup = this.leafGroupElement(sidecarLeaf);
@@ -734,7 +1022,6 @@ export default class ExcaliBrainPlugin extends Plugin {
         : unfoldSide === "top" ? "panel-top-open"
           : "panel-bottom-open";
     button.className = `kplex-sidecar-unfold-plex is-${unfoldSide}`;
-    button.title = "Unfold K-Plex";
     button.setAttribute("aria-label", "Unfold K-Plex");
     setIcon(button, unfoldIcon);
     button.addEventListener("click", () => void this.expandPlexFromSidecar(hostLeaf));
@@ -754,9 +1041,11 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async expandPlexFromSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
     if (!this.collapsedPlexHosts.has(hostLeaf)) return;
+    const hostGroup = this.leafGroupElement(hostLeaf);
+    const viewWindow = hostGroup?.ownerDocument.defaultView ?? window;
     this.restoreCollapsedPlex(hostLeaf);
     // Let Obsidian's split layout settle before recalculating sidecar geometry.
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => viewWindow.setTimeout(resolve, 0));
     this.notifySidecar();
   }
 
@@ -876,24 +1165,6 @@ export default class ExcaliBrainPlugin extends Plugin {
     return null;
   }
 
-  private isLeafAdjacentToAnyKplex(leaf: WorkspaceLeaf): boolean {
-    return this.app.workspace.getLeavesOfType(EXCALIBRAIN_VIEW_TYPE)
-      .some((host) => this.adjacentPosition(host, leaf) !== null);
-  }
-
-  private findVisibleAdjacentDocumentLeaf(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
-    let best: WorkspaceLeaf | null = null;
-    let bestScore = -1;
-    this.app.workspace.iterateAllLeaves((leaf) => {
-      if (!this.isDocumentLeafCandidate(leaf)) return;
-      const position = this.adjacentPosition(hostLeaf, leaf);
-      if (!position) return;
-      const score = (this.leafViewIsLoaded(leaf) ? 10 : 0) + (leaf === this.lastDocumentLeaf ? 4 : 0) + (leaf === this.app.workspace.getMostRecentLeaf() ? 2 : 0);
-      if (score > bestScore) { best = leaf; bestScore = score; }
-    });
-    return best;
-  }
-
   private rememberDocumentLeaf(leaf: WorkspaceLeaf | null): void {
     if (this.isDocumentLeafCandidate(leaf) && this.leafIsVisible(leaf)) this.lastDocumentLeaf = leaf;
   }
@@ -965,10 +1236,58 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   getDocumentSyncMode(): DocumentSyncMode { return this.settings.documentSyncMode; }
 
+  isStartupInitializing(): boolean { return this.startupInitializing; }
+
+  private documentSyncTargetLeaf(): WorkspaceLeaf | null {
+    this.validateLinkedDocumentLeaf();
+    if (this.settings.documentSyncMode === "pinned") return this.linkedDocumentLeaf;
+    if (this.settings.documentSyncMode === "recent") return this.findRecentDocumentLeaf();
+    return null;
+  }
+
+  hasDocumentSyncTarget(): boolean {
+    return this.documentSyncTargetLeaf() !== null;
+  }
+
+  private leafContainerElement(leaf: WorkspaceLeaf): HTMLElement | null {
+    // WorkspaceLeaf.containerEl is not part of the stable public type surface. Keep the compatibility
+    // bridge isolated and fall back to the view container on older/non-standard leaves.
+    const bridged = leaf as WorkspaceLeaf & { containerEl?: HTMLElement };
+    return bridged.containerEl?.isConnected ? bridged.containerEl : leaf.view?.containerEl ?? null;
+  }
+
+  private clearLinkedLeafHighlight(element: HTMLElement): void {
+    const pending = this.linkedLeafHighlightTimers.get(element);
+    if (pending) pending.viewWindow.clearTimeout(pending.timer);
+    this.linkedLeafHighlightTimers.delete(element);
+    element.classList.remove("kplex-linked-leaf-alert");
+  }
+
+  private flashDocumentLeaf(leaf: WorkspaceLeaf): void {
+    const element = this.leafContainerElement(leaf);
+    if (!element) return;
+    const viewWindow = element.ownerDocument.defaultView ?? window;
+    this.clearLinkedLeafHighlight(element);
+
+    // Appearance stays entirely in styles.css and therefore inherits the active Obsidian theme.
+    element.classList.add("kplex-linked-leaf-alert");
+    const timer = viewWindow.setTimeout(() => this.clearLinkedLeafHighlight(element), 2000);
+    this.linkedLeafHighlightTimers.set(element, { viewWindow, timer });
+  }
+
+  async showLinkedDocumentLeaf(): Promise<boolean> {
+    const leaf = this.documentSyncTargetLeaf();
+    if (!leaf || !this.leafIsAttached(leaf)) return false;
+    await this.app.workspace.revealLeaf(leaf);
+    this.flashDocumentLeaf(leaf);
+    return true;
+  }
+
   private syncKplexToLeafEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
   private syncLeafToKplexEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
 
   shouldFollowDocumentFile(file: TFile): boolean {
+    if (this.startupInitializing) return false;
     const suppression = this.transientDocumentFollowSuppression;
     if (suppression && Date.now() >= suppression.until) this.transientDocumentFollowSuppression = null;
     else if (suppression?.path === file.path) return false;
@@ -993,7 +1312,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.lastDocumentLeaf = candidate;
     this.settings.documentSyncMode = "pinned";
     if (page?.file) await candidate.openFile(page.file, { active: false });
-    this.settings.sidecarOpen = this.isLeafAdjacentToAnyKplex(candidate);
+    this.settings.sidecarOpen = false;
     await this.saveSettings(false, false);
     this.notifySidecar();
   }
@@ -1016,7 +1335,11 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
     if (mode === "recent") {
+      const released = this.linkedDocumentLeaf;
       this.linkedDocumentLeaf = null;
+      if (released) {
+        for (const [host, managed] of [...this.sidecarLeaves.entries()]) if (managed === released) this.sidecarLeaves.delete(host);
+      }
       this.settings.sidecarOpen = false;
       await this.saveSettings(false, false);
       this.notifySidecar();
@@ -1029,7 +1352,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.linkedDocumentLeaf = candidate;
     this.lastDocumentLeaf = candidate;
     if (page?.file) await candidate.openFile(page.file, { active: false });
-    this.settings.sidecarOpen = this.isLeafAdjacentToAnyKplex(candidate);
+    this.settings.sidecarOpen = this.isManagedSidecarLeaf(candidate);
     await this.saveSettings(false, false);
     this.notifySidecar();
     return null;
@@ -1188,25 +1511,15 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (collapsed && this.leafIsAttached(collapsed.sidecarLeaf)) return collapsed.sidecarLeaf;
 
     const managed = this.validateSidecarLeaf(hostLeaf);
-    if (managed && this.adjacentPosition(hostLeaf, managed)) return managed;
-
-    this.validateLinkedDocumentLeaf();
-    if (
-      this.settings.documentSyncMode === "pinned"
-      && this.linkedDocumentLeaf
-      && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
-    ) return this.linkedDocumentLeaf;
-
-    return null;
+    return managed && this.adjacentPosition(hostLeaf, managed) ? managed : null;
   }
 
   getSidecarPosition(hostLeaf: WorkspaceLeaf): SidecarPosition | null {
-    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE || this.settings.documentSyncMode !== "pinned") return null;
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return null;
     const collapsed = this.collapsedPlexHosts.get(hostLeaf);
     if (collapsed && this.leafIsAttached(collapsed.sidecarLeaf)) return collapsed.position;
-    this.validateLinkedDocumentLeaf();
-    if (!this.linkedDocumentLeaf) return null;
-    return this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf);
+    const managed = this.validateSidecarLeaf(hostLeaf);
+    return managed ? this.adjacentPosition(hostLeaf, managed) : null;
   }
 
   isSidecarOpen(hostLeaf: WorkspaceLeaf): boolean {
@@ -1219,13 +1532,175 @@ export default class ExcaliBrainPlugin extends Plugin {
     return this.app.workspace.createLeafBySplit(hostLeaf, direction, before);
   }
 
+  private leafMatchesPersistedSidecarTarget(leaf: WorkspaceLeaf): boolean {
+    const state = leaf.getViewState();
+    if (this.settings.sidecarLastFilePath) {
+      const fileState = state.state as { file?: unknown } | undefined;
+      return this.fileForLeaf(leaf)?.path === this.settings.sidecarLastFilePath
+        || fileState?.file === this.settings.sidecarLastFilePath;
+    }
+    if (this.settings.sidecarLastUrl) {
+      const urlState = state.state as { url?: unknown } | undefined;
+      return state.type === "webviewer" && urlState?.url === this.settings.sidecarLastUrl;
+    }
+    return false;
+  }
+
+  private navigationHistoryScoreForLeaf(leaf: WorkspaceLeaf): number {
+    const file = this.fileForLeaf(leaf);
+    if (!file) return -1;
+    return this.settings.navigationHistory.lastIndexOf(file.path);
+  }
+
+  private leafTabIsActive(leaf: WorkspaceLeaf): boolean {
+    const bridged = leaf as WorkspaceLeaf & { tabHeaderEl?: HTMLElement };
+    if (bridged.tabHeaderEl?.isConnected) return bridged.tabHeaderEl.classList.contains("is-active");
+    return (leaf.getViewState() as { active?: boolean }).active === true;
+  }
+
+  private restoredSidecarCandidate(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
+    // Startup restore is spatial first. Persisted sidecarPosition records which *tab group* K-Plex
+    // owned before shutdown, while Obsidian itself restores that group. Do not jump to a matching
+    // document on another side: in a layout with panes left/right/below that would reconnect K-Plex
+    // to the wrong user tab simply because it happens to show the same note.
+    const rememberedGroups = new Map<HTMLElement, WorkspaceLeaf[]>();
+    const ungroupedRemembered: WorkspaceLeaf[] = [];
+
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf === hostLeaf || this.isManagedSidecarLeaf(leaf) || !this.isDocumentLeafCandidate(leaf)) return;
+      if (this.adjacentPosition(hostLeaf, leaf) !== this.settings.sidecarPosition) return;
+      const group = this.leafGroupElement(leaf);
+      if (!group) {
+        ungroupedRemembered.push(leaf);
+        return;
+      }
+      const members = rememberedGroups.get(group) ?? [];
+      members.push(leaf);
+      rememberedGroups.set(group, members);
+    });
+
+    // There must be exactly one adjacent document tab-group on the remembered side. If the host
+    // edge is split into two independent groups, ownership is genuinely ambiguous and K-Plex must
+    // not adopt either one automatically (issue #17).
+    if (rememberedGroups.size === 1) {
+      const candidates = [...rememberedGroups.values()][0] ?? [];
+
+      // Strongest identity: remember the actual document/URL the managed sidecar displayed. The
+      // graph center can legitimately be different from the sidecar content, so lastActivePath is
+      // not a valid substitute for sidecar identity.
+      const exact = candidates.filter((leaf) => this.leafMatchesPersistedSidecarTarget(leaf));
+      if (exact.length === 1) return exact[0];
+
+      // Obsidian normally restores one selected tab per group. Prefer its active/visible tab before
+      // consulting global "most recent" state, which is unreliable during startup hydration.
+      const activeState = candidates.filter((leaf) => this.leafTabIsActive(leaf));
+      if (activeState.length === 1) return activeState[0];
+      const visible = candidates.filter((leaf) => this.leafIsVisible(leaf));
+      if (visible.length === 1) return visible[0];
+
+      // Backward-compatible heuristic for settings written before sidecarLastFilePath existed:
+      // if exactly one candidate is present in K-Plex navigation history, or one is clearly the
+      // most recent K-Plex page among the candidates, prefer it. This is intentionally scoped to
+      // the remembered-side group and can never select a left/bottom pane when the sidecar was right.
+      const scored = candidates
+        .map((leaf) => ({ leaf, score: this.navigationHistoryScoreForLeaf(leaf) }))
+        .filter((item) => item.score >= 0)
+        .sort((a, b) => b.score - a.score);
+      if (scored.length === 1 || (scored.length > 1 && scored[0].score > scored[1].score)) return scored[0].leaf;
+
+      if (candidates.length === 1) return candidates[0];
+      return null;
+    }
+
+    // Very early in workspace hydration parent tab-group DOM may not yet be available. A single
+    // geometrically adjacent document leaf is still safe; multiple leaves remain ambiguous.
+    if (rememberedGroups.size === 0 && ungroupedRemembered.length === 1) return ungroupedRemembered[0];
+    return null;
+  }
+
+  private async waitForRestoredSidecarCandidate(hostLeaf: WorkspaceLeaf): Promise<WorkspaceLeaf | null> {
+    // onLayoutReady can precede DeferredView/tab-group geometry settling. Poll briefly rather than
+    // creating a new split. The operation is asynchronous and never blocks Obsidian's UI thread.
+    const hostGroup = this.leafGroupElement(hostLeaf);
+    const viewWindow = hostGroup?.ownerDocument.defaultView ?? window;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const candidate = this.restoredSidecarCandidate(hostLeaf);
+      if (candidate) return candidate;
+      await new Promise<void>((resolve) => viewWindow.setTimeout(resolve, attempt < 4 ? 0 : 75));
+    }
+    return null;
+  }
+
+  private async restorePersistedSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
+    if (!this.settings.sidecarOpen || hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
+    if (!this.leafIsAttached(hostLeaf) || this.isSidecarOpen(hostLeaf)) return;
+    if (this.sidecarRestoreAttemptedHosts.has(hostLeaf)) return;
+    if (this.sidecarRestoreTask) {
+      await this.sidecarRestoreTask;
+      return;
+    }
+
+    const task = (async () => {
+      if (!this.settings.sidecarOpen || !this.leafIsAttached(hostLeaf) || this.isSidecarOpen(hostLeaf)) return;
+      this.sidecarRestoreAttemptedHosts.add(hostLeaf);
+
+      // Give Obsidian's restored split tree and DeferredViews time to hydrate before matching the
+      // remembered adjacent tab-group. Startup restoration must never create an extra pane merely
+      // because a legitimate restored sidecar has not produced a usable DOMRect yet.
+      await this.waitForWorkspaceLayout(hostLeaf, 3);
+      const restored = await this.waitForRestoredSidecarCandidate(hostLeaf);
+      if (!restored) {
+        // Preserve the user's restored workspace exactly as Obsidian opened it. A later explicit
+        // sidecar action may create a managed companion, but startup itself is non-greedy.
+        this.notifySidecar();
+        return;
+      }
+
+      this.sidecarLeaves.set(hostLeaf, restored);
+      this.linkedDocumentLeaf = restored;
+      this.lastDocumentLeaf = restored;
+      this.settings.documentSyncMode = "pinned";
+      const actualPosition = this.adjacentPosition(hostLeaf, restored);
+      if (actualPosition) this.settings.sidecarPosition = actualPosition;
+      const restoredFile = this.fileForLeaf(restored);
+      const restoredState = restored.getViewState();
+      if (restoredFile) {
+        this.settings.sidecarLastFilePath = restoredFile.path;
+        this.settings.sidecarLastUrl = "";
+      } else if (restoredState.type === "webviewer") {
+        const url = (restoredState.state as { url?: unknown } | undefined)?.url;
+        if (typeof url === "string") {
+          this.settings.sidecarLastUrl = url;
+          this.settings.sidecarLastFilePath = "";
+        }
+      }
+      await this.saveSettings(false, false);
+      this.notifySidecar();
+    })();
+    this.sidecarRestoreTask = task;
+    try {
+      await task;
+    } finally {
+      if (this.sidecarRestoreTask === task) this.sidecarRestoreTask = null;
+    }
+  }
+
   private ensureSidecarLeaf(hostLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
     if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return null;
     let leaf = this.validateSidecarLeaf(hostLeaf);
-    if (!leaf && this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)) {
-      leaf = this.linkedDocumentLeaf;
+
+    // A managed sidecar that the user manually moved away becomes an ordinary document tab. Keep
+    // it open, release ownership, and create a fresh companion split rather than dragging that tab
+    // back or later detaching it as collateral damage.
+    if (leaf && !this.adjacentPosition(hostLeaf, leaf)) {
+      this.sidecarLeaves.delete(hostLeaf);
+      if (this.linkedDocumentLeaf === leaf) this.linkedDocumentLeaf = null;
+      this.lastDocumentLeaf = leaf;
+      leaf = null;
     }
-    if (!leaf) leaf = this.findVisibleAdjacentDocumentLeaf(hostLeaf);
+
+    // Never adopt an arbitrary adjacent or pinned note tab. Sidecar actions may detach/move the
+    // managed leaf, so ownership must start with a leaf K-Plex created specifically for that role.
     if (!leaf) leaf = this.createSidecarLeaf(hostLeaf, this.settings.sidecarPosition);
     this.sidecarLeaves.set(hostLeaf, leaf);
     this.settings.sidecarOpen = true;
@@ -1244,6 +1719,8 @@ export default class ExcaliBrainPlugin extends Plugin {
       return;
     }
     this.transientDocumentFollowSuppression = { path: file.path, until: Date.now() + 1800 };
+    this.settings.sidecarLastFilePath = file.path;
+    this.settings.sidecarLastUrl = "";
     await leaf.openFile(file, { active: false });
     const state = leaf.getViewState();
     if (state.type === "markdown") {
@@ -1259,6 +1736,8 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   private async openPageInSidecarLeaf(leaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
     if (page.url) {
+      this.settings.sidecarLastUrl = page.url;
+      this.settings.sidecarLastFilePath = "";
       try {
         await leaf.setViewState({ type: "webviewer", state: { url: page.url, navigate: true }, active: false });
       } catch {
@@ -1267,9 +1746,13 @@ export default class ExcaliBrainPlugin extends Plugin {
       return;
     }
     if (!page.file) {
+      this.settings.sidecarLastFilePath = "";
+      this.settings.sidecarLastUrl = "";
       await leaf.setViewState({ type: "empty", active: false });
       return;
     }
+    this.settings.sidecarLastFilePath = page.file.path;
+    this.settings.sidecarLastUrl = "";
     await leaf.openFile(page.file, { active: false });
     const state = leaf.getViewState();
     if (state.type === "markdown") {
@@ -1291,11 +1774,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async closeSidecar(hostLeaf: WorkspaceLeaf, persist = true): Promise<void> {
     const collapsed = this.collapsedPlexHosts.get(hostLeaf);
-    const managed = this.sidecarLeaves.get(hostLeaf) ?? collapsed?.sidecarLeaf ?? null;
-    const adjacentPinned = this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf && this.adjacentPosition(hostLeaf, this.linkedDocumentLeaf)
-      ? this.linkedDocumentLeaf
-      : null;
-    const leaf = managed ?? adjacentPinned;
+    const leaf = this.sidecarLeaves.get(hostLeaf) ?? collapsed?.sidecarLeaf ?? null;
     this.restoreCollapsedPlex(hostLeaf);
     this.sidecarLeaves.delete(hostLeaf);
     if (leaf) {
@@ -1317,19 +1796,21 @@ export default class ExcaliBrainPlugin extends Plugin {
    * This path is also used when K-Plex itself closes: the user's document is content, not disposable
    * plugin chrome, so closing the graph must never close the note that happened to be beside it.
    */
-  private async releaseSidecar(hostLeaf: WorkspaceLeaf, persist = true): Promise<void> {
+  private async releaseSidecar(hostLeaf: WorkspaceLeaf, persist = true, preserveOpenIntent = false): Promise<void> {
     const collapsed = this.collapsedPlexHosts.get(hostLeaf);
-    const managed = this.sidecarLeaves.get(hostLeaf) ?? collapsed?.sidecarLeaf ?? null;
-    const adjacentPinned = !managed && this.settings.documentSyncMode === "pinned" && this.linkedDocumentLeaf
-      ? this.linkedDocumentLeaf
-      : null;
-    const leaf = managed ?? adjacentPinned;
+    const leaf = this.sidecarLeaves.get(hostLeaf) ?? collapsed?.sidecarLeaf ?? null;
     this.restoreCollapsedPlex(hostLeaf);
     this.sidecarLeaves.delete(hostLeaf);
-    if (this.linkedDocumentLeaf === leaf) this.linkedDocumentLeaf = null;
-    this.settings.documentSyncMode = "off";
-    this.settings.sidecarOpen = false;
-    if (leaf) this.lastDocumentLeaf = leaf;
+    if (!leaf) return;
+
+    // Releasing a K-Plex view must not disturb a separately pinned/recent note-tab link. Only the
+    // document leaf owned by this sidecar is allowed to change synchronization state.
+    if (this.linkedDocumentLeaf === leaf) {
+      this.linkedDocumentLeaf = null;
+      this.settings.documentSyncMode = "off";
+    }
+    if (!preserveOpenIntent) this.settings.sidecarOpen = false;
+    this.lastDocumentLeaf = leaf;
     if (persist) await this.saveSettings(false, false);
     this.notifySidecar();
   }
@@ -1344,21 +1825,81 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   async moveSidecar(hostLeaf: WorkspaceLeaf, position: SidecarPosition, page: GraphPage): Promise<void> {
-    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return;
-    if (this.isPlexFoldedForSidecar(hostLeaf)) await this.expandPlexFromSidecar(hostLeaf);
-    const wasOpen = this.isSidecarOpen(hostLeaf);
-    if (wasOpen) await this.closeSidecar(hostLeaf, false);
-    this.settings.sidecarPosition = position;
-    await this.saveSettings(false, false);
-    if (wasOpen) await this.openSidecar(hostLeaf, page);
-    this.notifySidecar();
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE || this.sidecarMovingHosts.has(hostLeaf)) return;
+    this.sidecarMovingHosts.add(hostLeaf);
+    try {
+      if (this.isPlexFoldedForSidecar(hostLeaf)) await this.expandPlexFromSidecar(hostLeaf);
+
+      const previousSidecar = this.validateSidecarLeaf(hostLeaf);
+      const wasOpen = previousSidecar !== null && this.adjacentPosition(hostLeaf, previousSidecar) !== null;
+      this.settings.sidecarPosition = position;
+
+      if (!wasOpen || !previousSidecar) {
+        await this.saveSettings(false, false);
+        this.notifySidecar();
+        return;
+      }
+
+      const currentPosition = this.adjacentPosition(hostLeaf, previousSidecar);
+      if (currentPosition === position) {
+        await this.saveSettings(false, false);
+        this.notifySidecar();
+        return;
+      }
+
+      // Measure the exact K-Plex + companion workspace footprint before changing the split tree.
+      // Creating the replacement first prevents a zero-width intermediate pane; restoring the saved
+      // rectangle after the old leaf detaches prevents repeated moves from donating space to a third
+      // workspace group.
+      const preservedFootprint = this.sidecarFootprint(hostLeaf, previousSidecar);
+      const replacement = this.createSidecarLeaf(hostLeaf, position);
+      this.sidecarLeaves.set(hostLeaf, replacement);
+      this.settings.sidecarOpen = true;
+      this.settings.documentSyncMode = "pinned";
+      this.linkedDocumentLeaf = replacement;
+      this.lastDocumentLeaf = replacement;
+
+      try {
+        await this.openPageInSidecarLeaf(replacement, page);
+        const actualPosition = this.adjacentPosition(hostLeaf, replacement);
+        if (actualPosition) this.settings.sidecarPosition = actualPosition;
+        if (this.leafIsAttached(previousSidecar)) previousSidecar.detach();
+        if (preservedFootprint) await this.restoreSidecarFootprint(hostLeaf, replacement, preservedFootprint);
+        await this.saveSettings(false, false);
+      } catch (error) {
+        try { if (this.leafIsAttached(replacement)) replacement.detach(); } catch { /* best effort */ }
+        if (this.leafIsAttached(previousSidecar)) {
+          this.sidecarLeaves.set(hostLeaf, previousSidecar);
+          this.linkedDocumentLeaf = previousSidecar;
+          this.lastDocumentLeaf = previousSidecar;
+          const previousPosition = this.adjacentPosition(hostLeaf, previousSidecar);
+          if (previousPosition) this.settings.sidecarPosition = previousPosition;
+          this.settings.sidecarOpen = true;
+          this.settings.documentSyncMode = "pinned";
+        } else {
+          this.sidecarLeaves.delete(hostLeaf);
+          this.linkedDocumentLeaf = null;
+          this.settings.sidecarOpen = false;
+          this.settings.documentSyncMode = "off";
+        }
+        await this.saveSettings(false, false);
+        this.notifySidecar();
+        throw error;
+      }
+
+      this.notifySidecar();
+    } finally {
+      this.sidecarMovingHosts.delete(hostLeaf);
+    }
   }
 
   async syncSidecarToPage(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
-    const managed = this.validateSidecarLeaf(hostLeaf);
-    const leaf = managed ?? (this.getSidecarPosition(hostLeaf) ? this.linkedDocumentLeaf : null);
-    if (!leaf) return;
+    const leaf = this.validateSidecarLeaf(hostLeaf);
+    if (!leaf || !this.adjacentPosition(hostLeaf, leaf)) return;
     await this.openPageInSidecarLeaf(leaf, page);
+    // Persist the sidecar's actual content identity, not merely the graph center. This is what lets
+    // startup reconnect to the correct restored tab inside the remembered adjacent tab group.
+    await this.saveSettings(false, false);
   }
 
 
@@ -1510,9 +2051,9 @@ export default class ExcaliBrainPlugin extends Plugin {
     new NoteTypeModal(this, page.file, page.noteType).open();
   }
 
-  openAddToOntologyModal(field: string): void {
+  openAddToOntologyModal(field: string, onSaved?: () => void): void {
     if (!field.trim()) return;
-    new AddToOntologyModal(this, field.trim()).open();
+    new AddToOntologyModal(this, field.trim(), onSaved).open();
   }
 
   async assignFieldToOntology(field: string, role: OntologyAssignmentRole): Promise<void> {

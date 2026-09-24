@@ -33,9 +33,12 @@ function tagStyle(page: GraphPage, settings: ExcaliBrainSettings): NodeStyle {
 
 function noteTypeStyle(page: GraphPage, settings: ExcaliBrainSettings): NodeStyle {
   if (!page.noteType) return {};
-  const direct = settings.noteTypeStyles[page.noteType];
+  const normalizedPageType = page.noteType.trim().replace(/^#/, "");
+  const direct = settings.noteTypeStyles[normalizedPageType] ?? settings.noteTypeStyles[page.noteType];
   if (direct) return direct;
-  const key = Object.keys(settings.noteTypeStyles).find((name) => name.toLowerCase() === page.noteType?.toLowerCase());
+  const key = Object.keys(settings.noteTypeStyles).find((name) =>
+    name.trim().replace(/^#/, "").toLowerCase() === normalizedPageType.toLowerCase()
+  );
   return key ? settings.noteTypeStyles[key] ?? {} : {};
 }
 
@@ -54,10 +57,14 @@ export function resolveNodeStyle(page: GraphPage, relation: Neighbour | null, ro
     ...(page.url ? settings.urlNodeStyle : {}),
     ...(!page.file && !page.url ? settings.virtualNodeStyle : {}),
     ...(page.file && page.file.extension !== "md" ? settings.attachmentNodeStyle : {}),
-    ...tagStyle(page, settings),
-    ...noteTypeStyle(page, settings),
     ...central,
     ...sibling,
+    // Semantic node styles are the user's explicit appearance choice and therefore override the
+    // generic role treatment. This is especially important for the central node: previously the
+    // central background/text colors masked a perfectly valid Note type style, making the editor
+    // appear broken even though the index had parsed the property correctly.
+    ...tagStyle(page, settings),
+    ...noteTypeStyle(page, settings),
     embedHeight: settings.centerEmbedHeight,
     embedWidth: settings.centerEmbedWidth
   };

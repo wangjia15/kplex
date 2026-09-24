@@ -171,6 +171,8 @@ export function PlexFilter({
   onLensesChange,
   layoutMode,
   onLayoutModeChange,
+  showSiblings,
+  onShowSiblingsChange,
 }: {
   index: GraphIndex;
   center?: GraphPage;
@@ -181,6 +183,8 @@ export function PlexFilter({
   onLensesChange: (lenses: GraphLensDefinition[]) => void;
   layoutMode: GraphFilterLayoutMode;
   onLayoutModeChange: (mode: GraphFilterLayoutMode) => void;
+  showSiblings: boolean;
+  onShowSiblingsChange: (show: boolean) => void;
 }) {
   const idPrefix = useId().replaceAll(":", "");
   const tagListId = `kplex-filter-tags-${idPrefix}`;
@@ -232,7 +236,7 @@ export function PlexFilter({
   }, [open, index, center?.path, revision]);
 
   const activeLensCount = lenses.filter((lens) => lens.enabled).length;
-  const active = isPlexFilterActive(value) || activeLensCount > 0;
+  const active = isPlexFilterActive(value) || !value.showCrossLinks || showSiblings || activeLensCount > 0;
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
@@ -447,6 +451,24 @@ export function PlexFilter({
     <datalist id={folderListId}>{suggestions.folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
 
     <section className="kplex-filter-section">
+      <div className="kplex-filter-section-heading kplex-filter-visibility-heading">
+        <span>Visibility</span>
+        <div className="kplex-filter-visibility-options">
+          <label className="kplex-filter-layout-toggle" title="Show notes that share one of the visible parents with the current center note.">
+            <span>Siblings</span>
+            <input type="checkbox" checked={showSiblings} onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
+            <span className="kplex-filter-switch" aria-hidden="true" />
+          </label>
+          <label className="kplex-filter-layout-toggle" title="Show relationships between visible non-central notes. Cross-links use the same ontology gates as normal connections.">
+            <span>Cross-links</span>
+            <input type="checkbox" checked={value.showCrossLinks} onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
+            <span className="kplex-filter-switch" aria-hidden="true" />
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section className="kplex-filter-section">
       <div className="kplex-filter-section-heading kplex-filter-heading-row">
         <span>Quick filter</span>
         <label className="kplex-filter-layout-toggle" title="When filtering, repack the surviving nodes instead of leaving them in their original positions.">
@@ -460,7 +482,7 @@ export function PlexFilter({
       <label>Note type<select value={value.noteType} onChange={(e) => onChange({ ...value, noteType: e.currentTarget.value })}>
         <option value="">Any</option>{suggestions.noteTypes.map((type) => <option key={type} value={type}>{type}</option>)}
       </select></label>
-      {isPlexFilterActive(value) && <button onClick={() => onChange(EMPTY_PLEX_FILTER)}>Clear quick filter</button>}
+      {isPlexFilterActive(value) && <button onClick={() => onChange({ ...EMPTY_PLEX_FILTER, showCrossLinks: value.showCrossLinks })}>Clear quick filter</button>}
     </section>
 
     <section className="kplex-filter-section kplex-lens-section">

@@ -9,8 +9,8 @@ import {
   type GraphPredicateExpression,
 } from "./GraphPredicate";
 
-export type PlexFilterState = { keyword: string; tag: string; noteType: string };
-export const EMPTY_PLEX_FILTER: PlexFilterState = { keyword: "", tag: "", noteType: "" };
+export type PlexFilterState = { keyword: string; tag: string; noteType: string; showCrossLinks: boolean };
+export const EMPTY_PLEX_FILTER: PlexFilterState = { keyword: "", tag: "", noteType: "", showCrossLinks: true };
 
 export function isPlexFilterActive(filter: PlexFilterState): boolean {
   return Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());

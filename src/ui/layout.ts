@@ -5,7 +5,9 @@ import { resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import type { GraphIndex } from "../index/GraphIndex";
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-const SIBLING_SCALE = 0.85;
+export function siblingScale(settings: ExcaliBrainSettings): number {
+  return clamp(settings.siblingRelativeSize / 100, 0.3, 0.85);
+}
 
 export type ZoneViewport = {
   key: ScrollZone;
@@ -63,7 +65,7 @@ function makeNode(
   settings: ExcaliBrainSettings,
 ): PositionedNode {
   const resolved = resolveNodeStyle(n.page, n, role, settings);
-  const scale = role === "sibling" ? SIBLING_SCALE : 1;
+  const scale = role === "sibling" ? siblingScale(settings) : 1;
   const style: NodeStyle = scale === 1 ? resolved : {
     ...resolved,
     fontSize: (resolved.fontSize ?? 18) * scale,
@@ -174,7 +176,7 @@ function distributeVertical(
   const nodes = items.map((n) => makeNode(n, role, index, settings));
   if (!nodes.length) return nodes;
 
-  const reserveScale = role === "sibling" ? SIBLING_SCALE : 1;
+  const reserveScale = role === "sibling" ? siblingScale(settings) : 1;
   const reserves = nodes.map((node) => expandedChildReserve(node.page, index, settings, centerPath) * reserveScale);
   nodes[0].x = x;
   nodes[0].y = 0;
@@ -278,7 +280,7 @@ function viewportFor(
   };
 }
 
-export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settings: ExcaliBrainSettings): PlexScene {
+export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settings: ExcaliBrainSettings, showCrossLinks = true): PlexScene {
   const centerStyle = resolveNodeStyle(neighborhood.center, null, "center", settings);
   const centerLabel = index.titleFor(neighborhood.center);
   const centerSize = nodeSize(`${centerStyle.prefix ?? ""}${centerLabel}`, centerStyle.fontSize ?? 30, settings, true, centerStyle.maxLabelLength ?? 30);
@@ -380,23 +382,91 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   from(neighborhood.leftFriends, "left");
   from(neighborhood.rightFriends, "right");
 
-  // Siblings are connected to one displayed parent where possible, matching legacy semantics.
-  for (const sibling of neighborhood.siblings) {
-    const parent = neighborhood.parents.find((p) => index.neighbours(p.page, "child").some((c) => c.page.path === sibling.page.path));
-    if (!parent) continue;
-    edges.push({
-      id: `sibling:${parent.page.path}:${sibling.page.path}`,
-      sourcePath: parent.page.path,
-      targetPath: sibling.page.path,
-      role: "sibling",
-      relationType: sibling.relationType,
-      typeDefinition: sibling.typeDefinition,
-      direction: sibling.linkDirection,
-      style: resolveLinkStyle(sibling, settings),
-    });
-  }
+  // Siblings exist only because they share one or more currently visible parents with the center.
+  // Those structural parent→sibling links are part of the sibling presentation itself and must
+  // remain visible even when optional cross-links are disabled.
+  appendSiblingParentLinks(nodes, edges, index, settings, neighborhood.center.path);
+  if (showCrossLinks) appendVisibleCrossLinks(nodes, edges, index, settings, neighborhood.center.path);
 
   return { nodes, edges, zoneViewports };
+}
+
+function appendSiblingParentLinks(
+  nodes: PositionedNode[],
+  edges: PositionedEdge[],
+  index: GraphIndex,
+  settings: ExcaliBrainSettings,
+  centerPath: string,
+): void {
+  const siblingPaths = new Set(nodes.filter((node) => node.role === "sibling").map((node) => node.page.path));
+  if (!siblingPaths.size) return;
+  for (const parent of nodes) {
+    if (parent.role !== "parent" || parent.page.path === centerPath || parent.page.transient) continue;
+    for (const relation of index.visibleRelationshipsWithin(parent.page, siblingPaths)) {
+      if (relation.role !== "child") continue;
+      edges.push({
+        id: `sibling-parent:${parent.page.path}:${relation.page.path}`,
+        sourcePath: parent.page.path,
+        targetPath: relation.page.path,
+        role: "child",
+        relationType: relation.relationType,
+        typeDefinition: relation.typeDefinition,
+        direction: relation.linkDirection,
+        style: resolveLinkStyle(relation, settings),
+      });
+    }
+  }
+}
+
+/** Add each semantic relationship between already-visible, non-central persistent nodes exactly
+ * once. Iterating each visible page's actual adjacency list avoids an O(visible²) pair scan. */
+function appendVisibleCrossLinks(
+  nodes: PositionedNode[],
+  edges: PositionedEdge[],
+  index: GraphIndex,
+  settings: ExcaliBrainSettings,
+  centerPath: string,
+): void {
+  const visibleByPath = new Map<string, GraphPage>();
+  for (const node of nodes) {
+    if (node.page.path === centerPath || node.page.transient) continue;
+    visibleByPath.set(node.page.path, node.page);
+  }
+  const visiblePaths = new Set(visibleByPath.keys());
+  if (visiblePaths.size < 2) return;
+
+  const seenPairs = new Set<string>();
+  // Structural sibling-parent links are rendered regardless of the cross-link filter. Seed the
+  // de-duplication set with all already-rendered non-central pairs so enabling cross-links adds
+  // only additional relationships instead of drawing a second connector on top of them.
+  for (const edge of edges) {
+    if (edge.sourcePath === centerPath || edge.targetPath === centerPath) continue;
+    const pairKey = edge.sourcePath < edge.targetPath
+      ? `${edge.sourcePath}\u0000${edge.targetPath}`
+      : `${edge.targetPath}\u0000${edge.sourcePath}`;
+    seenPairs.add(pairKey);
+  }
+  for (const source of visibleByPath.values()) {
+    for (const relation of index.visibleRelationshipsWithin(source, visiblePaths)) {
+      if (source.path === relation.page.path) continue;
+      const pairKey = source.path < relation.page.path
+        ? `${source.path}\u0000${relation.page.path}`
+        : `${relation.page.path}\u0000${source.path}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      edges.push({
+        id: `cross:${source.path}:${relation.page.path}:${relation.role}`,
+        sourcePath: source.path,
+        targetPath: relation.page.path,
+        role: relation.role,
+        relationType: relation.relationType,
+        typeDefinition: relation.typeDefinition,
+        direction: relation.linkDirection,
+        style: resolveLinkStyle(relation, settings),
+        isCrossLink: true,
+      });
+    }
+  }
 }
 
 /** Runtime layout for central-note heading expansion. Section headings form an outline tree
@@ -408,13 +478,16 @@ export function buildSectionExpandedScene(
   index: GraphIndex,
   settings: ExcaliBrainSettings,
   expandedSectionIds: ReadonlySet<string> = new Set(expansion.sections.filter((section) => section.childIds.length).map((section) => section.id)),
+  showCrossLinks = true,
 ): PlexScene {
   const sectionPaths = new Set(expansion.sections.map((section) => section.page.path));
   const baseNeighborhood: Neighborhood = {
     ...expansion.centerNeighborhood,
     children: expansion.centerNeighborhood.children.filter((item) => !sectionPaths.has(item.page.path)),
   };
-  const scene = buildScene(baseNeighborhood, index, settings);
+  // Add cross-links after section/runtime relationship nodes are appended, so the visibility rule
+  // is truly based on the final scene rather than only on the unexpanded center neighbourhood.
+  const scene = buildScene(baseNeighborhood, index, settings, false);
   const byId = new Map(expansion.sections.map((section) => [section.id, section] as const));
   const roots = expansion.sections.filter((section) => !section.parentId);
   const visible: Array<{ section: import("../index/SectionExpansion").ExpandedSection; depth: number }> = [];
@@ -614,5 +687,6 @@ export function buildSectionExpandedScene(
   }
 
   scene.sectionTreeEdges = sectionTreeEdges;
+  if (showCrossLinks) appendVisibleCrossLinks(scene.nodes, scene.edges, index, settings, expansion.centerNeighborhood.center.path);
   return scene;
 }

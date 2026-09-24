@@ -461,13 +461,59 @@
 .kplex-relation-direction { flex: 0 0 auto; padding: 2px 6px; color: var(--text-accent); border: 1px solid var(--background-modifier-border); border-radius: 10px; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
 .kplex-relation-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
 
-/* Note type style editor modal */
-.kplex-style-form { display: grid; gap: 9px; }
-.kplex-style-row { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(180px, 1.3fr); align-items: center; gap: 12px; }
-.kplex-style-row input[type="text"], .kplex-style-row input[type="number"] { width: 100%; }
-.kplex-style-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; }
-.kplex-style-actions button { display: inline-flex; align-items: center; gap: 6px; }
+/* Property-value node style editor modal */
+.modal.kplex-style-editor-modal {
+  width: min(560px, calc(100vw - 32px));
+  max-width: calc(100vw - 20px);
+  box-sizing: border-box;
+}
+.modal.kplex-style-editor-modal .modal-content { min-width: 0; overflow-x: hidden; }
+.kplex-style-editor > p {
+  max-width: 58ch;
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.kplex-style-form {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.kplex-style-row {
+  display: grid;
+  grid-template-columns: minmax(120px, .75fr) minmax(0, 1.25fr);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.kplex-style-row label { min-width: 0; color: var(--text-normal); font-weight: 500; }
+.kplex-style-row input[type="text"],
+.kplex-style-row input[type="number"],
+.kplex-style-row select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.kplex-style-row input[type="color"] { justify-self: start; width: 44px; height: 30px; padding: 2px; }
+.kplex-style-row input[type="checkbox"] { justify-self: start; }
+.kplex-style-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.kplex-style-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .kplex-style-form input.is-invalid { border-color: var(--text-error); }
+.kplex-input-suggestion-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.kplex-input-suggestion-line .kplex-lucide { flex: 0 0 auto; width: 16px; height: 16px; color: var(--text-muted); }
+.kplex-input-suggestion-line span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 520px) {
+  .kplex-style-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .kplex-style-actions button { flex: 1 1 auto; }
+}
 
 /* K-Plex responsive toolbar: controls wrap rather than disappearing into horizontal scroll. */
 .excalibrain-main-column {
@@ -2105,6 +2151,29 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+.kplex-filter-visibility-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kplex-filter-visibility-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 14px;
+}
+.kplex-filter-visibility-options .kplex-filter-layout-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
 .kplex-filter-layout-toggle input {
   position: absolute;
   width: 1px;
@@ -2339,3 +2408,157 @@
 .kplex-sidecar-controls.is-closed { padding: 2px; border-color: color-mix(in srgb, var(--interactive-accent) 35%, var(--background-modifier-border)); }
 .kplex-sidecar-controls .kplex-sidecar-primary { color: var(--text-accent); }
 .kplex-sidecar-controls.is-open .kplex-sidecar-primary { color: var(--text-normal); }
+
+/* Searchable managers keep large style/ontology collections compact and native-looking. */
+.modal.kplex-style-manager-modal {
+  width: min(760px, calc(100vw - 48px));
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+}
+.modal.kplex-style-manager-modal .modal-content {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+.kplex-style-manager {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+.kplex-style-manager > p {
+  max-width: 64ch;
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.kplex-style-manager-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 12px 0 8px;
+}
+.kplex-style-manager-search {
+  min-width: 0;
+  max-width: 100%;
+}
+.kplex-style-manager-search input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.kplex-style-manager-controls select,
+.kplex-style-manager-controls button {
+  min-width: 0;
+  max-width: 220px;
+}
+.kplex-style-manager-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.kplex-style-manager-status {
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.kplex-style-manager-list {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-secondary);
+  overflow: clip;
+}
+.kplex-style-manager-row {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  color: var(--text-normal);
+  text-align: left;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+.kplex-style-manager-row:hover,
+.kplex-style-manager-row:focus-visible {
+  background: var(--background-modifier-hover);
+}
+.kplex-style-manager-row > .kplex-lucide { order: 3; flex: 0 0 auto; color: var(--text-muted); }
+.kplex-style-manager-copy { flex: 1 1 auto; min-width: 0; max-width: 100%; display: grid; gap: 2px; overflow: hidden; }
+.kplex-style-manager-heading { min-width: 0; max-width: 100%; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; overflow: hidden; }
+.kplex-style-manager-name { min-width: 0; max-width: 100%; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kplex-style-manager-summary { min-width: 0; max-width: 100%; color: var(--text-muted); font-size: var(--font-ui-smaller); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kplex-style-manager-badges { min-width: 0; display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.kplex-style-manager-badge {
+  padding: 1px 5px;
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+}
+.kplex-style-manager-line-swatch {
+  flex: 0 0 28px;
+  height: 0;
+  border-top: 3px solid var(--kplex-style-swatch, var(--text-muted));
+  border-radius: 3px;
+}
+.kplex-style-manager-node-swatch {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 22px;
+  border: 2px solid var(--kplex-style-node-border, var(--background-modifier-border));
+  border-radius: 6px;
+  background: var(--kplex-style-node-bg, var(--background-secondary-alt));
+}
+.kplex-style-manager-property-icon {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.kplex-style-manager-empty,
+.kplex-style-manager-limit { padding: 12px; color: var(--text-muted); }
+.kplex-style-manager-empty p { margin: 0 0 10px; }
+.kplex-style-manager-more {
+  justify-self: center;
+  margin: 6px 0 2px;
+}
+
+@media (max-width: 680px) {
+  .modal.kplex-style-manager-modal { width: calc(100vw - 20px); max-width: calc(100vw - 20px); }
+  .kplex-style-manager-controls { grid-template-columns: minmax(0, 1fr); }
+  .kplex-style-manager-controls select,
+  .kplex-style-manager-controls button { width: 100%; max-width: none; }
+  .kplex-style-manager-summary { white-space: normal; }
+}
+.kplex-style-manager-line-swatch.is-dashed { border-top-style: dashed; }
+.kplex-style-manager-line-swatch.is-dotted { border-top-style: dotted; }
+
+/* Briefly identify the entire note leaf currently linked/pinned to K-Plex. The warning token is
+   supplied by the active Obsidian theme; no inline style or hard-coded alert color is required. */
+.kplex-linked-leaf-alert {
+  border: 3px;
+  border-color: var(--text-warning, var(--interactive-accent));
+  border-style: solid;
+}

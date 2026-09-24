@@ -6,7 +6,7 @@ import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
 import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, NodeVisual, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
 import { LinkDirection, RelationType } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
-import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, type ZoneViewport } from "./layout";
+import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, siblingScale, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
@@ -511,6 +511,7 @@ function Edge({
   inverseArrowDirection,
   connectorStyle,
   labelBackground,
+  crossLinkOpacity,
   highlighted,
   dimmed,
   onHover,
@@ -523,6 +524,7 @@ function Edge({
   inverseArrowDirection: boolean;
   connectorStyle: "bezier" | "straight";
   labelBackground: string;
+  crossLinkOpacity: number;
   highlighted: boolean;
   dimmed: boolean;
   onHover: (event: PointerEvent<SVGPathElement>) => void;
@@ -551,9 +553,12 @@ function Edge({
   const labelWidth = label ? Math.max(20, label.length * fontSize * 0.58 + 10) : 0;
   const labelHeight = fontSize + 6;
 
-  return <g className={`excalibrain-edge${highlighted ? " is-highlighted" : ""}${dimmed ? " is-dimmed" : ""}`}>
+  const resolvedCrossLinkOpacity = edge.isCrossLink && !highlighted ? crossLinkOpacity : undefined;
+
+  return <g className={`excalibrain-edge${edge.isCrossLink ? " is-cross-link" : ""}${highlighted ? " is-highlighted" : ""}${dimmed ? " is-dimmed" : ""}`}>
     <path
       className="excalibrain-edge-visible"
+      opacity={resolvedCrossLinkOpacity}
       d={geometry.d}
       fill="none"
       stroke={stroke}
@@ -576,7 +581,7 @@ function Edge({
       onPointerLeave={onLeave}
       onContextMenu={onContextMenu}
     />
-    {label && <g className="excalibrain-edge-label-wrap" pointerEvents="none">
+    {label && <g className="excalibrain-edge-label-wrap" pointerEvents="none" opacity={resolvedCrossLinkOpacity}>
       <rect
         x={geometry.midpoint.x - labelWidth / 2}
         y={geometry.midpoint.y - labelHeight / 2}
@@ -598,7 +603,7 @@ function Edge({
   </g>;
 }
 
-export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicate, lenses, filterLayoutMode, predicateRevision, activePath, renderRevision, onActivate, onOpen }: {
+export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicate, lenses, filterLayoutMode, predicateRevision, showCrossLinks, activePath, renderRevision, onActivate, onOpen }: {
   plugin: ExcaliBrainPlugin;
   index: GraphIndex;
   settings: ExcaliBrainSettings;
@@ -608,6 +613,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   lenses: CompiledGraphLensSet;
   filterLayoutMode: "keep" | "reflow";
   predicateRevision: number;
+  showCrossLinks: boolean;
   activePath: string;
   renderRevision: number;
   onActivate: (page: GraphPage) => void;
@@ -696,8 +702,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     return filterNeighborhoodForLenses(neighborhood, neighborhood.center, predicateEngine, index, predicate, lenses);
   }, [neighborhood, globalFiltering, filterLayoutMode, layoutSectionExpansion, predicateEngine, index, predicate, lenses, predicateRevision]);
   const scene = useMemo(() => layoutNeighborhood
-    ? (layoutSectionExpansion ? buildSectionExpandedScene(layoutSectionExpansion, index, settings, expandedSectionIds) : buildScene(layoutNeighborhood, index, settings))
-    : { nodes: [], edges: [], zoneViewports: {} }, [layoutNeighborhood, layoutSectionExpansion, expandedSectionIds, index, settings, layoutRevision]);
+    ? (layoutSectionExpansion ? buildSectionExpandedScene(layoutSectionExpansion, index, settings, expandedSectionIds, showCrossLinks) : buildScene(layoutNeighborhood, index, settings, showCrossLinks))
+    : { nodes: [], edges: [], zoneViewports: {} }, [layoutNeighborhood, layoutSectionExpansion, expandedSectionIds, index, settings, layoutRevision, showCrossLinks]);
   const [nodeVisuals, setNodeVisuals] = useState<Map<string, NodeVisual>>(new Map());
   const visualRefreshTimers = useRef(new Map<string, number>());
   const visualPages = useMemo(() => [...new Map(
@@ -1365,7 +1371,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         .slice(0, settings.maxItemCount);
       if (!relations.length) continue;
 
-      const miniScale = parent.role === "sibling" ? 0.85 : 1;
+      const miniScale = parent.role === "sibling" ? siblingScale(settings) : 1;
       const width = Math.max(220, Math.min(330, parent.width * 1.7));
       const columns = Math.min(3, relations.length);
       const cellWidth = width / Math.max(1, columns);
@@ -1416,7 +1422,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     }
 
     return clusters;
-  }, [sectionExpansion, settings.graphDepth, settings.compactingFactor, settings.maxItemCount, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision, predicate, lenses, predicateRevision, predicateEngine]);
+  }, [sectionExpansion, settings.graphDepth, settings.compactingFactor, settings.maxItemCount, settings.siblingRelativeSize, neighborhood, scene.nodes, visibleNodePaths, renderedNodeMap, expandedScrollTop, index, layoutRevision, predicate, lenses, predicateRevision, predicateEngine]);
 
   const expandedConnectors = useMemo(() => {
     if (settings.graphDepth !== 2) return [] as Array<{ key: string; d: string; stroke: string; width: number; dash?: string; markerStart?: string; markerEnd?: string }>;
@@ -2243,7 +2249,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
                 background: alphaHexToCss(child.style.backgroundColor, "rgba(0,0,0,.42)"),
                 color: alphaHexToCss(child.style.textColor, "white"),
                 borderColor: alphaHexToCss(child.style.borderColor, "rgba(255,255,255,.18)"),
-                fontSize: cluster.parent.role === "sibling" ? 6.8 : 8,
+                fontSize: cluster.parent.role === "sibling" ? 8 * siblingScale(settings) : 8,
               }}
               title={`${child.label} — ${child.relation.page.path}`}
               onClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onActivate(child.relation.page); }}
@@ -2255,7 +2261,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
               }}
             >
               <span className="kplex-expanded-mini-gate" />
-              {child.style.icon && <ObsidianIcon name={child.style.icon} size={cluster.parent.role === "sibling" ? 7 : 8} className="kplex-expanded-mini-icon" />}
+              {child.style.icon && <ObsidianIcon name={child.style.icon} size={cluster.parent.role === "sibling" ? 8 * siblingScale(settings) : 8} className="kplex-expanded-mini-icon" />}
               <span className="kplex-expanded-mini-label">{text}</span>
             </div>;
           })}
@@ -2330,6 +2336,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           inverseArrowDirection={settings.inverseArrowDirection}
           connectorStyle={settings.connectorStyle}
           labelBackground={alphaHexToCss(settings.backgroundColor, "#0c3e6a")}
+          crossLinkOpacity={Math.max(0, Math.min(1, settings.crossLinkOpacity / 100))}
           highlighted={!connectDrag && interaction.edgeIds.has(edge.id)}
           dimmed={connectDrag ? connectBlockedEdgeIds.has(edge.id) : hover !== null && !interaction.edgeIds.has(edge.id)}
           onHover={(event) => { if (!connectDrag && !nodeDrag) scheduleEdgeHover(edge, event); }}

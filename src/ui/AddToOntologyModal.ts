@@ -15,7 +15,11 @@ const ROLE_LABELS: Record<OntologyAssignmentRole, string> = {
 };
 
 export class AddToOntologyModal extends Modal {
-  constructor(private plugin: ExcaliBrainPlugin, private fieldName: string) { super(plugin.app); }
+  constructor(
+    private plugin: ExcaliBrainPlugin,
+    private fieldName: string,
+    private onSaved?: () => void,
+  ) { super(plugin.app); }
 
   onOpen(): void {
     this.titleEl.setText(`Add “${this.fieldName}” to K-Plex ontology`);
@@ -32,7 +36,10 @@ export class AddToOntologyModal extends Modal {
       });
     new Setting(this.contentEl)
       .addButton((button) => button.setButtonText("Save").setCta().onClick(() => {
-        void this.plugin.assignFieldToOntology(this.fieldName, selected).then(() => this.close());
+        void this.plugin.assignFieldToOntology(this.fieldName, selected).then(() => {
+          this.onSaved?.();
+          this.close();
+        });
       }))
       .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()));
   }

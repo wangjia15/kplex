@@ -1290,6 +1290,124 @@ export class GraphIndex {
   }
 
   /**
+   * Apply an Obsidian file rename/move directly to the published semantic graph. A TFile keeps its
+   * object identity across rename, and none of the note-owned ontology/body evidence changes merely
+   * because its path changed. Remap only the renamed page, evidence buckets and directly connected
+   * relation-map keys; do not schedule a whole-vault rebuild or reread Markdown.
+   */
+  renameFile(oldPath: string, file: TFile): boolean {
+    const newPath = file.path;
+    if (!oldPath || !newPath || oldPath === newPath) return true;
+
+    const page = this.state.pages.get(oldPath);
+    if (!page || page.isFolder || page.isTag || page.url) return false;
+
+    const collision = this.state.pages.get(newPath);
+    if (collision && collision !== page && (collision.file || collision.isFolder || collision.isTag || collision.url)) return false;
+
+    const affectedPaths = new Set<string>();
+    for (const targetPath of page.neighbours.keys()) affectedPaths.add(targetPath);
+    for (const item of this.state.evidence.declarationsTouching(oldPath)) {
+      affectedPaths.add(item.declaredByPath);
+      affectedPaths.add(item.declaredTargetPath);
+    }
+    if (collision && collision !== page) {
+      for (const targetPath of collision.neighbours.keys()) affectedPaths.add(targetPath);
+      for (const item of this.state.evidence.declarationsTouching(newPath)) {
+        affectedPaths.add(item.declaredByPath);
+        affectedPaths.add(item.declaredTargetPath);
+      }
+    }
+
+    const oldSearchEntry = this.searchEntryByPath.get(oldPath);
+    const collisionSearchEntry = collision && collision !== page ? this.searchEntryByPath.get(newPath) : undefined;
+
+    for (const path of this.state.evidence.renamePath(oldPath, newPath)) affectedPaths.add(path);
+
+    this.state.pages.delete(oldPath);
+    this.state.lowercasePathMap.delete(oldPath.toLowerCase());
+    if (collision && collision !== page) {
+      this.state.pages.delete(newPath);
+      this.state.lowercasePathMap.delete(newPath.toLowerCase());
+    }
+
+    page.path = newPath;
+    page.file = file;
+    page.name = file.basename;
+    page.mtime = file.stat.mtime;
+    page.url = null;
+    page.isFolder = false;
+    page.isTag = false;
+    page.neighbours.clear();
+    this.state.pages.set(newPath, page);
+    this.state.lowercasePathMap.set(newPath.toLowerCase(), newPath);
+
+    const canonicalAffected = new Set<string>();
+    for (const rawPath of affectedPaths) {
+      const path = rawPath === oldPath ? newPath : rawPath;
+      if (path !== newPath) canonicalAffected.add(path);
+    }
+    for (const targetPath of canonicalAffected) {
+      const target = this.get(targetPath);
+      if (!target || target === page) continue;
+      target.neighbours.delete(oldPath);
+      target.neighbours.delete(newPath);
+      resolveEvidencePair(this.state.pages, this.state.evidence, newPath, target.path);
+      resolveEvidencePair(this.state.pages, this.state.evidence, target.path, newPath);
+    }
+
+    // File-tree ancestry is the only semantic relation that can legitimately change when a rename
+    // also moves the file to another folder. Reconcile just that ancestry locally. A basename-only
+    // rename simply removes/re-adds the same one folder edge.
+    const treeTouched = this.reconcileFileTreeMembership(file);
+    for (const path of treeTouched) canonicalAffected.add(path);
+    canonicalAffected.add(newPath);
+
+    const fieldEntry = this.fieldCache.get(oldPath);
+    if (fieldEntry) {
+      this.fieldCache.delete(oldPath);
+      this.fieldCache.set(newPath, fieldEntry);
+    }
+    const fingerprint = this.semanticFingerprints.get(oldPath);
+    if (fingerprint !== undefined) {
+      this.semanticFingerprints.delete(oldPath);
+      this.semanticFingerprints.set(newPath, fingerprint);
+    }
+
+    this.searchCandidateCache.clear();
+    this.searchEntryByPath.delete(oldPath);
+    if (collisionSearchEntry) this.searchEntryByPath.delete(newPath);
+    const retainedEntry = oldSearchEntry ?? collisionSearchEntry;
+    const nextSearch = this.makeSearchEntry(page);
+    if (retainedEntry) {
+      retainedEntry.page = nextSearch.page;
+      retainedEntry.name = nextSearch.name;
+      retainedEntry.aliases = nextSearch.aliases;
+      retainedEntry.path = nextSearch.path;
+      this.searchEntryByPath.set(newPath, retainedEntry);
+      if (oldSearchEntry && collisionSearchEntry && collisionSearchEntry !== oldSearchEntry) {
+        this.searchEntries = this.searchEntries.filter((entry) => entry !== collisionSearchEntry);
+      }
+    } else {
+      this.searchEntries.push(nextSearch);
+      this.searchEntryByPath.set(newPath, nextSearch);
+    }
+
+    this.searchEntryPointPaths = [...new Set(this.searchEntryPointPaths.map((path) => path === oldPath ? newPath : path))];
+    this.restoredModifiedMarkdownPaths = [...new Set(this.restoredModifiedMarkdownPaths.map((path) => path === oldPath ? newPath : path))];
+    this.titleCache.delete(oldPath);
+    this.titleCache.delete(newPath);
+    this.nodeVisualCache.delete(oldPath);
+    this.nodeVisualCache.delete(newPath);
+    this.suggestionCatalogCache = null;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    // Persist the remapped semantic snapshot soon, but outside the rename interaction itself.
+    this.scheduleSnapshotPersist(5000);
+    return true;
+  }
+
+  /**
    * Optimistically materialize a file K-Plex itself just created. The normal Obsidian metadata
    * event remains authoritative and may enrich this page later, but UI rendering no longer waits
    * for that asynchronous round trip.
@@ -1552,6 +1670,44 @@ export class GraphIndex {
 
   neighbours(page: GraphPage, role: Role): Neighbour[] {
     return role === "sibling" ? [] : this.relationView(page).roles[role];
+  }
+
+  /** Resolve visible semantic relationships from one page to a supplied set of already-visible
+   * targets. Cross-link layout calls this once per displayed page, so work scales with graph
+   * degree rather than with every possible pair of visible nodes. */
+  visibleRelationshipsWithin(source: GraphPage, targetPaths: ReadonlySet<string>): Neighbour[] {
+    const settings = this.plugin.settings;
+    const result: Neighbour[] = [];
+    const definitionFor = (relation: Relation, role: Exclude<Role, "sibling">): string | undefined => {
+      switch (role) {
+        case "parent": return relation.parentTypeDefinition;
+        case "child": return relation.childTypeDefinition;
+        case "left": return relation.leftFriendTypeDefinition;
+        case "right": return relation.rightFriendTypeDefinition;
+        case "previous": return relation.previousFriendTypeDefinition;
+        case "next": return relation.nextFriendTypeDefinition;
+      }
+    };
+
+    const roles = ["parent", "child", "left", "right", "previous", "next"] as const;
+    for (const relation of source.neighbours.values()) {
+      if (!targetPaths.has(relation.target.path) || relation.isHidden || !this.isVisiblePage(relation.target)) continue;
+      for (const role of roles) {
+        const relationType = classifyRelation(relation, role, settings.inferAllLinksAsFriends);
+        if (!relationType || (relationType === RelationType.INFERRED && !settings.showInferredNodes)) continue;
+        result.push({
+          page: relation.target,
+          relationType,
+          typeDefinition: definitionFor(relation, role),
+          linkDirection: relation.direction,
+          role,
+        });
+        // RelationResolver's precedence can expose several raw flags, but K-Plex renders one
+        // resolved semantic role for a pair, matching the center-neighbourhood classification.
+        break;
+      }
+    }
+    return result;
   }
 
   isConnected(source: GraphPage, targetPath: string): boolean {

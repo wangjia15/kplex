@@ -39,6 +39,8 @@ Treat Obsidian's code scanner as part of the compatibility contract. New or touc
 - Do not call bare viewport/window scheduling APIs such as `requestAnimationFrame()`. Use the correct owning window (`element.ownerDocument.defaultView ?? window`) and call `viewWindow.requestAnimationFrame(...)`; use the same window for cancellation.
 - Remove unused imports, types and locals as part of every change. Do not leave dead type-only imports after refactors.
 - Prefer broadly supported CSS primitives within K-Plex's minimum Obsidian version. In grid/flex layouts use `gap` instead of `column-gap` when either expresses the same intent; avoid CSS features the Obsidian scanner reports as only partially supported.
+- Prefer Obsidian's own semantic CSS classes and CSS variables wherever practical (`--text-*`, `--background-*`, `--interactive-*`, `--color-*`, tab/modal variables, etc.) instead of hard-coded UI colors or surfaces. K-Plex must inherit community themes naturally; plugin-specific CSS should describe structure/state, while Obsidian theme variables provide the visual tokens.
+- Temporary attention/highlight states should be implemented by adding/removing a semantic CSS class and styling that class in `styles.css` with Obsidian theme variables. Do not inject one-off inline colors/borders for these states.
 - Do not silence scanner findings with `!important`, blanket casts, or compatibility suppressions unless the underlying issue cannot be solved cleanly and the exception is documented here.
 
 ## Obsidian API discipline
@@ -54,14 +56,18 @@ Rules:
 5. Use `workspace.getLeaf("window")` for pop-out workflows when supported by the installed API.
 6. Use the Obsidian declarative settings API for settings UI.
 7. All plugin UI icons must be Lucide icons obtained through Obsidian `getIcon()` (or a thin React wrapper around it). Do not ship hand-coded icon SVGs or unrelated icon libraries.
-8. Moment is host-provided by Obsidian. Do not runtime-import `moment` or call the `moment` export from `obsidian`; production code should use Obsidian's `window.moment` through narrow local typing. Tests may install a Moment test double on `window`.
-9. When a vault path is known and a specific type is expected, prefer the narrow synchronous Vault API (`getFileByPath()` / `getFolderByPath()`) over `getAbstractFileByPath()` or adapter-level existence checks.
-10. Register long-lived Obsidian/DOM/timer resources through plugin lifecycle helpers where practical, or provide an equally explicit cleanup path. Reload/unload must not leak listeners, timers or detached UI.
+8. When subclassing Obsidian UI classes (`Modal`, `SuggestModal`, `AbstractInputSuggest`, etc.), do not reuse base-class property names such as `scope` for unrelated local state. Type-check against the installed Obsidian API before release.
+9. Moment is host-provided by Obsidian. Do not runtime-import `moment` or call the `moment` export from `obsidian`; production code should use Obsidian's `window.moment` through narrow local typing. Tests may install a Moment test double on `window`.
+10. When a vault path is known and a specific type is expected, prefer the narrow synchronous Vault API (`getFileByPath()` / `getFolderByPath()`) over `getAbstractFileByPath()` or adapter-level existence checks.
+11. Register long-lived Obsidian/DOM/timer resources through plugin lifecycle helpers where practical, or provide an equally explicit cleanup path. Reload/unload must not leak listeners, timers or detached UI.
 
 ## Host UX, privacy and accessibility
 
 - K-Plex is local/offline by default. Do not add telemetry, remote-code loading or network calls without an explicit user-facing reason, opt-in where appropriate, and clear documentation.
 - Keep UI copy short, sentence-case and action-oriented. Prefer established Obsidian classes/components before inventing a parallel visual language.
+- Settings are user-facing product UI, not a debugging surface. Never expose implementation commentary (for example “instead of expanding the collection in Settings”) as labels or descriptions. Explain the user-visible purpose of a control.
+- Do not dump large discovered/configured collections into a settings page. Put large collections behind a searchable/filterable manager or a dedicated subpage, show useful counts/summaries, and avoid nested scroll regions or horizontal scrolling.
+- Prefer shallow, task-oriented settings pages. When a settings page mixes distinct jobs (for example canvas, node styling and link styling), use declarative subpages so the landing page remains easy to scan.
 - Use semantic interactive elements. Link-like navigation should behave as navigation; buttons should represent actions.
 - A control with an Obsidian/styled tooltip must use `aria-label` for its accessible name and **must not also set an HTML `title` attribute**. Native Chromium/Electron `title` tooltips otherwise stack on top of the styled tooltip.
 - Portaled menus/popovers must carry portal-safe classes and an explicit stacking level when needed; validate main window, pop-out, click-outside and Escape behavior.
@@ -205,8 +211,8 @@ Leave a small vertical gap between the bottom of lateral zones and the start of 
 Siblings:
 
 - move slightly upward relative to the current layout
-- render at `0.85` normal scale
-- expanded-view descendants of sibling nodes inherit the same `0.85` multiplier
+- render using the persisted `siblingRelativeSize` multiplier, constrained to **30%–85%**
+- expanded-view descendants of sibling nodes inherit the same configured multiplier
 
 ### Scroll zones
 
@@ -261,7 +267,11 @@ Density must **not** change node interior padding. Use the tight padding from th
 
 ### Companion sidecar
 
-The sidecar is a **native adjacent Obsidian WorkspaceLeaf**, never a fake nested leaf inside React. “Sidecar” is a geometric/UI state of a pinned tab: when the pinned tab is adjacent to K-Plex the edge controls are visible; moving it away hides those controls without breaking the pin; moving it back restores them. On startup prefer a visible adjacent loaded document leaf over Obsidian's deferred/hidden “most recent” leaf. `_loaded` may be used only as an isolated optional compatibility hint (`FileView & { _loaded?: boolean }`), never as the sole criterion. Detach breaks synchronization but leaves the native tab open. Closing K-Plex must also release ownership without detaching the user's companion document. Sidecar Markdown mode is a persisted K-Plex default (Reading view vs Edit/source mode). Folding K-Plex in sidecar mode hides the complete K-Plex tab-group DOM container, keeps both workspace leaves alive, and mounts the recovery/unfold button on the surviving document tab group; all fold state is ephemeral and must be restored on leaf removal/plugin unload. Sidecar is unavailable when K-Plex itself is hosted in a sidepanel.
+The sidecar is a **native adjacent Obsidian WorkspaceLeaf**, never a fake nested leaf inside React. It is also an **owned companion leaf**: K-Plex must create the leaf it manages as a sidecar and must never adopt an arbitrary adjacent/recent/pinned user tab. This ownership distinction is critical because sidecar move/close actions may detach the managed leaf; ordinary tabs must never be collateral damage. A pinned/synchronized note tab and a sidecar are separate concepts even when both happen to be adjacent to K-Plex. Opening a sidecar pins synchronization to the K-Plex-created companion; closing it turns that sidecar synchronization off. If the user manually moves a managed sidecar away, keep that document tab open and release/recreate sidecar ownership as needed rather than dragging or closing the moved tab. Detach breaks synchronization but leaves the native tab open. Closing K-Plex must also release ownership without detaching the user's companion document. Sidecar Markdown mode is a persisted K-Plex default (Reading view vs Edit/source mode). Folding K-Plex in sidecar mode hides the complete K-Plex tab-group DOM container, keeps both workspace leaves alive, and mounts the recovery/unfold button on the surviving document tab group; all fold state is ephemeral and must be restored on leaf removal/plugin unload. Sidecar is unavailable when K-Plex itself is hosted in a sidepanel.
+
+Moving an open sidecar between left/right/above/below must preserve the **combined K-Plex + sidecar workspace allocation**, including when another unrelated tab group is present. Measure the tab-group `containerEl` rectangles before the move, keep structural continuity by creating/populating the replacement before detaching the old companion, then re-establish the saved combined bounding rectangle after Obsidian collapses/reparents the old split. A one-shot `flex-basis` correction is acceptable only for the settled workspace branches that participate in that geometry restoration; do not run continuous resize loops or repeatedly rebalance unrelated ancestors. Enumerate DOM children with `Array.from(...)` rather than assuming `HTMLCollection` is iterable under the project TypeScript configuration.
+
+Persisted `sidecarOpen` is restore intent, not merely a mirror of the runtime ownership map. At Obsidian startup, K-Plex must be **non-greedy**: Obsidian restores the workspace groups, and K-Plex only re-associates ownership. Startup code must never call the normal sidecar-open path or create a new workspace split. The remembered `sidecarPosition` is the primary spatial identity: only the document tab-group directly adjacent on that remembered side is eligible (right means right, never a same-file tab below/left). Persist the actual last document/URL shown by the managed sidecar and prefer that exact restored tab inside the remembered-side group; next prefer Obsidian's active/visible tab in that group, then K-Plex navigation history as a legacy fallback. Do not use the graph center as a proxy for sidecar content. Keep a short session-only startup-initialization guard so transient `getMostRecentLeaf()` / `getActiveFile()` values cannot redirect K-Plex before re-association finishes. If two independent tab-groups share that edge or ownership remains ambiguous, adopt neither. Wait briefly for native split geometry/DeferredViews to settle rather than manufacturing a replacement pane. Serialized `WorkspaceLeaf.getViewState()` is authoritative enough to inspect deferred restored files before `FileView.file` hydrates. During an explicit sidecar move, transient zero-size layout events are non-authoritative until the replacement split settles.
 
 ### Runtime section outline
 
@@ -394,18 +404,25 @@ When rewriting relationship data, prefer adding/updating document properties bec
 
 ## Styling
 
-A `Note type` frontmatter/document property may drive a note's primary node style. Settings must allow defining styles per note type.
+A single configurable **Style property** (default `Note type`) drives K-Plex property-value node styles. Keep legacy `primaryTagField` persisted for ExcaliBrain migration compatibility, but do not present it as a second active K-Plex selector. Explicit property-value styles must override generic central/sibling appearance for the fields they set, and style editors should suggest existing values/tags plus live Lucide icon IDs rather than relying on free-text-only entry.
 
 Continue supporting legacy tag-specific style compatibility where feasible.
 
 ## Settings UX
 
-Use grouped declarative settings pages such as:
+Use grouped declarative settings pages with user-intent names such as:
 
-- Graph
+- Plex behavior
 - Ontology
+- Visual styling
+- Sidecar
 - Compatibility
-- Appearance
+
+Keep **Visual styling** shallow: Canvas & labels lives on the landing page, while Node styling (including node images and property-value styles) and Link styling (including relationship-specific connector overrides) are dedicated declarative subpages. Keep **Ontology** semantic: relationship fields, editor suggester, and discovered/unassigned fields are separate jobs; styling does not belong there.
+
+Large style/discovery collections use responsive searchable managers with progressive disclosure rather than embedded long lists. Manager modals must fit the viewport without horizontal scrollbars or nested scroll regions. Descriptions must explain user intent, never implementation history or development rationale. Nonfunctional migration-only fields should not be exposed as active settings.
+
+Do not surface UI-owned synchronization state such as the current note-tab link mode in the Settings tab. It may be persisted for restoration, but it is controlled from the live K-Plex UI and may change dynamically as sidecar/link actions occur.
 
 The root K-Plex settings page begins with a compact centered row:
 
@@ -417,7 +434,7 @@ with links:
 - https://community.sketch-your-mind.com/sym
 - https://community.sketch-your-mind.com
 
-Do not place these links inside the Graph page and do not add explanatory marketing copy around them.
+Do not place these links inside the Plex behavior page and do not add explanatory marketing copy around them.
 
 Use sliders where a bounded numeric range is meaningful (zone heights, gate radius, etc.) and show the current value next to the slider.
 

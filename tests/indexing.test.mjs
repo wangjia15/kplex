@@ -11,6 +11,111 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureRoot = join(root, "tests/fixtures/excalibrain-indexing/Vault");
 const temp = mkdtempSync(join(tmpdir(), "kplex-index-test-"));
 
+// Workspace ownership regression for issue #17. Sidecar actions are allowed to detach their own
+// managed leaf, so the implementation must never adopt an arbitrary adjacent/pinned user tab.
+const mainSource = readFileSync(join(root, "src/main.ts"), "utf8");
+
+const appSource = readFileSync(join(root, "src/ui/App.tsx"), "utf8");
+assert(!appSource.includes('void plugin.openSidecar(hostLeaf, page);'), "React mount must not create a sidecar during startup restore; plugin-level restore owns re-association");
+assert(appSource.includes("plugin.isStartupInitializing() && plugin.settings.lastActivePath"), "A restored K-Plex view must keep its persisted center while Obsidian startup tab ordering is unstable");
+assert(appSource.includes('setTitle("Show linked/pinned tab")'), "The pin/link menu must provide an explicit way to reveal the linked document tab");
+assert(appSource.includes("plugin.showLinkedDocumentLeaf()"), "Show linked/pinned tab must reveal the actual resolved sync target");
+const ensureSidecarStart = mainSource.indexOf("  private ensureSidecarLeaf(");
+const ensureSidecarEnd = mainSource.indexOf("  async openMarkdownInSidecar(", ensureSidecarStart);
+const ensureSidecarSource = mainSource.slice(ensureSidecarStart, ensureSidecarEnd);
+assert(ensureSidecarStart >= 0 && ensureSidecarEnd > ensureSidecarStart);
+assert(ensureSidecarSource.includes("createSidecarLeaf(hostLeaf, this.settings.sidecarPosition)"), "Sidecar must create a dedicated companion leaf");
+assert(!ensureSidecarSource.includes("findVisibleAdjacentDocumentLeaf"), "Sidecar must not adopt an arbitrary adjacent document leaf");
+assert(!ensureSidecarSource.includes("leaf = this.linkedDocumentLeaf"), "Sidecar must not adopt a separately pinned document leaf");
+const sidecarPositionStart = mainSource.indexOf("  getSidecarPosition(");
+const sidecarPositionEnd = mainSource.indexOf("  isSidecarOpen(", sidecarPositionStart);
+const sidecarPositionSource = mainSource.slice(sidecarPositionStart, sidecarPositionEnd);
+assert(sidecarPositionSource.includes("validateSidecarLeaf(hostLeaf)"));
+assert(!sidecarPositionSource.includes("linkedDocumentLeaf"), "An adjacent pinned tab must not become sidecar-managed by geometry alone");
+const closeSidecarStart = mainSource.indexOf("  async closeSidecar(");
+const closeSidecarEnd = mainSource.indexOf("  /**", closeSidecarStart);
+assert(!mainSource.slice(closeSidecarStart, closeSidecarEnd).includes("adjacentPinned"), "Closing a sidecar must never detach an ordinary adjacent pinned tab");
+const releaseSidecarStart = mainSource.indexOf("  private async releaseSidecar(");
+const releaseSidecarEnd = mainSource.indexOf("  async detachSidecar(", releaseSidecarStart);
+const releaseSidecarSource = mainSource.slice(releaseSidecarStart, releaseSidecarEnd);
+assert(releaseSidecarSource.includes("if (!leaf) return;"), "Closing K-Plex without a managed sidecar must preserve independent note-tab synchronization");
+
+const settingsSource = readFileSync(join(root, "src/settings.ts"), "utf8");
+assert(settingsSource.includes("sidecarLastFilePath: string"), "Persisted sidecar identity must remember its last document path");
+assert(settingsSource.includes("sidecarLastUrl: string"), "Persisted sidecar identity must also support web sidecars");
+const settingDefinitionsStart = settingsSource.indexOf("  getSettingDefinitions()");
+const settingDefinitionsEnd = settingsSource.indexOf("  getControlValue(", settingDefinitionsStart);
+const settingDefinitionsSource = settingsSource.slice(settingDefinitionsStart, settingDefinitionsEnd);
+assert(!settingDefinitionsSource.includes('name: "Note tab link"'), "Live note-tab synchronization state must not be duplicated in Settings");
+assert(settingDefinitionsSource.includes('name: "Sibling relative size (%)"'));
+assert(settingDefinitionsSource.includes('name: "Cross-link opacity (%)"'));
+assert(settingDefinitionsSource.includes('name: "Node styling"'), "Node styling must be a Visual styling subpage");
+assert(settingDefinitionsSource.includes('name: "Link styling"'), "Link styling must be a Visual styling subpage");
+assert(settingDefinitionsSource.includes('name: "Style property"'), "K-Plex must expose one clear property-value style selector");
+assert(!settingDefinitionsSource.includes('name: "Primary tag field"'), "Legacy primaryTagField must remain migration-only instead of appearing as a second style selector");
+assert(settingDefinitionsSource.includes('name: "Property-value styles"'), "Large node-style collections must open through the searchable manager");
+assert(settingDefinitionsSource.includes('name: "Relationship-specific styles"'), "Relationship-specific link appearance must open through the searchable manager");
+assert(!settingDefinitionsSource.includes('heading: "Connector styles by ontology"'), "Ontology must not expand one connector-style row per relationship field");
+const ontologyPageStart = settingDefinitionsSource.indexOf('name: "Ontology"');
+const visualStylingPageStart = settingDefinitionsSource.indexOf('name: "Visual styling"');
+assert(ontologyPageStart >= 0 && visualStylingPageStart > ontologyPageStart);
+const ontologyPageSource = settingDefinitionsSource.slice(ontologyPageStart, visualStylingPageStart);
+assert(!ontologyPageSource.includes('Relationship-specific styles'), "Ontology semantics and visual link styling must stay separate");
+assert(settingsSource.includes('text: "Custom styles"'), "Relationship link styles must default to a compact custom-only view");
+assert(settingsSource.includes('placeholder: "Search relationship properties…"'), "Ontology link styles must be searchable");
+assert(settingsSource.includes('placeholder: "Search node styles…"'), "Property-value node styles must be searchable");
+assert(settingsSource.includes("class NodeStyleValueSuggest extends AbstractInputSuggest"), "Node style values must use an Obsidian input suggester");
+assert(settingsSource.includes("getIconIds()"), "Lucide icon names must come from Obsidian's live icon registry");
+assert(settingsSource.includes('private displayScope: "custom" | "all"'), "Ontology style filtering must not shadow Modal.scope");
+assert(settingDefinitionsSource.includes('name: "Discovered fields"'), "Ontology discovery must live on a compact subpage");
+assert(settingDefinitionsSource.includes('name: "Review unassigned fields"'), "Unassigned ontology fields must open in a searchable manager");
+assert(!settingDefinitionsSource.includes('occurrence · assign this discovered property'), "Settings must not dump every unassigned field into the page");
+assert(settingsSource.includes('class UnassignedOntologyManagerModal'), "Unassigned ontology fields need a dedicated manager");
+assert(!settingsSource.includes('instead of expanding the entire collection'), "Settings UI must not contain implementation-facing copy");
+assert(settingsSource.includes('kplex-style-manager-modal'), "Style managers need bounded responsive modal styling");
+
+const moveSidecarStart = mainSource.indexOf("  async moveSidecar(");
+const moveSidecarEnd = mainSource.indexOf("  async syncSidecarToPage(", moveSidecarStart);
+const moveSidecarSource = mainSource.slice(moveSidecarStart, moveSidecarEnd);
+assert(moveSidecarSource.includes("const replacement = this.createSidecarLeaf(hostLeaf, position)"), "Moving a sidecar must create the replacement before removing the old companion");
+assert(moveSidecarSource.indexOf("this.sidecarLeaves.set(hostLeaf, replacement)") < moveSidecarSource.indexOf("previousSidecar.detach()"), "Replacement ownership must be established before the old sidecar is detached");
+assert(!moveSidecarSource.includes("closeSidecar(hostLeaf, false)"), "Moving a sidecar must not collapse the old split before the replacement exists");
+assert(mainSource.includes("private sidecarFootprint("), "Sidecar moves must measure the combined K-Plex + sidecar workspace footprint");
+assert(mainSource.includes("getBoundingClientRect()"), "Sidecar footprint preservation must use settled workspace geometry");
+assert(moveSidecarSource.includes("const preservedFootprint = this.sidecarFootprint(hostLeaf, previousSidecar)"));
+assert(moveSidecarSource.indexOf("previousSidecar.detach()") < moveSidecarSource.indexOf("restoreSidecarFootprint(hostLeaf, replacement, preservedFootprint)"), "The saved bounding rectangle must be restored after the old pane collapses");
+assert(mainSource.includes("Array.from(parent.children)"), "Workspace child enumeration must compile without relying on HTMLCollection iteration support");
+assert(mainSource.includes("this.sidecarMovingHosts.has(host) || this.startupInitializing"), "Transient zero-width move/startup layout events must not orphan the managed sidecar leaf");
+assert(mainSource.includes("restorePersistedSidecar"), "Persisted sidecar intent must be restored after workspace startup");
+assert(mainSource.includes("restoredSidecarCandidate"), "Startup restore should re-associate a plausible native companion instead of duplicating it");
+assert(mainSource.includes("leaf.getViewState()"), "Startup sidecar matching must work with Obsidian DeferredView state");
+assert(mainSource.includes("private startupInitializing = true"), "Startup needs a short session-only guard against transient most-recent-tab state");
+assert(mainSource.includes("if (this.startupInitializing) return false;"), "Normal note-tab following must be suppressed until startup re-association finishes");
+assert(mainSource.includes("this.sidecarMovingHosts.has(host) || this.startupInitializing"), "Transient startup geometry must not release a just-restored sidecar before its split settles");
+assert(mainSource.includes("sidecarLastFilePath"), "Sidecar content identity must be persisted independently of the graph center");
+assert(mainSource.includes("leafMatchesPersistedSidecarTarget"), "Startup re-association must prefer the sidecar's actual persisted document/URL");
+assert(mainSource.includes("leafTabIsActive"), "Startup re-association should inspect Obsidian's selected tab in the remembered group");
+assert(mainSource.includes("navigationHistoryScoreForLeaf"), "Navigation history should provide a legacy fallback when older settings have no sidecar target identity");
+const restoreSidecarStart = mainSource.indexOf("  private async restorePersistedSidecar(");
+const restoreSidecarEnd = mainSource.indexOf("  private ensureSidecarLeaf(", restoreSidecarStart);
+const restoreSidecarSource = mainSource.slice(restoreSidecarStart, restoreSidecarEnd);
+assert(!restoreSidecarSource.includes("openSidecar(hostLeaf, page)"), "Startup restore must never create an extra workspace pane when native restoration cannot be identified safely");
+assert(restoreSidecarSource.includes("waitForWorkspaceLayout(hostLeaf, 3)"), "Startup restore should wait for native split geometry before matching the companion");
+assert(mainSource.includes("rememberedGroups.size === 1"), "Startup sidecar recovery must bind only to one unambiguous tab-group on the remembered side");
+assert(mainSource.includes("this.adjacentPosition(hostLeaf, leaf) !== this.settings.sidecarPosition"), "Startup sidecar recovery must reject adjacent panes on the wrong side");
+assert(mainSource.includes("const visible = candidates.filter((leaf) => this.leafIsVisible(leaf))"), "When the restored sidecar group has several tabs, K-Plex should adopt the tab Obsidian restored as visible");
+assert(mainSource.includes("waitForRestoredSidecarCandidate"), "Startup sidecar recovery should briefly wait for DeferredView/tab-group geometry instead of creating a split");
+assert(mainSource.includes("releaseSidecar(hostLeaf, true, true)"), "Closing a K-Plex host must preserve sidecar restore intent");
+
+const stylesSource = readFileSync(join(root, "styles.css"), "utf8");
+assert(stylesSource.includes(".kplex-linked-leaf-alert"), "Linked/pinned-tab feedback must highlight the entire target leaf");
+assert(stylesSource.includes("var(--text-warning, var(--interactive-accent))"), "Linked-leaf feedback must use Obsidian theme variables rather than a hard-coded alert color");
+assert(!stylesSource.includes("kplex-linked-tab-alert"), "The obsolete tab-header-only linked highlight must not remain in the stylesheet");
+assert(mainSource.includes("element.classList.add(\"kplex-linked-leaf-alert\")"), "Linked-leaf feedback must use a temporary CSS class rather than inline styling");
+assert(!mainSource.includes("element.style.flexBasis"), "Sidecar footprint restoration must use Obsidian DOM style helpers rather than direct style mutation");
+assert(!mainSource.includes("tabHeaderForLeaf"), "Linked-tab feedback cleanup must not retain the obsolete tab-header bridge");
+assert(mainSource.includes("viewWindow.requestAnimationFrame"), "Sidecar/link UI scheduling should use the target leaf window for pop-out compatibility");
+
 globalThis.window = globalThis;
 
 function compile(relativePath) {
@@ -184,8 +289,9 @@ const { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSe
 const { parseBodyMetadata, parseBodyMetadataCore, parseBodyMetadataCooperative } = require(join(temp, "src/index/fieldParser.js"));
 const { MetadataParser, MetadataParseCancelledError } = require(join(temp, "src/index/MetadataParser.js"));
 const { RelationType, LinkDirection } = require(join(temp, "src/types.js"));
+const { resolveNodeStyle } = require(join(temp, "src/index/style.js"));
 const { RelationEvidenceStore } = require(join(temp, "src/index/RelationEvidence.js"));
-const { buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
+const { buildScene, buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
 const {
   GraphPredicateEngine,
   compileGraphPredicate,
@@ -194,7 +300,7 @@ const {
   predicateLiteral,
   predicateProperty,
 } = require(join(temp, "src/lens/GraphPredicate.js"));
-const { compilePlexFilter } = require(join(temp, "src/lens/SimplePlexFilter.js"));
+const { EMPTY_PLEX_FILTER, compilePlexFilter } = require(join(temp, "src/lens/SimplePlexFilter.js"));
 const { compileGraphLensDefinitions, graphLensEdgeStyle, graphLensNodeStyle, matchesGraphLenses, sanitizeGraphLensDefinitions, validateGraphLensExpression } = require(join(temp, "src/lens/GraphLens.js"));
 const { tryParseGraphPredicateExpression } = require(join(temp, "src/lens/GraphPredicateParser.js"));
 const {
@@ -444,6 +550,8 @@ const settings = {
   excludeFilepaths: [],
   maxItemCount: 500,
   renderSiblings: true,
+  siblingRelativeSize: 85,
+  crossLinkOpacity: 85,
   thumbnailProperty: "thumbnail",
   nodeImageProperty: "node-image",
   attachmentImageDisplay: "thumbnail-label",
@@ -541,6 +649,137 @@ try {
   assert(A);
   const neighborhoodA = index.getNeighborhood("Note A.md");
   assert(neighborhoodA);
+
+  // A custom style selected by the Style property is an explicit user choice. It must remain
+  // visible on the central note instead of being masked by the generic central-node appearance.
+  const originalCentralStyle = settings.centralNodeStyle;
+  const originalNoteTypeStyles = settings.noteTypeStyles;
+  const originalCenterNoteType = A.noteType;
+  A.noteType = "testStyle";
+  settings.centralNodeStyle = { backgroundColor: "#aaaaaaff", textColor: "#000000ff", fontSize: 30 };
+  settings.noteTypeStyles = { testStyle: { backgroundColor: "#ff00ffff", textColor: "#ffffffff" } };
+  const styledCenter = resolveNodeStyle(A, null, "center", settings);
+  assert.equal(styledCenter.backgroundColor, "#ff00ffff", "Property-value styles must override the generic central background");
+  assert.equal(styledCenter.textColor, "#ffffffff", "Property-value styles must override the generic central text color");
+  assert.equal(styledCenter.fontSize, 30, "Unspecified properties still inherit the central style");
+  settings.noteTypeStyles = { "#testStyle": { borderColor: "#123456ff" } };
+  assert.equal(resolveNodeStyle(A, null, "center", settings).borderColor, "#123456ff", "Legacy/hash-prefixed style keys must normalize to the same logical value");
+  settings.centralNodeStyle = originalCentralStyle;
+  settings.noteTypeStyles = originalNoteTypeStyles;
+  A.noteType = originalCenterNoteType;
+
+  // Issues #7/#8: every semantic relationship between visible non-central notes is rendered as
+  // a cross-link by default. The actual ontology role is retained so the renderer chooses the
+  // same top/bottom/left/right gates as a center connection, and the visibility switch removes
+  // only these secondary links.
+  assert.equal(EMPTY_PLEX_FILTER.showCrossLinks, true, "Cross-links must be visible by default");
+  const sceneA = buildScene(neighborhoodA, index, settings);
+  const crossBC = sceneA.edges.find((edge) => edge.isCrossLink && edge.sourcePath === "Note B.md" && edge.targetPath === "Note C.md");
+  assert(crossBC, "Visible parent/child notes must retain their cross-link");
+  assert.equal(crossBC.role, "child", "Cross-links must use the resolved ontology role, not the sibling presentation role");
+  const crossCD = sceneA.edges.find((edge) => edge.isCrossLink && edge.sourcePath === "Note C.md" && edge.targetPath === "Note D.md");
+  assert(crossCD, "Visible related peers must retain their cross-link");
+  assert.equal(crossCD.role, "left");
+  const sceneAWithoutCrossLinks = buildScene(neighborhoodA, index, settings, false);
+  assert.equal(sceneAWithoutCrossLinks.edges.some((edge) => edge.isCrossLink), false, "Cross-link visibility toggle must leave secondary links out of the scene");
+  assert(sceneAWithoutCrossLinks.edges.some((edge) => edge.sourcePath === "Note A.md"), "Cross-link visibility toggle must not remove center spokes");
+
+  // Issue #8 regression: a sibling can be the child of several visible parents. Every one of
+  // those parent relationships must render; no parent may be arbitrarily prioritized.
+  const fakePage = (path) => ({
+    path,
+    name: path.replace(/\.md$/, ""),
+    file: null,
+    aliases: [],
+    tags: [],
+    styleTags: [],
+    neighbours: new Map(),
+  });
+  const fakeCenter = fakePage("Center.md");
+  const fakeParentOne = fakePage("Parent One.md");
+  const fakeParentTwo = fakePage("Parent Two.md");
+  const fakeSibling = fakePage("Sibling.md");
+  const fakeNeighbour = (page, role) => ({ page, role, relationType: RelationType.DEFINED, typeDefinition: role === "child" ? "Child" : "Parent", linkDirection: null });
+  const emptyGateStats = () => ({
+    top: { visibleCount: 0, hasAny: false },
+    bottom: { visibleCount: 0, hasAny: false },
+    left: { visibleCount: 0, hasAny: false },
+    right: { visibleCount: 0, hasAny: false },
+  });
+  const fakeCrossIndex = {
+    titleFor: (page) => page.name,
+    neighbourCount: () => 0,
+    gateStats: emptyGateStats,
+    neighbours: () => [],
+    visibleRelationshipsWithin: (source, targets) => {
+      if ((source === fakeParentOne || source === fakeParentTwo) && targets.has(fakeSibling.path)) return [fakeNeighbour(fakeSibling, "child")];
+      return [];
+    },
+  };
+  const multiParentScene = buildScene({
+    center: fakeCenter,
+    parents: [fakeNeighbour(fakeParentOne, "parent"), fakeNeighbour(fakeParentTwo, "parent")],
+    children: [],
+    leftFriends: [],
+    rightFriends: [],
+    siblings: [fakeNeighbour(fakeSibling, "sibling")],
+  }, fakeCrossIndex, settings);
+  const siblingParentLinks = multiParentScene.edges.filter((edge) => !edge.isCrossLink && edge.targetPath === fakeSibling.path);
+  assert.deepEqual(siblingParentLinks.map((edge) => edge.sourcePath).sort(), [fakeParentOne.path, fakeParentTwo.path]);
+  assert(siblingParentLinks.every((edge) => edge.role === "child"));
+  const multiParentWithoutCrossLinks = buildScene({
+    center: fakeCenter,
+    parents: [fakeNeighbour(fakeParentOne, "parent"), fakeNeighbour(fakeParentTwo, "parent")],
+    children: [],
+    leftFriends: [],
+    rightFriends: [],
+    siblings: [fakeNeighbour(fakeSibling, "sibling")],
+  }, fakeCrossIndex, settings, false);
+  const structuralSiblingLinks = multiParentWithoutCrossLinks.edges.filter((edge) => edge.targetPath === fakeSibling.path);
+  assert.deepEqual(
+    structuralSiblingLinks.map((edge) => edge.sourcePath).sort(),
+    [fakeParentOne.path, fakeParentTwo.path],
+    "Sibling-parent links must remain visible when cross-links are disabled",
+  );
+  assert(structuralSiblingLinks.every((edge) => !edge.isCrossLink), "Sibling-parent links are structural sibling context, not optional cross-links");
+
+  // Ontology-specific connector styles are keyed by the normalized relationship field and apply
+  // equally to center spokes, structural sibling links and optional cross-links.
+  settings.hierarchyLinkStyles.child = { strokeColor: "#123456ff", strokeStyle: "dashed" };
+  const styledSiblingScene = buildScene({
+    center: fakeCenter,
+    parents: [fakeNeighbour(fakeParentOne, "parent")],
+    children: [],
+    leftFriends: [],
+    rightFriends: [],
+    siblings: [fakeNeighbour(fakeSibling, "sibling")],
+  }, fakeCrossIndex, settings, false);
+  const styledSiblingLink = styledSiblingScene.edges.find((edge) => edge.sourcePath === fakeParentOne.path && edge.targetPath === fakeSibling.path);
+  assert(styledSiblingLink);
+  assert.equal(styledSiblingLink.style.strokeColor, "#123456ff");
+  assert.equal(styledSiblingLink.style.strokeStyle, "dashed");
+  delete settings.hierarchyLinkStyles.child;
+
+  // Sibling sizing is a presentation multiplier, not a semantic/index setting. Verify the two
+  // supported endpoints affect the sibling thought proportionally without changing other roles.
+  const siblingAt85 = multiParentScene.nodes.find((node) => node.page.path === fakeSibling.path);
+  const parentAt85 = multiParentScene.nodes.find((node) => node.page.path === fakeParentOne.path);
+  assert(siblingAt85 && parentAt85);
+  settings.siblingRelativeSize = 30;
+  const siblingScaleScene = buildScene({
+    center: fakeCenter,
+    parents: [fakeNeighbour(fakeParentOne, "parent"), fakeNeighbour(fakeParentTwo, "parent")],
+    children: [],
+    leftFriends: [],
+    rightFriends: [],
+    siblings: [fakeNeighbour(fakeSibling, "sibling")],
+  }, fakeCrossIndex, settings);
+  const siblingAt30 = siblingScaleScene.nodes.find((node) => node.page.path === fakeSibling.path);
+  const parentAt30 = siblingScaleScene.nodes.find((node) => node.page.path === fakeParentOne.path);
+  assert(siblingAt30 && parentAt30);
+  assert(Math.abs((siblingAt30.width / siblingAt85.width) - (30 / 85)) < 0.001, "Sibling width must follow the configured relative-size multiplier");
+  assert.equal(parentAt30.width, parentAt85.width, "Sibling sizing must not resize parent thoughts");
+  settings.siblingRelativeSize = 85;
 
   // Predicate engine checkpoint: the existing simple filter compiles into one generic declarative
   // predicate. It preserves keyword/alias, hierarchical-tag, note-type and relationship matching
@@ -1208,9 +1447,13 @@ try {
   const visibilitySignature = computeIndexSettingsSignature(settings);
   const previousFolderVisibility = settings.showFolderNodes;
   const previousTagVisibility = settings.showTagNodes;
+  const previousSiblingRelativeSize = settings.siblingRelativeSize;
+  const previousCrossLinkOpacity = settings.crossLinkOpacity;
   settings.showFolderNodes = false;
   settings.showTagNodes = false;
-  assert.equal(computeIndexSettingsSignature(settings), visibilitySignature, "Folder/tag visibility must not invalidate the semantic index");
+  settings.siblingRelativeSize = 30;
+  settings.crossLinkOpacity = 40;
+  assert.equal(computeIndexSettingsSignature(settings), visibilitySignature, "Presentation-only visibility/sizing/opacity settings must not invalidate the semantic index");
   const hiddenStructuralIndex = new GraphIndex(plugin, app);
   try {
     assert.equal(await hiddenStructuralIndex.rebuild(), true);
@@ -1237,6 +1480,8 @@ try {
     hiddenStructuralIndex.destroy();
     settings.showFolderNodes = previousFolderVisibility;
     settings.showTagNodes = previousTagVisibility;
+    settings.siblingRelativeSize = previousSiblingRelativeSize;
+    settings.crossLinkOpacity = previousCrossLinkOpacity;
   }
 
   // P9/P16: expanded-section parsing is cached independently from presentation visibility. The
@@ -1535,6 +1780,71 @@ try {
   assert.equal(coordinatorPatchCalls.length, 2, "Revealing K-Plex must resume the backlog exactly once");
   assert.equal(coordinator.indexDirty, false);
   assert.equal(coordinator.dirtyMarkdownPaths.size, 0);
+
+  // Rename performance regression: a TFile rename must remap the already-published semantic graph
+  // in place. No Markdown is reparsed and all evidence/search/relationship paths follow the same
+  // TFile object to its new basename.
+  const renamePage = index.get("Note A.md");
+  assert(renamePage?.file);
+  const renameFile = renamePage.file;
+  renameFile.path = "Note A Renamed.md";
+  renameFile.name = "Note A Renamed.md";
+  renameFile.basename = "Note A Renamed";
+  const sizeBeforeRename = index.size;
+  assert.equal(index.renameFile("Note A.md", renameFile), true);
+  assert.equal(index.size, sizeBeforeRename, "A basename-only rename must not rebuild or change graph cardinality");
+  assert.equal(index.get("Note A.md"), undefined);
+  assert.equal(index.get("Note A Renamed.md"), renamePage, "GraphPage identity must survive a TFile rename");
+  assert(index.evidenceBetween("Note A Renamed.md", "Note B.md").length > 0, "Evidence touching the renamed path must be remapped locally");
+  assert(index.search("note a renamed").some((page) => page === renamePage), "Search index must update immediately after rename");
+  assert(index.neighbours(renamePage, "parent").some((item) => item.page.path === "Note B.md"), "Connected notes must remain connected after rename");
+
+  // The reactive coordinator must not turn the rename event (or Obsidian's unchanged follow-up
+  // metadata event) into indexing work. Persisted navigation paths are still remapped immediately.
+  const renameCoordinator = new ExcaliBrainPlugin();
+  const renameHandlers = new Map();
+  const rebuildReasons = [];
+  const fastRenameCalls = [];
+  renameCoordinator.app = {
+    vault: {
+      on: (name, callback) => { renameHandlers.set(`vault:${name}`, callback); return {}; },
+    },
+    metadataCache: {
+      on: (name, callback) => { renameHandlers.set(`metadata:${name}`, callback); return {}; },
+    },
+  };
+  renameCoordinator.index = { renameFile: (oldPath, file) => { fastRenameCalls.push([oldPath, file.path]); return true; } };
+  renameCoordinator.settings = {
+    ...settings,
+    primaryTagField: "Note type",
+    lastActivePath: "Folder/Old.md",
+    navigationHistory: ["Start.md", "Folder/Old.md", "Folder/Old.md"],
+    pinnedNodes: ["Folder/Old.md", "Pinned.md"],
+  };
+  renameCoordinator.saveSettings = async () => {};
+  renameCoordinator.scheduleRebuild = (reason) => { rebuildReasons.push(reason); };
+  renameCoordinator.registerReactiveIndexListeners();
+  const renamedCentral = new TFile("Moved/New.md", 123);
+  const renameHandler = renameHandlers.get("vault:rename");
+  const metadataChangedHandler = renameHandlers.get("metadata:changed");
+  assert(renameHandler && metadataChangedHandler, "Rename and metadata listeners must be registered");
+  renameHandler(renamedCentral, "Folder/Old.md");
+  assert.equal(renameCoordinator.settings.lastActivePath, "Moved/New.md");
+  assert.deepEqual(renameCoordinator.settings.navigationHistory, ["Start.md", "Moved/New.md"]);
+  assert.deepEqual(renameCoordinator.settings.pinnedNodes, ["Moved/New.md", "Pinned.md"]);
+  assert.deepEqual(fastRenameCalls, [["Folder/Old.md", "Moved/New.md"]]);
+  assert.equal(renameCoordinator.dirtyMarkdownPaths.size, 0, "A clean rename must not enqueue a Markdown patch");
+  assert.deepEqual(rebuildReasons, [], "A TFile rename must not schedule a full rebuild");
+
+  metadataChangedHandler(renamedCentral);
+  assert.equal(renameCoordinator.dirtyMarkdownPaths.size, 0, "Rename-generated metadata event with identical revision must be ignored");
+  assert.deepEqual(rebuildReasons, []);
+
+  renamedCentral.stat.mtime += 1;
+  renamedCentral.stat.size += 1;
+  metadataChangedHandler(renamedCentral);
+  assert(renameCoordinator.dirtyMarkdownPaths.has("Moved/New.md"), "A real content revision after rename must still use the incremental patch path");
+  assert.deepEqual(rebuildReasons, ["metadata:changed"]);
 
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P17 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");

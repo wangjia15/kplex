@@ -27,8 +27,7 @@ type BooleanToolbarSetting =
   | "renderAlias"
   | "showFolderNodes"
   | "showTagNodes"
-  | "showURLNodes"
-  | "renderSiblings";
+  | "showURLNodes";
 
 function IndexStatusIndicator({ plugin }: { plugin: ExcaliBrainPlugin }) {
   const [status, setStatus] = useState(() => plugin.getIndexStatus());
@@ -66,20 +65,30 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const [hostWidth, setHostWidth] = useState(0);
   const [sidecarRevision, setSidecarRevision] = useState(0);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
-  const sidecarRestoreAttempted = useRef(false);
+  const [initialWorkspaceFile] = useState<TFile | null>(() => plugin.app.workspace.getActiveFile());
   const [activePath, setActivePath] = useState(() => {
-    const active = plugin.app.workspace.getActiveFile();
     const history = plugin.settings.navigationHistory;
-    return active?.path ?? (
+    // During Obsidian workspace restore, getActiveFile()/getMostRecentLeaf() can temporarily point
+    // at the first serialized tab in a group. A restored K-Plex view should keep its own persisted
+    // center until the startup sidecar/link re-association window has finished.
+    return (plugin.isStartupInitializing() && plugin.settings.lastActivePath
+      ? plugin.settings.lastActivePath
+      : initialWorkspaceFile?.path) ?? (
       plugin.settings.lastActivePath
       || history[history.length - 1]
       || plugin.app.vault.getMarkdownFiles()[0]?.path
       || "folder:/"
     );
   });
+  const activePathRef = useRef(activePath);
+  const activeFileRef = useRef<TFile | null>(
+    plugin.index.get(activePath)?.file ?? (initialWorkspaceFile?.path === activePath ? initialWorkspaceFile : null),
+  );
   const [historyCursor, setHistoryCursor] = useState(() => Math.max(0, plugin.settings.navigationHistory.length - 1));
 
   const activate = useCallback((target: GraphPage, record = true) => {
+    activePathRef.current = target.path;
+    activeFileRef.current = target.file;
     setActivePath(target.path);
     plugin.settings.lastActivePath = target.path;
     if (record) {
@@ -93,6 +102,14 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   }, [plugin, hostLeaf]);
 
   useEffect(() => plugin.index.subscribe(() => {
+    // A TFile keeps its object identity while Obsidian renames or moves it. Track the central file
+    // by that identity and adopt its new path only after the rebuilt index has published it. This
+    // prevents the center from briefly/finally falling back to folder:/ when its filename changes.
+    const trackedFile = activeFileRef.current;
+    if (trackedFile && trackedFile.path !== activePathRef.current && plugin.index.get(trackedFile.path)) {
+      activePathRef.current = trackedFile.path;
+      setActivePath(trackedFile.path);
+    }
     // Hidden tabs/sidebars stay mounted in Obsidian. Do not run the graph React tree for a shared
     // index publication unless this surface is actually visible; it catches up on reveal.
     if (plugin.isKplexLeafVisible(hostLeaf)) forceRender((value) => value + 1);
@@ -157,19 +174,13 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     ?? plugin.index.get("folder:/");
 
   useEffect(() => {
-    if (!page || plugin.settings.lastActivePath === page.path) return;
+    if (!page) return;
+    activePathRef.current = page.path;
+    activeFileRef.current = page.file;
+    if (plugin.settings.lastActivePath === page.path) return;
     plugin.settings.lastActivePath = page.path;
     void plugin.saveSettings(false, false);
   }, [page?.path, plugin]);
-
-  useEffect(() => {
-    // Restore a persisted sidecar once when this K-Plex surface materializes. After that, geometry
-    // is user-owned: moving a pinned tab away must merely hide the controls, not recreate a pane.
-    if (!page || sidecarRestoreAttempted.current) return;
-    sidecarRestoreAttempted.current = true;
-    if (surface === "sidepanel" || !plugin.settings.sidecarOpen || plugin.isSidecarOpen(hostLeaf)) return;
-    void plugin.openSidecar(hostLeaf, page);
-  }, [page?.path, surface, hostLeaf, plugin]);
 
   const open = useCallback((target: GraphPage) => { void plugin.openPage(target); }, [plugin]);
 
@@ -192,6 +203,15 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     // Visibility controls are presentation-only. Folder/tag topology is maintained in the
     // structural index regardless of whether those node classes are currently rendered, so
     // showing or hiding them must never invalidate or rebuild the semantic graph.
+    await plugin.saveSettings(false, true);
+    forceRender((value) => value + 1);
+  };
+
+  const setSiblingVisibility = async (show: boolean) => {
+    if (plugin.settings.renderSiblings === show) return;
+    plugin.settings.renderSiblings = show;
+    // Siblings are derived from the existing semantic graph, so changing visibility only needs
+    // a presentation refresh; the persisted setting remains the default for future K-Plex views.
     await plugin.saveSettings(false, true);
     forceRender((value) => value + 1);
   };
@@ -232,6 +252,12 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
         .setChecked(current === mode)
         .onClick(() => void setDocumentSyncMode(mode)));
     }
+    menu.addSeparator();
+    menu.addItem((item) => item
+      .setTitle("Show linked/pinned tab")
+      .setIcon("scan-eye")
+      .setDisabled(!plugin.hasDocumentSyncTarget())
+      .onClick(() => void plugin.showLinkedDocumentLeaf()));
     menu.showAtMouseEvent(event.nativeEvent);
   };
 
@@ -278,12 +304,15 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   const linkedLabel = plugin.getLinkedDocumentLeafLabel();
   const syncMode = plugin.getDocumentSyncMode();
+  const syncTargetAvailable = plugin.hasDocumentSyncTarget();
   const syncIcon = syncMode === "pinned" ? "pin" : syncMode === "recent" ? "link" : "unlink";
   const syncTitle = syncMode === "off"
     ? "K-Plex is not linked to a note tab"
     : syncMode === "recent"
-      ? "K-Plex is linked to the most recent note tab"
-      : `K-Plex is pinned to a fixed note tab${linkedLabel ? ` · ${linkedLabel}` : ""}`;
+      ? (syncTargetAvailable ? "K-Plex is linked to the most recent note tab" : "No recent note tab is currently available")
+      : (syncTargetAvailable
+        ? `K-Plex is pinned to a fixed note tab${linkedLabel ? ` · ${linkedLabel}` : ""}`
+        : "K-Plex has a pinned-tab preference, but the tab is not currently connected");
   const isPinned = plugin.isPinned(page.path);
   const pinnedPages = plugin.settings.pinnedNodes
     .map((path) => plugin.index.get(path))
@@ -339,10 +368,10 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
           <SearchBox index={plugin.index} onActivate={activate} focusRequest={searchFocusRequest} />
-          <PlexFilter index={plugin.index} center={page} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} lenses={graphLenses} onLensesChange={updateGraphLenses} layoutMode={filterLayoutMode} onLayoutModeChange={setFilterLayoutMode} />
+          <PlexFilter index={plugin.index} center={page} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} lenses={graphLenses} onLensesChange={updateGraphLenses} layoutMode={filterLayoutMode} onLayoutModeChange={setFilterLayoutMode} showSiblings={plugin.settings.renderSiblings} onShowSiblingsChange={(show) => void setSiblingVisibility(show)} />
           <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
             <button
-              className={`excalibrain-icon-button${syncMode !== "off" ? " is-on" : ""}`}
+              className={`excalibrain-icon-button${syncMode !== "off" && syncTargetAvailable ? " is-on" : ""}`}
               aria-label={`${syncTitle}. Click for sync actions and link mode.`}
               onClick={showDocumentSyncMenu}
             ><ObsidianIcon name={syncIcon} size={17} /></button>
@@ -358,7 +387,6 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
               <ToolButton icon="folder" title="Show or hide folder nodes" on={plugin.settings.showFolderNodes} onClick={() => void toggleToolbarSetting("showFolderNodes")} />
               <ToolButton icon="tag" title="Show or hide tag nodes" on={plugin.settings.showTagNodes} onClick={() => void toggleToolbarSetting("showTagNodes")} />
               <ToolButton icon="globe" title="Show or hide web link nodes" on={plugin.settings.showURLNodes} onClick={() => void toggleToolbarSetting("showURLNodes")} />
-              <ToolButton icon="grip" title="Show or hide siblings" on={plugin.settings.renderSiblings} onClick={() => void toggleToolbarSetting("renderSiblings")} />
               <ToolButton icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"} title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each node’s children"} on={plugin.settings.graphDepth === 2} onClick={() => void toggleExpandedView()} />
               <ToolButton icon="spline" title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"} on={plugin.settings.connectorStyle === "bezier"} onClick={() => void toggleConnectorStyle()} />
             </>}
@@ -384,7 +412,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <div className="excalibrain-zone-label zone-left">FRIENDS / PREVIOUS</div>
           <div className="excalibrain-zone-label zone-right">CHALLENGERS / NEXT</div>
           <div className="excalibrain-zone-label zone-child">CHILDREN</div>
-          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} predicate={plexFilterPredicate} lenses={compiledGraphLenses} filterLayoutMode={filterLayoutMode} predicateRevision={predicateRevision} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
+          <PlexGraph plugin={plugin} index={plugin.index} settings={viewSettings} surface={profileSurface} hostLeaf={hostLeaf} predicate={plexFilterPredicate} lenses={compiledGraphLenses} filterLayoutMode={filterLayoutMode} predicateRevision={predicateRevision} showCrossLinks={plexFilter.showCrossLinks} activePath={page.path} renderRevision={renderRevision} onActivate={activate} onOpen={open} />
         </section>
       </main>
 

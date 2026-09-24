@@ -187,4 +187,6 @@ export type PositionedEdge = {
   typeDefinition?: string;
   direction: LinkDirection | null;
   style: LinkStyle;
+  /** True when this relationship connects two visible non-central nodes. */
+  isCrossLink?: boolean;
 };

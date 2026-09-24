@@ -247,6 +247,45 @@ export class RelationEvidenceStore {
     return output;
   }
 
+  /**
+   * Rename one graph endpoint without rescanning any Markdown. Only pair buckets touching the old
+   * path are rewritten, so work is proportional to the renamed note's degree rather than vault
+   * size. Declaration ids and provenance are retained; a declaration that would become a self-link
+   * after merging into an unresolved placeholder is dropped.
+   */
+  renamePath(oldPath: string, newPath: string): Set<string> {
+    const touched = new Set<string>();
+    if (!oldPath || !newPath || oldPath === newPath) return touched;
+
+    const keys = [...this.pairKeysForPath(oldPath)];
+    if (!keys.length) return touched;
+    const declarations: RelationEvidence[] = [];
+    for (const key of keys) {
+      const current = this.readPair(key) ?? [];
+      declarations.push(...current);
+      const [left, right] = splitPairKey(key);
+      touched.add(left === oldPath ? newPath : left);
+      touched.add(right === oldPath ? newPath : right);
+      this.writePair(key, [], current.length);
+    }
+
+    for (const item of declarations) {
+      const declaredByPath = item.declaredByPath === oldPath ? newPath : item.declaredByPath;
+      const declaredTargetPath = item.declaredTargetPath === oldPath ? newPath : item.declaredTargetPath;
+      if (declaredByPath === declaredTargetPath) continue;
+      this.addDeclarationRecord({
+        ...item,
+        sourcePath: item.sourcePath === oldPath ? newPath : item.sourcePath,
+        targetPath: item.targetPath === oldPath ? newPath : item.targetPath,
+        declaredByPath,
+        declaredTargetPath,
+      });
+    }
+    touched.delete(oldPath);
+    touched.add(newPath);
+    return touched;
+  }
+
   /** Allocation-light iterator used by time-sliced incremental patches. */
   *declarationsTouchingIterator(path: string): IterableIterator<RelationEvidence> {
     for (const key of this.pairKeysForPath(path)) {

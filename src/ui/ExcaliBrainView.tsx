@@ -50,7 +50,7 @@ abstract class BaseKplexView extends ItemView {
     // awaiting the build here makes the sidepanel appear not to open at all and can keep
     // setViewState() pending long enough for the WebView to look hung. Render the indexing state
     // immediately, then let the index publish asynchronously into the mounted React view.
-    void this.plugin.onKplexViewOpened().catch((error) => console.error("K-Plex view initialization failed", error));
+    void this.plugin.onKplexViewOpened(this.leaf).catch((error) => console.error("K-Plex view initialization failed", error));
   }
 
   async onClose(): Promise<void> {

@@ -73,7 +73,7 @@ On phones, K-Plex opens naturally in the side panel. Tablets can use either a no
 - Clicking or touching empty graph space clears temporary node, gate and connector highlights.
 - Use **Fit graph** whenever you want to bring the visible Plex back into view.
 
-K-Plex uses positional animation when navigating: notes that exist in both scenes visibly move to their new location, while new notes enter from the direction of their relationship. Animation speed can be changed in **Settings → K-Plex → Graph**, including turning it off completely.
+K-Plex uses positional animation when navigating: notes that exist in both scenes visibly move to their new location, while new notes enter from the direction of their relationship. Animation speed can be changed in **Settings → K-Plex → Plex behavior**, including turning it off completely.
 
 ### Search, history and pins
 
@@ -196,7 +196,7 @@ Expanded children are intentionally smaller and more subdued. Larger child group
 
 ## Companion sidecar
 
-K-Plex can keep a normal Obsidian note pane beside the graph as a **companion sidecar**.
+K-Plex can create a dedicated normal Obsidian note pane beside the graph as a **companion sidecar**. Existing neighboring tabs are never taken over or closed by Sidecar actions.
 
 The sidecar:
 
@@ -209,6 +209,8 @@ The sidecar:
 
 The small **Sidecar control lives on the corresponding edge of K-Plex**. If you close the Sidecar, the control stays on that edge so you always know where to reopen it. K-Plex remembers the last Sidecar position; if you have never positioned it before, the configured default side is used.
 
+When you move an open Sidecar, K-Plex preserves the combined screen area occupied by K-Plex and the Sidecar instead of gradually giving that space to other tab groups. On restart, Obsidian restores the workspace layout itself; K-Plex does **not** open another pane. It reconnects to the already-restored document tab-group on the same side where the Sidecar was last positioned and remembers the actual document/URL that Sidecar was showing. For example, a Sidecar remembered on the right reconnects only to the adjacent right-hand group, not to a note below or to the left. During the first few seconds of workspace hydration K-Plex also ignores Obsidian's transient “most recent tab” ordering so the graph center and Sidecar are not redirected to the first restored tab. If that edge is genuinely ambiguous, K-Plex leaves the restored workspace untouched rather than adding or taking over a pane.
+
 Closing K-Plex does not close the document you were reading.
 
 ### Note-tab synchronization
@@ -219,7 +221,7 @@ K-Plex can be:
 - linked to the most recently used note tab;
 - pinned to one fixed note tab.
 
-There are also one-shot actions to send the current K-Plex note to the most recent note tab, or bring the most recent note tab into K-Plex.
+There are also one-shot actions to send the current K-Plex note to the most recent note tab, bring the most recent note tab into K-Plex, or **Show linked/pinned tab**. The last action activates the actual linked tab and briefly outlines the entire note pane using the active Obsidian theme’s warning color, so it is easy to identify.
 
 ## Layout and appearance
 
@@ -251,19 +253,21 @@ node-image:: [[image.jpg]]
 - **thumbnail** shows a small image before the normal node label.
 - **node-image** replaces the visible label with a compact image while keeping the node's normal graph footprint and accessible file identity.
 
-Images stay deliberately small so they do not make the Plex expand. On desktop, hover the image for a larger preview. The property names can be changed in **Settings → K-Plex → Appearance → Node images**.
+Images stay deliberately small so they do not make the Plex expand. On desktop, hover the image for a larger preview. The property names can be changed in **Settings → K-Plex → Visual styling → Node styling**.
 
 An image referenced only through the thumbnail/node-image fields is treated as presentation metadata, so it is not also shown as an inferred child. If the same image is linked independently through normal content or another ontology, it remains a normal graph node as well.
 
 Image attachments such as JPG, PNG, GIF, WebP and SVG files can also be shown directly as nodes. Choose whether attachment nodes display **file name**, **thumbnail + file name** (default), or **image only** in the same settings section.
 
-### Note type styling
+### Property-value node styling
 
-A Markdown property can define a note's visual type. By default this property is **Note type**.
+One Markdown property selects a note's persistent visual style. By default that **Node style property** is **Note type**, but you can point it at another YAML or Dataview-style inline property in **Settings → K-Plex → Visual styling → Node styling**.
 
-In **Settings → K-Plex → Appearance** you can assign styles to individual Note type values, including icon, background, text, border and font size.
+Use **Node styles** to assign icon, background, text, border and font size to individual values of that property. The editor suggests values already found in the index as well as vault tags, and its Lucide icon field searches Obsidian's live icon registry. A leading `#` in a style value is normalized away, so `#project` and `project` address the same logical style.
 
-Graph Lenses complement Note type styles when you want temporary, context-specific styling rather than a permanent visual identity.
+Imported ExcaliBrain `primaryTagField` data is retained for compatibility, but it is not exposed as a second K-Plex style selector. Explicit property-value styles take precedence over the generic central/sibling appearance, so a styled note keeps its custom colors when it becomes the center of the Plex.
+
+Graph Lenses complement property-value styles when you want temporary, context-specific styling rather than a permanent visual identity.
 
 ## Mobile and touch
 
@@ -311,11 +315,13 @@ K-Plex and classic ExcaliBrain can coexist while you migrate.
 
 K-Plex settings are organized into:
 
-1. **Graph** — navigation, layout, visibility, animation and connector behavior
-2. **Ontology** — relationship field names and ontology helpers
-3. **Appearance** — graph, gate and Note type styling
+Sibling relative size (30–85%) is under **Plex behavior → Layout & sizing**. Cross-link opacity and connector appearance are under **Visual styling → Link styling**. Note-tab synchronization is intentionally controlled from the live K-Plex toolbar rather than duplicated in Settings.
+
+1. **Plex behavior** — navigation, layout, visibility, animation and relationship behavior
+2. **Ontology** — separate pages for relationship fields, editor suggestions and discovered/unassigned vault properties
+3. **Visual styling** — canvas options plus dedicated **Node styling** and **Link styling** pages
 4. **Sidecar** — companion-pane behavior and Markdown mode
-5. **Compatibility** — ExcaliBrain import and legacy settings
+5. **Compatibility** — ExcaliBrain settings import
 
 ## Help, issues and contributing
 
