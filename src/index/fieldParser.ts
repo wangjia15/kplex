@@ -248,7 +248,7 @@ export function parseBodyMetadataCore(content: string): ParsedBodyMetadata {
     let hasHttp = false;
     const isWhitespace = (ch: string | undefined): boolean => Boolean(ch && /\s/.test(ch));
     const isWord = (ch: string | undefined): boolean => Boolean(ch && /[A-Za-z0-9_]/.test(ch));
-    const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()\[\]{}"']/.test(ch));
+    const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()[\]{}"']/.test(ch));
     const isTrailingUrlPunctuation = (ch: string | undefined): boolean => Boolean(ch && ".,;:!?".includes(ch));
     for (let i = 0; i < visible.length; i += 1) {
       const ch = visible[i];
@@ -419,7 +419,7 @@ export async function parseBodyMetadataCooperative(
 
   const isWhitespace = (ch: string | undefined): boolean => Boolean(ch && /\s/.test(ch));
   const isWord = (ch: string | undefined): boolean => Boolean(ch && /[A-Za-z0-9_]/.test(ch));
-  const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()\[\]{}"']/.test(ch));
+  const isUrlChar = (ch: string | undefined): boolean => Boolean(ch && !/[\s<>()[\]{}"']/.test(ch));
   const isTrailingUrlPunctuation = (ch: string | undefined): boolean => Boolean(ch && ".,;:!?".includes(ch));
 
   const trimBounds = async (text: string, start = 0, end = text.length): Promise<[number, number]> => {

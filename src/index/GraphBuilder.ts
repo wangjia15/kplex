@@ -219,6 +219,10 @@ class PatchOverlayMap<K, V> extends Map<K, V> {
   seal(): this { this.cloneOnRead = undefined; return this; }
 }
 
+function isPatchOverlayMap<K, V>(map: Map<K, V>): map is PatchOverlayMap<K, V> {
+  return map instanceof PatchOverlayMap;
+}
+
 function cloneGraphPage(page: GraphPage): GraphPage {
   return {
     ...page,
@@ -421,11 +425,11 @@ export class GraphBuilder {
   /** Bound retained copy-on-write history before starting another transaction. Compaction builds
    * complete private replacements and publishes them together only after all checkpoints pass. */
   private async compactPublishedPatchLayers(state: GraphState): Promise<boolean> {
-    const pageOverlay = state.pages instanceof PatchOverlayMap && state.pages.depth >= MAX_PATCH_OVERLAY_DEPTH
+    const pageOverlay = isPatchOverlayMap(state.pages) && state.pages.depth >= MAX_PATCH_OVERLAY_DEPTH
       ? state.pages : null;
-    const lowercaseOverlay = state.lowercasePathMap instanceof PatchOverlayMap && state.lowercasePathMap.depth >= MAX_PATCH_OVERLAY_DEPTH
+    const lowercaseOverlay = isPatchOverlayMap(state.lowercasePathMap) && state.lowercasePathMap.depth >= MAX_PATCH_OVERLAY_DEPTH
       ? state.lowercasePathMap : null;
-    const fieldOverlay = state.discoveredFields instanceof PatchOverlayMap && state.discoveredFields.depth >= MAX_PATCH_OVERLAY_DEPTH
+    const fieldOverlay = isPatchOverlayMap(state.discoveredFields) && state.discoveredFields.depth >= MAX_PATCH_OVERLAY_DEPTH
       ? state.discoveredFields : null;
     const compactEvidence = state.evidence.depth >= MAX_PATCH_OVERLAY_DEPTH;
     if (!pageOverlay && !lowercaseOverlay && !fieldOverlay && !compactEvidence) return this.isCurrent();
@@ -456,7 +460,7 @@ export class GraphBuilder {
       state.evidence,
       sourcePath,
       targetPath,
-      pages instanceof PatchOverlayMap
+      isPatchOverlayMap(pages)
         ? (path, staged) => pages.publicationValue(path) ?? staged
         : undefined,
     );
@@ -1541,7 +1545,7 @@ export class GraphBuilder {
       const page = state.pages.get(path);
       let hasEvidence = false;
       if (page?.url && !page.file) {
-        for (const _item of state.evidence.declarationsTouchingIterator(path)) { hasEvidence = true; break; }
+        hasEvidence = !state.evidence.declarationsTouchingIterator(path).next().done;
       }
       if (page?.url && !page.file && !hasEvidence) {
         for (const neighborPath of page.neighbours.keys()) {

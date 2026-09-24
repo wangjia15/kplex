@@ -113,8 +113,12 @@ export class RelationEvidenceStore {
    */
   async compactCooperative(checkpoint: () => Promise<boolean>): Promise<RelationEvidenceStore | null> {
     if (!this.base) return this;
-    const layers: RelationEvidenceStore[] = [];
-    for (let layer: RelationEvidenceStore | null = this; layer; layer = layer.base) layers.push(layer);
+    const layers: RelationEvidenceStore[] = [this];
+    let baseLayer: RelationEvidenceStore | null = this.base;
+    while (baseLayer) {
+      layers.push(baseLayer);
+      baseLayer = baseLayer.base;
+    }
     layers.reverse();
 
     const latest = new Map<string, RelationEvidence[]>();
