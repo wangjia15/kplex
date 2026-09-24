@@ -1686,8 +1686,8 @@
 
 /* Streamlined add-related modal: one fuzzy note field, ontology field, and creation buttons. */
 .kplex-add-related-modal {
-  width: min(560px, calc(100vw - 32px));
-  max-width: min(560px, calc(100vw - 32px));
+  width: min(680px, calc(100vw - 24px));
+  max-width: min(680px, calc(100vw - 24px));
 }
 .kplex-add-related-form {
   display: grid;
@@ -1753,14 +1753,27 @@
   color: var(--text-on-accent);
   background: var(--interactive-accent);
 }
-.kplex-add-related-bottom-row {
+.kplex-add-related-control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.kplex-add-related-control-row .kplex-add-related-ontology-search {
+  flex: 1 1 280px;
+}
+.kplex-add-related-control-row .kplex-create-edit-toggle {
+  flex: 0 1 auto;
+}
+.kplex-add-related-compose-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 94px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
+  min-width: 0;
 }
 .kplex-add-related-action-area {
-  width: 94px;
   min-width: 94px;
   height: 38px;
 }
@@ -1768,7 +1781,6 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  width: 94px;
   height: 38px;
 }
 .kplex-add-related-type-button {
@@ -1816,12 +1828,22 @@
 }
 @media (max-width: 520px) {
   .kplex-add-related-role-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kplex-add-related-bottom-row { grid-template-columns: minmax(0, 1fr) 83px; gap: 7px; }
-  .kplex-add-related-action-area,
-  .kplex-add-related-create-actions { width: 83px; min-width: 83px; }
-  .kplex-add-related-create-actions { gap: 7px; }
-  .kplex-add-related-type-button { width: 38px; min-width: 38px; }
+  .kplex-add-related-control-row { gap: 7px; }
+  .kplex-add-related-control-row .kplex-add-related-ontology-search { flex-basis: 210px; }
+  .kplex-add-related-compose-row { gap: 7px; }
+  .kplex-add-related-action-area { min-width: 83px; }
+  .kplex-add-related-create-actions { gap: 6px; }
+  .kplex-add-related-type-button { width: 36px; min-width: 36px; }
   .kplex-add-related-link-button { width: 83px; min-width: 83px; }
+}
+@media (max-width: 380px) {
+  .kplex-add-related-modal {
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+  }
+  .kplex-add-related-control-row .kplex-add-related-ontology-search { flex-basis: 150px; }
+  .kplex-add-related-create-actions { gap: 4px; }
+  .kplex-add-related-type-button { width: 33px; min-width: 33px; }
 }
 
 /* Folding K-Plex in companion-sidecar mode removes the Plex tab group from the split. The
@@ -2310,15 +2332,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 8px 10px;
+  gap: 10px;
+  min-height: 38px;
+  padding: 4px 8px 4px 10px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   background: var(--background-secondary);
   cursor: pointer;
+  white-space: nowrap;
 }
-.kplex-create-edit-copy { display: grid; gap: 2px; min-width: 0; }
-.kplex-create-edit-copy small { color: var(--text-muted); font-size: var(--font-ui-smaller); line-height: 1.25; }
+.kplex-create-edit-copy { display: flex; align-items: center; min-width: 0; }
 .kplex-create-edit-toggle .checkbox-container { flex: 0 0 auto; }
 
 /* Connection details is optimized for skimming provenance occurrences and hands actual editing
@@ -2561,4 +2584,19 @@
   border: 3px;
   border-color: var(--text-warning, var(--interactive-accent));
   border-style: solid;
+}
+
+/* Folder-child creation gives the note name its own full-width row. The native Setting layout is
+   optimized for short controls and otherwise leaves a long filename input cramped into the right
+   column on wide dialogs. */
+.kplex-create-folder-note-modal .kplex-create-folder-note-name-setting {
+  display: block;
+}
+.kplex-create-folder-note-modal .kplex-create-folder-note-name-setting .setting-item-info {
+  margin-bottom: 8px;
+}
+.kplex-create-folder-note-modal .kplex-create-folder-note-name-setting .setting-item-control,
+.kplex-create-folder-note-modal .kplex-create-folder-note-name-setting input[type="text"] {
+  width: 100%;
+  max-width: none;
 }

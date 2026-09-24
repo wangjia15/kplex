@@ -153,17 +153,23 @@ export function ThoughtNode({
     />}
     {GATES.map((gate) => {
       const stat = node.gateStats[gate];
+      const gateDisabled = node.page.isTag || (node.page.isFolder && gate !== "bottom");
+      const gateTitle = node.page.isTag
+        ? `${gate} gate · drag linking is disabled for tag thoughts`
+        : node.page.isFolder
+          ? gate === "bottom"
+            ? "child gate · drag to create a note in this folder"
+            : `${gate} gate · folder relationship editing is disabled`
+          : `${gate} gate${stat.hasAny ? ` · ${stat.visibleCount} visible` : " · no relationships"}`;
       return <span key={gate} className={`excalibrain-gate-wrap gate-wrap-${gate}${stat.hasAny ? "" : " is-empty"}`}>
         <span
-          className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}${node.page.isFolder || node.page.isTag ? " is-link-disabled" : ""}`}
+          className={`excalibrain-gate gate-${gate}${stat.hasAny ? " has-connections" : " is-empty"}${highlightedGates.has(gate) ? " is-highlighted" : ""}${gateDisabled ? " is-link-disabled" : ""}`}
           data-kplex-gate={gate}
           onPointerEnter={(e: ReactPointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverGate(node, gate); }}
           onPointerLeave={(e: ReactPointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
           onPointerDown={(e: ReactPointerEvent<HTMLSpanElement>) => { onGatePointerDown(node, gate, e); }}
           onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
-          title={node.page.isFolder || node.page.isTag
-            ? `${gate} gate · drag linking is disabled for folder and tag thoughts`
-            : `${gate} gate${stat.hasAny ? ` · ${stat.visibleCount} visible` : " · no relationships"}`}
+          title={gateTitle}
         />
         {settings.showNeighborCount && stat.visibleCount > 0 && <span className="excalibrain-gate-count">{stat.shownCount === undefined ? stat.visibleCount : `${stat.shownCount}/${stat.visibleCount}`}</span>}
       </span>;

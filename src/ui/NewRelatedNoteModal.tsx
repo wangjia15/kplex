@@ -118,6 +118,24 @@ function RelatedNoteComposer({
     }
   };
 
+  const createPlaceholder = async () => {
+    if (busy || selectedTarget || !nameValidation.valid || nameValidation.existing) return;
+    setBusy(true);
+    try {
+      const field = await prepareField();
+      if (!field) return;
+      const page = await plugin.createPlaceholderRelatedPage(origin, role, nameValidation.stem, field);
+      if (!page) return;
+      plugin.requestRelationshipFlair(page.path);
+      onCommitted?.();
+      onClose();
+    } catch (error) {
+      new Notice(`Could not create placeholder: ${error instanceof Error ? error.message : String(error)}`, 5000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const chooseExisting = (page: GraphPage) => {
     setSelectedTarget(page);
     setQuery(plugin.index.titleFor(page));
@@ -135,6 +153,7 @@ function RelatedNoteComposer({
   };
 
   const createAvailable = !selectedTarget && nameValidation.valid && !nameValidation.existing;
+  const placeholderAvailable = createAvailable && origin.file?.extension === "md";
   const roleRow = allowRoleSelection
     ? createElement(
         "div",
@@ -230,6 +249,23 @@ function RelatedNoteComposer({
       )
     : null;
 
+  const placeholderButton = createElement(
+    "button",
+    {
+      type: "button",
+      className: "kplex-add-related-type-button",
+      title: placeholderAvailable
+        ? "Create a placeholder link without creating a file"
+        : origin.file?.extension !== "md"
+          ? "Placeholder links require a Markdown origin note."
+          : nameValidation.error ?? (nameValidation.existing ? "A note with this name already exists." : "Type a valid new note name."),
+      "aria-label": "Create placeholder node",
+      disabled: !placeholderAvailable || busy,
+      onClick: () => { void createPlaceholder(); },
+    },
+    createElement(ObsidianIcon, { name: "circle-dashed", size: 20 }),
+  );
+
   const linkButton = selectedTarget
     ? createElement(
         "button",
@@ -252,22 +288,23 @@ function RelatedNoteComposer({
     { className: "kplex-add-related-action-area" },
     selectedTarget
       ? linkButton
-      : createElement("div", { className: "kplex-add-related-create-actions" }, markdownButton, excalidrawButton),
-  );
-
-  const bottomRow = createElement(
-    "div",
-    { className: "kplex-add-related-bottom-row" },
-    ontologySearch,
-    actionArea,
+      : createElement(
+          "div",
+          { className: `kplex-add-related-create-actions${excalidrawAvailable ? " has-three-actions" : ""}` },
+          markdownButton,
+          excalidrawButton,
+          placeholderButton,
+        ),
   );
 
   const editToggle = !selectedTarget ? createElement(
     "label",
-    { className: "kplex-create-edit-toggle" },
+    {
+      className: "kplex-create-edit-toggle",
+      title: "Center the new note and open it in the Sidecar.",
+    },
     createElement("span", { className: "kplex-create-edit-copy" },
       createElement("strong", null, "Open for editing"),
-      createElement("small", null, "Center the new note and open it in the Sidecar."),
     ),
     createElement(
       "span",
@@ -286,13 +323,27 @@ function RelatedNoteComposer({
     ),
   ) : null;
 
+  const controlRow = createElement(
+    "div",
+    { className: "kplex-add-related-control-row" },
+    ontologySearch,
+    editToggle,
+  );
+
+  const composeRow = createElement(
+    "div",
+    { className: "kplex-add-related-compose-row" },
+    noteSearch,
+    actionArea,
+  );
+
   let statusText: string | null = null;
   if (selectedTarget) {
     statusText = `Selected existing note: ${selectedTarget.path}`;
   } else if (noteTyped && query.trim()) {
     if (nameValidation.error) statusText = nameValidation.error;
     else if (nameValidation.existing) statusText = "A note with this name already exists. Select it from the search results to link it.";
-    else statusText = `Create “${nameValidation.stem}” as Markdown${excalidrawAvailable ? " or Excalidraw" : ""}. Ctrl/Cmd+Enter creates ${defaultCreateType === "excalidraw" ? "Excalidraw" : "Markdown"}.`;
+    else statusText = `Create “${nameValidation.stem}” as Markdown${excalidrawAvailable ? ", Excalidraw" : ""}, or a placeholder. Ctrl/Cmd+Enter creates ${defaultCreateType === "excalidraw" ? "Excalidraw" : "Markdown"}.`;
   }
 
   const status = statusText
@@ -303,9 +354,8 @@ function RelatedNoteComposer({
     "div",
     { className: "kplex-add-related-form" },
     roleRow,
-    noteSearch,
-    bottomRow,
-    editToggle,
+    controlRow,
+    composeRow,
     status,
   );
 }

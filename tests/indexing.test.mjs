@@ -16,6 +16,18 @@ const temp = mkdtempSync(join(tmpdir(), "kplex-index-test-"));
 const mainSource = readFileSync(join(root, "src/main.ts"), "utf8");
 
 const appSource = readFileSync(join(root, "src/ui/App.tsx"), "utf8");
+const newRelatedSource = readFileSync(join(root, "src/ui/NewRelatedNoteModal.ts"), "utf8");
+const ghostModalSource = readFileSync(join(root, "src/ui/MaterializeGhostModal.ts"), "utf8");
+const plexGraphSource = readFileSync(join(root, "src/ui/PlexGraph.tsx"), "utf8");
+const deleteNodeModalSource = readFileSync(join(root, "src/ui/DeleteNodeModal.ts"), "utf8");
+const createFolderNoteModalSource = readFileSync(join(root, "src/ui/CreateFolderNoteModal.ts"), "utf8");
+const thoughtNodeSource = readFileSync(join(root, "src/ui/ThoughtNode.tsx"), "utf8");
+assert(newRelatedSource.includes('"aria-label": "Create placeholder node"'), "Create-related UI must offer a placeholder-only action");
+assert(newRelatedSource.includes("plugin.createPlaceholderRelatedPage(origin, role"), "Placeholder action must create only a relationship-backed virtual node");
+assert(newRelatedSource.includes("void createNew(defaultCreateType)"), "Ctrl/Cmd+Enter must keep using the shared Markdown/Excalidraw default rather than the placeholder action");
+assert(ghostModalSource.includes('this.scope.register(["Mod"], "Enter"'), "Ghost materialization must support the same Ctrl/Cmd+Enter default action as create-related");
+assert(ghostModalSource.includes('setName("Location")'), "Ambiguous ghost destinations must expose a location dropdown");
+assert(ghostModalSource.includes('setButtonText("Excalidraw")'), "Ghost materialization must offer Excalidraw when the integration is available");
 assert(!appSource.includes('void plugin.openSidecar(hostLeaf, page);'), "React mount must not create a sidecar during startup restore; plugin-level restore owns re-association");
 assert(appSource.includes("plugin.isStartupInitializing() && plugin.settings.lastActivePath"), "A restored K-Plex view must keep its persisted center while Obsidian startup tab ordering is unstable");
 assert(appSource.includes('setTitle("Show linked/pinned tab")'), "The pin/link menu must provide an explicit way to reveal the linked document tab");
@@ -52,6 +64,8 @@ assert(settingDefinitionsSource.includes('name: "Cross-link opacity (%)"'));
 assert(settingDefinitionsSource.includes('name: "Node styling"'), "Node styling must be a Visual styling subpage");
 assert(settingDefinitionsSource.includes('name: "Link styling"'), "Link styling must be a Visual styling subpage");
 assert(settingDefinitionsSource.includes('name: "Style property"'), "K-Plex must expose one clear property-value style selector");
+assert(settingDefinitionsSource.includes('name: "Name fields"'), "Display-name field precedence must be configurable");
+assert(settingsSource.includes('nameFields: "aliases"'), "Aliases must remain the default display-name field for backward compatibility");
 assert(!settingDefinitionsSource.includes('name: "Primary tag field"'), "Legacy primaryTagField must remain migration-only instead of appearing as a second style selector");
 assert(settingDefinitionsSource.includes('name: "Property-value styles"'), "Large node-style collections must open through the searchable manager");
 assert(settingDefinitionsSource.includes('name: "Relationship-specific styles"'), "Relationship-specific link appearance must open through the searchable manager");
@@ -115,6 +129,53 @@ assert(mainSource.includes("element.classList.add(\"kplex-linked-leaf-alert\")")
 assert(!mainSource.includes("element.style.flexBasis"), "Sidecar footprint restoration must use Obsidian DOM style helpers rather than direct style mutation");
 assert(!mainSource.includes("tabHeaderForLeaf"), "Linked-tab feedback cleanup must not retain the obsolete tab-header bridge");
 assert(mainSource.includes("viewWindow.requestAnimationFrame"), "Sidecar/link UI scheduling should use the target leaf window for pop-out compatibility");
+const createGhostStart = mainSource.indexOf("  async createGhostNote(page: GraphPage)");
+const createGhostSource = mainSource.slice(createGhostStart);
+assert(createGhostSource.includes("ghostCreationLocations(page, validation.stem)"), "Ghost creation must resolve destinations from the graph rather than defaulting to vault root");
+assert(!createGhostSource.includes("rebuildIndex("), "Materializing a ghost node must not trigger a full graph rebuild");
+assert(mainSource.includes("this.index.semanticParentPages(page)"), "Ghost destination resolution must consider every semantic parent");
+assert(mainSource.includes("getNewFileParent(sourcePath, proposedName)"), "Ghost/create-child locations must honor Obsidian's configured new-note folder logic");
+assert(mainSource.includes("new MaterializeGhostModal("), "Ambiguous destinations or Excalidraw choices must use the materialization dialog");
+assert(mainSource.includes("this.index.renameFile(page.path, file)"), "Materializing a ghost in another folder must remap the live virtual page instead of rebuilding the vault");
+assert(mainSource.includes("this.index?.dematerializeFile(deleted.path)"), "Deleting an active Markdown file must dematerialize the existing GraphPage instead of rebuilding/falling back to root");
+assert(mainSource.includes('this.app.vault.getFileByPath(file.path) !== file'), "Metadata events for already-deleted TFiles must be ignored instead of resurrecting a stale patch/rebuild");
+assert(mainSource.includes("this.settlePatchOnlyBacklogIfIdle()"), "Deleting a note must clear metadata-only rebuild work once no dirty Markdown paths remain");
+assert(appSource.includes("plugin.resolveNavigationFallbackPath(activePath)"), "A missing persisted center must fall back through navigation history before the vault root");
+assert(mainSource.includes("this.settings.navigationHistory.length - 1"), "Navigation fallback must walk history newest-to-oldest");
+assert(!appSource.includes("plugin.app.vault.getMarkdownFiles()[0]?.path"), "Startup must not choose an arbitrary first Markdown note when navigation history is exhausted");
+assert(plexGraphSource.includes('setTitle(persistent.file ? "Delete note…" : "Delete placeholder…")'), "Every Markdown/placeholder node context menu must expose deletion");
+assert(plexGraphSource.includes("plugin.deleteNode(persistent, hostLeaf, isCenter)"), "Node deletion must tell the workflow whether the deleted node is the active center");
+assert(mainSource.includes("if (hadFile && wasCenter && !folderOnlyOrphan) return;"), "Deleting a connected active center file must keep its dematerialized ghost active");
+assert(mainSource.includes("const folderOnlyOrphan = hadFile && this.isFolderOnlyOrphan(target)"), "File deletion must distinguish a folder-only orphan from a connected node");
+assert(mainSource.includes("this.removeFromNavigationHistory(path)"), "A fully deleted orphan/placeholder must be removed from navigation history");
+assert(mainSource.includes("? this.deletionFallbackPath(path, [])"), "Deleting a centered folder-only orphan must fall back through navigation history rather than its former folder host");
+assert(mainSource.includes("removePropertyReferencesToNode"), "Node deletion must clean document-property references before considering a ghost removable");
+assert(mainSource.includes("normalizedNoteReferenceMatches"), "Property cleanup must still recognize a note link after deleting its backing file makes Obsidian resolution unavailable");
+assert(mainSource.includes("remainingBodyReferences"), "Deletion review must include parser-backed inline body relationships that may not appear in Obsidian's link cache");
+assert(mainSource.includes("new RemainingNodeReferencesModal("), "Body references must be surfaced for manual cleanup rather than rewritten automatically");
+assert(deleteNodeModalSource.includes("Always confirm before deleting files"), "The first delete prompt must capture the persistent file-delete confirmation preference");
+assert(deleteNodeModalSource.includes("I understand, don\'t ask me again"), "Real-file delete confirmations must let the user disable future prompts from the dialog itself");
+assert(mainSource.includes("const preferenceChanged = this.settings.confirmFileDelete !== confirmFileDelete"), "Delete confirmation preferences changed from the dialog must persist even after first use");
+assert(settingsSource.includes("confirmFileDelete: boolean"), "File-delete confirmation preference must be persisted");
+assert(createFolderNoteModalSource.includes('this.modalEl.addClass("kplex-create-folder-note-modal")'), "Folder creation must expose a scoped modal class for responsive layout styling");
+assert(createFolderNoteModalSource.includes('nameSetting.settingEl.addClass("kplex-create-folder-note-name-setting")'), "Folder creation must mark the filename row so the input can use the full modal width");
+assert(createFolderNoteModalSource.includes('this.scope.register(["Mod"], "Enter"'), "Folder creation must use the shared Ctrl/Cmd+Enter create default");
+assert(createFolderNoteModalSource.includes('this.plugin.settings.newNodeDefaultType'), "Folder creation must share the create-child Markdown/Excalidraw default");
+assert(!createFolderNoteModalSource.includes("Create placeholder"), "Folder creation must not offer a placeholder because folders require real files");
+assert(plexGraphSource.includes('const folderChildCreation = node.page.isFolder && gate === "bottom"'), "A folder child gate must be a valid creation drag origin");
+assert(plexGraphSource.includes('if (origin?.isFolder && drag.gate === "bottom")'), "Releasing a dragged folder child gate must open file-only folder creation");
+assert(thoughtNodeSource.includes('"child gate · drag to create a note in this folder"'), "Folder child gates must explain their creation gesture");
+assert(plexGraphSource.includes("plugin.openCreateInFolderModal(target, hostLeaf)"), "Dropping a regular note gate on a folder may continue to start the secondary file-only folder flow");
+assert(mainSource.includes("createNewNodeInFolder(folder: GraphPage"), "Folder creation must materialize directly in the selected folder");
+assert(newRelatedSource.includes('className: "kplex-add-related-control-row"'), "Ontology and open-for-editing controls must share the first responsive row");
+assert(newRelatedSource.includes('className: "kplex-add-related-compose-row"'), "Name search and create/link actions must share the second row");
+assert(newRelatedSource.indexOf("controlRow,") < newRelatedSource.indexOf("composeRow,"), "Relationship controls must render above the focused name row");
+const placeholderPathStart = mainSource.indexOf("  private placeholderPath(stem: string)");
+const placeholderPathEnd = mainSource.indexOf("  async createPlaceholderRelatedPage(", placeholderPathStart);
+assert(placeholderPathStart >= 0 && placeholderPathEnd > placeholderPathStart);
+const placeholderPathSource = mainSource.slice(placeholderPathStart, placeholderPathEnd);
+assert(placeholderPathSource.includes("return stem.trim()"), "New placeholders must use only their unresolved note name as identity");
+assert(!placeholderPathSource.includes("getNewFileParent"), "A placeholder must not receive a physical folder before it is materialized");
 
 globalThis.window = globalThis;
 
@@ -161,6 +222,10 @@ for (const file of [
   "src/lens/GraphLensSimple.ts",
   "src/lens/SimplePlexFilter.ts",
   "src/ui/layout.ts",
+  "src/ui/NewRelatedNoteModal.ts",
+  "src/ui/MaterializeGhostModal.ts",
+  "src/ui/CreateFolderNoteModal.ts",
+  "src/ui/DeleteNodeModal.ts",
 ]) compile(file);
 
 const obsidianModuleDir = join(temp, "node_modules/obsidian");
@@ -270,10 +335,14 @@ exports.KplexSidepanelView = class {};
 for (const [path, name] of [
   ["src/ui/RelationModal.js", "RelationModal"],
   ["src/ui/NewRelatedNoteModal.js", "NewRelatedNoteModal"],
+  ["src/ui/MaterializeGhostModal.js", "MaterializeGhostModal"],
+  ["src/ui/CreateFolderNoteModal.js", "CreateFolderNoteModal"],
+  ["src/ui/DeleteNodeModal.js", "DeleteNodeConfirmationModal"],
   ["src/editor/OntologySuggester.js", "OntologySuggester"],
   ["src/ui/AddToOntologyModal.js", "AddToOntologyModal"],
   ["src/ui/NoteTypeModal.js", "NoteTypeModal"],
 ]) writeRuntimeStub(path, `exports.${name} = class {};`);
+writeRuntimeStub("src/ui/DeleteNodeModal.js", `exports.DeleteNodeConfirmationModal = class {}; exports.RemainingNodeReferencesModal = class {};`);
 writeRuntimeStub("src/ui/viewProfile.js", `
 exports.activeLayoutProfile = () => null;
 exports.currentDeviceClass = () => "desktop";
@@ -468,6 +537,7 @@ const app = {
     getMarkdownFiles() { return [...files.values()]; },
     getFiles() { return [...files.values()]; },
     cachedRead(file) { return Promise.resolve(contents.get(file.path) ?? ""); },
+    getFileByPath(path) { return files.get(path) ?? null; },
     getAbstractFileByPath(path) { return files.get(path) ?? folders.get(path) ?? null; },
     getResourcePath(file) { return `app://local/${encodeURIComponent(file.path)}`; },
   },
@@ -546,6 +616,7 @@ const settings = {
   showPageNodes: true,
   showURLNodes: true,
   renderAlias: true,
+  nameFields: "aliases",
   nodeTitleScript: "",
   excludeFilepaths: [],
   maxItemCount: 500,
@@ -1151,6 +1222,19 @@ try {
   const aliasPatch = await index.patchMarkdownPaths(["Note A.md"]);
   assert.deepEqual(aliasPatch, { outcome: "patched", count: 1 });
   assert.equal(index.search("runtimealiaszzz", 5)[0]?.path, "Note A.md");
+  noteACache.frontmatter.title = "Preferred scalar title";
+  settings.nameFields = "title, aliases";
+  index.refreshDisplayNames();
+  assert.equal(index.titleFor(index.get("Note A.md")), "Preferred scalar title", "Ordered name fields must accept scalar text values");
+  noteACache.frontmatter.title = ["Preferred project title", "Backup title"];
+  index.refreshDisplayNames();
+  assert.equal(index.titleFor(index.get("Note A.md")), "Preferred project title", "Ordered name fields must accept list values and use the first non-empty item");
+  assert.equal(index.search("preferred project title", 5)[0]?.path, "Note A.md", "Configured display names must also participate in search");
+  delete noteACache.frontmatter.title;
+  index.refreshDisplayNames();
+  assert.equal(index.titleFor(index.get("Note A.md")), "RuntimeAliasZZZ", "Missing higher-priority name fields must fall back to aliases");
+  settings.nameFields = "aliases";
+  index.refreshDisplayNames();
   const aliasesCountAfter = index.discoveredFields().find((field) => field.normalized === "aliases")?.count ?? 0;
   assert.equal(aliasesCountAfter, aliasesCountBefore, "Incremental saves must not inflate discovered-field counts");
 
@@ -1203,6 +1287,42 @@ try {
   assert.equal(index.get(immediateFile.path), immediatePage);
   assert(index.applyRelationshipEdit("Note A.md", immediateFile.path, "child", "Children"));
   expectRole("Note A.md", "child", immediateFile.path, RelationType.DEFINED);
+
+  // Placeholder creation is optimistic too: no TFile is required until the user materializes the
+  // ghost. Materialization remaps the same semantic page/evidence to the created file path.
+  const placeholderPage = index.insertVirtualPage("Future Child");
+  assert.equal(placeholderPage.file, null);
+  assert(index.applyRelationshipEdit("Note A.md", placeholderPage.path, "child", "Children"));
+  expectRole("Note A.md", "child", "Future Child", RelationType.DEFINED);
+  const materializedPlaceholder = new TFile("Future Child.md", noteA.stat.mtime + 1200);
+  files.set(materializedPlaceholder.path, materializedPlaceholder);
+  contents.set(materializedPlaceholder.path, "# Future Child\n");
+  caches.set(materializedPlaceholder.path, { frontmatter: {}, tags: [], links: [] });
+  assert(index.renameFile("Future Child", materializedPlaceholder));
+  assert.equal(index.get("Future Child.md")?.file, materializedPlaceholder);
+  expectRole("Note A.md", "child", "Future Child.md", RelationType.DEFINED);
+
+  // Deleting a real Markdown note dematerializes the same GraphPage into a ghost. Inbound
+  // declarations survive; declarations owned by the deleted file and its tree/tag memberships do
+  // not. A ghost can disappear only after its final inbound declaration has been removed.
+  const deleteTargetFile = new TFile("Delete Target.md", noteA.stat.mtime + 1300);
+  files.set(deleteTargetFile.path, deleteTargetFile);
+  contents.set(deleteTargetFile.path, "# Delete Target\n");
+  caches.set(deleteTargetFile.path, { frontmatter: {}, tags: [], links: [] });
+  const deleteTargetPage = index.insertCreatedFile(deleteTargetFile);
+  expectRole("folder:/", "child", deleteTargetPage.path, RelationType.DEFINED);
+  assert(index.applyRelationshipEdit("Note B.md", deleteTargetPage.path, "child", "Children"));
+  assert(index.applyRelationshipEdit(deleteTargetPage.path, "Note C.md", "child", "Children"));
+  const ghostAfterDelete = index.dematerializeFile(deleteTargetPage.path);
+  assert.equal(ghostAfterDelete, deleteTargetPage, "File deletion must preserve GraphPage identity for an active center");
+  assert.equal(ghostAfterDelete?.file, null, "Deleted Markdown must become a virtual/ghost node");
+  assert.equal(index.evidenceBetween("folder:/", deleteTargetPage.path).length, 0, "Deleted Markdown must lose physical file-tree evidence immediately");
+  assert.equal(index.get("folder:/")?.neighbours.has(deleteTargetPage.path), false, "A deleted ghost must not remain a child of its former physical folder");
+  expectRole("Note B.md", "child", deleteTargetPage.path, RelationType.DEFINED);
+  assert.equal(index.evidenceBetween(deleteTargetPage.path, "Note C.md").length, 0, "Evidence owned by the deleted file must be removed");
+  assert(index.removePropertyReferenceEvidence("Note B.md", deleteTargetPage.path, true));
+  assert.equal(index.removeVirtualPageIfUnreferenced(deleteTargetPage.path), true, "Unreferenced ghost should be removable after property cleanup");
+  assert.equal(index.get(deleteTargetPage.path), undefined);
 
   // Assertions 67–68: Connection details adds/specifies ontology without replacing existing
   // frontmatter ontology evidence for the same pair, and repeating the same ontology is idempotent.
@@ -1808,6 +1928,7 @@ try {
   renameCoordinator.app = {
     vault: {
       on: (name, callback) => { renameHandlers.set(`vault:${name}`, callback); return {}; },
+      getFileByPath: (path) => path === renamedCentral?.path ? renamedCentral : null,
     },
     metadataCache: {
       on: (name, callback) => { renameHandlers.set(`metadata:${name}`, callback); return {}; },
@@ -1851,6 +1972,7 @@ try {
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
   console.log("Immediate creation + lazy node imagery: assertions 60–66 PASS");
   console.log("Additive connection ontology: assertions 67–68 PASS");
+  console.log("Placeholder creation + ghost materialization PASS");
 } finally {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });

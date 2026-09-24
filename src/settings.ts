@@ -99,6 +99,8 @@ export interface ExcaliBrainSettings {
   inverseInfer: boolean;
   inverseArrowDirection: boolean;
   renderAlias: boolean;
+  /** Ordered comma-separated frontmatter fields used as display-name fallbacks. */
+  nameFields: string;
   nodeTitleScript: string;
   backgroundColor: string;
   excludeFilepaths: string[];
@@ -203,6 +205,10 @@ export interface ExcaliBrainSettings {
   editNewNodeAfterCreate: boolean;
   /** Remember which create button Ctrl/Cmd+Enter should invoke next time. */
   newNodeDefaultType: NewNodeType;
+  /** Whether K-Plex has already shown the first-use delete confirmation/preferences prompt. */
+  deletePromptInitialized: boolean;
+  /** Ask for confirmation before deleting a real note file from the node context menu. */
+  confirmFileDelete: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -216,6 +222,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   inverseInfer: false,
   inverseArrowDirection: true,
   renderAlias: true,
+  nameFields: "aliases",
   nodeTitleScript: "",
   backgroundColor: "#0c3e6aff",
   excludeFilepaths: [],
@@ -305,7 +312,9 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   nodeImageProperty: "node-image",
   attachmentImageDisplay: "thumbnail-label",
   editNewNodeAfterCreate: false,
-  newNodeDefaultType: "markdown"
+  newNodeDefaultType: "markdown",
+  deletePromptInitialized: false,
+  confirmFileDelete: true
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -424,6 +433,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     parentMaxHeight: Math.max(120, Math.min(900, Number(old.parentMaxHeight ?? DEFAULT_SETTINGS.parentMaxHeight))),
     childMaxHeight: Math.max(120, Math.min(900, Number(old.childMaxHeight ?? DEFAULT_SETTINGS.childMaxHeight))),
     noteTypeField: String(old.noteTypeField ?? DEFAULT_SETTINGS.noteTypeField),
+    nameFields: String(old.nameFields ?? DEFAULT_SETTINGS.nameFields).trim() || DEFAULT_SETTINGS.nameFields,
     kplexInitialized: Boolean(old.kplexInitialized),
     startInPopout: Boolean(old.startInPopout),
     lastActivePath: String(old.lastActivePath ?? ""),
@@ -451,6 +461,8 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     attachmentImageDisplay: old.attachmentImageDisplay === "label" || old.attachmentImageDisplay === "image" ? old.attachmentImageDisplay : "thumbnail-label",
     editNewNodeAfterCreate: Boolean(old.editNewNodeAfterCreate),
     newNodeDefaultType: old.newNodeDefaultType === "excalidraw" ? "excalidraw" : "markdown",
+    deletePromptInitialized: Boolean(old.deletePromptInitialized),
+    confirmFileDelete: old.confirmFileDelete !== false,
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",
@@ -1477,6 +1489,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
               { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
               { name: "Expanded toolbar", desc: "Show the full visibility/layout toolbar. When disabled, K-Plex keeps only the most important navigation controls visible.", control: { type: "toggle", key: "toolbarExpanded" } },
+              { name: "Confirm before deleting files", desc: "Ask before a node context-menu action deletes a note using Obsidian's configured trash behavior. Placeholder cleanup is still explained the first time you use Delete node.", control: { type: "toggle", key: "confirmFileDelete" } },
               {
                 name: "Mouse navigation",
                 desc: "Smart reserves right-click for context menus: left-drag empty canvas or middle-drag anywhere to pan. Legacy allows any mouse button to pan. Wheel zoom never requires a modifier.",
@@ -1611,7 +1624,8 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
             heading: "Canvas & labels",
             items: [
               { name: "Plex background", control: { type: "color", key: "backgroundColorHex" } },
-              { name: "Render aliases", control: { type: "toggle", key: "renderAlias" } },
+              { name: "Use frontmatter display names", desc: "Use the first non-empty value from the configured name fields. Turn this off to always show the file name.", control: { type: "toggle", key: "renderAlias" } },
+              { name: "Name fields", desc: "Comma-separated frontmatter fields checked in order. Text and list values are supported; the first non-empty value is used, then K-Plex falls back to the file name. Example: title, aliases, backup_names.", control: { type: "text", key: "nameFields" } },
               { name: "Show full tag names", control: { type: "toggle", key: "showFullTagName" } },
             ],
           },
@@ -1815,6 +1829,11 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
 
     const settingKey = key as keyof ExcaliBrainSettings;
     (this.ebPlugin.settings as unknown as Record<string, unknown>)[settingKey] = value;
+    if (key === "renderAlias" || key === "nameFields") {
+      await this.ebPlugin.saveSettings(false, false);
+      this.ebPlugin.index.refreshDisplayNames();
+      return;
+    }
     await this.ebPlugin.saveSettings(REINDEX_SETTING_KEYS.has(key));
   }
 }

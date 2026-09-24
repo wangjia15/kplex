@@ -76,7 +76,6 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
       : initialWorkspaceFile?.path) ?? (
       plugin.settings.lastActivePath
       || history[history.length - 1]
-      || plugin.app.vault.getMarkdownFiles()[0]?.path
       || "folder:/"
     );
   });
@@ -169,18 +168,30 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     };
   }, [plugin, hostLeaf, activate]);
 
-  const page = plugin.index.get(activePath)
-    ?? (plugin.settings.lastActivePath ? plugin.index.get(plugin.settings.lastActivePath) : undefined)
+  const exactPage = plugin.index.get(activePath);
+  const fallbackPath = exactPage ? null : plugin.resolveNavigationFallbackPath(activePath);
+  const page = exactPage
+    ?? (fallbackPath ? plugin.index.get(fallbackPath) : undefined)
     ?? plugin.index.get("folder:/");
 
   useEffect(() => {
     if (!page) return;
+    const replacingMissingCenter = page.path !== activePath;
+    // During partial startup hydration the root can exist before a still-valid persisted center has
+    // been restored. Never persist that temporary root. Once the authoritative index is ready, a
+    // genuinely missing center falls back through navigation history and only then to folder:/.
+    if (replacingMissingCenter && page.path === "folder:/" && !plugin.isNavigationFallbackReady()) return;
     activePathRef.current = page.path;
     activeFileRef.current = page.file;
+    if (replacingMissingCenter) {
+      setActivePath(page.path);
+      const historyIndex = plugin.settings.navigationHistory.lastIndexOf(page.path);
+      if (historyIndex >= 0) setHistoryCursor(historyIndex);
+    }
     if (plugin.settings.lastActivePath === page.path) return;
     plugin.settings.lastActivePath = page.path;
     void plugin.saveSettings(false, false);
-  }, [page?.path, plugin]);
+  }, [page?.path, activePath, plugin]);
 
   const open = useCallback((target: GraphPage) => { void plugin.openPage(target); }, [plugin]);
 

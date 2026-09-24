@@ -66,7 +66,7 @@ On phones, K-Plex opens naturally in the side panel. Tablets can use either a no
 - **Single-click / tap** a node to make it the center.
 - **Double-click** a file-backed node to open it in Obsidian.
 - Double-clicking a URL opens it in the browser.
-- Double-clicking an unresolved link can create the missing Markdown note.
+- Double-clicking an unresolved link can create the missing Markdown note. Placeholders carry only the unresolved note name; their real folder/path is assigned when the file is created.
 - Folder and tag nodes can also become the center.
 - Drag empty graph space to pan and use the mouse wheel or pinch gesture to zoom.
 - Long-press on touch devices opens the same context menus available with right-click on desktop.
@@ -77,7 +77,9 @@ K-Plex uses positional animation when navigating: notes that exist in both scene
 
 ### Search, history and pins
 
-The search box finds notes by title, alias and path using fuzzy matching. Exact and prefix matches rank above looser matches.
+The search box finds notes by display name, file name, alias and path using fuzzy matching. Exact and prefix matches rank above looser matches.
+
+Display names are configurable in **Settings → K-Plex → Visual styling → Canvas & labels → Name fields**. Enter a comma-separated precedence list such as `title, aliases, backup_names`. K-Plex uses the first non-empty text/list value and falls back to the file name. The default is `aliases`, which preserves the previous alias-rendering behavior.
 
 Keyboard shortcuts while K-Plex has focus:
 
@@ -102,14 +104,23 @@ The relationship dialog provides:
 - remembered Markdown/Excalidraw create action, including Ctrl/Cmd+Enter;
 - filename validation and duplicate-name checking;
 - an **Open for editing** toggle for new notes.
+- a **Placeholder** action that creates only the unresolved relationship and no file.
 
-Newly created notes and their relationships appear in the Plex immediately instead of waiting for Obsidian's background indexing cycle. If **Open for editing** is enabled, the new note becomes the center and opens in the companion Sidecar in Obsidian's normal Markdown editor, ready for writing.
+Newly created notes and their relationships appear in the Plex immediately instead of waiting for Obsidian's background indexing cycle. Placeholder nodes are stored as name-only unresolved links until they are materialized. If **Open for editing** is enabled, the new note becomes the center and opens in the companion Sidecar in Obsidian's normal Markdown editor, ready for writing.
+
+When folder nodes are visible, drag outward from a folder's **Child gate** to create a new Markdown note (or Excalidraw drawing when available) directly in that folder. The folder location itself supplies the file-tree relationship, so K-Plex does not create a separate note-to-note link. Ctrl/Cmd+Enter uses the same remembered Markdown/Excalidraw default as the normal create-child workflow, and folder creation never offers a placeholder because an unresolved placeholder has no physical folder yet. Dropping a regular note gate onto a folder remains available as a secondary file-only shortcut.
 
 You can also drag an existing related node to another relationship area to reclassify it. K-Plex updates the graph immediately while the underlying note change is written. When K-Plex needs to create a new YAML/document property for a relationship, it adds that property at the bottom of the property list.
 
 ### Connection details and unlinking
 
 A visible connection may come from YAML properties, body fields, ordinary links, folder/tag structure, URLs, dates, or other supported sources. A single connection can also be supported by several different source occurrences.
+
+### Deleting notes and placeholders
+
+Right-click a Markdown-backed node or unresolved placeholder and choose **Delete note…** / **Delete placeholder…**. The first time you use this workflow, K-Plex explains the behavior and asks whether file deletions should always require confirmation. That preference is also available under **Settings → K-Plex → Plex behavior → Navigation & interaction**.
+
+Deleting a Markdown file keeps the same graph node alive as a ghost, including when that node is currently in the center. Deleting the active center never navigates K-Plex away merely because the backing file disappeared. K-Plex automatically removes references stored in note properties. Links and inline relationship fields in Markdown content are never rewritten automatically; when they remain, K-Plex opens a **Remaining references** window with navigation buttons so you can review and remove those sources yourself. Once a non-active placeholder has no remaining references, K-Plex removes it from the graph. Files are sent through Obsidian's normal trash workflow.
 
 Right-click a connector to access two related workflows:
 

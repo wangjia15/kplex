@@ -1,4 +1,4 @@
-import { Platform, TFile, type App } from "obsidian";
+import { Platform, TFile, normalizePath, type App } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { ExcaliBrainSettings } from "../settings";
 import {
@@ -17,7 +17,7 @@ import { GraphBuilder, type FieldCacheEntry } from "./GraphBuilder";
 import { extractLinksFromValue, normalizeFieldName, type ParsedBodyMetadata } from "./fieldParser";
 import { KplexIndexedDbCache, type IndexedDbSnapshotMeta } from "./IndexedDbCache";
 import { createGraphState, getGraphPage } from "./GraphState";
-import type { EvidenceRole, RelationEvidence } from "./RelationEvidence";
+import type { EvidenceRole, EvidenceSourceKind, RelationEvidence } from "./RelationEvidence";
 import { MetadataParser } from "./MetadataParser";
 import {
   addPersistedEvidenceToState,
@@ -65,6 +65,15 @@ type FileRevision = { mtime: number; size: number };
 const captureFileRevision = (file: TFile): FileRevision => ({ mtime: file.stat.mtime, size: file.stat.size });
 const fileRevisionMatches = (file: TFile, revision: FileRevision): boolean =>
   file.stat.mtime === revision.mtime && file.stat.size === revision.size;
+
+const FILE_CONTENT_EVIDENCE = new Set<EvidenceSourceKind>([
+  "obsidian-link",
+  "unresolved-link",
+  "frontmatter-ontology",
+  "inline-ontology",
+  "body-url",
+  "date-property",
+]);
 
 export type SuggestionCatalog = {
   tags: string[];
@@ -171,6 +180,13 @@ export class GraphIndex {
     for (const listener of this.listeners) listener();
   }
   notify(): void { this.emit(); }
+
+  /** Refresh presentation-only labels/search terms after display-name settings change. */
+  refreshDisplayNames(): void {
+    this.titleCache.clear();
+    this.rebuildSearchIndex();
+    this.emit();
+  }
 
   get size(): number { return this.state.pages.size; }
   get(path: string): GraphPage | undefined { return getGraphPage(this.state, path); }
@@ -1126,10 +1142,13 @@ export class GraphIndex {
   }
 
   private makeSearchEntry(page: GraphPage): SearchEntry {
+    const title = this.titleFor(page);
+    const alternateNames = new Set([page.name, ...page.aliases]);
+    alternateNames.delete(title);
     return {
       page,
-      name: page.name.toLowerCase(),
-      aliases: page.aliases.map((alias) => alias.toLowerCase()),
+      name: title.toLowerCase(),
+      aliases: [...alternateNames].map((alias) => alias.toLowerCase()),
       path: page.path.toLowerCase(),
     };
   }
@@ -1408,6 +1427,144 @@ export class GraphIndex {
   }
 
   /**
+   * Convert a deleted Markdown file into the unresolved node that its surviving inbound links now
+   * describe. File-owned evidence (body/YAML declarations, tags and folder membership) disappears,
+   * while declarations from other notes that still point at this path remain intact. Keeping the
+   * GraphPage object itself is important when the deleted note is the active Plex center.
+   */
+  dematerializeFile(path: string): GraphPage | null {
+    const page = this.get(path);
+    if (!page || page.isFolder || page.isTag || page.url) return page ?? null;
+
+    const affected = new Set<string>([page.path]);
+    const membershipParents = new Set<string>();
+    for (const item of this.state.evidence.declarationsTouching(page.path)) {
+      affected.add(item.declaredByPath);
+      affected.add(item.declaredTargetPath);
+      if ((item.sourceKind === "file-tree" || item.sourceKind === "tag-tree") && item.declaredTargetPath === page.path) {
+        membershipParents.add(item.declaredByPath);
+      }
+    }
+
+    this.state.evidence.removeDeclarationsTouching(page.path, (item) => {
+      if (item.declaredByPath === page.path && FILE_CONTENT_EVIDENCE.has(item.sourceKind)) return true;
+      if ((item.sourceKind === "file-tree" || item.sourceKind === "tag-tree") && item.declaredTargetPath === page.path) return true;
+      return false;
+    });
+
+    // Physical folder/tag membership exists only while a backing file exists. Clear those relation
+    // map entries eagerly as well as their evidence so the current scene cannot render the deleted
+    // ghost under its former folder while the affected pair resolver catches up.
+    for (const parentPath of membershipParents) {
+      this.get(parentPath)?.neighbours.delete(page.path);
+      page.neighbours.delete(parentPath);
+    }
+
+    page.file = null;
+    page.mtime = null;
+    page.url = null;
+    page.aliases = [];
+    page.tags = [];
+    page.noteType = null;
+    page.primaryStyleTag = null;
+    page.styleTags = [];
+    page.neighbours.clear();
+
+    for (const rawPath of affected) {
+      if (rawPath === page.path) continue;
+      const target = this.get(rawPath);
+      if (!target) continue;
+      target.neighbours.delete(page.path);
+      resolveEvidencePair(this.state.pages, this.state.evidence, page.path, target.path);
+      resolveEvidencePair(this.state.pages, this.state.evidence, target.path, page.path);
+    }
+
+    this.fieldCache.delete(page.path);
+    this.semanticFingerprints.delete(page.path);
+    this.restoredModifiedMarkdownPaths = this.restoredModifiedMarkdownPaths.filter((candidate) => candidate !== page.path);
+    this.invalidatePatchedPages(affected);
+    this.patchSearchIndex(affected);
+    this.suggestionCatalogCache = null;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return page;
+  }
+
+  /**
+   * Remove relationship evidence that was stored in YAML for one host/target pair. Generic Obsidian
+   * link evidence is removed only when the caller has verified that no Markdown-body occurrence
+   * remains after the YAML edit.
+   */
+  removePropertyReferenceEvidence(storagePath: string, targetPath: string, removeGenericLinkEvidence: boolean): boolean {
+    const source = this.get(storagePath);
+    const target = this.get(targetPath);
+    if (!source || !target) return false;
+    const removed = this.state.evidence.removeDeclarationsTouching(targetPath, (item) => {
+      if (item.declaredByPath !== storagePath || item.declaredTargetPath !== targetPath) return false;
+      if (item.sourceKind === "frontmatter-ontology" || item.sourceKind === "date-property") return true;
+      return removeGenericLinkEvidence && (item.sourceKind === "obsidian-link" || item.sourceKind === "unresolved-link");
+    });
+    if (!removed) return false;
+    resolveEvidencePair(this.state.pages, this.state.evidence, storagePath, targetPath);
+    resolveEvidencePair(this.state.pages, this.state.evidence, targetPath, storagePath);
+    this.invalidatePatchedPages(new Set([storagePath, targetPath]));
+    this.patchSearchIndex(new Set([storagePath, targetPath]));
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return true;
+  }
+
+  /** Remove an unresolved node only when no declaration anywhere in the graph still references it. */
+  removeVirtualPageIfUnreferenced(path: string): boolean {
+    const page = this.get(path);
+    if (!page || page.file || page.isFolder || page.isTag || page.url) return false;
+    if (this.state.evidence.declarationsTouching(page.path).length) return false;
+
+    this.state.pages.delete(page.path);
+    this.state.lowercasePathMap.delete(page.path.toLowerCase());
+    this.fieldCache.delete(page.path);
+    this.semanticFingerprints.delete(page.path);
+    this.titleCache.delete(page.path);
+    this.nodeVisualCache.delete(page.path);
+    this.searchCandidateCache.clear();
+    const searchEntry = this.searchEntryByPath.get(page.path);
+    this.searchEntryByPath.delete(page.path);
+    if (searchEntry) this.searchEntries = this.searchEntries.filter((entry) => entry !== searchEntry);
+    this.searchEntryPointPaths = this.searchEntryPointPaths.filter((candidate) => candidate !== page.path);
+    this.restoredModifiedMarkdownPaths = this.restoredModifiedMarkdownPaths.filter((candidate) => candidate !== page.path);
+    this.suggestionCatalogCache = null;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return true;
+  }
+
+  /** Insert an unresolved/virtual note immediately so a placeholder relationship can appear in
+   * the live Plex without creating a file or waiting for MetadataCache to rediscover the link. */
+  insertVirtualPage(rawPath: string): GraphPage {
+    const path = normalizePath(rawPath.trim());
+    const existing = this.get(path);
+    if (existing) return existing;
+    const name = path.split("/").pop()?.replace(/\.md$/i, "") || path;
+    const page: GraphPage = {
+      path, file: null, name, url: null, isFolder: false, isTag: false, mtime: null,
+      neighbours: new Map(), aliases: [], tags: [], noteType: null,
+      primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
+    };
+    this.state.pages.set(path, page);
+    this.state.lowercasePathMap.set(path.toLowerCase(), path);
+    this.invalidatePatchedPages(new Set([path]));
+    this.patchSearchIndex(new Set([path]));
+    this.suggestionCatalogCache = null;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return page;
+  }
+
+  /**
    * Optimistically materialize a file K-Plex itself just created. The normal Obsidian metadata
    * event remains authoritative and may enrich this page later, but UI rendering no longer waits
    * for that asynchronous round trip.
@@ -1672,6 +1829,19 @@ export class GraphIndex {
     return role === "sibling" ? [] : this.relationView(page).roles[role];
   }
 
+  /** Return semantic parent pages without applying presentation visibility filters. Creation flows
+   * use this to resolve a ghost note's destination from every parent that actually defines it, even
+   * when one of those parents is currently outside the rendered Plex. */
+  semanticParentPages(page: GraphPage): GraphPage[] {
+    const result: GraphPage[] = [];
+    for (const relation of page.neighbours.values()) {
+      if (relation.isHidden) continue;
+      if (classifyRelation(relation, "parent", this.plugin.settings.inferAllLinksAsFriends) === null) continue;
+      result.push(relation.target);
+    }
+    return result;
+  }
+
   /** Resolve visible semantic relationships from one page to a supplied set of already-visible
    * targets. Cross-link layout calls this once per displayed page, so work scales with graph
    * degree rather than with every possible pair of visible nodes. */
@@ -1772,11 +1942,53 @@ export class GraphIndex {
     return result;
   }
 
+  private displayNameFromConfiguredFields(page: GraphPage): string | null {
+    if (!this.plugin.settings.renderAlias) return null;
+    const fields = this.plugin.settings.nameFields
+      .split(",")
+      .map((field) => field.trim())
+      .filter(Boolean);
+    if (!fields.length) return null;
+
+    const firstTextValue = (value: unknown): string | null => {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const candidate = firstTextValue(item);
+          if (candidate) return candidate;
+        }
+        return null;
+      }
+      if (typeof value !== "string") return null;
+      const text = value.trim();
+      return text || null;
+    };
+
+    const frontmatter = page.file ? this.app.metadataCache.getFileCache(page.file)?.frontmatter : null;
+    for (const requested of fields) {
+      const normalized = normalizeFieldName(requested);
+      // Using `aliases` must be byte-for-byte equivalent to the historical Render aliases behavior.
+      if (normalized === "aliases" || normalized === "alias") {
+        const alias = page.aliases.find((value) => value.trim().length > 0);
+        if (alias) return alias.trim();
+        continue;
+      }
+      if (!frontmatter) continue;
+      for (const [key, value] of Object.entries(frontmatter)) {
+        if (key === "position" || normalizeFieldName(key) !== normalized) continue;
+        const candidate = firstTextValue(value);
+        if (candidate) return candidate;
+        break;
+      }
+    }
+    return null;
+  }
+
   titleFor(page: GraphPage): string {
     const settings = this.plugin.settings;
     const signature = [
       page.mtime ?? 0,
       settings.renderAlias ? "1" : "0",
+      settings.nameFields,
       settings.nodeTitleScript,
       page.aliases[0] ?? "",
       page.name,
@@ -1788,7 +2000,7 @@ export class GraphIndex {
 
     // Custom JavaScript title expressions from legacy ExcaliBrain settings are intentionally not
     // executed. Community plugins must remain statically analyzable and must not execute user-provided JavaScript.
-    const title = settings.renderAlias && page.aliases.length ? page.aliases[0] : page.name;
+    const title = this.displayNameFromConfiguredFields(page) ?? page.name;
     this.titleCache.set(page.path, { signature, title });
     return title;
   }

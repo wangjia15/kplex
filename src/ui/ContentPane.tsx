@@ -52,7 +52,7 @@ export function ContentPane({ plugin, index, page, owner, onOpen, onActivate }: 
       <div className="excalibrain-content-path">{page.path}</div>
       <div className="excalibrain-content-actions">
         {(page.file || page.url) && <button onClick={onOpen}>Open</button>}
-        {!page.file && !page.url && !page.isFolder && !page.isTag && <button onClick={() => void plugin.createGhostNote(page.path)}>Create note</button>}
+        {!page.file && !page.url && !page.isFolder && !page.isTag && <button onClick={() => void plugin.createGhostNote(page)}>Create note</button>}
       </div>
     </header>
 

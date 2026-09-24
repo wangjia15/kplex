@@ -35,6 +35,9 @@ type ConnectDrag = {
   gate: GateSide;
   pointerId: number;
   current: Point;
+  startClientX: number;
+  startClientY: number;
+  moved: boolean;
 };
 type NodeDrag = {
   path: string;
@@ -1510,14 +1513,22 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (!connectDrag) return new Set<string>();
     const origin = index.get(connectDrag.originPath);
     if (!origin) return new Set<string>();
+    if (origin.isFolder) {
+      // A folder's child gate is a creation gesture, not a relationship gesture. Dim all other
+      // nodes while dragging because the drop position does not select a relationship target.
+      return new Set(scene.nodes.map((node) => node.page.path).filter((path) => path !== origin.path));
+    }
     const blocked = index.gateNeighbourPaths(origin, connectDrag.gate);
-    // Folder and tag thoughts can be navigated and can become the center thought, but they are
-    // structural nodes rather than writable relationship endpoints. Never offer drag-linking to them.
+    // Tags are never writable relationship endpoints. Folders remain valid drop targets for the
+    // secondary file-only creation gesture that starts from a regular note gate.
     for (const node of scene.nodes) {
-      if (node.page.isFolder || node.page.isTag) blocked.add(node.page.path);
+      if (node.page.isFolder) blocked.delete(node.page.path);
+      else if (node.page.isTag) blocked.add(node.page.path);
     }
     if (!origin.file || origin.file.extension !== "md") {
-      for (const node of scene.nodes) if (!node.page.file || node.page.file.extension !== "md") blocked.add(node.page.path);
+      for (const node of scene.nodes) {
+        if (!node.page.isFolder && (!node.page.file || node.page.file.extension !== "md")) blocked.add(node.page.path);
+      }
     }
     blocked.delete(origin.path);
     return blocked;
@@ -1537,12 +1548,27 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const startGateDrag = (node: PositionedNode, gate: GateSide, event: PointerEvent<HTMLSpanElement>) => {
     // Touch gestures are exclusively reserved for canvas navigation. A finger on a gate must not
     // start relationship creation because that competes with one-finger pan and two-finger pinch.
-    if (event.pointerType === "touch" || event.button !== 0 || node.page.isFolder || node.page.isTag || node.page.transient) return;
+    const folderChildCreation = node.page.isFolder && gate === "bottom";
+    if (
+      event.pointerType === "touch"
+      || event.button !== 0
+      || node.page.isTag
+      || node.page.transient
+      || (node.page.isFolder && !folderChildCreation)
+    ) return;
     event.preventDefault();
     event.stopPropagation();
     clearHoverIntent(false);
     setHover({ kind: "gate", path: node.page.path, gate });
-    setConnectDrag({ originPath: node.page.path, gate, pointerId: event.pointerId, current: toWorld(event.clientX, event.clientY) });
+    setConnectDrag({
+      originPath: node.page.path,
+      gate,
+      pointerId: event.pointerId,
+      current: toWorld(event.clientX, event.clientY),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      moved: false,
+    });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -1680,7 +1706,11 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const move = (e: PointerEvent<HTMLDivElement>) => {
     if (connectDrag) {
       if (e.pointerId !== connectDrag.pointerId) return;
-      setConnectDrag((current) => current ? { ...current, current: toWorld(e.clientX, e.clientY) } : null);
+      setConnectDrag((current) => current ? {
+        ...current,
+        current: toWorld(e.clientX, e.clientY),
+        moved: current.moved || Math.hypot(e.clientX - current.startClientX, e.clientY - current.startClientY) > 6,
+      } : null);
       return;
     }
     if (nodeDrag) {
@@ -1738,6 +1768,13 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (connectDrag && e.pointerId === connectDrag.pointerId) {
       const drag = connectDrag;
       const origin = index.get(drag.originPath);
+      if (origin?.isFolder && drag.gate === "bottom") {
+        setConnectDrag(null);
+        clearHoverIntent(true);
+        suppressActivateUntil.current = Date.now() + 180;
+        if (drag.moved) plugin.openCreateInFolderModal(origin, hostLeaf);
+        return;
+      }
       const hit = e.currentTarget.ownerDocument.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       const targetEl = hit?.closest<HTMLElement>("[data-kplex-path]") ?? null;
       const targetGateEl = hit?.closest<HTMLElement>("[data-kplex-gate]") ?? null;
@@ -1749,12 +1786,15 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       const semanticRole = targetGate
         ? plugin.inverseGateRole(semanticRoleForGate(targetGate))
         : semanticRoleForGate(drag.gate);
-      const disabledTarget = Boolean(target?.isFolder || target?.isTag);
-      const fixedTarget = target && target.path !== drag.originPath && !connectBlockedPaths.has(target.path) ? target : undefined;
+      const fixedTarget = target && !target.isFolder && !target.isTag && target.path !== drag.originPath && !connectBlockedPaths.has(target.path) ? target : undefined;
       setConnectDrag(null);
       clearHoverIntent(true);
       suppressActivateUntil.current = Date.now() + 180;
-      if (origin && !disabledTarget) {
+      if (origin && target?.isFolder) {
+        plugin.openCreateInFolderModal(target, hostLeaf);
+        return;
+      }
+      if (origin && !target?.isTag) {
         plugin.openRelationModal({
           hostLeaf,
           mode: "create",
@@ -1939,6 +1979,17 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         .setTitle(pinned ? "Unpin note" : "Pin note")
         .setIcon(pinned ? "pin-off" : "pin")
         .onClick(() => void plugin.togglePinned(persistent.path)));
+    }
+
+    if (persistent && !persistent.isFolder && !persistent.isTag && !persistent.url &&
+        (!persistent.file || persistent.file.extension === "md") && page.transient?.kind !== "section") {
+      menu.addSeparator();
+      menu.addItem((item) => item
+        .setTitle(persistent.file ? "Delete note…" : "Delete placeholder…")
+        .setIcon("trash-2")
+        .onClick(() => {
+          void plugin.deleteNode(persistent, hostLeaf, isCenter).then(() => clearHoverIntent(true));
+        }));
     }
 
     if (isCenter && isMarkdown && persistent && !page.transient && canExpand) {
