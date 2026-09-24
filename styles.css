@@ -2041,6 +2041,9 @@
   background: var(--background-primary-alt, var(--background-primary));
   box-shadow: 0 18px 56px rgba(0,0,0,.58);
 }
+/* Obsidian's styled tooltip is also portalled outside the filter panel. While this overlay is
+   open, keep those tooltips one layer above it instead of letting the panel cover them. */
+body.kplex-filter-panel-open .tooltip { z-index: 100300; }
 .kplex-filter-portal button { justify-self: auto; }
 .kplex-lens-heading-actions { display: flex; align-items: center; gap: 6px; }
 .kplex-lens-disable-all {
@@ -2758,5 +2761,57 @@
     top: 3px;
     bottom: 3px;
     left: 5px;
+  }
+}
+
+/* Follow-up polish: keep the filename/alias pair visually aligned. */
+.kplex-create-alias-input {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  line-height: 38px;
+}
+
+/* Obsidian Mobile/iPad can impose large native button metrics inside modals. Keep the
+   relationship actions compact and make their Lucide glyphs explicit so the buttons do not
+   turn into large empty tap targets. */
+.kplex-relation-modal .kplex-relation-actions {
+  flex: 0 0 auto;
+  min-height: 0;
+  height: auto;
+  padding-bottom: 0;
+}
+.kplex-relation-modal .kplex-relation-actions button {
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  padding: 0;
+  line-height: 1;
+}
+.kplex-relation-modal .kplex-relation-actions .kplex-lucide,
+.kplex-relation-modal .kplex-relation-actions svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  min-height: 17px;
+  stroke: currentColor;
+  color: inherit;
+}
+@media (pointer: coarse) {
+  .kplex-relation-modal .kplex-relation-actions {
+    position: static;
+    margin-top: 10px;
+    padding-top: 0;
+    padding-bottom: 0;
+    align-items: center;
   }
 }

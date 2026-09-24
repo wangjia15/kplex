@@ -65,6 +65,23 @@ const EVIDENCE_SOURCE_CHOICES: Choice[] = [
 ];
 const BOOLEAN_CHOICES: Choice[] = [{ value: "true", label: "Active" }, { value: "false", label: "Suppressed" }];
 
+const openFilterPanels = new WeakMap<Document, number>();
+
+function registerOpenFilterPanel(doc: Document): () => void {
+  const count = (openFilterPanels.get(doc) ?? 0) + 1;
+  openFilterPanels.set(doc, count);
+  doc.body.classList.add("kplex-filter-panel-open");
+  return () => {
+    const next = Math.max(0, (openFilterPanels.get(doc) ?? 1) - 1);
+    if (next > 0) {
+      openFilterPanels.set(doc, next);
+      return;
+    }
+    openFilterPanels.delete(doc);
+    doc.body.classList.remove("kplex-filter-panel-open");
+  };
+}
+
 const FIELD_OPTIONS: Record<GraphLensScope, Array<{ value: GraphLensSimpleField; label: string; title?: string }>> = {
   node: [
     { value: "node.label", label: "Title" },
@@ -305,6 +322,7 @@ export function PlexFilter({
   useEffect(() => {
     if (!open || !triggerRef.current) return;
     const doc = triggerRef.current.ownerDocument;
+    const releaseFilterLayer = registerOpenFilterPanel(doc);
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target && (triggerRef.current?.contains(target) || panelRef.current?.contains(target))) return;
@@ -316,6 +334,7 @@ export function PlexFilter({
     return () => {
       doc.removeEventListener("pointerdown", onPointerDown, true);
       doc.removeEventListener("keydown", onKeyDown, true);
+      releaseFilterLayer();
     };
   }, [open]);
 
@@ -488,6 +507,40 @@ export function PlexFilter({
     <datalist id={folderListId}>{suggestions.folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
 
     <section className="kplex-filter-section">
+      <div className="kplex-filter-section-heading">Visibility</div>
+      <div className="kplex-filter-visibility-grid">
+        {[
+          ["showPageNodes", "Markdown", "Show or hide Markdown notes"],
+          ["showAttachments", "Attachments", "Show or hide attachment nodes"],
+          ["showFolderNodes", "Folders", "Show or hide folder nodes"],
+          ["showTagNodes", "Tags", "Show or hide tag nodes"],
+          ["showURLNodes", "Web links", "Show or hide web-link nodes"],
+          ["showVirtualNodes", "Placeholders", "Show or hide placeholder notes"],
+          ["showInferredNodes", "Inferred", "Show or hide inferred relationships and nodes"],
+        ].map(([key, label, tooltip]) => <label key={key} className="kplex-filter-layout-toggle" aria-label={tooltip} data-tooltip-position="top" data-kplex-long-press-tooltip>
+          <span>{label}</span>
+          <input
+            type="checkbox"
+            checked={visibility[key as PlexVisibilitySetting]}
+            aria-label={`Show ${label.toLocaleLowerCase()}`}
+            onChange={() => onVisibilityChange(key as PlexVisibilitySetting)}
+          />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>)}
+        <label className="kplex-filter-layout-toggle" aria-label="Show or hide sibling nodes" data-tooltip-position="top" data-kplex-long-press-tooltip>
+          <span>Siblings</span>
+          <input type="checkbox" checked={showSiblings} aria-label="Show siblings" onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>
+        <label className="kplex-filter-layout-toggle" aria-label="Show or hide connections between peripheral nodes" data-tooltip-position="top" data-kplex-long-press-tooltip>
+          <span>Cross-links</span>
+          <input type="checkbox" checked={value.showCrossLinks} aria-label="Show cross-links" onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>
+      </div>
+    </section>
+
+    <section className="kplex-filter-section">
       <div className="kplex-filter-section-heading">Node order</div>
       <label>Sort within each zone<select value={sortOrder} onChange={(event) => onSortOrderChange(event.currentTarget.value as NodeSortOrder)}>
         <option value="name-asc">Name · A → Z</option>
@@ -656,39 +709,6 @@ export function PlexFilter({
       </div>}
     </section>
 
-    <section className="kplex-filter-section">
-      <div className="kplex-filter-section-heading">Visibility</div>
-      <div className="kplex-filter-visibility-grid">
-        {[
-          ["showPageNodes", "Markdown", "Show or hide Markdown notes"],
-          ["showAttachments", "Attachments", "Show or hide attachment nodes"],
-          ["showFolderNodes", "Folders", "Show or hide folder nodes"],
-          ["showTagNodes", "Tags", "Show or hide tag nodes"],
-          ["showURLNodes", "Web links", "Show or hide web-link nodes"],
-          ["showVirtualNodes", "Placeholders", "Show or hide placeholder notes"],
-          ["showInferredNodes", "Inferred", "Show or hide inferred relationships and nodes"],
-        ].map(([key, label, tooltip]) => <label key={key} className="kplex-filter-layout-toggle" aria-label={tooltip} data-tooltip-position="top" data-kplex-long-press-tooltip>
-          <span>{label}</span>
-          <input
-            type="checkbox"
-            checked={visibility[key as PlexVisibilitySetting]}
-            aria-label={`Show ${label.toLocaleLowerCase()}`}
-            onChange={() => onVisibilityChange(key as PlexVisibilitySetting)}
-          />
-          <span className="kplex-filter-switch" aria-hidden="true" />
-        </label>)}
-        <label className="kplex-filter-layout-toggle" aria-label="Show or hide sibling nodes" data-tooltip-position="top" data-kplex-long-press-tooltip>
-          <span>Siblings</span>
-          <input type="checkbox" checked={showSiblings} aria-label="Show siblings" onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
-          <span className="kplex-filter-switch" aria-hidden="true" />
-        </label>
-        <label className="kplex-filter-layout-toggle" aria-label="Show or hide connections between peripheral nodes" data-tooltip-position="top" data-kplex-long-press-tooltip>
-          <span>Cross-links</span>
-          <input type="checkbox" checked={value.showCrossLinks} aria-label="Show cross-links" onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
-          <span className="kplex-filter-switch" aria-hidden="true" />
-        </label>
-      </div>
-    </section>
   </div> : null;
 
   const portalTarget = triggerRef.current?.ownerDocument.body ?? (typeof document !== "undefined" ? document.body : null);

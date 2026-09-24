@@ -1,4 +1,4 @@
-import { Modal, Notice, TFile, getIcon, type WorkspaceLeaf } from "obsidian";
+import { Modal, Notice, TFile, setIcon, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GateRole, GateSide, GraphPage, LinkDirection } from "../types";
 
@@ -35,10 +35,8 @@ function gateForRole(role: GateRole): GateSide {
 }
 
 function addIcon(el: HTMLElement, name: string): void {
-  const icon = getIcon(name);
-  if (!icon) return;
-  icon.classList.add("kplex-lucide");
-  el.prepend(icon);
+  setIcon(el, name);
+  el.querySelector("svg")?.classList.add("kplex-lucide");
 }
 
 export class RelationModal extends Modal {
