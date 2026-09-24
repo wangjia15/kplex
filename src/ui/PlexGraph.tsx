@@ -60,6 +60,9 @@ const EMPTY_SCROLLS: ScrollValues = { parent: 0, child: 0, left: 0, right: 0, si
 const GATE_GAP = 3;
 const MAX_ZOOM = 3;
 const IOS_MAX_ZOOM = 1.85;
+const TOUCH_GATE_LONG_PRESS_MS = 420;
+const NODE_RELINK_MIN_DRAG_PX = 36;
+const NODE_RELINK_HYSTERESIS_PX = 48;
 const COLUMN_PRESETS: ReadonlyArray<readonly [number, number]> = [
   [1, 1], [1, 2], [1, 3], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7],
 ];
@@ -211,9 +214,19 @@ function semanticRoleForGate(gate: GateSide): GateRole {
   }
 }
 
-function semanticRoleForPosition(point: Point): GateRole {
-  if (Math.abs(point.x) > Math.abs(point.y)) return point.x < 0 ? "left" : "right";
-  return point.y < 0 ? "parent" : "child";
+function semanticRoleForPosition(point: Point, currentRole?: GateRole, hysteresis = 0): GateRole {
+  const scores: Record<GateRole, number> = {
+    parent: -point.y,
+    child: point.y,
+    left: -point.x,
+    right: point.x,
+  };
+  if (currentRole) scores[currentRole] += hysteresis;
+  let best: GateRole = "parent";
+  for (const role of ["child", "left", "right"] as GateRole[]) {
+    if (scores[role] > scores[best]) best = role;
+  }
+  return best;
 }
 
 function normalizedRole(role: Role | "center"): GateRole | null {
@@ -809,12 +822,30 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     edgeId?: string;
   } | null>(null);
 
+  const pendingGateLongPress = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    timer: number;
+    element: HTMLSpanElement;
+    nodePath: string;
+    gate: GateSide;
+  } | null>(null);
+
   const cancelTouchLongPress = () => {
     if (touchLongPress.current) window.clearTimeout(touchLongPress.current.timer);
     touchLongPress.current = null;
   };
 
-  useEffect(() => () => cancelTouchLongPress(), []);
+  const cancelPendingGateLongPress = () => {
+    if (pendingGateLongPress.current) window.clearTimeout(pendingGateLongPress.current.timer);
+    pendingGateLongPress.current = null;
+  };
+
+  useEffect(() => () => {
+    cancelTouchLongPress();
+    cancelPendingGateLongPress();
+  }, []);
 
   useEffect(() => plugin.subscribeRelationshipFlair((path) => {
     if (flairClearTimer.current !== null) window.clearTimeout(flairClearTimer.current);
@@ -1546,16 +1577,41 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   }, [connectDrag, visibleEdges]);
 
   const startGateDrag = (node: PositionedNode, gate: GateSide, event: PointerEvent<HTMLSpanElement>) => {
-    // Touch gestures are exclusively reserved for canvas navigation. A finger on a gate must not
-    // start relationship creation because that competes with one-finger pan and two-finger pinch.
     const folderChildCreation = node.page.isFolder && gate === "bottom";
-    if (
-      event.pointerType === "touch"
-      || event.button !== 0
-      || node.page.isTag
-      || node.page.transient
-      || (node.page.isFolder && !folderChildCreation)
-    ) return;
+    if (event.button !== 0 || node.page.isTag || node.page.transient || (node.page.isFolder && !folderChildCreation)) return;
+
+    if (event.pointerType === "touch") {
+      cancelPendingGateLongPress();
+      const element = event.currentTarget;
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const timer = window.setTimeout(() => {
+        const pending = pendingGateLongPress.current;
+        if (!pending || pending.pointerId !== pointerId || touchPointers.current.size > 1 || pinchGesture.current) return;
+        pendingGateLongPress.current = null;
+        cancelTouchLongPress();
+        panDrag.current = null;
+        touchPointers.current.delete(pointerId);
+        if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
+        suppressActivateUntil.current = Date.now() + 220;
+        clearHoverIntent(false);
+        setHover({ kind: "gate", path: pending.nodePath, gate: pending.gate });
+        setConnectDrag({
+          originPath: pending.nodePath,
+          gate: pending.gate,
+          pointerId,
+          current: toWorld(startX, startY),
+          startClientX: startX,
+          startClientY: startY,
+          moved: false,
+        });
+        try { pending.element.setPointerCapture(pointerId); } catch { /* Pointer can already be captured by WebKit. */ }
+      }, TOUCH_GATE_LONG_PRESS_MS);
+      pendingGateLongPress.current = { pointerId, startX, startY, timer, element, nodePath: node.page.path, gate };
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     clearHoverIntent(false);
@@ -1573,10 +1629,11 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   };
 
   const startNodeDrag = (node: PositionedNode, event: PointerEvent<HTMLDivElement>) => {
-    // Relationship reclassification is a precision mouse/pen gesture. A finger always belongs to
-    // canvas navigation so touch-dragging a thought never accidentally rewrites ontology.
-    if (event.pointerType === "touch" || event.button !== 0 || !normalizedRole(node.role) || node.page.isFolder || node.page.isTag || node.page.transient || neighborhood?.center.isFolder || neighborhood?.center.isTag) return;
+    const target = event.target as Element;
+    if (target.closest("[data-kplex-gate], button")) return;
+    if (event.button !== 0 || !normalizedRole(node.role) || node.page.isFolder || node.page.isTag || node.page.transient || neighborhood?.center.isFolder || neighborhood?.center.isTag) return;
     clearHoverIntent(true);
+    event.preventDefault();
     event.stopPropagation();
     const world = toWorld(event.clientX, event.clientY);
     const displayed = renderedNodeMap.get(node.page.path) ?? node;
@@ -1592,6 +1649,28 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       moved: false,
     });
     event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (event.pointerType === "touch") {
+      cancelTouchLongPress();
+      touchPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      viewport.current?.classList.add("is-touch-gesturing");
+      const element = event.currentTarget;
+      const pointerId = event.pointerId;
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+      const timer = window.setTimeout(() => {
+        const pending = touchLongPress.current;
+        if (!pending || pending.pointerId !== pointerId || pending.nodePath !== node.page.path) return;
+        touchLongPress.current = null;
+        setNodeDrag(null);
+        touchPointers.current.delete(pointerId);
+        if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
+        suppressActivateUntil.current = Date.now() + 650;
+        try { element.releasePointerCapture(pointerId); } catch { /* Capture may already be released. */ }
+        showNodeContextMenuAt(node, clientX, clientY);
+      }, 520);
+      touchLongPress.current = { pointerId, startX: clientX, startY: clientY, timer, nodePath: node.page.path };
+    }
   };
 
   const beginPinch = () => {
@@ -1625,7 +1704,22 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   };
 
   const down = (e: PointerEvent<HTMLDivElement>) => {
-    if (connectDrag || nodeDrag) return;
+    if (connectDrag) return;
+    if (nodeDrag) {
+      if (e.pointerType !== "touch" || e.pointerId === nodeDrag.pointerId) return;
+      if (touchLongPress.current?.pointerId === nodeDrag.pointerId) cancelTouchLongPress();
+      setNodeDrag(null);
+      touchPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      viewport.current?.classList.add("is-touch-gesturing");
+      if (touchPointers.current.size >= 2) {
+        cancelPendingGateLongPress();
+        panDrag.current = null;
+        beginPinch();
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const target = e.target as Element;
     if (target.closest(".excalibrain-zoom-controls, .kplex-zone-tools, .kplex-layout-controls, .kplex-filter-panel, input, select, textarea, button")) return;
 
@@ -1650,8 +1744,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
 
       // Obsidian Mobile/browser native long-press menus are unreliable once K-Plex owns the
       // touch stream (which it must do to prevent workspace edge/top swipe gestures). Provide an
-      // explicit long-press gesture for thought and connector context menus instead. Gates are
-      // excluded: a gate touch always remains a camera gesture.
+      // explicit long-press gesture for thought and connector context menus instead. Gate touches
+      // are handled separately: a stationary hold becomes a relationship drag, while movement
+      // before the hold remains a camera gesture.
       cancelTouchLongPress();
       const gateEl = target.closest("[data-kplex-gate]");
       const nodeEl = !gateEl ? target.closest<HTMLElement>("[data-kplex-path]") : null;
@@ -1681,6 +1776,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
 
       if (touchPointers.current.size >= 2) {
         cancelTouchLongPress();
+        cancelPendingGateLongPress();
         panDrag.current = null;
         beginPinch();
       } else {
@@ -1716,7 +1812,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (nodeDrag) {
       if (e.pointerId !== nodeDrag.pointerId) return;
       const world = toWorld(e.clientX, e.clientY);
+      if (e.pointerType === "touch") touchPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const moved = nodeDrag.moved || Math.hypot(e.clientX - nodeDrag.startClientX, e.clientY - nodeDrag.startClientY) > 6;
+      if (moved && touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
       setNodeDrag((current) => current ? { ...current, x: world.x - current.offsetX, y: world.y - current.offsetY, moved } : null);
       return;
     }
@@ -1725,12 +1823,19 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       e.preventDefault();
       e.stopPropagation();
       touchPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pendingGate = pendingGateLongPress.current;
+      if (pendingGate && pendingGate.pointerId === e.pointerId) {
+        const gateDistance = Math.hypot(e.clientX - pendingGate.startX, e.clientY - pendingGate.startY);
+        if (gateDistance > 10) cancelPendingGateLongPress();
+        else return; // Keep a deliberate gate hold stationary until it is promoted to a connector drag.
+      }
       const pendingLongPress = touchLongPress.current;
       if (pendingLongPress && pendingLongPress.pointerId === e.pointerId && Math.hypot(e.clientX - pendingLongPress.startX, e.clientY - pendingLongPress.startY) > 10) {
         cancelTouchLongPress();
       }
       if (touchPointers.current.size >= 2) {
         cancelTouchLongPress();
+        cancelPendingGateLongPress();
         if (!pinchGesture.current) beginPinch();
         const pinch = pinchGesture.current;
         const points = [...touchPointers.current.values()];
@@ -1765,6 +1870,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   };
 
   const up = (e: PointerEvent<HTMLDivElement>) => {
+    if (pendingGateLongPress.current?.pointerId === e.pointerId) cancelPendingGateLongPress();
     if (connectDrag && e.pointerId === connectDrag.pointerId) {
       const drag = connectDrag;
       const origin = index.get(drag.originPath);
@@ -1808,15 +1914,21 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     }
     if (nodeDrag && e.pointerId === nodeDrag.pointerId) {
       const drag = nodeDrag;
+      if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
       const original = scene.nodes.find((node) => node.page.path === drag.path);
+      const dragDistance = Math.hypot(e.clientX - drag.startClientX, e.clientY - drag.startClientY);
       if (drag.moved) {
         suppressActivateUntil.current = Date.now() + 220;
         const draggedNode = renderedNodeMap.get(drag.path);
         const center = neighborhood?.center;
-        if (draggedNode && original && center) {
-          const nextRole = semanticRoleForPosition({ x: draggedNode.x, y: draggedNode.y });
-          const currentRole = normalizedRole(original.role);
-          if (currentRole && nextRole !== currentRole) {
+        const currentRole = original ? normalizedRole(original.role) : null;
+        if (dragDistance >= NODE_RELINK_MIN_DRAG_PX && draggedNode && original && center && currentRole) {
+          const nextRole = semanticRoleForPosition(
+            { x: draggedNode.x, y: draggedNode.y },
+            currentRole,
+            NODE_RELINK_HYSTERESIS_PX / Math.max(0.3, camera.current.scale),
+          );
+          if (nextRole !== currentRole) {
             plugin.openRelationModal({
               hostLeaf,
               mode: "relink",
@@ -1849,6 +1961,10 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         onActivate(original.page);
       }
       setNodeDrag(null);
+      if (e.pointerType === "touch") {
+        touchPointers.current.delete(e.pointerId);
+        if (touchPointers.current.size === 0) viewport.current?.classList.remove("is-touch-gesturing");
+      }
       return;
     }
     if (e.pointerType === "touch" && touchPointers.current.has(e.pointerId)) {
@@ -1900,11 +2016,15 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   };
 
   const cancel = (e: PointerEvent<HTMLDivElement>) => {
+    if (pendingGateLongPress.current?.pointerId === e.pointerId) cancelPendingGateLongPress();
     if (connectDrag?.pointerId === e.pointerId) {
       setConnectDrag(null);
       clearHoverIntent(true);
     }
-    if (nodeDrag?.pointerId === e.pointerId) setNodeDrag(null);
+    if (nodeDrag?.pointerId === e.pointerId) {
+      if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
+      setNodeDrag(null);
+    }
     if (e.pointerType === "touch") {
       if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
       touchPointers.current.delete(e.pointerId);
@@ -1951,15 +2071,18 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     const canExpand = canExpandCentralSections(persistent, activePath);
     const menu = new Menu();
 
-    if (isMarkdown && persistent && page.transient?.kind !== "section") {
+    if (persistent && !persistent.isFolder && !persistent.isTag && !persistent.url && page.transient?.kind !== "section") {
       menu.addItem((item) => item
-        .setTitle("Link to note…")
-        .setIcon("link-2")
+        .setTitle("Add note…")
+        .setIcon("file-plus-2")
         .onClick(() => plugin.openRelationModal({
           hostLeaf,
-          mode: "create", origin: persistent, semanticRole: "child", allowRoleSelection: true,
+          mode: "create", origin: persistent, semanticRole: "child",
           onCommitted: () => clearHoverIntent(true),
         })));
+    }
+
+    if (isMarkdown && persistent && page.transient?.kind !== "section") {
       menu.addItem((item) => item
         .setTitle("Set note type…")
         .setIcon("tags")
@@ -2059,7 +2182,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     }
 
     const doc = viewport.current?.ownerDocument ?? document;
-    menu.showAtPosition({ x: clientX, y: clientY }, doc);
+    plugin.showKplexMenuAtPosition(menu, { x: clientX, y: clientY }, doc);
   };
 
   const showNodeContextMenu = (node: PositionedNode, event: MouseEvent<HTMLDivElement>): void => {
@@ -2107,7 +2230,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         }).catch(() => openDetails("sources"));
       }));
     const doc = viewport.current?.ownerDocument ?? document;
-    menu.showAtPosition({ x: clientX, y: clientY }, doc);
+    plugin.showKplexMenuAtPosition(menu, { x: clientX, y: clientY }, doc);
   };
 
   const renderNode = (baseNode: PositionedNode, displayNode: PositionedNode) => {

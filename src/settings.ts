@@ -207,7 +207,7 @@ export interface ExcaliBrainSettings {
   /** Last URL shown in the managed sidecar. Mutually exclusive with sidecarLastFilePath. */
   sidecarLastUrl: string;
   /** Remember the last ontology field used by each add-relationship action. */
-  relationDefaultFields: { parent: string; child: string; left: string; right: string };
+  relationDefaultFields: { parent: string; child: string; left: string; right: string; previous: string; next: string };
   /** How K-Plex is paired with a note tab. */
   documentSyncMode: DocumentSyncMode;
   /** Animation speed multiplier: 0 disables motion; 1 is normal; 2 is very fast. */
@@ -324,7 +324,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sidecarCondensedBreakpoint: 560,
   sidecarLastFilePath: "",
   sidecarLastUrl: "",
-  relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger" },
+  relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger", previous: "Previous", next: "Next" },
   documentSyncMode: "off",
   animationSpeed: 0.5,
   graphLenses: [],
@@ -473,6 +473,8 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
       child: String(old.relationDefaultFields?.child ?? DEFAULT_SETTINGS.relationDefaultFields.child),
       left: String(old.relationDefaultFields?.left ?? DEFAULT_SETTINGS.relationDefaultFields.left),
       right: String(old.relationDefaultFields?.right ?? DEFAULT_SETTINGS.relationDefaultFields.right),
+      previous: String(old.relationDefaultFields?.previous ?? DEFAULT_SETTINGS.relationDefaultFields.previous),
+      next: String(old.relationDefaultFields?.next ?? DEFAULT_SETTINGS.relationDefaultFields.next),
     },
     documentSyncMode,
     animationSpeed: Math.max(0, Math.min(2, finite(old.animationSpeed, 1))),

@@ -13,6 +13,7 @@ export enum LinkDirection {
 
 export type Role = "parent" | "child" | "left" | "right" | "previous" | "next" | "sibling";
 export type GateRole = "parent" | "child" | "left" | "right";
+export type RelationshipRole = Exclude<Role, "sibling">;
 export type GateSide = "top" | "bottom" | "left" | "right";
 export type ScrollZone = "parent" | "child" | "left" | "right" | "sibling";
 export type StrokeStyle = "solid" | "dashed" | "dotted";

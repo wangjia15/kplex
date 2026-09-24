@@ -7,7 +7,7 @@ import { NewRelatedNoteModal } from "./ui/NewRelatedNoteModal";
 import { CreateFolderNoteModal } from "./ui/CreateFolderNoteModal";
 import { MaterializeGhostModal, type GhostMaterializationKind, type GhostMaterializationLocation } from "./ui/MaterializeGhostModal";
 import { DeleteNodeConfirmationModal, RemainingNodeReferencesModal, type RemainingNodeReference } from "./ui/DeleteNodeModal";
-import { LinkDirection, type GateRole, type GraphPage } from "./types";
+import { LinkDirection, type GateRole, type GraphPage, type RelationshipRole } from "./types";
 import { OntologySuggester } from "./editor/OntologySuggester";
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./index/fieldParser";
 import type { RelationEvidence } from "./index/RelationEvidence";
@@ -91,6 +91,15 @@ export default class ExcaliBrainPlugin extends Plugin {
   private readonly dirtyMarkdownPaths = new Set<string>();
   /** Rename-only metadata notifications are semantic no-ops when mtime/size are unchanged. */
   private readonly renameMetadataSuppressions = new Map<string, { mtime: number; size: number; until: number }>();
+  private activeKplexMenu: Menu | null = null;
+  private activeKplexMenuDocument: Document | null = null;
+  private readonly kplexMenuOutsidePointerDown = (event: PointerEvent): void => {
+    const target = event.target && typeof event.target === "object" && "closest" in event.target
+      ? event.target as Element
+      : null;
+    if (target?.closest(".menu")) return;
+    this.dismissKplexMenu();
+  };
 
   private runningExcaliBrainSettings(): unknown {
     // Obsidian does not currently expose the community-plugin registry as public API. The
@@ -391,6 +400,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.dismissKplexMenu();
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     if (this.startupInitializationTimer !== null) window.clearTimeout(this.startupInitializationTimer);
     for (const element of [...this.linkedLeafHighlightTimers.keys()]) this.clearLinkedLeafHighlight(element);
@@ -2300,6 +2310,31 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (this.index.setSearchEntryPoints([...new Set(paths)])) this.index.notify();
   }
 
+  dismissKplexMenu(): void {
+    this.activeKplexMenuDocument?.removeEventListener("pointerdown", this.kplexMenuOutsidePointerDown, true);
+    this.activeKplexMenuDocument = null;
+    this.activeKplexMenu?.hide();
+    this.activeKplexMenu = null;
+  }
+
+  private trackKplexMenu(menu: Menu, ownerDocument: Document): void {
+    this.dismissKplexMenu();
+    this.activeKplexMenu = menu;
+    this.activeKplexMenuDocument = ownerDocument;
+    ownerDocument.addEventListener("pointerdown", this.kplexMenuOutsidePointerDown, true);
+  }
+
+  showKplexMenuAtMouseEvent(menu: Menu, event: MouseEvent): void {
+    const ownerDocument = event.view?.document ?? document;
+    this.trackKplexMenu(menu, ownerDocument);
+    menu.showAtMouseEvent(event);
+  }
+
+  showKplexMenuAtPosition(menu: Menu, position: { x: number; y: number }, ownerDocument: Document): void {
+    this.trackKplexMenu(menu, ownerDocument);
+    menu.showAtPosition(position, ownerDocument);
+  }
+
   openSettings(): void {
     // Obsidian currently has no public Plugin API method for programmatically opening a
     // specific settings tab. Keep the internal bridge isolated and guarded so the rest of
@@ -2316,7 +2351,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   openRelationModal(options: RelationModalOptions): void {
     if (options.mode === "create" && !options.fixedTarget) {
-      new NewRelatedNoteModal(this, options.origin, options.semanticRole, options.onCommitted, options.allowRoleSelection === true, options.hostLeaf).open();
+      new NewRelatedNoteModal(this, options.origin, options.semanticRole, options.onCommitted, options.hostLeaf).open();
       return;
     }
     new RelationModal(this, options).open();
@@ -2334,16 +2369,24 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
   }
 
-  ontologyFieldsForRole(role: GateRole): string[] {
+  ontologyFieldsForRole(role: RelationshipRole): string[] {
     const h = this.settings.hierarchy;
     switch (role) {
       case "parent": return [...h.parents];
       case "child": return [...h.children];
-      // Previous/next occupy the same physical gates as the lateral ontologies, so they
-      // belong in the chooser for that direction even though they are asymmetric pairs.
-      case "left": return [...h.leftFriends, ...h.previous];
-      case "right": return [...h.rightFriends, ...h.next];
+      case "left": return [...h.leftFriends];
+      case "right": return [...h.rightFriends];
+      case "previous": return [...h.previous];
+      case "next": return [...h.next];
     }
+  }
+
+  inverseRelationshipRole(role: RelationshipRole): RelationshipRole {
+    if (role === "parent") return "child";
+    if (role === "child") return "parent";
+    if (role === "previous") return "next";
+    if (role === "next") return "previous";
+    return role;
   }
 
   inverseGateRole(role: GateRole): GateRole {
@@ -2367,7 +2410,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     return null;
   }
 
-  inverseOntologyField(field: string, semanticRole: GateRole): string {
+  inverseOntologyField(field: string, semanticRole: RelationshipRole): string {
     const group = this.ontologyRoleForField(field);
     const h = this.settings.hierarchy;
     switch (group) {
@@ -2379,31 +2422,33 @@ export default class ExcaliBrainPlugin extends Plugin {
       // property name when the relationship has to be stored on the opposite Markdown note.
       case "left":
       case "right": return field;
-      default: return this.defaultOntologyField(this.inverseGateRole(semanticRole));
+      default: return this.defaultOntologyField(this.inverseRelationshipRole(semanticRole));
     }
   }
 
-  defaultOntologyField(role: GateRole): string {
+  defaultOntologyField(role: RelationshipRole): string {
     const fields = this.ontologyFieldsForRole(role);
     const remembered = this.settings.relationDefaultFields?.[role]?.trim();
     if (remembered) {
       const canonical = fields.find((field) => normalizeFieldName(field) === normalizeFieldName(remembered));
       if (canonical) return canonical;
     }
-    const preferred: Record<GateRole, string[]> = {
+    const preferred: Record<RelationshipRole, string[]> = {
       parent: ["parent", "parents"],
       child: ["child", "children"],
       left: ["friend", "friends", "jump", "jumps"],
       right: ["challenger", "opposes"],
+      previous: ["previous", "prev"],
+      next: ["next"],
     };
     for (const candidate of preferred[role]) {
       const found = fields.find((field) => normalizeFieldName(field) === candidate);
       if (found) return found;
     }
-    return fields[0] ?? (role === "parent" ? "Parent" : role === "child" ? "Child" : role === "left" ? "Friend" : "Challenger");
+    return fields[0] ?? (role === "parent" ? "Parent" : role === "child" ? "Child" : role === "left" ? "Friend" : role === "right" ? "Challenger" : role === "previous" ? "Previous" : "Next");
   }
 
-  async rememberRelationshipOntology(role: GateRole, rawField: string): Promise<string> {
+  async rememberRelationshipOntology(role: RelationshipRole, rawField: string): Promise<string> {
     const trimmed = rawField.trim();
     if (!trimmed) return this.defaultOntologyField(role);
     const normalized = normalizeFieldName(trimmed);
@@ -2426,7 +2471,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         const next = list.filter((field) => normalizeFieldName(field) !== normalized);
         if (next.length !== list.length) { list.splice(0, list.length, ...next); hierarchyChanged = true; }
       }
-      const target = role === "parent" ? h.parents : role === "child" ? h.children : role === "left" ? h.leftFriends : h.rightFriends;
+      const target = role === "parent" ? h.parents : role === "child" ? h.children : role === "left" ? h.leftFriends : role === "right" ? h.rightFriends : role === "previous" ? h.previous : h.next;
       target.push(canonical);
       hierarchyChanged = true;
     }
@@ -2600,9 +2645,9 @@ export default class ExcaliBrainPlugin extends Plugin {
     await this.createRelationToPage(origin, semanticRole, selectedPage, selectedField);
   }
 
-  async createRelationToPage(origin: GraphPage, semanticRole: GateRole, target: GraphPage, selectedField: string): Promise<void> {
+  async createRelationToPage(origin: GraphPage, semanticRole: RelationshipRole, target: GraphPage, selectedField: string): Promise<void> {
     if (origin.path === target.path) return;
-    const gate = semanticRole === "parent" ? "top" : semanticRole === "child" ? "bottom" : semanticRole === "left" ? "left" : "right";
+    const gate = semanticRole === "parent" ? "top" : semanticRole === "child" ? "bottom" : semanticRole === "left" || semanticRole === "previous" ? "left" : "right";
     if (this.index.gateNeighbourPaths(origin, gate).has(target.path)) {
       new Notice("These nodes are already connected through this gate.", 1800);
       return;
@@ -2619,7 +2664,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.writeRelationship(origin.file, target, selectedField);
       this.index.applyRelationshipEdit(origin.path, target.path, semanticRole, selectedField);
     } else if (target.file?.extension === "md") {
-      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseRole = this.inverseRelationshipRole(semanticRole);
       const inverseField = this.inverseOntologyField(selectedField, semanticRole);
       await this.writeRelationship(target.file, origin, inverseField);
       this.index.applyRelationshipEdit(target.path, origin.path, inverseRole, inverseField);
@@ -2632,7 +2677,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   async addOntologyToConnection(
     center: GraphPage,
     neighbour: GraphPage,
-    semanticRole: GateRole,
+    semanticRole: RelationshipRole,
     selectedField: string,
     storagePathOverride: string | null = null,
   ): Promise<void> {
@@ -2653,7 +2698,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.addRelationshipOntology(centerFile, neighbour, selectedField);
       this.index.applyAdditionalRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
     } else if (storagePath === neighbourFile?.path && neighbourFile) {
-      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseRole = this.inverseRelationshipRole(semanticRole);
       const inverseField = this.inverseOntologyField(selectedField, semanticRole);
       await this.addRelationshipOntology(neighbourFile, center, inverseField);
       this.index.applyAdditionalRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
@@ -2661,7 +2706,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.addRelationshipOntology(centerFile, neighbour, selectedField);
       this.index.applyAdditionalRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
     } else if (neighbourFile) {
-      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseRole = this.inverseRelationshipRole(semanticRole);
       const inverseField = this.inverseOntologyField(selectedField, semanticRole);
       await this.addRelationshipOntology(neighbourFile, center, inverseField);
       this.index.applyAdditionalRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
@@ -2671,7 +2716,7 @@ export default class ExcaliBrainPlugin extends Plugin {
   async relinkCentralNeighbour(
     center: GraphPage,
     neighbour: GraphPage,
-    semanticRole: GateRole,
+    semanticRole: RelationshipRole,
     selectedField: string,
     existingDirection: LinkDirection | null = null,
     storagePathOverride: string | null = null,
@@ -2713,14 +2758,14 @@ export default class ExcaliBrainPlugin extends Plugin {
       await this.writeRelationship(centerFile, neighbour, selectedField);
       this.index.applyRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
     } else if (storagePath === neighbourFile?.path && neighbourFile) {
-      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseRole = this.inverseRelationshipRole(semanticRole);
       await this.writeRelationship(neighbourFile, center, inverseField);
       this.index.applyRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
     } else if (centerFile) {
       await this.writeRelationship(centerFile, neighbour, selectedField);
       this.index.applyRelationshipEdit(center.path, neighbour.path, semanticRole, selectedField);
     } else if (neighbourFile) {
-      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseRole = this.inverseRelationshipRole(semanticRole);
       await this.writeRelationship(neighbourFile, center, inverseField);
       this.index.applyRelationshipEdit(neighbour.path, center.path, inverseRole, inverseField);
     }
@@ -3445,7 +3490,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     return file;
   }
 
-  async linkNewRelatedFile(origin: GraphPage, semanticRole: GateRole, file: TFile, selectedField: string, rawAlias = ""): Promise<GraphPage> {
+  async linkNewRelatedFile(origin: GraphPage, semanticRole: RelationshipRole, file: TFile, selectedField: string, rawAlias = ""): Promise<GraphPage> {
     // K-Plex already knows the complete minimum fact set for a newly created node. Publish both the
     // page and relationship before awaiting processFrontMatter/MetadataCache, then let the normal
     // incremental path reconcile richer metadata in the background.
@@ -3462,7 +3507,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       return target;
     }
     if (target.file?.extension === "md") {
-      const inverseRole = this.inverseGateRole(semanticRole);
+      const inverseRole = this.inverseRelationshipRole(semanticRole);
       const inverseField = this.inverseOntologyField(selectedField, semanticRole);
       this.index.applyRelationshipEdit(target.path, origin.path, inverseRole, inverseField);
       try {
@@ -3478,7 +3523,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async createWebLinkRelatedPage(
     origin: GraphPage,
-    semanticRole: GateRole,
+    semanticRole: RelationshipRole,
     rawUrl: string,
     rawAlias: string,
     selectedField: string,
@@ -3513,7 +3558,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async createPlaceholderRelatedPage(
     origin: GraphPage,
-    semanticRole: GateRole,
+    semanticRole: RelationshipRole,
     rawName: string,
     selectedField: string,
   ): Promise<GraphPage | null> {

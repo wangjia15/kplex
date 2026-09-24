@@ -1,17 +1,19 @@
 import { Modal, Notice, type WorkspaceLeaf } from "obsidian";
-import { createElement, useMemo, useState } from "react";
+import { createElement, useEffect, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type ExcaliBrainPlugin from "../main";
-import type { GateRole, GraphPage } from "../types";
+import type { GraphPage, RelationshipRole } from "../types";
 import { FuzzySearchInput, fuzzyFilterStrings } from "./FuzzySearchInput";
 import { ObsidianIcon } from "./ObsidianIcon";
 
-const ROLE_LABEL: Record<GateRole, string> = {
-  parent: "Parent",
-  child: "Child",
-  left: "Friend",
-  right: "Challenger",
-};
+const RELATIONSHIP_ROLES: Array<{ value: RelationshipRole; label: string }> = [
+  { value: "child", label: "Child" },
+  { value: "parent", label: "Parent" },
+  { value: "left", label: "Friend" },
+  { value: "right", label: "Challenger" },
+  { value: "previous", label: "Previous" },
+  { value: "next", label: "Next" },
+];
 
 function isNoteTarget(page: GraphPage, originPath: string): boolean {
   if (page.path === originPath || page.isFolder || page.isTag || page.url) return false;
@@ -22,20 +24,18 @@ function RelatedNoteComposer({
   plugin,
   origin,
   initialRole,
-  allowRoleSelection,
   onCommitted,
   onClose,
   hostLeaf,
 }: {
   plugin: ExcaliBrainPlugin;
   origin: GraphPage;
-  initialRole: GateRole;
-  allowRoleSelection: boolean;
+  initialRole: RelationshipRole;
   onCommitted?: () => void;
   onClose: () => void;
   hostLeaf?: WorkspaceLeaf;
 }) {
-  const [role, setRole] = useState<GateRole>(initialRole);
+  const [role, setRole] = useState<RelationshipRole>(initialRole);
   const [query, setQuery] = useState("");
   const [alias, setAlias] = useState("");
   const [aliasFocused, setAliasFocused] = useState(false);
@@ -75,11 +75,11 @@ function RelatedNoteComposer({
   }, [query]);
   const nameValidation = useMemo(() => plugin.validateRelatedNoteName(query), [plugin, query]);
 
-  const chooseRole = (nextRole: GateRole) => {
-    setRole(nextRole);
-    setOntology(plugin.defaultOntologyField(nextRole));
+  useEffect(() => {
+    setRole(initialRole);
+    setOntology(plugin.defaultOntologyField(initialRole));
     setOntologyTyped(false);
-  };
+  }, [initialRole, plugin]);
 
   const prepareField = async (): Promise<string | null> => {
     const field = ontology.trim();
@@ -188,24 +188,6 @@ function RelatedNoteComposer({
   const createAvailable = !selectedTarget && !webUrl && nameValidation.valid && !nameValidation.existing;
   const placeholderAvailable = createAvailable && origin.file?.extension === "md";
   const webLinkAvailable = !selectedTarget && Boolean(webUrl) && origin.file?.extension === "md";
-  const roleRow = allowRoleSelection
-    ? createElement(
-        "div",
-        { className: "kplex-add-related-role-row", "aria-label": "Relationship role" },
-        ...(["parent", "child", "left", "right"] as GateRole[]).map((candidate) => createElement(
-          "button",
-          {
-            key: candidate,
-            type: "button",
-            className: candidate === role ? "is-active" : "",
-            disabled: busy,
-            onClick: () => chooseRole(candidate),
-          },
-          ROLE_LABEL[candidate],
-        )),
-      )
-    : null;
-
   const noteSearch = createElement(FuzzySearchInput<GraphPage>, {
     value: query,
     onChange: onNoteChange,
@@ -411,7 +393,6 @@ function RelatedNoteComposer({
   return createElement(
     "div",
     { className: "kplex-add-related-form" },
-    roleRow,
     controlRow,
     composeRow,
     status,
@@ -425,9 +406,8 @@ export class NewRelatedNoteModal extends Modal {
   constructor(
     private plugin: ExcaliBrainPlugin,
     private origin: GraphPage,
-    private role: GateRole,
+    private role: RelationshipRole,
     private onCommitted?: () => void,
-    private allowRoleSelection = false,
     private hostLeaf?: WorkspaceLeaf,
   ) {
     super(plugin.app);
@@ -468,16 +448,33 @@ export class NewRelatedNoteModal extends Modal {
       event.preventDefault();
       return true;
     });
-    this.titleEl.setText(this.allowRoleSelection ? "Add relationship" : `Add ${ROLE_LABEL[this.role]}`);
+    this.titleEl.empty();
+    this.titleEl.addClass("kplex-add-related-title");
+    this.titleEl.createSpan({ text: "Add" });
+    const roleSelect = this.titleEl.createEl("select", {
+      cls: "kplex-add-related-role-select",
+      attr: { "aria-label": "Relationship type" },
+    });
+    for (const choice of RELATIONSHIP_ROLES) roleSelect.createEl("option", { text: choice.label, attr: { value: choice.value } });
+    roleSelect.value = this.role;
+    roleSelect.addEventListener("change", () => {
+      const next = roleSelect.value as RelationshipRole;
+      if (next === this.role) return;
+      this.role = next;
+      this.renderComposer();
+    });
     this.modalEl.addClass("kplex-add-related-modal");
     this.modalEl.setAttr("data-kplex-tooltip-scope", "");
     this.contentEl.empty();
     this.root = createRoot(this.contentEl);
-    this.root.render(createElement(RelatedNoteComposer, {
+    this.renderComposer();
+  }
+
+  private renderComposer(): void {
+    this.root?.render(createElement(RelatedNoteComposer, {
       plugin: this.plugin,
       origin: this.origin,
       initialRole: this.role,
-      allowRoleSelection: this.allowRoleSelection,
       onCommitted: this.onCommitted,
       onClose: () => this.close(),
       hostLeaf: this.hostLeaf,

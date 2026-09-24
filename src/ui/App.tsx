@@ -20,7 +20,7 @@ import { compilePlexFilter } from "../lens/SimplePlexFilter";
 import { compileGraphLensDefinitions, type GraphLensDefinition } from "../lens/GraphLens";
 import { installKplexLongPressTooltips } from "./LongPressTooltip";
 
-type BooleanToolbarSetting = PlexVisibilitySetting;
+type BooleanToolbarSetting = PlexVisibilitySetting | "renderAlias";
 
 function IndexStatusIndicator({ plugin }: { plugin: ExcaliBrainPlugin }) {
   const [status, setStatus] = useState(() => plugin.getIndexStatus());
@@ -218,9 +218,8 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   const toggleToolbarSetting = async (key: BooleanToolbarSetting) => {
     plugin.settings[key] = !plugin.settings[key];
-    // Visibility controls are presentation-only. Folder/tag topology is maintained in the
-    // structural index regardless of whether those node classes are currently rendered, so
-    // showing or hiding them must never invalidate or rebuild the semantic graph.
+    // These toolbar/filter controls are presentation-only. Folder/tag topology and aliases are
+    // already present in the index, so changing their display must never rebuild the semantic graph.
     await plugin.saveSettings(false, true);
     forceRender((value) => value + 1);
   };
@@ -283,7 +282,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
       .setIcon("scan-eye")
       .setDisabled(!plugin.hasDocumentSyncTarget())
       .onClick(() => void plugin.showLinkedDocumentLeaf()));
-    menu.showAtMouseEvent(event.nativeEvent);
+    plugin.showKplexMenuAtMouseEvent(menu, event.nativeEvent);
   };
 
   const toggleExpandedView = async () => {
@@ -310,6 +309,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   };
 
   const handlePlexPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    plugin.dismissKplexMenu();
     const target = event.target as Element | null;
     if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='button']")) return;
     rootRef.current?.focus({ preventScroll: true });
@@ -332,7 +332,6 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
       : (syncTargetAvailable
         ? `K-Plex is pinned to a fixed note tab${linkedLabel ? ` · ${linkedLabel}` : ""}`
         : "K-Plex has a pinned-tab preference, but the tab is not currently connected");
-  const isPinned = plugin.isPinned(page.path);
   const pinnedPages = plugin.settings.pinnedNodes
     .map((path) => plugin.index.get(path))
     .filter((item): item is GraphPage => Boolean(item));
@@ -356,7 +355,6 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   const profileSurface: KplexViewSurface = condensedBySidecar ? "sidepanel" : surface;
   const viewSettings = plugin.getViewSettings(profileSurface);
 
-  const togglePinned = async () => { await plugin.togglePinned(page.path); forceRender((value) => value + 1); };
   const unpin = async (path: string) => { if (plugin.isPinned(path)) await plugin.togglePinned(path); forceRender((value) => value + 1); };
 
   const showSidecarMoveMenu = (event: MouseEvent<HTMLButtonElement>) => {
@@ -367,7 +365,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     for (const [position, label, icon] of options) menu.addItem((item) => item
       .setTitle(label).setIcon(icon).setChecked((sidecarPosition ?? plugin.settings.sidecarPosition) === position)
       .onClick(() => void plugin.moveSidecar(hostLeaf, position, page)));
-    menu.showAtMouseEvent(event.nativeEvent);
+    plugin.showKplexMenuAtMouseEvent(menu, event.nativeEvent);
   };
 
   void sidecarRevision; // subscription is a render trigger; all state is owned by the plugin.
@@ -405,7 +403,6 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
               showVirtualNodes: plugin.settings.showVirtualNodes,
               showInferredNodes: plugin.settings.showInferredNodes,
               showPageNodes: plugin.settings.showPageNodes,
-              renderAlias: plugin.settings.renderAlias,
               showFolderNodes: plugin.settings.showFolderNodes,
               showTagNodes: plugin.settings.showTagNodes,
               showURLNodes: plugin.settings.showURLNodes,
@@ -420,9 +417,13 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
               aria-label={`${syncTitle}. Click for sync actions and link mode.`}
               onClick={showDocumentSyncMenu}
             ><ObsidianIcon name={syncIcon} size={17} /></button>
-            <ToolButton icon={isPinned ? "bookmark-check" : "bookmark"} title={isPinned ? "Unpin current node" : "Pin current node"} on={isPinned} onClick={() => void togglePinned()} />
+            <ToolButton
+              icon="type"
+              title={plugin.settings.renderAlias ? "Display aliases: on" : "Display aliases: off"}
+              on={plugin.settings.renderAlias}
+              onClick={() => void toggleToolbarSetting("renderAlias")}
+            />
             <span className="excalibrain-toolbar-divider" />
-            <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
             <ToolButton icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"} title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each node’s children"} on={plugin.settings.graphDepth === 2} onClick={() => void toggleExpandedView()} />
             <ToolButton icon="spline" title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"} on={plugin.settings.connectorStyle === "bezier"} onClick={() => void toggleConnectorStyle()} />
             <ToolButton icon="settings" title="Open K-Plex settings" onClick={() => plugin.openSettings()} />

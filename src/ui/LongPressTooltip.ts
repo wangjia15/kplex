@@ -9,24 +9,24 @@ type DocumentState = {
 
 const documentStates = new WeakMap<Document, DocumentState>();
 
-function scopedButton(target: EventTarget | null): HTMLButtonElement | null {
+function scopedTooltipTarget(target: EventTarget | null): HTMLElement | null {
   if (!target || typeof target !== "object" || !("closest" in target)) return null;
-  const button = (target as Element).closest<HTMLButtonElement>("button");
-  if (!button) return null;
-  return button.closest("[data-kplex-tooltip-scope]") ? button : null;
+  const element = (target as Element).closest<HTMLElement>("button, [data-kplex-long-press-tooltip]");
+  if (!element) return null;
+  return element.closest("[data-kplex-tooltip-scope]") ? element : null;
 }
 
-function tooltipText(button: HTMLButtonElement): string {
-  return button.getAttribute("aria-label")?.trim()
-    || button.getAttribute("title")?.trim()
-    || button.textContent?.trim()
+function tooltipText(element: HTMLElement): string {
+  return element.getAttribute("aria-label")?.trim()
+    || element.getAttribute("title")?.trim()
+    || element.textContent?.trim()
     || "";
 }
 
 /**
  * Android has no hover tooltip. This delegated long-press guard shows the accessible label and,
- * critically, consumes the synthesized click that follows a completed long press so holding a
- * toolbar button can never trigger its action. One document-level listener is shared by all K-Plex
+ * critically, consumes the synthesized click that follows a completed long press. Buttons opt in
+ * automatically; compact toggles can opt in with data-kplex-long-press-tooltip. One document-level listener is shared by all K-Plex
  * views in the same Obsidian window; portalled surfaces opt in with data-kplex-tooltip-scope.
  */
 export function installKplexLongPressTooltips(doc: Document): () => void {
@@ -48,12 +48,12 @@ export function installKplexLongPressTooltips(doc: Document): () => void {
   let pressTimer = 0;
   let hideTimer = 0;
   let suppressClickTimer = 0;
-  let activeButton: HTMLButtonElement | null = null;
+  let activeTarget: HTMLElement | null = null;
   let activePointerId = -1;
   let startX = 0;
   let startY = 0;
   let completedLongPress = false;
-  let suppressClickFor: HTMLButtonElement | null = null;
+  let suppressClickFor: HTMLElement | null = null;
   let tooltip: HTMLDivElement | null = null;
 
   const clearPressTimer = () => {
@@ -79,12 +79,12 @@ export function installKplexLongPressTooltips(doc: Document): () => void {
     tooltip = null;
   };
 
-  const showTooltip = (button: HTMLButtonElement) => {
-    const text = tooltipText(button);
+  const showTooltip = (element: HTMLElement) => {
+    const text = tooltipText(element);
     if (!text) return;
     removeTooltip();
     tooltip = doc.body.createDiv({ cls: "kplex-long-press-tooltip", attr: { role: "tooltip" }, text });
-    const buttonRect = button.getBoundingClientRect();
+    const buttonRect = element.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
     const margin = 8;
     const left = Math.max(margin, Math.min(
@@ -99,49 +99,51 @@ export function installKplexLongPressTooltips(doc: Document): () => void {
 
   const resetActivePress = () => {
     clearPressTimer();
-    activeButton = null;
+    activeTarget = null;
     activePointerId = -1;
     completedLongPress = false;
   };
 
   const onPointerDown = (event: PointerEvent) => {
     if (!event.isPrimary || event.button !== 0) return;
-    const button = scopedButton(event.target);
-    if (!button || button.disabled) return;
+    const target = scopedTooltipTarget(event.target);
+    if (!target) return;
+    const control = target.matches("button, input") ? target : target.querySelector<HTMLElement>("button, input");
+    if (control?.hasAttribute("disabled")) return;
     clearPressTimer();
-    activeButton = button;
+    activeTarget = target;
     activePointerId = event.pointerId;
     startX = event.clientX;
     startY = event.clientY;
     completedLongPress = false;
     pressTimer = view.setTimeout(() => {
       pressTimer = 0;
-      if (!activeButton) return;
+      if (!activeTarget) return;
       completedLongPress = true;
-      suppressClickFor = activeButton;
+      suppressClickFor = activeTarget;
       if (suppressClickTimer) view.clearTimeout(suppressClickTimer);
       // A browser-generated click normally follows pointerup immediately. Expire the guard so a
       // later, intentional tap on the same button is never swallowed if no click was synthesized.
       suppressClickTimer = view.setTimeout(clearSuppressedClick, 1_000);
-      showTooltip(activeButton);
+      showTooltip(activeTarget);
     }, LONG_PRESS_MS);
   };
 
   const onPointerMove = (event: PointerEvent) => {
-    if (!activeButton || event.pointerId !== activePointerId) return;
+    if (!activeTarget || event.pointerId !== activePointerId) return;
     if (Math.hypot(event.clientX - startX, event.clientY - startY) <= MOVE_TOLERANCE_PX) return;
     clearPressTimer();
-    if (!completedLongPress) activeButton = null;
+    if (!completedLongPress) activeTarget = null;
   };
 
   const onPointerUp = (event: PointerEvent) => {
-    if (!activeButton || event.pointerId !== activePointerId) return;
+    if (!activeTarget || event.pointerId !== activePointerId) return;
     clearPressTimer();
     if (completedLongPress) {
       event.preventDefault();
       event.stopPropagation();
     }
-    activeButton = null;
+    activeTarget = null;
     activePointerId = -1;
     completedLongPress = false;
   };
@@ -154,16 +156,16 @@ export function installKplexLongPressTooltips(doc: Document): () => void {
 
   const onClick = (event: MouseEvent) => {
     if (!suppressClickFor) return;
-    const button = scopedButton(event.target);
-    if (button !== suppressClickFor) return;
+    const target = scopedTooltipTarget(event.target);
+    if (target !== suppressClickFor) return;
     clearSuppressedClick();
     event.preventDefault();
     event.stopImmediatePropagation();
   };
 
   const onContextMenu = (event: MouseEvent) => {
-    const button = scopedButton(event.target);
-    if (button && (button === activeButton || button === suppressClickFor)) event.preventDefault();
+    const target = scopedTooltipTarget(event.target);
+    if (target && (target === activeTarget || target === suppressClickFor)) event.preventDefault();
   };
 
   doc.addEventListener("pointerdown", onPointerDown, true);

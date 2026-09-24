@@ -27,7 +27,6 @@ export type PlexVisibilitySetting =
   | "showVirtualNodes"
   | "showInferredNodes"
   | "showPageNodes"
-  | "renderAlias"
   | "showFolderNodes"
   | "showTagNodes"
   | "showURLNodes";
@@ -489,44 +488,23 @@ export function PlexFilter({
     <datalist id={folderListId}>{suggestions.folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
 
     <section className="kplex-filter-section">
-      <div className="kplex-filter-section-heading">Visibility</div>
-      <div className="kplex-filter-visibility-grid">
-        {[
-          ["showPageNodes", "Markdown"],
-          ["showAttachments", "Attachments"],
-          ["showFolderNodes", "Folders"],
-          ["showTagNodes", "Tags"],
-          ["showURLNodes", "Web links"],
-          ["showVirtualNodes", "Placeholders"],
-          ["showInferredNodes", "Inferred"],
-          ["renderAlias", "Aliases"],
-        ].map(([key, label]) => <label key={key} className="kplex-filter-layout-toggle">
-          <span>{label}</span>
-          <input
-            type="checkbox"
-            checked={visibility[key as PlexVisibilitySetting]}
-            aria-label={`Show ${label.toLocaleLowerCase()}`}
-            onChange={() => onVisibilityChange(key as PlexVisibilitySetting)}
-          />
-          <span className="kplex-filter-switch" aria-hidden="true" />
-        </label>)}
-        <label className="kplex-filter-layout-toggle">
-          <span>Siblings</span>
-          <input type="checkbox" checked={showSiblings} aria-label="Show siblings" onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
-          <span className="kplex-filter-switch" aria-hidden="true" />
-        </label>
-        <label className="kplex-filter-layout-toggle">
-          <span>Cross-links</span>
-          <input type="checkbox" checked={value.showCrossLinks} aria-label="Show cross-links" onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
-          <span className="kplex-filter-switch" aria-hidden="true" />
-        </label>
-      </div>
+      <div className="kplex-filter-section-heading">Node order</div>
+      <label>Sort within each zone<select value={sortOrder} onChange={(event) => onSortOrderChange(event.currentTarget.value as NodeSortOrder)}>
+        <option value="name-asc">Name · A → Z</option>
+        <option value="name-desc">Name · Z → A</option>
+        <option value="modified-desc">Modified · newest first</option>
+        <option value="modified-asc">Modified · oldest first</option>
+        <option value="created-desc">Created · newest first</option>
+        <option value="created-asc">Created · oldest first</option>
+        <option value="connections-desc">Connections · most first</option>
+        <option value="connections-asc">Connections · fewest first</option>
+      </select></label>
     </section>
 
     <section className="kplex-filter-section">
       <div className="kplex-filter-section-heading kplex-filter-heading-row">
         <span>Quick lens</span>
-        <label className="kplex-filter-layout-toggle">
+        <label className="kplex-filter-layout-toggle" aria-label="Repack filtered nodes instead of leaving layout gaps" data-tooltip-position="top" data-kplex-long-press-tooltip>
           <span>Reflow</span>
           <input type="checkbox" checked={layoutMode === "reflow"} aria-label="Reflow filtered nodes" onChange={(event) => onLayoutModeChange(event.currentTarget.checked ? "reflow" : "keep")} />
           <span className="kplex-filter-switch" aria-hidden="true" />
@@ -559,20 +537,6 @@ export function PlexFilter({
             /></label>}
       </div>
       {isPlexFilterActive(value) && <button className="kplex-filter-clear" onClick={() => onChange({ ...EMPTY_PLEX_FILTER, showCrossLinks: value.showCrossLinks })}>Clear quick lens</button>}
-    </section>
-
-    <section className="kplex-filter-section">
-      <div className="kplex-filter-section-heading">Node order</div>
-      <label>Sort within each zone<select value={sortOrder} onChange={(event) => onSortOrderChange(event.currentTarget.value as NodeSortOrder)}>
-        <option value="name-asc">Name · A → Z</option>
-        <option value="name-desc">Name · Z → A</option>
-        <option value="modified-desc">Modified · newest first</option>
-        <option value="modified-asc">Modified · oldest first</option>
-        <option value="created-desc">Created · newest first</option>
-        <option value="created-asc">Created · oldest first</option>
-        <option value="connections-desc">Connections · most first</option>
-        <option value="connections-asc">Connections · fewest first</option>
-      </select></label>
     </section>
 
     <section className="kplex-filter-section kplex-lens-section">
@@ -690,6 +654,40 @@ export function PlexFilter({
         {draftError && <div className="kplex-lens-editor-error">{draftError}</div>}
         <div className="kplex-lens-editor-actions"><button onClick={() => { setDraft(null); setDraftError(null); }}>Cancel</button><button className="mod-cta" onClick={saveDraft}>Save lens</button></div>
       </div>}
+    </section>
+
+    <section className="kplex-filter-section">
+      <div className="kplex-filter-section-heading">Visibility</div>
+      <div className="kplex-filter-visibility-grid">
+        {[
+          ["showPageNodes", "Markdown", "Show or hide Markdown notes"],
+          ["showAttachments", "Attachments", "Show or hide attachment nodes"],
+          ["showFolderNodes", "Folders", "Show or hide folder nodes"],
+          ["showTagNodes", "Tags", "Show or hide tag nodes"],
+          ["showURLNodes", "Web links", "Show or hide web-link nodes"],
+          ["showVirtualNodes", "Placeholders", "Show or hide placeholder notes"],
+          ["showInferredNodes", "Inferred", "Show or hide inferred relationships and nodes"],
+        ].map(([key, label, tooltip]) => <label key={key} className="kplex-filter-layout-toggle" aria-label={tooltip} data-tooltip-position="top" data-kplex-long-press-tooltip>
+          <span>{label}</span>
+          <input
+            type="checkbox"
+            checked={visibility[key as PlexVisibilitySetting]}
+            aria-label={`Show ${label.toLocaleLowerCase()}`}
+            onChange={() => onVisibilityChange(key as PlexVisibilitySetting)}
+          />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>)}
+        <label className="kplex-filter-layout-toggle" aria-label="Show or hide sibling nodes" data-tooltip-position="top" data-kplex-long-press-tooltip>
+          <span>Siblings</span>
+          <input type="checkbox" checked={showSiblings} aria-label="Show siblings" onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>
+        <label className="kplex-filter-layout-toggle" aria-label="Show or hide connections between peripheral nodes" data-tooltip-position="top" data-kplex-long-press-tooltip>
+          <span>Cross-links</span>
+          <input type="checkbox" checked={value.showCrossLinks} aria-label="Show cross-links" onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>
+      </div>
     </section>
   </div> : null;
 

@@ -2687,3 +2687,76 @@
   .kplex-create-name-pair { gap: 6px; }
   .kplex-create-alias-input { min-width: 62px; }
 }
+
+/* Add-related modal: relationship role lives in the title and the filename field does not
+   spend horizontal space on a decorative search glyph. */
+.kplex-add-related-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.kplex-add-related-role-select {
+  width: auto;
+  min-width: 128px;
+  max-width: min(46vw, 220px);
+  font: inherit;
+  font-weight: inherit;
+}
+.kplex-create-name-pair .kplex-add-related-note-search .excalibrain-search-icon {
+  display: none;
+}
+.kplex-create-name-pair .kplex-add-related-note-search .excalibrain-search {
+  padding-left: 12px;
+}
+
+/* iPad/WebKit applies large minimum tap-target dimensions to buttons. Keep the tiny section
+   outline control visually square while its surrounding thought remains the forgiving hit area. */
+.kplex-section-fold-handle {
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 10px;
+  block-size: 10px;
+  min-inline-size: 10px;
+  min-block-size: 10px;
+  max-inline-size: 10px;
+  max-block-size: 10px;
+  flex: 0 0 10px;
+  overflow: hidden;
+  font-size: 0;
+  -webkit-touch-callout: none;
+}
+.excalibrain-thought,
+.excalibrain-thought * {
+  -webkit-touch-callout: none;
+}
+@media (pointer: coarse) {
+  .kplex-section-fold-handle {
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    min-height: 14px;
+    max-width: 14px;
+    max-height: 14px;
+    inline-size: 14px;
+    block-size: 14px;
+    min-inline-size: 14px;
+    min-block-size: 14px;
+    max-inline-size: 14px;
+    max-block-size: 14px;
+    flex-basis: 14px;
+    bottom: -8px;
+  }
+  .kplex-section-fold-handle.is-expanded::after,
+  .kplex-section-fold-handle.is-folded::before {
+    left: 3px;
+    right: 3px;
+    top: 5px;
+  }
+  .kplex-section-fold-handle.is-folded::after {
+    top: 3px;
+    bottom: 3px;
+    left: 5px;
+  }
+}

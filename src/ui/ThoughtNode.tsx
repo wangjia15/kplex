@@ -121,7 +121,19 @@ export function ThoughtNode({
     onPointerLeave={() => { onHoverEnd(); }}
     onClick={click}
     onDoubleClick={(e: MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onOpen(node); }}
-    onContextMenu={(e: MouseEvent<HTMLDivElement>) => { if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e); } }}
+    onContextMenu={(e: MouseEvent<HTMLDivElement>) => {
+      const target = e.target as Element;
+      if (target.closest("button, [data-kplex-gate]")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (onContextMenu) {
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu(node, e);
+      }
+    }}
     aria-label={`${node.label} — ${node.page.path}`}
   >
     <span className="excalibrain-thought-label">
@@ -169,7 +181,8 @@ export function ThoughtNode({
           onPointerLeave={(e: ReactPointerEvent<HTMLSpanElement>) => { e.stopPropagation(); onHoverNode(node); }}
           onPointerDown={(e: ReactPointerEvent<HTMLSpanElement>) => { onGatePointerDown(node, gate, e); }}
           onClick={(e: MouseEvent<HTMLSpanElement>) => e.stopPropagation()}
-          title={gateTitle}
+          aria-label={gateTitle}
+          data-tooltip-position="top"
         />
         {settings.showNeighborCount && stat.visibleCount > 0 && <span className="excalibrain-gate-count">{stat.shownCount === undefined ? stat.visibleCount : `${stat.shownCount}/${stat.visibleCount}`}</span>}
       </span>;
