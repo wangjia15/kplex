@@ -1564,12 +1564,39 @@ export class GraphIndex {
     return page;
   }
 
+  /** Insert a URL target immediately after its frontmatter relationship has been written. */
+  insertUrlPage(rawUrl: string, alias?: string): GraphPage {
+    const url = rawUrl.trim();
+    const existing = this.get(url);
+    if (existing) {
+      if (alias?.trim() && (existing.name === existing.url || existing.name === existing.path)) existing.name = alias.trim();
+      this.invalidatePatchedPages(new Set([existing.path]));
+      this.patchSearchIndex(new Set([existing.path]));
+      this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+      this.emit();
+      return existing;
+    }
+    const page: GraphPage = {
+      path: url, file: null, name: alias?.trim() || url, url, isFolder: false, isTag: false, mtime: null,
+      neighbours: new Map(), aliases: [], tags: [], noteType: null, primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
+    };
+    this.state.pages.set(url, page);
+    this.state.lowercasePathMap.set(url.toLowerCase(), url);
+    this.invalidatePatchedPages(new Set([url]));
+    this.patchSearchIndex(new Set([url]));
+    this.suggestionCatalogCache = null;
+    this.relationViewCache = new WeakMap<GraphPage, CachedRelationView>();
+    this.emit();
+    this.scheduleSnapshotPersist(SNAPSHOT_EDIT_IDLE_MS);
+    return page;
+  }
+
   /**
    * Optimistically materialize a file K-Plex itself just created. The normal Obsidian metadata
    * event remains authoritative and may enrich this page later, but UI rendering no longer waits
    * for that asynchronous round trip.
    */
-  insertCreatedFile(file: TFile): GraphPage {
+  insertCreatedFile(file: TFile, aliases: readonly string[] = []): GraphPage {
     const existing = this.get(file.path);
     if (existing) {
       // A K-Plex-created note can materialize a previously unresolved/virtual graph page. Promote
@@ -1581,6 +1608,7 @@ export class GraphIndex {
       existing.isFolder = false;
       existing.isTag = false;
       existing.mtime = file.stat.mtime;
+      if (aliases.length) existing.aliases = [...new Set([...existing.aliases, ...aliases.map((alias) => alias.trim()).filter(Boolean)])];
       const touched = this.reconcileFileTreeMembership(file);
       touched.add(existing.path);
       this.invalidatePatchedPages(touched);
@@ -1593,7 +1621,7 @@ export class GraphIndex {
     }
     const page: GraphPage = {
       path: file.path, file, name: file.basename, url: null, isFolder: false, isTag: false,
-      mtime: file.stat.mtime, neighbours: new Map(), aliases: [], tags: [], noteType: null,
+      mtime: file.stat.mtime, neighbours: new Map(), aliases: aliases.map((alias) => alias.trim()).filter(Boolean), tags: [], noteType: null,
       primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
     };
     this.state.pages.set(page.path, page);
@@ -1719,6 +1747,37 @@ export class GraphIndex {
     return true;
   }
 
+  /** Sort a rendered zone without changing graph topology or rebuilding the index. */
+  sortNeighbours(items: readonly Neighbour[]): Neighbour[] {
+    if (items.length < 2) return [...items];
+    const order = this.plugin.settings.nodeSortOrder;
+    const keyed = items.map((item, index) => ({
+      item,
+      index,
+      title: this.titleFor(item.page),
+      modified: item.page.file?.stat.mtime ?? item.page.mtime ?? 0,
+      created: item.page.file?.stat.ctime ?? 0,
+      connections: item.page.neighbours.size,
+    }));
+    keyed.sort((a, b) => {
+      let primary = 0;
+      switch (order) {
+        case "name-desc": primary = naturalCompare(b.title, a.title); break;
+        case "modified-desc": primary = b.modified - a.modified; break;
+        case "modified-asc": primary = a.modified - b.modified; break;
+        case "created-desc": primary = b.created - a.created; break;
+        case "created-asc": primary = a.created - b.created; break;
+        case "connections-desc": primary = b.connections - a.connections; break;
+        case "connections-asc": primary = a.connections - b.connections; break;
+        case "name-asc": primary = naturalCompare(a.title, b.title); break;
+      }
+      if (primary) return primary;
+      const titleOrder = naturalCompare(a.title, b.title);
+      return titleOrder || a.index - b.index;
+    });
+    return keyed.map((entry) => entry.item);
+  }
+
   private relationViewSignature(): string {
     const settings = this.plugin.settings;
     return [
@@ -1730,6 +1789,7 @@ export class GraphIndex {
       settings.showPageNodes ? "1" : "0",
       settings.showURLNodes ? "1" : "0",
       settings.renderAlias ? "1" : "0",
+      settings.nodeSortOrder,
       settings.nodeTitleScript,
       settings.excludeFilepaths.join("\u0002"),
     ].join("\u0001");
@@ -1806,14 +1866,7 @@ export class GraphIndex {
     }
 
     for (const role of concreteRoles) {
-      const list = roles[role];
-      if (list.length < 2) continue;
-      // Compute each title once. Calling titleFor() from Array.sort's comparator made a single
-      // neighborhood calculation invoke it tens or hundreds of thousands of times on large
-      // sibling sets, even when every call was a cache hit.
-      const keyed = list.map((item, index) => ({ item, index, title: this.titleFor(item.page) }));
-      keyed.sort((a, b) => naturalCompare(a.title, b.title) || a.index - b.index);
-      roles[role] = keyed.map((entry) => entry.item);
+      roles[role] = this.sortNeighbours(roles[role]);
     }
     gateStats.top.visibleCount = visibleGatePaths.top.size;
     gateStats.bottom.visibleCount = visibleGatePaths.bottom.size;
@@ -1934,10 +1987,7 @@ export class GraphIndex {
         }
       }
     }
-    const siblingList = [...siblingsMap.values()];
-    const siblingKeys = siblingList.map((item, index) => ({ item, index, title: this.titleFor(item.page) }));
-    siblingKeys.sort((a, b) => naturalCompare(a.title, b.title) || a.index - b.index);
-    const siblings = siblingKeys.slice(0, max).map((entry) => entry.item);
+    const siblings = this.sortNeighbours([...siblingsMap.values()]).slice(0, max);
     const result = { center, parents, children, leftFriends, rightFriends, siblings };
     return result;
   }

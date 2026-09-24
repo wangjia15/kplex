@@ -22,6 +22,9 @@ const plexGraphSource = readFileSync(join(root, "src/ui/PlexGraph.tsx"), "utf8")
 const deleteNodeModalSource = readFileSync(join(root, "src/ui/DeleteNodeModal.ts"), "utf8");
 const createFolderNoteModalSource = readFileSync(join(root, "src/ui/CreateFolderNoteModal.ts"), "utf8");
 const thoughtNodeSource = readFileSync(join(root, "src/ui/ThoughtNode.tsx"), "utf8");
+const plexFilterSource = readFileSync(join(root, "src/ui/PlexFilter.tsx"), "utf8");
+const simpleFilterSource = readFileSync(join(root, "src/lens/SimplePlexFilter.ts"), "utf8");
+const longPressTooltipSource = readFileSync(join(root, "src/ui/LongPressTooltip.ts"), "utf8");
 assert(newRelatedSource.includes('"aria-label": "Create placeholder node"'), "Create-related UI must offer a placeholder-only action");
 assert(newRelatedSource.includes("plugin.createPlaceholderRelatedPage(origin, role"), "Placeholder action must create only a relationship-backed virtual node");
 assert(newRelatedSource.includes("void createNew(defaultCreateType)"), "Ctrl/Cmd+Enter must keep using the shared Markdown/Excalidraw default rather than the placeholder action");
@@ -145,10 +148,10 @@ assert(mainSource.includes("this.settings.navigationHistory.length - 1"), "Navig
 assert(!appSource.includes("plugin.app.vault.getMarkdownFiles()[0]?.path"), "Startup must not choose an arbitrary first Markdown note when navigation history is exhausted");
 assert(plexGraphSource.includes('setTitle(persistent.file ? "Delete note…" : "Delete placeholder…")'), "Every Markdown/placeholder node context menu must expose deletion");
 assert(plexGraphSource.includes("plugin.deleteNode(persistent, hostLeaf, isCenter)"), "Node deletion must tell the workflow whether the deleted node is the active center");
-assert(mainSource.includes("if (hadFile && wasCenter && !folderOnlyOrphan) return;"), "Deleting a connected active center file must keep its dematerialized ghost active");
-assert(mainSource.includes("const folderOnlyOrphan = hadFile && this.isFolderOnlyOrphan(target)"), "File deletion must distinguish a folder-only orphan from a connected node");
-assert(mainSource.includes("this.removeFromNavigationHistory(path)"), "A fully deleted orphan/placeholder must be removed from navigation history");
-assert(mainSource.includes("? this.deletionFallbackPath(path, [])"), "Deleting a centered folder-only orphan must fall back through navigation history rather than its former folder host");
+assert(mainSource.includes("this.removeFromNavigationHistory(path)"), "Every deleted node must be removed from navigation history immediately");
+assert(mainSource.includes("const fallback = this.deletionFallbackPath(path)"), "Deleting the active center must choose its replacement from remaining navigation history");
+assert(mainSource.includes('return this.index.get("folder:/")?.path ?? null'), "Delete navigation must fall back to the vault root when no valid history entry remains");
+assert(mainSource.indexOf("this.removeFromNavigationHistory(path)") < mainSource.indexOf("removePropertyReferencesToNode(ghost)"), "Delete navigation/history cleanup must happen before asynchronous relationship cleanup");
 assert(mainSource.includes("removePropertyReferencesToNode"), "Node deletion must clean document-property references before considering a ghost removable");
 assert(mainSource.includes("normalizedNoteReferenceMatches"), "Property cleanup must still recognize a note link after deleting its backing file makes Obsidian resolution unavailable");
 assert(mainSource.includes("remainingBodyReferences"), "Deletion review must include parser-backed inline body relationships that may not appear in Obsidian's link cache");
@@ -170,6 +173,19 @@ assert(mainSource.includes("createNewNodeInFolder(folder: GraphPage"), "Folder c
 assert(newRelatedSource.includes('className: "kplex-add-related-control-row"'), "Ontology and open-for-editing controls must share the first responsive row");
 assert(newRelatedSource.includes('className: "kplex-add-related-compose-row"'), "Name search and create/link actions must share the second row");
 assert(newRelatedSource.indexOf("controlRow,") < newRelatedSource.indexOf("composeRow,"), "Relationship controls must render above the focused name row");
+assert(newRelatedSource.includes('className: "kplex-create-alias-input"'), "Create-related UI must provide an optional alias field");
+assert(newRelatedSource.includes("plugin.createWebLinkRelatedPage(origin, role, webUrl, alias, field)"), "Create-related UI must recognize and persist web-link relationships");
+assert(mainSource.includes('const reference = alias ? `[${escapedAlias}](${url})` : url'), "Web-link aliases must be stored as Markdown link labels in document properties");
+assert(mainSource.includes('frontmatter[key] = [...aliases, alias]'), "New-note aliases must be written through Obsidian frontmatter");
+assert(appSource.includes("plugin.isManagedCreatedFile(trackedFile)"), "A selected optimistic note must survive an older in-flight index publication");
+assert(mainSource.includes('this.scheduleRebuild("kplex:create-during-rebuild")'), "A note created during a full build must queue one authoritative catch-up pass");
+assert(!appSource.includes("plugin.settings.toolbarExpanded ?"), "Visibility controls must no longer depend on an expanded-toolbar overflow state");
+assert(plexFilterSource.includes("kplex-filter-visibility-grid"), "Node-type visibility controls must live in the Filter / Graph Lenses popover");
+assert(plexFilterSource.includes('option value="connections-desc"'), "Filter panel must expose connection-count sorting");
+assert(simpleFilterSource.includes("buildGraphLensSimpleConditionExpression"), "Quick filter must compile through the same field/operator model as Graph Lenses");
+assert(plexFilterSource.includes('label: "does not have tag"'), "Quick lens must expose an explicit negative tag filter");
+assert(longPressTooltipSource.includes("event.stopImmediatePropagation()"), "Completed long presses must consume the synthesized button click");
+assert(longPressTooltipSource.includes("showTooltip(activeButton)"), "Completed long presses must show the button tooltip");
 const placeholderPathStart = mainSource.indexOf("  private placeholderPath(stem: string)");
 const placeholderPathEnd = mainSource.indexOf("  async createPlaceholderRelatedPage(", placeholderPathStart);
 assert(placeholderPathStart >= 0 && placeholderPathEnd > placeholderPathStart);
@@ -852,11 +868,10 @@ try {
   assert.equal(parentAt30.width, parentAt85.width, "Sibling sizing must not resize parent thoughts");
   settings.siblingRelativeSize = 85;
 
-  // Predicate engine checkpoint: the existing simple filter compiles into one generic declarative
-  // predicate. It preserves keyword/alias, hierarchical-tag, note-type and relationship matching
-  // while also providing node/edge/evidence/note/file/this namespaces for later named lenses.
+  // Quick filter checkpoint: it is now exactly one Graph-Lens-style condition, including negative
+  // operators, rather than a separate keyword/tag/note-type predicate language.
   const predicateEngine = new GraphPredicateEngine(app);
-  const simplePredicate = compilePlexFilter({ keyword: "alpha hub", tag: "#taxonomy/body", noteType: "PROJECT" });
+  const simplePredicate = compilePlexFilter({ field: "node.label", operator: "contains", value: "alpha hub", showCrossLinks: true });
   assert(simplePredicate);
   assert.equal(simplePredicate.dependencies.usesFrontmatter, false);
   assert.equal(predicateEngine.matches(simplePredicate, { node: { page: A, label: index.titleFor(A) }, center: A }), true);
@@ -864,15 +879,14 @@ try {
   assert(noteBForPredicate);
   assert.equal(predicateEngine.matches(simplePredicate, { node: { page: noteBForPredicate, label: index.titleFor(noteBForPredicate) }, center: A }), false);
 
-  const childCForPredicate = neighborhoodA.children.find((item) => item.page.path === "Note C.md");
-  assert(childCForPredicate);
-  const relationshipPredicate = compilePlexFilter({ keyword: childCForPredicate.typeDefinition ?? "child", tag: "", noteType: "" });
-  assert(relationshipPredicate);
-  assert.equal(predicateEngine.matches(relationshipPredicate, {
-    node: { page: childCForPredicate.page, label: index.titleFor(childCForPredicate.page) },
-    center: A,
-    edge: { role: childCForPredicate.role, definition: childCForPredicate.typeDefinition },
-  }), true);
+  const negativeTagPredicate = compilePlexFilter({ field: "file.tags", operator: "does-not-have", value: "#taxonomy/body", showCrossLinks: true });
+  assert(negativeTagPredicate);
+  assert.equal(predicateEngine.matches(negativeTagPredicate, { node: { page: A, label: index.titleFor(A) }, center: A }), false);
+  assert.equal(predicateEngine.matches(negativeTagPredicate, { node: { page: noteBForPredicate, label: index.titleFor(noteBForPredicate) }, center: A }), true);
+
+  const noteTypePredicate = compilePlexFilter({ field: "node.noteType", operator: "is", value: "PROJECT", showCrossLinks: true });
+  assert(noteTypePredicate);
+  assert.equal(predicateEngine.matches(noteTypePredicate, { node: { page: A, label: index.titleFor(A) }, center: A }), true);
 
   const noteACacheForPredicate = caches.get("Note A.md");
   noteACacheForPredicate.frontmatter["Lens Status"] = "Active";
@@ -1296,7 +1310,7 @@ try {
   expectRole("Note A.md", "child", "Future Child", RelationType.DEFINED);
   const materializedPlaceholder = new TFile("Future Child.md", noteA.stat.mtime + 1200);
   files.set(materializedPlaceholder.path, materializedPlaceholder);
-  contents.set(materializedPlaceholder.path, "# Future Child\n");
+  contents.set(materializedPlaceholder.path, "");
   caches.set(materializedPlaceholder.path, { frontmatter: {}, tags: [], links: [] });
   assert(index.renameFile("Future Child", materializedPlaceholder));
   assert.equal(index.get("Future Child.md")?.file, materializedPlaceholder);

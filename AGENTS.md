@@ -533,3 +533,22 @@ Before returning a patch:
 ## Sidecar edge-control invariant
 
 The native companion Sidecar's primary open/close control lives on the K-Plex edge corresponding to the remembered sidecar position (left/right/above/below). It remains present while the Sidecar is closed so reopening does not require returning to the toolbar. The Sidecar itself remains a native Obsidian WorkspaceLeaf.
+
+## K-Plex toolbar interaction invariants
+
+- Toolbar visibility controls for Markdown notes, attachments, folders, tags, URLs, placeholders,
+  inferred relationships and aliases live in the Filter / Graph Lenses popover. Do not reintroduce
+  a second expanded-toolbar overflow state for these controls.
+- The quick filter is a one-condition Graph Lens and must use the same field/operator semantics as
+  named lenses, including explicit negative operators such as `does not contain` and `does not have tag`.
+- Node ordering is presentation-only. Changing sort order must invalidate/render relation views but
+  must not rebuild the semantic index.
+- Every K-Plex button inside a `data-kplex-tooltip-scope` participates in delegated long-press
+  tooltips. A completed long press must consume the synthesized click so the button action does not run.
+
+## Deletion navigation invariant
+
+Deleting a node is an immediate navigation-history operation even when the deleted Markdown endpoint
+survives semantically as a ghost. Remove the deleted path from history before asynchronous relationship
+cleanup. If the deleted node is central, navigate newest-to-oldest through the remaining valid history;
+if none exists, navigate to `folder:/`. Do not wait for metadata/index reconciliation to move focus.

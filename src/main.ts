@@ -38,6 +38,8 @@ export type RelationshipSourceSection = {
 const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const MANAGED_CREATED_PATH_TTL_MS = 4_000;
+
 export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
   index!: GraphIndex;
@@ -82,8 +84,9 @@ export default class ExcaliBrainPlugin extends Plugin {
   private lastIndexStatusKey = "";
   private readonly graphLensListeners = new Set<(lenses: ExcaliBrainSettings["graphLenses"]) => void>();
   private readonly managedMetadataWrites = new Map<string, number>();
-  /** Files created by K-Plex and already inserted optimistically into GraphIndex. */
+  /** Paths suppress the synchronous vault:create rebuild; object identity protects optimistic UI. */
   private readonly managedCreatedPaths = new Map<string, number>();
+  private readonly managedCreatedFiles = new WeakSet<TFile>();
   /** Markdown files whose metadata/body changed since the last published graph. */
   private readonly dirtyMarkdownPaths = new Set<string>();
   /** Rename-only metadata notifications are semantic no-ops when mtime/size are unchanged. */
@@ -419,6 +422,21 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
   }
 
+  isManagedCreatedFile(file: TFile): boolean {
+    return this.managedCreatedFiles.has(file);
+  }
+
+  private rememberManagedCreatedFile(file: TFile): TFile {
+    this.managedCreatedFiles.add(file);
+    this.managedCreatedPaths.set(file.path, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
+    if (this.rebuildTask) {
+      // The in-flight builder may have captured the vault before this file existed. Mark a single
+      // catch-up rebuild now; the optimistic page keeps the UI usable until that authoritative pass.
+      this.scheduleRebuild("kplex:create-during-rebuild");
+    }
+    return file;
+  }
+
   private pruneMissingDirtyMarkdownPaths(): void {
     const vault = this.app?.vault;
     if (!vault) return;
@@ -461,6 +479,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         this.dirtyMarkdownPaths.delete(deleted.path);
         this.managedMetadataWrites.delete(deleted.path);
         this.managedCreatedPaths.delete(deleted.path);
+        this.managedCreatedFiles.delete(deleted);
         this.renameMetadataSuppressions.delete(deleted.path);
         this.index?.dematerializeFile(deleted.path);
         // A metadata event may already have queued an incremental patch for this file. Once the
@@ -2496,7 +2515,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
   }
 
-  private async writeRelationship(storageFile: TFile, target: GraphPage, field: string): Promise<void> {
+  private async writeRelationship(storageFile: TFile, target: GraphPage, field: string, referenceOverride?: string): Promise<void> {
     // Mark before processFrontMatter so our own metadataCache.changed event is not interpreted as
     // an external vault edit that requires a 20k-note rebuild.
     // Large vaults can deliver metadataCache.changed several seconds after processFrontMatter.
@@ -2506,7 +2525,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
     const ontologyFields = new Set(this.allOntologyFields().map(normalizeFieldName));
     const desiredNormalized = normalizeFieldName(field);
-    const reference = this.referenceForPage(target, storageFile);
+    const reference = referenceOverride ?? this.referenceForPage(target, storageFile);
 
     await this.app.fileManager.processFrontMatter(storageFile, (frontmatter: Record<string, unknown>) => {
       let desiredKey = field;
@@ -2904,36 +2923,12 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
   }
 
-  private deletionFallbackPath(deletedPath: string, hostPaths: readonly string[]): string | null {
-    for (const path of hostPaths) if (path !== deletedPath && this.index.get(path)) return path;
+  private deletionFallbackPath(deletedPath: string): string | null {
     for (let index = this.settings.navigationHistory.length - 1; index >= 0; index -= 1) {
       const path = this.settings.navigationHistory[index];
       if (path !== deletedPath && this.index.get(path)) return path;
     }
     return this.index.get("folder:/")?.path ?? null;
-  }
-
-  private isFolderOnlyOrphan(page: GraphPage): boolean {
-    let hasFolderParent = false;
-    for (const relation of page.neighbours.values()) {
-      if (relation.isHidden) continue;
-      if (relation.target.isFolder && relation.isParent) {
-        hasFolderParent = true;
-        continue;
-      }
-      // Folder/tag taxonomy edges do not make a note meaningfully connected to another note.
-      // Preserve the deleted center as a ghost only when a real semantic relationship survives.
-      if (relation.target.isTag) continue;
-      if (
-        relation.isParent
-        || relation.isChild
-        || relation.isLeftFriend
-        || relation.isRightFriend
-        || relation.isNextFriend
-        || relation.isPreviousFriend
-      ) return false;
-    }
-    return hasFolderParent;
   }
 
   private removeFromNavigationHistory(path: string): void {
@@ -2946,8 +2941,6 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (!(await this.confirmDeleteNode(target))) return;
 
     const path = target.path;
-    const hadFile = Boolean(target.file);
-    const folderOnlyOrphan = hadFile && this.isFolderOnlyOrphan(target);
     if (target.file) {
       const file = target.file;
       await this.app.fileManager.trashFile(file);
@@ -2956,9 +2949,24 @@ export default class ExcaliBrainPlugin extends Plugin {
       this.index.dematerializeFile(path);
     }
 
+    // Navigation is part of the delete command, not a side effect of the later metadata cleanup.
+    // Remove the deleted path immediately and move a deleted center to the newest still-valid
+    // history entry (walking farther back when necessary), or to the vault root when history is
+    // exhausted. This happens before relationship-reference cleanup/index reconciliation.
+    this.settings.pinnedNodes = this.settings.pinnedNodes.filter((candidate) => candidate !== path);
+    this.removeFromNavigationHistory(path);
+    if (wasCenter) {
+      const fallback = this.deletionFallbackPath(path);
+      if (fallback) {
+        this.settings.lastActivePath = fallback;
+        this.notifyNavigation(fallback);
+      }
+    }
+    await this.saveSettings(false, false);
+
     const ghost = this.index.get(path);
     if (!ghost) return;
-    const { hosts, remaining } = await this.removePropertyReferencesToNode(ghost);
+    const { remaining } = await this.removePropertyReferencesToNode(ghost);
 
     if (remaining.length) {
       new RemainingNodeReferencesModal(
@@ -2970,22 +2978,9 @@ export default class ExcaliBrainPlugin extends Plugin {
       return;
     }
 
-    // A connected center survives file deletion as the same ghost node so users can continue to
-    // inspect and clean up its relationship evidence. A folder-only orphan is different: once its
-    // file-tree edge disappears there is no semantic node left to preserve, so return to the most
-    // recent still-valid navigation-history entry instead of falling back to the vault root.
-    if (hadFile && wasCenter && !folderOnlyOrphan) return;
-
+    // Remaining references are handled above. Once they are gone, remove the dematerialized graph
+    // endpoint when nothing else still references it; focus/history have already moved away.
     if (!this.index.removeVirtualPageIfUnreferenced(path)) return;
-    this.settings.pinnedNodes = this.settings.pinnedNodes.filter((candidate) => candidate !== path);
-    this.removeFromNavigationHistory(path);
-    if (wasCenter) {
-      const fallback = folderOnlyOrphan
-        ? this.deletionFallbackPath(path, [])
-        : this.deletionFallbackPath(path, hosts);
-      if (fallback) this.notifyNavigation(fallback);
-    }
-    await this.saveSettings(false, false);
   }
 
   private async frontmatterPropertyLineRange(file: TFile, fieldName: string): Promise<{ start: number; end: number } | null> {
@@ -3293,11 +3288,11 @@ export default class ExcaliBrainPlugin extends Plugin {
     // Mark the predicted path before creation because Obsidian may emit vault:create synchronously
     // inside create()/the Excalidraw API. K-Plex materializes the page itself as soon as the
     // returned TFile is available, so that event must not schedule a redundant whole-vault build.
-    this.managedCreatedPaths.set(destination, Date.now() + 4000);
+    this.managedCreatedPaths.set(destination, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
     const alternateExcalidrawPath = kind === "excalidraw"
       ? normalizePath(normalizedFolder ? `${normalizedFolder}/${leafName}.md` : `${leafName}.md`)
       : null;
-    if (alternateExcalidrawPath) this.managedCreatedPaths.set(alternateExcalidrawPath, Date.now() + 4000);
+    if (alternateExcalidrawPath) this.managedCreatedPaths.set(alternateExcalidrawPath, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
 
     if (kind === "excalidraw") {
       type Automate = {
@@ -3318,14 +3313,14 @@ export default class ExcaliBrainPlugin extends Plugin {
           }));
           const created = this.app.vault.getAbstractFileByPath(createdPath);
           if (!(created instanceof TFile)) throw new Error("Excalidraw did not return a created file.");
-          this.managedCreatedPaths.set(created.path, Date.now() + 4000);
+          this.managedCreatedPaths.set(created.path, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
           if (created.extension !== "md") {
             this.managedCreatedPaths.delete(destination);
             if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
             new Notice("Excalidraw created a legacy non-Markdown drawing. Enable Markdown Excalidraw files in Excalidraw settings to use it as a K-Plex note.", 5000);
             return null;
           }
-          return created;
+          return this.rememberManagedCreatedFile(created);
         } catch (error) {
           this.managedCreatedPaths.delete(destination);
           if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
@@ -3353,8 +3348,7 @@ export default class ExcaliBrainPlugin extends Plugin {
           new Notice("Excalidraw created a legacy non-Markdown drawing. Enable Markdown Excalidraw files in Excalidraw settings to use it as a K-Plex note.", 5000);
           return null;
         }
-        this.managedCreatedPaths.set(file.path, Date.now() + 4000);
-        return file;
+        return this.rememberManagedCreatedFile(file);
       } catch (error) {
         this.managedCreatedPaths.delete(destination);
         if (alternateExcalidrawPath) this.managedCreatedPaths.delete(alternateExcalidrawPath);
@@ -3363,9 +3357,8 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
     try {
-      const file = await this.app.vault.create(destination, `# ${leafName}\n`);
-      this.managedCreatedPaths.set(file.path, Date.now() + 4000);
-      return file;
+      const file = await this.app.vault.create(destination, "");
+      return this.rememberManagedCreatedFile(file);
     } catch (error) {
       this.managedCreatedPaths.delete(destination);
       throw error;
@@ -3398,7 +3391,37 @@ export default class ExcaliBrainPlugin extends Plugin {
     new CreateFolderNoteModal(this, folder, hostLeaf).open();
   }
 
-  async createNewRelatedFileForOrigin(origin: GraphPage, rawName: string, kind: GhostMaterializationKind): Promise<TFile | null> {
+  private async writeCreatedNodeAlias(file: TFile, rawAlias: string): Promise<string> {
+    const alias = rawAlias.trim();
+    if (!alias) return "";
+    this.pruneManagedMetadataWrites();
+    this.managedMetadataWrites.set(file.path, Date.now() + 15000);
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      const key = Object.keys(frontmatter).find((candidate) => {
+        const normalized = normalizeFieldName(candidate);
+        return normalized === "alias" || normalized === "aliases";
+      }) ?? "aliases";
+      const current = frontmatter[key];
+      const aliases = Array.isArray(current)
+        ? current.filter((value): value is string => typeof value === "string")
+        : typeof current === "string" && current.trim() ? [current] : [];
+      if (!aliases.includes(alias)) frontmatter[key] = [...aliases, alias];
+    });
+    return alias;
+  }
+
+  private normalizedWebUrl(raw: string): string | null {
+    const value = raw.trim();
+    if (!/^https?:\/\//i.test(value)) return null;
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async createNewRelatedFileForOrigin(origin: GraphPage, rawName: string, kind: GhostMaterializationKind, rawAlias = ""): Promise<TFile | null> {
     const validation = this.validateRelatedNoteName(rawName);
     if (!validation.valid) {
       new Notice(validation.error ?? "Enter a valid note name.", 2800);
@@ -3416,14 +3439,18 @@ export default class ExcaliBrainPlugin extends Plugin {
     const sourcePath = origin.file?.path ?? origin.path;
     const configuredParent = this.app.fileManager.getNewFileParent(sourcePath, proposedName);
     const configuredFolder = configuredParent.path === "/" ? "" : configuredParent.path;
-    return this.createNewFileInFolder(validation.stem, kind, configuredFolder);
+    const file = await this.createNewFileInFolder(validation.stem, kind, configuredFolder);
+    if (!file) return null;
+    await this.writeCreatedNodeAlias(file, rawAlias);
+    return file;
   }
 
-  async linkNewRelatedFile(origin: GraphPage, semanticRole: GateRole, file: TFile, selectedField: string): Promise<GraphPage> {
+  async linkNewRelatedFile(origin: GraphPage, semanticRole: GateRole, file: TFile, selectedField: string, rawAlias = ""): Promise<GraphPage> {
     // K-Plex already knows the complete minimum fact set for a newly created node. Publish both the
     // page and relationship before awaiting processFrontMatter/MetadataCache, then let the normal
     // incremental path reconcile richer metadata in the background.
-    const target = this.index.insertCreatedFile(file);
+    const alias = rawAlias.trim();
+    const target = this.index.insertCreatedFile(file, alias ? [alias] : []);
     if (origin.file?.extension === "md") {
       this.index.applyRelationshipEdit(origin.path, target.path, semanticRole, selectedField);
       try {
@@ -3447,6 +3474,35 @@ export default class ExcaliBrainPlugin extends Plugin {
       return target;
     }
     throw new Error("A new K-Plex relationship requires at least one Markdown endpoint.");
+  }
+
+  async createWebLinkRelatedPage(
+    origin: GraphPage,
+    semanticRole: GateRole,
+    rawUrl: string,
+    rawAlias: string,
+    selectedField: string,
+  ): Promise<GraphPage | null> {
+    if (origin.file?.extension !== "md") {
+      new Notice("Web links can only be added from a Markdown node.", 2800);
+      return null;
+    }
+    const url = this.normalizedWebUrl(rawUrl);
+    if (!url) {
+      new Notice("Enter a valid http:// or https:// web link.", 2800);
+      return null;
+    }
+    const alias = rawAlias.trim();
+    const provisional: GraphPage = {
+      path: url, file: null, name: alias || url, url, isFolder: false, isTag: false, mtime: null,
+      neighbours: new Map(), aliases: [], tags: [], noteType: null, primaryStyleTag: null, styleTags: [], maxLabelLength: 0,
+    };
+    const escapedAlias = alias.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
+    const reference = alias ? `[${escapedAlias}](${url})` : url;
+    await this.writeRelationship(origin.file, provisional, selectedField, reference);
+    const target = this.index.insertUrlPage(url, alias);
+    this.index.applyRelationshipEdit(origin.path, target.path, semanticRole, selectedField);
+    return target;
   }
 
   private placeholderPath(stem: string): string {

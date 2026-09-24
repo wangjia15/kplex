@@ -70,6 +70,23 @@ export type SidecarMarkdownMode = "preview" | "source";
 export type AttachmentImageDisplay = "label" | "thumbnail-label" | "image";
 export type NewNodeType = "markdown" | "excalidraw";
 export type DocumentSyncMode = "off" | "recent" | "pinned";
+export type NodeSortOrder = "name-asc" | "name-desc" | "modified-desc" | "modified-asc" | "created-desc" | "created-asc" | "connections-desc" | "connections-asc";
+
+function sanitizeNodeSortOrder(value: unknown): NodeSortOrder {
+  switch (value) {
+    case "name-asc":
+    case "name-desc":
+    case "modified-desc":
+    case "modified-asc":
+    case "created-desc":
+    case "created-asc":
+    case "connections-desc":
+    case "connections-asc":
+      return value;
+    default:
+      return "name-asc";
+  }
+}
 export type KplexLayoutProfile = {
   compactingFactor: number;
   parentColumns: number;
@@ -164,6 +181,8 @@ export interface ExcaliBrainSettings {
   contentPaneWidth: number;
   graphDepth: 1 | 2;
   connectorStyle: "bezier" | "straight";
+  /** Presentation-only order used within each visible Plex zone. */
+  nodeSortOrder: NodeSortOrder;
   parentColumns: number;
   childColumns: number;
   friendMaxHeight: number;
@@ -272,7 +291,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   ontologySuggesterTrigger: ":::",
   ontologySuggesterMidSentenceTrigger: "(",
   boldFields: false,
-  allowAutozoom: true,
+  allowAutozoom: false,
   allowAutofocuOnSearch: true,
   defaultAlwaysOnTop: false,
   embedCentralNode: false,
@@ -283,6 +302,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   contentPaneWidth: 38,
   graphDepth: 1,
   connectorStyle: "bezier",
+  nodeSortOrder: "name-asc",
   parentColumns: 2,
   childColumns: 5,
   friendMaxHeight: 350,
@@ -306,7 +326,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sidecarLastUrl: "",
   relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger" },
   documentSyncMode: "off",
-  animationSpeed: 1,
+  animationSpeed: 0.5,
   graphLenses: [],
   thumbnailProperty: "thumbnail",
   nodeImageProperty: "node-image",
@@ -421,6 +441,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     excludeFilepaths: old.excludeFilepaths ?? [],
     primaryTagFieldLowerCase: norm(old.primaryTagField ?? DEFAULT_SETTINGS.primaryTagField),
     connectorStyle: old.connectorStyle === "straight" ? "straight" : "bezier",
+    nodeSortOrder: sanitizeNodeSortOrder(old.nodeSortOrder),
     graphDepth: old.graphDepth === 2 ? 2 : 1,
     parentColumns: legacyProfile.parentColumns,
     childColumns: legacyProfile.childColumns,
@@ -1488,7 +1509,6 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Animation speed", desc: "Speed multiplier: 0 = off, 0.5 = slow, 1 = normal, 1.5 = fast, 2 = very fast. Shared nodes visibly migrate to their new position while the newly selected center arrives a little sooner.", control: { type: "slider", key: "animationSpeed", min: 0, max: 2, step: 0.1 } },
               { name: "Auto fit on navigation", control: { type: "toggle", key: "allowAutozoom" } },
               { name: "Open K-Plex in a pop-out window", desc: "When K-Plex is opened and no K-Plex view already exists, create it in a pop-out window. Desktop only.", control: { type: "toggle", key: "startInPopout" } },
-              { name: "Expanded toolbar", desc: "Show the full visibility/layout toolbar. When disabled, K-Plex keeps only the most important navigation controls visible.", control: { type: "toggle", key: "toolbarExpanded" } },
               { name: "Confirm before deleting files", desc: "Ask before a node context-menu action deletes a note using Obsidian's configured trash behavior. Placeholder cleanup is still explained the first time you use Delete node.", control: { type: "toggle", key: "confirmFileDelete" } },
               {
                 name: "Mouse navigation",

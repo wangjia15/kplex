@@ -37,6 +37,8 @@ function RelatedNoteComposer({
 }) {
   const [role, setRole] = useState<GateRole>(initialRole);
   const [query, setQuery] = useState("");
+  const [alias, setAlias] = useState("");
+  const [aliasFocused, setAliasFocused] = useState(false);
   const [noteTyped, setNoteTyped] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<GraphPage | null>(null);
   const [ontology, setOntology] = useState(() => plugin.defaultOntologyField(initialRole));
@@ -61,6 +63,16 @@ function RelatedNoteComposer({
     [plugin, role, ontology, ontologyTyped],
   );
 
+  const webUrl = useMemo(() => {
+    const value = query.trim();
+    if (!/^https?:\/\//i.test(value)) return null;
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : null;
+    } catch {
+      return null;
+    }
+  }, [query]);
   const nameValidation = useMemo(() => plugin.validateRelatedNoteName(query), [plugin, query]);
 
   const chooseRole = (nextRole: GateRole) => {
@@ -97,16 +109,16 @@ function RelatedNoteComposer({
   };
 
   const createNew = async (kind: "markdown" | "excalidraw") => {
-    if (busy || selectedTarget || !nameValidation.valid || nameValidation.existing) return;
+    if (busy || selectedTarget || webUrl || !nameValidation.valid || nameValidation.existing) return;
     setBusy(true);
     try {
       const field = await prepareField();
       if (!field) return;
-      const file = await plugin.createNewRelatedFileForOrigin(origin, nameValidation.stem, kind);
+      const file = await plugin.createNewRelatedFileForOrigin(origin, nameValidation.stem, kind, alias);
       if (!file) return;
       setDefaultCreateType(kind);
       void plugin.rememberNewNodeDefaultType(kind);
-      const page = await plugin.linkNewRelatedFile(origin, role, file, field);
+      const page = await plugin.linkNewRelatedFile(origin, role, file, field, alias);
       plugin.requestRelationshipFlair(file.path);
       onCommitted?.();
       onClose();
@@ -119,7 +131,10 @@ function RelatedNoteComposer({
   };
 
   const createPlaceholder = async () => {
-    if (busy || selectedTarget || !nameValidation.valid || nameValidation.existing) return;
+    if (busy || selectedTarget || webUrl || !nameValidation.valid || nameValidation.existing) return;
+    if (alias.trim()) {
+      new Notice("Placeholder nodes cannot persist aliases. The alias will not be saved.", 4_000);
+    }
     setBusy(true);
     try {
       const field = await prepareField();
@@ -131,6 +146,24 @@ function RelatedNoteComposer({
       onClose();
     } catch (error) {
       new Notice(`Could not create placeholder: ${error instanceof Error ? error.message : String(error)}`, 5000);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createWebLink = async () => {
+    if (busy || selectedTarget || !webUrl || origin.file?.extension !== "md") return;
+    setBusy(true);
+    try {
+      const field = await prepareField();
+      if (!field) return;
+      const page = await plugin.createWebLinkRelatedPage(origin, role, webUrl, alias, field);
+      if (!page) return;
+      plugin.requestRelationshipFlair(page.path);
+      onCommitted?.();
+      onClose();
+    } catch (error) {
+      new Notice(`Could not add web link: ${error instanceof Error ? error.message : String(error)}`, 5000);
     } finally {
       setBusy(false);
     }
@@ -152,8 +185,9 @@ function RelatedNoteComposer({
     setOntology(value);
   };
 
-  const createAvailable = !selectedTarget && nameValidation.valid && !nameValidation.existing;
+  const createAvailable = !selectedTarget && !webUrl && nameValidation.valid && !nameValidation.existing;
   const placeholderAvailable = createAvailable && origin.file?.extension === "md";
+  const webLinkAvailable = !selectedTarget && Boolean(webUrl) && origin.file?.extension === "md";
   const roleRow = allowRoleSelection
     ? createElement(
         "div",
@@ -180,8 +214,8 @@ function RelatedNoteComposer({
     getKey: (page: GraphPage) => page.path,
     getLabel: (page: GraphPage) => plugin.index.titleFor(page),
     getDetail: (page: GraphPage) => page.path,
-    placeholder: "Find a note or type a new note name…",
-    ariaLabel: "Related note",
+    placeholder: "Find a note, type a new name, or paste a web link…",
+    ariaLabel: "Related note name or web link",
     autoFocus: true,
     disabled: busy,
     className: `kplex-add-related-note-search${selectedTarget ? " has-selection" : ""}`,
@@ -191,9 +225,29 @@ function RelatedNoteComposer({
     maxFloatingHeight: 320,
     onCtrlEnter: () => {
       if (selectedTarget) void linkExisting();
+      else if (webLinkAvailable) void createWebLink();
       else if (createAvailable) void createNew(defaultCreateType);
     },
   });
+
+  const aliasInput = !selectedTarget ? createElement("input", {
+    type: "text",
+    className: "kplex-create-alias-input",
+    value: alias,
+    placeholder: "Alias",
+    "aria-label": "Alias (optional)",
+    disabled: busy,
+    onFocus: () => setAliasFocused(true),
+    onBlur: () => setAliasFocused(false),
+    onChange: (event: { currentTarget: HTMLInputElement }) => setAlias(event.currentTarget.value),
+  }) : null;
+
+  const nameEditor = createElement(
+    "div",
+    { className: `kplex-create-name-pair${aliasFocused ? " is-alias-focused" : ""}${selectedTarget ? " has-selection" : ""}` },
+    noteSearch,
+    aliasInput,
+  );
 
   const ontologySearch = createElement(FuzzySearchInput<string>, {
     value: ontology,
@@ -218,10 +272,7 @@ function RelatedNoteComposer({
     {
       type: "button",
       className: `kplex-add-related-type-button${defaultCreateType === "markdown" ? " is-default" : ""}`,
-      title: createAvailable
-        ? `Create Markdown note and link it${defaultCreateType === "markdown" ? " (Ctrl/Cmd+Enter)" : ""}`
-        : nameValidation.error ?? (nameValidation.existing ? "A note with this name already exists." : "Type a valid new note name."),
-      "aria-label": "Create Markdown note",
+      "aria-label": createAvailable ? "Create Markdown note and link it" : "Create Markdown note",
       "aria-keyshortcuts": "Control+Enter Meta+Enter",
       disabled: !createAvailable || busy,
       "data-kplex-primary-action": defaultCreateType === "markdown" ? "true" : undefined,
@@ -236,10 +287,7 @@ function RelatedNoteComposer({
         {
           type: "button",
           className: `kplex-add-related-type-button${defaultCreateType === "excalidraw" ? " is-default" : ""}`,
-          title: createAvailable
-            ? `Create Excalidraw drawing and link it${defaultCreateType === "excalidraw" ? " (Ctrl/Cmd+Enter)" : ""}`
-            : nameValidation.error ?? (nameValidation.existing ? "A note with this name already exists." : "Type a valid new note name."),
-          "aria-label": "Create Excalidraw drawing",
+          "aria-label": createAvailable ? "Create Excalidraw drawing and link it" : "Create Excalidraw drawing",
           "aria-keyshortcuts": "Control+Enter Meta+Enter",
           disabled: !createAvailable || busy,
           "data-kplex-primary-action": defaultCreateType === "excalidraw" ? "true" : undefined,
@@ -254,11 +302,6 @@ function RelatedNoteComposer({
     {
       type: "button",
       className: "kplex-add-related-type-button",
-      title: placeholderAvailable
-        ? "Create a placeholder link without creating a file"
-        : origin.file?.extension !== "md"
-          ? "Placeholder links require a Markdown origin note."
-          : nameValidation.error ?? (nameValidation.existing ? "A note with this name already exists." : "Type a valid new note name."),
       "aria-label": "Create placeholder node",
       disabled: !placeholderAvailable || busy,
       onClick: () => { void createPlaceholder(); },
@@ -266,13 +309,28 @@ function RelatedNoteComposer({
     createElement(ObsidianIcon, { name: "circle-dashed", size: 20 }),
   );
 
+  const webLinkButton = webUrl
+    ? createElement(
+        "button",
+        {
+          type: "button",
+          className: "kplex-add-related-link-button",
+          "aria-label": origin.file?.extension === "md" ? "Add web link" : "Web links require a Markdown origin node",
+          disabled: !webLinkAvailable || busy,
+          "data-kplex-primary-action": webLinkAvailable ? "true" : undefined,
+          onClick: () => { void createWebLink(); },
+        },
+        createElement(ObsidianIcon, { name: "globe", size: 19 }),
+        createElement("span", null, "Add link"),
+      )
+    : null;
+
   const linkButton = selectedTarget
     ? createElement(
         "button",
         {
           type: "button",
           className: "kplex-add-related-link-button",
-          title: `Link to ${plugin.index.titleFor(selectedTarget)}`,
           "aria-label": `Link to ${plugin.index.titleFor(selectedTarget)}`,
           disabled: busy,
           "data-kplex-primary-action": "true",
@@ -288,24 +346,21 @@ function RelatedNoteComposer({
     { className: "kplex-add-related-action-area" },
     selectedTarget
       ? linkButton
-      : createElement(
-          "div",
-          { className: `kplex-add-related-create-actions${excalidrawAvailable ? " has-three-actions" : ""}` },
-          markdownButton,
-          excalidrawButton,
-          placeholderButton,
-        ),
+      : webUrl
+        ? webLinkButton
+        : createElement(
+            "div",
+            { className: `kplex-add-related-create-actions${excalidrawAvailable ? " has-three-actions" : ""}` },
+            markdownButton,
+            excalidrawButton,
+            placeholderButton,
+          ),
   );
 
-  const editToggle = !selectedTarget ? createElement(
+  const editToggle = !selectedTarget && !webUrl ? createElement(
     "label",
-    {
-      className: "kplex-create-edit-toggle",
-      title: "Center the new note and open it in the Sidecar.",
-    },
-    createElement("span", { className: "kplex-create-edit-copy" },
-      createElement("strong", null, "Open for editing"),
-    ),
+    { className: "kplex-create-edit-toggle" },
+    createElement("span", { className: "kplex-create-edit-copy" }, createElement("strong", null, "Open for editing")),
     createElement(
       "span",
       { className: `checkbox-container${editAfterCreate ? " is-enabled" : ""}` },
@@ -313,6 +368,7 @@ function RelatedNoteComposer({
         type: "checkbox",
         checked: editAfterCreate,
         disabled: busy,
+        "aria-label": "Open the new note for editing",
         onChange: (event: { currentTarget: HTMLInputElement }) => {
           const enabled = event.currentTarget.checked;
           setEditAfterCreate(enabled);
@@ -323,31 +379,33 @@ function RelatedNoteComposer({
     ),
   ) : null;
 
-  const controlRow = createElement(
-    "div",
-    { className: "kplex-add-related-control-row" },
-    ontologySearch,
-    editToggle,
-  );
-
-  const composeRow = createElement(
-    "div",
-    { className: "kplex-add-related-compose-row" },
-    noteSearch,
-    actionArea,
-  );
+  const controlRow = createElement("div", { className: "kplex-add-related-control-row" }, ontologySearch, editToggle);
+  const composeRow = createElement("div", { className: "kplex-add-related-compose-row" }, nameEditor, actionArea);
 
   let statusText: string | null = null;
+  let statusError = false;
   if (selectedTarget) {
     statusText = `Selected existing note: ${selectedTarget.path}`;
+  } else if (webUrl) {
+    if (origin.file?.extension !== "md") {
+      statusText = "Web links can only be added from a Markdown node because the relationship is stored in document properties.";
+      statusError = true;
+    } else {
+      statusText = alias.trim() ? `Add “${alias.trim()}” as a web link.` : "Add this web link. Add an optional alias for its display text.";
+    }
   } else if (noteTyped && query.trim()) {
-    if (nameValidation.error) statusText = nameValidation.error;
-    else if (nameValidation.existing) statusText = "A note with this name already exists. Select it from the search results to link it.";
-    else statusText = `Create “${nameValidation.stem}” as Markdown${excalidrawAvailable ? ", Excalidraw" : ""}, or a placeholder. Ctrl/Cmd+Enter creates ${defaultCreateType === "excalidraw" ? "Excalidraw" : "Markdown"}.`;
+    if (nameValidation.error) {
+      statusText = nameValidation.error;
+      statusError = true;
+    } else if (nameValidation.existing) {
+      statusText = "A note with this name already exists. Select it from the search results to link it.";
+    } else {
+      statusText = `Create “${nameValidation.stem}” as Markdown${excalidrawAvailable ? ", Excalidraw" : ""}, or a placeholder. Alias is optional.`;
+    }
   }
 
   const status = statusText
-    ? createElement("div", { className: `kplex-add-related-create-hint${nameValidation.error && !selectedTarget ? " is-error" : ""}` }, statusText)
+    ? createElement("div", { className: `kplex-add-related-create-hint${statusError ? " is-error" : ""}` }, statusText)
     : null;
 
   return createElement(
@@ -359,6 +417,7 @@ function RelatedNoteComposer({
     status,
   );
 }
+
 
 export class NewRelatedNoteModal extends Modal {
   private root: Root | null = null;
@@ -411,6 +470,7 @@ export class NewRelatedNoteModal extends Modal {
     });
     this.titleEl.setText(this.allowRoleSelection ? "Add relationship" : `Add ${ROLE_LABEL[this.role]}`);
     this.modalEl.addClass("kplex-add-related-modal");
+    this.modalEl.setAttr("data-kplex-tooltip-scope", "");
     this.contentEl.empty();
     this.root = createRoot(this.contentEl);
     this.root.render(createElement(RelatedNoteComposer, {

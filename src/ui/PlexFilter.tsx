@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSP
 import { createPortal } from "react-dom";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { GraphPage, Role } from "../types";
+import type { NodeSortOrder } from "../settings";
 import { createGraphLensId, defaultGraphLensStyle, validateGraphLensExpression, type GraphLensDefinition, type GraphLensMode, type GraphLensScope, type GraphLensStyle } from "../lens/GraphLens";
 import {
   buildGraphLensSimpleExpression,
@@ -21,6 +22,15 @@ export type { PlexFilterState } from "../lens/SimplePlexFilter";
 export { EMPTY_PLEX_FILTER } from "../lens/SimplePlexFilter";
 
 export type GraphFilterLayoutMode = "keep" | "reflow";
+export type PlexVisibilitySetting =
+  | "showAttachments"
+  | "showVirtualNodes"
+  | "showInferredNodes"
+  | "showPageNodes"
+  | "renderAlias"
+  | "showFolderNodes"
+  | "showTagNodes"
+  | "showURLNodes";
 
 type LensEditorMode = "simple" | "code";
 type LensDraft = Pick<GraphLensDefinition, "id" | "name" | "scope" | "mode" | "expression"> & {
@@ -132,6 +142,25 @@ function defaultOperator(field: GraphLensSimpleField): GraphLensSimpleOperator {
   return "is";
 }
 
+function quickOperatorChoices(field: PlexFilterState["field"]): Choice[] {
+  if (field === "file.tags") return [
+    { value: "has", label: "has tag" },
+    { value: "does-not-have", label: "does not have tag" },
+  ];
+  if (field === "node.noteType") return [
+    { value: "is", label: "is" },
+    { value: "is-not", label: "is not" },
+  ];
+  return [
+    { value: "contains", label: "contains" },
+    { value: "does-not-have", label: "does not contain" },
+    { value: "is", label: "is" },
+    { value: "is-not", label: "is not" },
+    { value: "starts-with", label: "starts with" },
+    { value: "ends-with", label: "ends with" },
+  ];
+}
+
 function scopeLabel(scope: GraphLensScope): string {
   if (scope === "edge") return "Relationship";
   if (scope === "evidence") return "Evidence";
@@ -173,6 +202,10 @@ export function PlexFilter({
   onLayoutModeChange,
   showSiblings,
   onShowSiblingsChange,
+  visibility,
+  onVisibilityChange,
+  sortOrder,
+  onSortOrderChange,
 }: {
   index: GraphIndex;
   center?: GraphPage;
@@ -185,6 +218,10 @@ export function PlexFilter({
   onLayoutModeChange: (mode: GraphFilterLayoutMode) => void;
   showSiblings: boolean;
   onShowSiblingsChange: (show: boolean) => void;
+  visibility: Record<PlexVisibilitySetting, boolean>;
+  onVisibilityChange: (key: PlexVisibilitySetting) => void;
+  sortOrder: NodeSortOrder;
+  onSortOrderChange: (order: NodeSortOrder) => void;
 }) {
   const idPrefix = useId().replaceAll(":", "");
   const tagListId = `kplex-filter-tags-${idPrefix}`;
@@ -441,6 +478,7 @@ export function PlexFilter({
   const panel = open ? <div
     ref={panelRef}
     className="kplex-filter-panel kplex-filter-portal"
+    data-kplex-tooltip-scope
     style={panelStyle}
     onPointerDown={(event) => event.stopPropagation()}
   >
@@ -451,38 +489,90 @@ export function PlexFilter({
     <datalist id={folderListId}>{suggestions.folders.map((folder) => <option key={folder} value={folder} />)}</datalist>
 
     <section className="kplex-filter-section">
-      <div className="kplex-filter-section-heading kplex-filter-visibility-heading">
-        <span>Visibility</span>
-        <div className="kplex-filter-visibility-options">
-          <label className="kplex-filter-layout-toggle" title="Show notes that share one of the visible parents with the current center note.">
-            <span>Siblings</span>
-            <input type="checkbox" checked={showSiblings} onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
-            <span className="kplex-filter-switch" aria-hidden="true" />
-          </label>
-          <label className="kplex-filter-layout-toggle" title="Show relationships between visible non-central notes. Cross-links use the same ontology gates as normal connections.">
-            <span>Cross-links</span>
-            <input type="checkbox" checked={value.showCrossLinks} onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
-            <span className="kplex-filter-switch" aria-hidden="true" />
-          </label>
-        </div>
+      <div className="kplex-filter-section-heading">Visibility</div>
+      <div className="kplex-filter-visibility-grid">
+        {[
+          ["showPageNodes", "Markdown"],
+          ["showAttachments", "Attachments"],
+          ["showFolderNodes", "Folders"],
+          ["showTagNodes", "Tags"],
+          ["showURLNodes", "Web links"],
+          ["showVirtualNodes", "Placeholders"],
+          ["showInferredNodes", "Inferred"],
+          ["renderAlias", "Aliases"],
+        ].map(([key, label]) => <label key={key} className="kplex-filter-layout-toggle">
+          <span>{label}</span>
+          <input
+            type="checkbox"
+            checked={visibility[key as PlexVisibilitySetting]}
+            aria-label={`Show ${label.toLocaleLowerCase()}`}
+            onChange={() => onVisibilityChange(key as PlexVisibilitySetting)}
+          />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>)}
+        <label className="kplex-filter-layout-toggle">
+          <span>Siblings</span>
+          <input type="checkbox" checked={showSiblings} aria-label="Show siblings" onChange={(event) => onShowSiblingsChange(event.currentTarget.checked)} />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>
+        <label className="kplex-filter-layout-toggle">
+          <span>Cross-links</span>
+          <input type="checkbox" checked={value.showCrossLinks} aria-label="Show cross-links" onChange={(event) => onChange({ ...value, showCrossLinks: event.currentTarget.checked })} />
+          <span className="kplex-filter-switch" aria-hidden="true" />
+        </label>
       </div>
     </section>
 
     <section className="kplex-filter-section">
       <div className="kplex-filter-section-heading kplex-filter-heading-row">
-        <span>Quick filter</span>
-        <label className="kplex-filter-layout-toggle" title="When filtering, repack the surviving nodes instead of leaving them in their original positions.">
+        <span>Quick lens</span>
+        <label className="kplex-filter-layout-toggle">
           <span>Reflow</span>
-          <input type="checkbox" checked={layoutMode === "reflow"} onChange={(event) => onLayoutModeChange(event.currentTarget.checked ? "reflow" : "keep")} />
+          <input type="checkbox" checked={layoutMode === "reflow"} aria-label="Reflow filtered nodes" onChange={(event) => onLayoutModeChange(event.currentTarget.checked ? "reflow" : "keep")} />
           <span className="kplex-filter-switch" aria-hidden="true" />
         </label>
       </div>
-      <label>Keyword<input value={value.keyword} placeholder="Title, path or relationship" onChange={(e) => onChange({ ...value, keyword: e.currentTarget.value })} /></label>
-      <label>Tag<input value={value.tag} list={tagListId} placeholder="#tag" onChange={(e) => onChange({ ...value, tag: e.currentTarget.value })} /></label>
-      <label>Note type<select value={value.noteType} onChange={(e) => onChange({ ...value, noteType: e.currentTarget.value })}>
-        <option value="">Any</option>{suggestions.noteTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+      <div className="kplex-quick-lens-row">
+        <label>Scope<select
+          value={value.field}
+          onChange={(event) => {
+            const field = event.currentTarget.value as PlexFilterState["field"];
+            onChange({ ...value, field, operator: defaultOperator(field), value: "" });
+          }}
+        >
+          <option value="node.label">Note name</option>
+          <option value="file.tags">Tag</option>
+          <option value="node.noteType">Note type</option>
+        </select></label>
+        <label>Match<select value={value.operator} onChange={(event) => onChange({ ...value, operator: event.currentTarget.value as GraphLensSimpleOperator })}>
+          {quickOperatorChoices(value.field).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+        </select></label>
+        {value.field === "node.noteType"
+          ? <label>Value<select value={value.value} onChange={(event) => onChange({ ...value, value: event.currentTarget.value })}>
+              <option value="">Choose…</option>{suggestions.noteTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select></label>
+          : <label>Value<input
+              value={value.value}
+              list={value.field === "file.tags" ? tagListId : undefined}
+              placeholder={value.field === "file.tags" ? "#tag" : "Text"}
+              onChange={(event) => onChange({ ...value, value: event.currentTarget.value })}
+            /></label>}
+      </div>
+      {isPlexFilterActive(value) && <button className="kplex-filter-clear" onClick={() => onChange({ ...EMPTY_PLEX_FILTER, showCrossLinks: value.showCrossLinks })}>Clear quick lens</button>}
+    </section>
+
+    <section className="kplex-filter-section">
+      <div className="kplex-filter-section-heading">Node order</div>
+      <label>Sort within each zone<select value={sortOrder} onChange={(event) => onSortOrderChange(event.currentTarget.value as NodeSortOrder)}>
+        <option value="name-asc">Name · A → Z</option>
+        <option value="name-desc">Name · Z → A</option>
+        <option value="modified-desc">Modified · newest first</option>
+        <option value="modified-asc">Modified · oldest first</option>
+        <option value="created-desc">Created · newest first</option>
+        <option value="created-asc">Created · oldest first</option>
+        <option value="connections-desc">Connections · most first</option>
+        <option value="connections-asc">Connections · fewest first</option>
       </select></label>
-      {isPlexFilterActive(value) && <button onClick={() => onChange({ ...EMPTY_PLEX_FILTER, showCrossLinks: value.showCrossLinks })}>Clear quick filter</button>}
     </section>
 
     <section className="kplex-filter-section kplex-lens-section">

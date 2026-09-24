@@ -186,7 +186,7 @@ function resolveNeighbourhood(
       buckets[role].push({ page: target, relationType, typeDefinition: roleDefinition(relation, role), linkDirection: relation.direction, role });
     }
   }
-  const sort = (items: Neighbour[]) => items.sort((a, b) => index.titleFor(a.page).localeCompare(index.titleFor(b.page), undefined, { numeric: true, sensitivity: "base" })).slice(0, max);
+  const sort = (items: Neighbour[]) => index.sortNeighbours(items).slice(0, max);
   return {
     center,
     parents: sort(buckets.parent),

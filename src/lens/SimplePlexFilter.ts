@@ -1,49 +1,39 @@
-import {
-  compileGraphPredicate,
-  predicateAll,
-  predicateAny,
-  predicateCall,
-  predicateLiteral,
-  predicateProperty,
-  type CompiledGraphPredicate,
-  type GraphPredicateExpression,
-} from "./GraphPredicate";
+import { buildGraphLensSimpleConditionExpression, type GraphLensSimpleField, type GraphLensSimpleOperator } from "./GraphLensSimple";
+import { compileGraphPredicate, type CompiledGraphPredicate } from "./GraphPredicate";
+import { tryParseGraphPredicateExpression } from "./GraphPredicateParser";
 
-export type PlexFilterState = { keyword: string; tag: string; noteType: string; showCrossLinks: boolean };
-export const EMPTY_PLEX_FILTER: PlexFilterState = { keyword: "", tag: "", noteType: "", showCrossLinks: true };
+export type QuickPlexFilterField = Extract<GraphLensSimpleField, "node.label" | "file.tags" | "node.noteType">;
+export type PlexFilterState = {
+  field: QuickPlexFilterField;
+  operator: GraphLensSimpleOperator;
+  value: string;
+  showCrossLinks: boolean;
+};
+
+export const EMPTY_PLEX_FILTER: PlexFilterState = {
+  field: "node.label",
+  operator: "contains",
+  value: "",
+  showCrossLinks: true,
+};
 
 export function isPlexFilterActive(filter: PlexFilterState): boolean {
-  return Boolean(filter.keyword.trim() || filter.tag.trim() || filter.noteType.trim());
+  return Boolean(filter.value.trim());
 }
 
 /**
- * Keeps the existing simple filter UI while translating it into the generic predicate model.
- * Named lenses can later produce the same CompiledGraphPredicate without changing graph rendering.
+ * The quick filter is deliberately a one-condition Graph Lens. Keeping it on the same field /
+ * operator vocabulary as named lenses makes positive and negative filtering behave identically
+ * without maintaining a second predicate language in the toolbar.
  */
 export function compilePlexFilter(filter: PlexFilterState): CompiledGraphPredicate | null {
-  const clauses: GraphPredicateExpression[] = [];
-  const keyword = filter.keyword.trim();
-  const tag = filter.tag.trim();
-  const noteType = filter.noteType.trim().replace(/^#/, "");
-
-  if (keyword) {
-    const wanted = predicateLiteral(keyword);
-    clauses.push(predicateAny(
-      predicateCall("text.contains", predicateProperty("node", "label"), wanted),
-      predicateCall("text.contains", predicateProperty("node", "path"), wanted),
-      predicateCall("text.contains", predicateProperty("node", "aliases"), wanted),
-      predicateCall("text.contains", predicateProperty("edge", "definition"), wanted),
-    ));
-  }
-
-  if (tag) {
-    clauses.push(predicateCall("tags.has", predicateProperty("node", "tags"), predicateLiteral(tag)));
-  }
-
-  if (noteType) {
-    clauses.push(predicateCall("text.equals", predicateProperty("node", "noteType"), predicateLiteral(noteType)));
-  }
-
-  if (!clauses.length) return null;
-  return compileGraphPredicate(predicateAll(...clauses));
+  if (!isPlexFilterActive(filter)) return null;
+  const expressionSource = buildGraphLensSimpleConditionExpression({
+    id: "quick-filter",
+    field: filter.field,
+    operator: filter.operator,
+    value: filter.value.trim(),
+  });
+  const parsed = tryParseGraphPredicateExpression(expressionSource);
+  return parsed.expression ? compileGraphPredicate(parsed.expression) : null;
 }

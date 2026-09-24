@@ -11,23 +11,16 @@ import {
 import { Menu, type TFile, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphPage } from "../types";
-import type { DocumentSyncMode, KplexViewSurface, SidecarPosition } from "../settings";
+import type { DocumentSyncMode, KplexViewSurface, NodeSortOrder, SidecarPosition } from "../settings";
 import { SearchBox } from "./SearchBox";
 import { PlexGraph } from "./PlexGraph";
 import { ObsidianIcon } from "./ObsidianIcon";
-import { EMPTY_PLEX_FILTER, PlexFilter, type GraphFilterLayoutMode, type PlexFilterState } from "./PlexFilter";
+import { EMPTY_PLEX_FILTER, PlexFilter, type GraphFilterLayoutMode, type PlexFilterState, type PlexVisibilitySetting } from "./PlexFilter";
 import { compilePlexFilter } from "../lens/SimplePlexFilter";
 import { compileGraphLensDefinitions, type GraphLensDefinition } from "../lens/GraphLens";
+import { installKplexLongPressTooltips } from "./LongPressTooltip";
 
-type BooleanToolbarSetting =
-  | "showAttachments"
-  | "showVirtualNodes"
-  | "showInferredNodes"
-  | "showPageNodes"
-  | "renderAlias"
-  | "showFolderNodes"
-  | "showTagNodes"
-  | "showURLNodes";
+type BooleanToolbarSetting = PlexVisibilitySetting;
 
 function IndexStatusIndicator({ plugin }: { plugin: ExcaliBrainPlugin }) {
   const [status, setStatus] = useState(() => plugin.getIndexStatus());
@@ -105,6 +98,14 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     // by that identity and adopt its new path only after the rebuilt index has published it. This
     // prevents the center from briefly/finally falling back to folder:/ when its filename changes.
     const trackedFile = activeFileRef.current;
+    if (trackedFile && trackedFile.path === activePathRef.current && !plugin.index.get(trackedFile.path)
+      && plugin.isManagedCreatedFile(trackedFile) && plugin.app.vault.getFileByPath(trackedFile.path) === trackedFile) {
+      // A full index build can have started before this note was created. If that stale snapshot
+      // publishes after the user has already selected the optimistic node, immediately reinsert the
+      // known TFile instead of allowing the center to fall back to the previous history entry.
+      plugin.index.insertCreatedFile(trackedFile);
+      return;
+    }
     if (trackedFile && trackedFile.path !== activePathRef.current && plugin.index.get(trackedFile.path)) {
       activePathRef.current = trackedFile.path;
       setActivePath(trackedFile.path);
@@ -137,6 +138,12 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     () => plugin.subscribeSearchFocus(hostLeaf, () => setSearchFocusRequest((value) => value + 1)),
     [plugin, hostLeaf],
   );
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    return installKplexLongPressTooltips(el.ownerDocument);
+  }, []);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -218,6 +225,13 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     forceRender((value) => value + 1);
   };
 
+  const setNodeSortOrder = async (order: NodeSortOrder) => {
+    if (plugin.settings.nodeSortOrder === order) return;
+    plugin.settings.nodeSortOrder = order;
+    await plugin.saveSettings(false, true);
+    forceRender((value) => value + 1);
+  };
+
   const setSiblingVisibility = async (show: boolean) => {
     if (plugin.settings.renderSiblings === show) return;
     plugin.settings.renderSiblings = show;
@@ -280,12 +294,6 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
 
   const toggleConnectorStyle = async () => {
     plugin.settings.connectorStyle = plugin.settings.connectorStyle === "straight" ? "bezier" : "straight";
-    await plugin.saveSettings(false, false);
-    forceRender((value) => value + 1);
-  };
-
-  const toggleToolbar = async () => {
-    plugin.settings.toolbarExpanded = !plugin.settings.toolbarExpanded;
     await plugin.saveSettings(false, false);
     forceRender((value) => value + 1);
   };
@@ -367,6 +375,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
   return <div
     ref={rootRef}
     className={`excalibrain-app kplex-surface-${surface}${condensedBySidecar ? " is-sidecar-condensed" : ""}`}
+    data-kplex-tooltip-scope
     tabIndex={-1}
     onKeyDownCapture={handlePlexKeyDown}
     onPointerDownCapture={handlePlexPointerDown}
@@ -379,29 +388,43 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
           <ToolButton icon="arrow-big-left" title="Navigate back" onClick={() => goHistory(-1)} disabled={historyCursor <= 0} />
           <ToolButton icon="arrow-big-right" title="Navigate forward" onClick={() => goHistory(1)} disabled={historyCursor >= plugin.settings.navigationHistory.length - 1} />
           <SearchBox index={plugin.index} onActivate={activate} focusRequest={searchFocusRequest} />
-          <PlexFilter index={plugin.index} center={page} revision={renderRevision} value={plexFilter} onChange={setPlexFilter} lenses={graphLenses} onLensesChange={updateGraphLenses} layoutMode={filterLayoutMode} onLayoutModeChange={setFilterLayoutMode} showSiblings={plugin.settings.renderSiblings} onShowSiblingsChange={(show) => void setSiblingVisibility(show)} />
-          <div className={`excalibrain-top-actions${plugin.settings.toolbarExpanded ? " is-expanded" : " is-compact"}`}>
+          <PlexFilter
+            index={plugin.index}
+            center={page}
+            revision={renderRevision}
+            value={plexFilter}
+            onChange={setPlexFilter}
+            lenses={graphLenses}
+            onLensesChange={updateGraphLenses}
+            layoutMode={filterLayoutMode}
+            onLayoutModeChange={setFilterLayoutMode}
+            showSiblings={plugin.settings.renderSiblings}
+            onShowSiblingsChange={(show) => void setSiblingVisibility(show)}
+            visibility={{
+              showAttachments: plugin.settings.showAttachments,
+              showVirtualNodes: plugin.settings.showVirtualNodes,
+              showInferredNodes: plugin.settings.showInferredNodes,
+              showPageNodes: plugin.settings.showPageNodes,
+              renderAlias: plugin.settings.renderAlias,
+              showFolderNodes: plugin.settings.showFolderNodes,
+              showTagNodes: plugin.settings.showTagNodes,
+              showURLNodes: plugin.settings.showURLNodes,
+            }}
+            onVisibilityChange={(key) => void toggleToolbarSetting(key)}
+            sortOrder={plugin.settings.nodeSortOrder}
+            onSortOrderChange={(order) => void setNodeSortOrder(order)}
+          />
+          <div className="excalibrain-top-actions is-compact">
             <button
               className={`excalibrain-icon-button${syncMode !== "off" && syncTargetAvailable ? " is-on" : ""}`}
               aria-label={`${syncTitle}. Click for sync actions and link mode.`}
               onClick={showDocumentSyncMenu}
             ><ObsidianIcon name={syncIcon} size={17} /></button>
             <ToolButton icon={isPinned ? "bookmark-check" : "bookmark"} title={isPinned ? "Unpin current node" : "Pin current node"} on={isPinned} onClick={() => void togglePinned()} />
-            {plugin.settings.toolbarExpanded && <>
-              <span className="excalibrain-toolbar-divider" />
-              <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
-              <ToolButton icon="paperclip" title="Show or hide attachments" on={plugin.settings.showAttachments} onClick={() => void toggleToolbarSetting("showAttachments")} />
-              <ToolButton icon="circle-minus" title="Show or hide virtual nodes" on={plugin.settings.showVirtualNodes} onClick={() => void toggleToolbarSetting("showVirtualNodes")} />
-              <ToolButton icon="git-pull-request-draft" title="Show or hide inferred relationships" on={plugin.settings.showInferredNodes} onClick={() => void toggleToolbarSetting("showInferredNodes")} />
-              <ToolButton icon="file-text" title="Show or hide Markdown page nodes" on={plugin.settings.showPageNodes} onClick={() => void toggleToolbarSetting("showPageNodes")} />
-              <ToolButton icon="venetian-mask" title="Show aliases instead of file names" on={plugin.settings.renderAlias} onClick={() => void toggleToolbarSetting("renderAlias")} />
-              <ToolButton icon="folder" title="Show or hide folder nodes" on={plugin.settings.showFolderNodes} onClick={() => void toggleToolbarSetting("showFolderNodes")} />
-              <ToolButton icon="tag" title="Show or hide tag nodes" on={plugin.settings.showTagNodes} onClick={() => void toggleToolbarSetting("showTagNodes")} />
-              <ToolButton icon="globe" title="Show or hide web link nodes" on={plugin.settings.showURLNodes} onClick={() => void toggleToolbarSetting("showURLNodes")} />
-              <ToolButton icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"} title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each node’s children"} on={plugin.settings.graphDepth === 2} onClick={() => void toggleExpandedView()} />
-              <ToolButton icon="spline" title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"} on={plugin.settings.connectorStyle === "bezier"} onClick={() => void toggleConnectorStyle()} />
-            </>}
-            <ToolButton icon={plugin.settings.toolbarExpanded ? "chevrons-right" : "ellipsis"} title={plugin.settings.toolbarExpanded ? "Use compact toolbar" : "Show full toolbar"} on={plugin.settings.toolbarExpanded} onClick={() => void toggleToolbar()} />
+            <span className="excalibrain-toolbar-divider" />
+            <ToolButton icon="refresh-cw" title="Refresh K-Plex" onClick={() => void plugin.rebuildIndex()} />
+            <ToolButton icon={plugin.settings.graphDepth === 2 ? "list-chevrons-down-up" : "list-chevrons-up-down"} title={plugin.settings.graphDepth === 2 ? "Single-level view" : "Expanded view: show each node’s children"} on={plugin.settings.graphDepth === 2} onClick={() => void toggleExpandedView()} />
+            <ToolButton icon="spline" title={plugin.settings.connectorStyle === "bezier" ? "Use straight connectors" : "Use curved connectors"} on={plugin.settings.connectorStyle === "bezier"} onClick={() => void toggleConnectorStyle()} />
             <ToolButton icon="settings" title="Open K-Plex settings" onClick={() => plugin.openSettings()} />
           </div>
         </header>
