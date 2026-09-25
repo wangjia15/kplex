@@ -162,7 +162,7 @@ Introduce only the seam and the current behavior in C19/C20. Do not build a mode
 
 Current commands are `npm test` and `npm run build`. C02 will add the **proposed** commands `npm run check:architecture` and `npm run verify`; C08 will add `npm run check:core`. Do not claim these commands exist before their checkpoint lands.
 
-After introduction, `verify` runs architecture checks, portable-core type checking, all registered test suites, and the real production build. Keep `npm test` as the aggregate behavioral regression entry point as suites are added. CI must run the same aggregate lane; a standalone test file that no script invokes is not a guardrail.
+After introduction, `verify` runs architecture checks, portable-core type checking, all non-host test suites, and the real production build. Keep `npm test` as the aggregate non-host behavioral regression entry point as suites are added. These commands must work without an installed/running Obsidian application. CI must run the same aggregate lane; a standalone test file that no script invokes is not a guardrail. Add a separate `verify:obsidian` lane in C02 for real-host checks as described in section 4.6.
 
 The existing harness transpiles selected files without full cross-module type checking. It must remain supplemented by the real repository build against installed Obsidian declarations. A second host-free lane must compile/import actual portable modules without stubbing their dependencies.
 
@@ -204,6 +204,7 @@ Use the lane codes below in checkpoint records. All implementation checkpoints s
 | X — Plex/layout | Deterministic scene output; keep-layout/reflow; gate shown/total vs hasAny; style-only lens; sections/folding/provenance; no graph mutation/rebuild | Zone symmetry, lateral bottom alignment, scroll packing, expanded children, sibling scale, camera preservation. |
 | M — mutation/navigation | Success/cancel/failure/stale target; provenance-safe writes; optimistic rollback; deletion history; owning-view routing | Real temporary-vault YAML edits/trash, linked/unlinked/pinned tabs, Sidecar ownership and source-line navigation; platform-specific host behavior as touched. |
 | H — host independence | Type/import checks plus clean-process tests with no Obsidian/DOM/window shim, host-free records and fake scheduler/provider | Demonstrates core reuse only; does not claim a working Logseq/Tana integration or host-independent native UI. |
+| O — Obsidian automation | Capability preflight; deploy exact local build to a test vault; CLI-driven application/UI/performance scenarios exercising relevant G/I/P/U/X/M checks | Capture assertions, diagnostics, screenshots and measurements; record unsupported pop-out/device scenarios separately. Required when the affected host checks have a configured capable environment. |
 
 For DOM behavior tests, select a minimal harness in C03 and record the choice. Do not bolt React UI tests onto the indexing suite's fake `window`. A DOM emulator can validate interaction contracts; actual Obsidian and physical touch remain separate evidence.
 
@@ -213,14 +214,38 @@ C00 records a repeatable procedure using a representative large vault or non-pri
 
 For hot-path changes compare before/after on the same environment. Require zero new full rebuilds for presentation-only actions, no full evidence scan for a per-file patch, no arbitrary property copies, and no extra whole-vault body reads on a fresh warm restore. Preserve bounded reads, time slicing and iOS prewarm behavior. Agree numeric timing/memory tolerances from actual baseline measurements in C00; do not invent universal millisecond budgets or use flaky CI timing as the sole gate. If measurements are unavailable, record performance validation as pending.
 
+### 4.6 Environment-aware host automation for coding agents
+
+Codex, Claude Code and other implementing agents should run applicable real-host tests themselves whenever a configured Obsidian environment is available. Keep this workflow in repository scripts and contributor/agent instructions, independent of the agent product. Automate repeatable application, UI and performance checks; do not equate a successful reload or a screenshot with a passed scenario.
+
+**Verified CLI basis (2026-09-25):** The official CLI controls the desktop application, which must run and may be launched by a command. Detect the installed version and commands using `obsidian version` and `obsidian help`; installation of Obsidian alone does not establish CLI readiness. Explicit `vault=<name-or-id>` comes before the command. Available developer commands include `plugin:reload`, `dev:dom`, `dev:css`, `dev:screenshot`, `dev:errors`, `dev:console`, `eval` and `dev:cdp`. Recheck local help instead of assuming a fixed capability set. [Official CLI reference](https://help.obsidian.md/cli).
+
+**Separate the runners:** Keep shared fixtures, scenario expectations and result records independent of the host. Put CLI invocation, deployment and UI-driving details in test infrastructure such as `scripts/testing/obsidian/` and `tests/host/obsidian/`, outside shipped `src/` and the core dependency graph. Future hosts can implement their own driver and applicability list; do not build a universal automation framework now. No Obsidian CLI dependency belongs in portable tests, production runtime, or generic application contracts.
+
+**Local build and test loop:**
+
+1. Preflight the CLI, desktop connection, required commands and explicitly configured test-vault identity/path/config directory. Use bounded timeouts. Record versions and capabilities; distinguish missing setup from a command/assertion failure. Never fall back to the currently active personal vault. Establish a dedicated fixture vault, following [Obsidian's development-vault guidance](https://docs.obsidian.md/Plugins/Getting%20started/Build%20a%20plugin), and keep machine-specific paths out of committed configuration.
+2. Run `verify`, then stage this checkout's `dist/main.js`, `dist/manifest.json` and `dist/styles.css` into that vault's plugin directory for `k-plex`. Validate destination and artifact hashes; keep plugin data/settings for warm-restore cases. Disable the test plugin while replacing artifacts, then enable/reload through the CLI. Restart the test application when required by manifest changes. `plugin:install` installs a community plugin; it does not deploy an unpublished local build. Do not test a downloaded release instead of the changed code.
+3. Drive the relevant fixture scenarios through registered commands and real UI input. Discover command IDs rather than invent them. Use DOM/CSS assertions and screenshots for rendering; use CLI-supported CDP/input automation where available for keyboard/pointer/focus flows. Direct `eval` invocation of application methods is useful for state checks but does not prove UI event wiring. Wait for observable readiness and expected state with deadlines, not arbitrary long sleeps.
+4. Assert outcomes and capture errors/console output per scenario. For performance, use section 4.5's datasets, repetitions and cold/warm conditions; distinguish CLI round-trip time, indexing completion and visible rendering. Any temporary measurement hooks stay development/test-only and are removed or disabled in production. Verify pop-out target/window coverage explicitly; if the driver cannot reach it, leave that scenario pending.
+5. Emit a machine-readable report plus failure evidence: source revision and dirty-tree/build identity, artifact hashes, runtime/OS/host versions, capabilities, fixture/settings/viewport, scenario IDs, assertions, timings and screenshot/log paths. A process exit code alone is not success. Clean up only resources owned by the test run; preserve artifacts needed to diagnose failures. Run cold-state cleanup only in the designated disposable fixture storage.
+
+**Availability and acceptance rules:**
+
+- Normal CI and machines without Obsidian run `verify` and portable/DOM-emulated scenarios. Record required Obsidian scenarios as **unavailable/pending**, with the reason and rerun command/artifact identity. Continue independent work; do not silently count a skip as host validation.
+- An explicitly requested `verify:obsidian` run, or a dedicated host CI job, is strict: missing prerequisites, timeouts and failed assertions return nonzero. A separate preflight can report unavailable without failing the portable lane. Once a capable target is configured, agents run relevant host scenarios rather than routinely handing them back as manual tasks.
+- For a future non-Obsidian implementation, mark Obsidian-specific scenarios **not applicable** with the target/reason and run that host's relevant integration checks. Absence of Obsidian on a machine does not make checks for the Obsidian product inapplicable.
+- Automated evidence may satisfy a previously manual desktop gate when it tests the same behavior. Screenshots without assertions/review, desktop mobile emulation and synthetic clicks do not establish physical touch or platform-specific lifecycle correctness. Keep unautomated device/accessibility/platform checks explicit; do not promise universal full automation.
+- A later equipped environment reruns pending scenarios against the exact build under acceptance. Source changes invalidate affected earlier results. Final acceptance of the Obsidian refactor still requires its applicable host gates; portable progress does not depend on installing Obsidian everywhere.
+
 ## 5. Agent execution and tracking protocol
 
 1. Read this ledger and applicable `AGENTS.md`; inspect branch/status and checkpoint prerequisites.
 2. State the selected checkpoint, exact behavior seam, current consumers, invariants, expected touched files and verification lanes. If a checkpoint contains several risky extractions, create lettered subrows before editing and execute only the first.
 3. Characterize any missing behavior before moving it. Make the smallest extraction and migrate one representative consumer; retain an explicit facade if necessary.
-4. Run required checks, inspect the full diff, and search for remaining callers, obsolete imports, accidental schema changes and diagnostics. Do not suppress failures to finish a checkpoint.
+4. Run required checks, including applicable CLI-driven host scenarios when a configured capable environment is available (section 4.6), inspect the full diff, and search for remaining callers, obsolete imports, accidental schema changes and diagnostics. Do not suppress failures to finish a checkpoint.
 5. Update the ledger, append an action record and update architecture/component docs only for implemented contracts. Record exact verification evidence and the next small step.
-6. Stop at the checkpoint boundary. Do not commit, publish or deploy unless separately requested. Do not ask again for permission for routine authorized edits/checks.
+6. Stop at the checkpoint boundary. Local build deployment to the configured disposable test vault is part of verification; do not commit, publish or deploy to a personal/production vault unless separately requested. Do not ask again for permission for routine authorized edits/checks.
 
 If a product-policy conflict cannot be resolved from current instructions and tests, record it and ask one focused question; continue independent work. If manual validation is unavailable, mark **Review** rather than **Done**. Do not fabricate a smoke test or block independent work just because a device is unavailable. Dependent high-risk expansion waits for its prerequisite acceptance evidence.
 
@@ -238,7 +263,7 @@ IDs C00–C26 replace the draft's numbering. All implementation statuses start P
 | --- | --- | --- | --- | --- |
 | C00 | Baseline, conflicts, invariant inventory | — | G/I/P/U/X/M | Pending |
 | C01 | Behavior characterization and test seams | C00 | G/I/X | Pending |
-| C02 | Dependency rules, checker, PR verification | C01 | H | Pending |
+| C02 | Dependency rules, checker, PR verification and optional-host runner | C01 | H/O | Pending |
 | C03 | Token/icon seam and one action primitive | C02 | U | Pending |
 | C04 | Floating-layer mechanics from existing consumers | C03 | U | Pending |
 | C05 | Host-free shared suggester | C04 | U | Pending |
@@ -272,6 +297,7 @@ These parent checkpoints are **not single-session implementation tasks**. Execut
 
 | Parent | Prescribed independently reviewable slices |
 | --- | --- |
+| C02 | C02a: architecture rules/checker and portable CI lane; C02b: host capability preflight, local-build staging and minimal CLI smoke/report runner. Extend scenarios with the checkpoints that need them; do not wait for a complete UI test framework. |
 | C12 | C12a: file/container/tag source facts; C12b: resolved/unresolved link and ontology occurrences; C12c: remaining Date/URL/body source facts and complete collector wiring. Inventory exact source ownership first so overlapping source kinds are not emitted twice. |
 | C14 | C14a: characterize patch outcomes, observer visibility and cancellation boundaries; C14b: move staging/commit behavior intact behind the compiler contract and migrate the production patch path. |
 | C16 | C16a: serialization codecs separated from host binding; C16b: snapshot generation orchestration/storage port; C16c: body-cache/parser service ownership. Keep the active-generation transaction inside its storage implementation. |
@@ -309,6 +335,8 @@ Do not mechanically extract code into a new service whose constructor still take
 ### C02 — Add the architecture contract and executable guardrails
 
 **Change:** Create `docs/ARCHITECTURE.md` with the import diagram, layer ownership, current migration status and feature-placement guide. Add the scoped dependency checker and its negative tests from section 4.2. Introduce `check:architecture` and aggregate `verify`, and a PR CI job on the actual default branch using supported Node 22, installed lockfile dependencies, tests and build. Add `check:core` to the aggregate only when C08 creates it.
+
+C02b adds section 4.6's environment-aware `verify:obsidian` runner and documents one-time test-vault/CLI setup in contributor guidance. Start with exact-build deployment, opening K-Plex, a real rendered-state assertion and error capture. Test preflight/report/failure handling without Obsidian; execute the real smoke test when available and keep that evidence pending otherwise. A host-unavailable C02b review must not block independent portable checkpoints; only checks requiring its actual host evidence wait. Add UI/performance scenarios as their behavior is extracted.
 
 Update `AGENTS.md` with rules for new/migrated areas, not claims that legacy code has already moved. Record exact grandfathered roots/edges and removal checkpoints. Rules include transitive/type-only coupling, no plugin escape hatches, single semantics owner, and no weakening tests to accommodate moves.
 
@@ -545,7 +573,9 @@ Behavior seam and consumer(s) migrated:
 Files/contracts changed:
 Invariants preserved and characterization tests:
 Commands + Node version + actual results:
-Manual/device/performance checks actually run:
+Host target/capabilities and artifact/report identity:
+Automated host/manual/device/performance checks actually run:
+Unavailable or not-applicable scenarios, reasons and rerun command:
 Outstanding checks and why:
 Persisted formats/keys changed: none | separate approved migration reference
 Remaining legacy callers / facade owner / retirement checkpoint:
@@ -564,3 +594,8 @@ Next checkpoint / exact first step:
 ### 2026-09-25 — View-mode design clarification
 
 - Added separate projection-policy and layout-strategy responsibilities, with semantic roles independent of physical gates. Updated C19/C20 to establish and verify this seam for future mindmap/rotated views while preserving current condensed/expanded and sibling behavior. Documentation only; no additional product modes are in refactor scope.
+
+### 2026-09-25 — Environment-aware host testing
+
+- Added an optional-environment, strict-when-invoked Obsidian CLI verification lane, local artifact deployment, scenario evidence and performance capture. Separated host drivers from portable tests and distinguished unavailable checks from genuinely inapplicable host scenarios. C02 establishes the runner; later checkpoints extend coverage. Agent instructions support both Codex and Claude Code without requiring Obsidian on every machine.
+- Checked the official CLI and plugin-development documentation. This update changes the plan only; no CLI installation, vault deployment or application/UI/performance tests were performed.
