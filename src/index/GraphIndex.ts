@@ -1795,6 +1795,8 @@ export class GraphIndex {
       settings.showPageNodes ? "1" : "0",
       settings.showURLNodes ? "1" : "0",
       settings.renderAlias ? "1" : "0",
+      settings.nameFields,
+      settings.plainNameFields,
       settings.nodeSortOrder,
       settings.nodeTitleScript,
       settings.excludeFilepaths.join("\u0002"),
@@ -1999,8 +2001,9 @@ export class GraphIndex {
   }
 
   private displayNameFromConfiguredFields(page: GraphPage): string | null {
-    if (!this.plugin.settings.renderAlias) return null;
-    const fields = this.plugin.settings.nameFields
+    // The toolbar toggle switches between two field lists; with no plain fields, off = file name.
+    const settings = this.plugin.settings;
+    const fields = (settings.renderAlias ? settings.nameFields : settings.plainNameFields ?? "")
       .split(",")
       .map((field) => field.trim())
       .filter(Boolean);
@@ -2045,6 +2048,7 @@ export class GraphIndex {
       page.mtime ?? 0,
       settings.renderAlias ? "1" : "0",
       settings.nameFields,
+      settings.plainNameFields,
       settings.nodeTitleScript,
       page.aliases[0] ?? "",
       page.name,

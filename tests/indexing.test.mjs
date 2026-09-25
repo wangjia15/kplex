@@ -1268,6 +1268,20 @@ try {
   assert.equal(index.titleFor(index.get("Note A.md")), "RuntimeAliasZZZ", "Missing higher-priority name fields must fall back to aliases");
   settings.nameFields = "aliases";
   index.refreshDisplayNames();
+  // The toolbar display-name toggle switches to plainNameFields (empty = file name, the legacy behavior).
+  noteACache.frontmatter.title = "Original English title";
+  settings.renderAlias = false;
+  index.refreshDisplayNames();
+  assert.equal(index.titleFor(index.get("Note A.md")), "Note A", "Display names off without plain fields must show the file name");
+  settings.plainNameFields = "title";
+  index.refreshDisplayNames();
+  assert.equal(index.titleFor(index.get("Note A.md")), "Original English title", "Display names off must use the plain name fields");
+  settings.renderAlias = true;
+  index.refreshDisplayNames();
+  assert.equal(index.titleFor(index.get("Note A.md")), "RuntimeAliasZZZ", "Display names on must use the alias again");
+  settings.plainNameFields = "";
+  delete noteACache.frontmatter.title;
+  index.refreshDisplayNames();
   const aliasesCountAfter = index.discoveredFields().find((field) => field.normalized === "aliases")?.count ?? 0;
   assert.equal(aliasesCountAfter, aliasesCountBefore, "Incremental saves must not inflate discovered-field counts");
 

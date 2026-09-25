@@ -8,6 +8,7 @@ import { LinkDirection, RelationType } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, siblingScale, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
+import { ABSTRACT_CARD_WIDTH, AbstractCard, type AbstractCardState } from "./AbstractCard";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 import { RenameNoteModal } from "./RenameNoteModal";
@@ -865,6 +866,63 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (flairPendingTimer.current !== null) window.clearTimeout(flairPendingTimer.current);
   }, []);
 
+  // ---- Abstract hover cards (paper reading) -------------------------------------------------
+  const [abstractCards, setAbstractCards] = useState<AbstractCardState[]>([]);
+  const abstractShowTimer = useRef<number | null>(null);
+  const abstractHideTimer = useRef<number | null>(null);
+  const clearAbstractTimers = () => {
+    if (abstractShowTimer.current !== null) window.clearTimeout(abstractShowTimer.current);
+    if (abstractHideTimer.current !== null) window.clearTimeout(abstractHideTimer.current);
+    abstractShowTimer.current = null;
+    abstractHideTimer.current = null;
+  };
+  const hideAbstractCard = () => {
+    if (abstractHideTimer.current !== null) window.clearTimeout(abstractHideTimer.current);
+    // A short grace period lets the pointer travel from the node into the card to pin it.
+    abstractHideTimer.current = window.setTimeout(() => {
+      abstractHideTimer.current = null;
+      setAbstractCards((cards) => cards.filter((card) => card.pinned));
+    }, 300);
+  };
+  const scheduleAbstractCard = (node: PositionedNode, pointerType?: string) => {
+    if (pointerType !== "mouse" && pointerType !== "pen") return;
+    if (!plugin.settings.paperReadingEnabled || !plugin.settings.paperHoverAbstract) return;
+    if (node.page.transient || node.page.file?.extension !== "md") return;
+    clearAbstractTimers();
+    const path = node.page.path;
+    abstractShowTimer.current = window.setTimeout(() => {
+      abstractShowTimer.current = null;
+      const el = viewport.current;
+      const nodeEl = el ? Array.from(el.querySelectorAll<HTMLElement>("[data-kplex-path]")).find((candidate) => candidate.dataset.kplexPath === path) : null;
+      if (!el || !nodeEl) return;
+      const box = el.getBoundingClientRect();
+      const rect = nodeEl.getBoundingClientRect();
+      let left = rect.right - box.left + 10;
+      if (left + ABSTRACT_CARD_WIDTH > el.clientWidth - 8) left = rect.left - box.left - ABSTRACT_CARD_WIDTH - 10;
+      left = Math.max(8, Math.min(left, el.clientWidth - ABSTRACT_CARD_WIDTH - 8));
+      const top = Math.max(8, Math.min(rect.top - box.top, el.clientHeight - 220));
+      setAbstractCards((cards) => cards.some((card) => card.pinned && card.path === path)
+        ? cards.filter((card) => card.pinned)
+        : [...cards.filter((card) => card.pinned), { id: "hover", path, left, top, pinned: false }]);
+    }, 750);
+  };
+  const toggleAbstractPin = (id: string) => {
+    setAbstractCards((cards) => {
+      const card = cards.find((item) => item.id === id);
+      if (!card) return cards;
+      // Unpinning closes the card; pinning keeps it (at most 8 pinned cards).
+      if (card.pinned) return cards.filter((item) => item.id !== id);
+      const pinned = cards.filter((item) => item.pinned);
+      return [...pinned.slice(-7), { ...card, id: `pin-${Date.now()}`, pinned: true }];
+    });
+  };
+  useEffect(() => () => clearAbstractTimers(), []);
+  // Navigating keeps pinned cards but drops the transient hover card.
+  useEffect(() => {
+    clearAbstractTimers();
+    setAbstractCards((cards) => cards.filter((card) => card.pinned));
+  }, [activePath]);
+
   const clearEdgeTooltip = () => {
     if (edgeTooltipTimer.current !== null) window.clearTimeout(edgeTooltipTimer.current);
     edgeTooltipTimer.current = null;
@@ -1164,7 +1222,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       const target = e.target as Element | null;
       // Native wheel scrolling is retained only inside bounded thought lists. Everywhere else
       // the wheel zooms, regardless of whether the wheel/middle button is currently pressed.
-      if (target?.closest?.(".kplex-zone-scroll, .kplex-expanded-scroll, .modal-container")) return;
+      if (target?.closest?.(".kplex-zone-scroll, .kplex-expanded-scroll, .modal-container, .kplex-abstract-card")) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const px = e.clientX - rect.left;
@@ -2289,9 +2347,18 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       connectionState={connectionStateFor(baseNode)}
       onActivate={() => activateNode(baseNode.page)}
       onOpen={() => openNode(baseNode.page, baseNode.role === "center")}
-      onHoverNode={() => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "node", path: baseNode.page.path }); }}
+      onHoverNode={(_, pointerType) => {
+        if (connectDrag || nodeDrag) return;
+        scheduleHoverIntent({ kind: "node", path: baseNode.page.path });
+        if (pointerType) scheduleAbstractCard(baseNode, pointerType);
+      }}
       onHoverGate={(_, gate) => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "gate", path: baseNode.page.path, gate }); }}
-      onHoverEnd={() => { if (!connectDrag && !nodeDrag) clearHoverIntent(true); }}
+      onHoverEnd={() => {
+        if (abstractShowTimer.current !== null) window.clearTimeout(abstractShowTimer.current);
+        abstractShowTimer.current = null;
+        hideAbstractCard();
+        if (!connectDrag && !nodeDrag) clearHoverIntent(true);
+      }}
       onHoverPreview={(_, targetEl, event) => {
         if (!connectDrag && !nodeDrag) plugin.triggerHoverPreview(baseNode.page, targetEl, event, neighborhood.center.file?.path ?? "");
       }}
@@ -2559,6 +2626,18 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         {draggedBaseNode && renderNode(draggedBaseNode, renderedNodeMap.get(draggedBaseNode.page.path) ?? draggedBaseNode)}
       </div>
     </div>
+
+    {abstractCards.map((card) => <AbstractCard
+      key={card.id}
+      plugin={plugin}
+      card={card}
+      onPin={toggleAbstractPin}
+      onClose={(id) => setAbstractCards((cards) => cards.filter((item) => item.id !== id))}
+      onMove={(id, left, top) => setAbstractCards((cards) => cards.map((item) => item.id === id ? { ...item, left, top } : item))}
+      onPointerEnter={() => { if (abstractHideTimer.current !== null) window.clearTimeout(abstractHideTimer.current); abstractHideTimer.current = null; }}
+      onPointerLeave={() => { if (!card.pinned) hideAbstractCard(); }}
+      onShowDetails={(page) => void plugin.openPaperDetails(page, hostLeaf, (target) => onActivate(target))}
+    />)}
 
     {edgeHoverTooltip && <div
       className="kplex-edge-hover-tooltip"

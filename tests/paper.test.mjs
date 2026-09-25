@@ -448,6 +448,16 @@ await test("article import helpers", () => {
   assert.equal(articles.tidyMarkdown("a\n\n\n\nb\n"), "a\n\nb\n");
 });
 
+await test("abstract extraction for hover cards", () => {
+  const ex = load("src/paper/AbstractExtract.js");
+  assert.deepEqual(ex.extractAbstract("---\ntitle: x\n---\nAuthors\n\nAbstract\n\nFirst line of abstract.\nSecond line.\n\n1 Introduction\n\nIntro text."),
+    { text: "First line of abstract.\nSecond line.", translated: false });
+  assert.deepEqual(ex.extractAbstract("###### Abstract\n\nConverted article abstract.\n\n## 1 Introduction\n"), { text: "Converted article abstract.", translated: false });
+  assert.deepEqual(ex.extractAbstract("> Abstract:Robust detection matters.\nComments: CVPR"), { text: "Robust detection matters.", translated: false });
+  assert.deepEqual(ex.extractAbstract("## Abstract\n\nEnglish.\n\n## 摘要（简体中文）\n\n中文。\n"), { text: "中文。", translated: true });
+  assert.equal(ex.extractAbstract("Just a note without an abstract."), null);
+});
+
 await test("openalex title match picks the fullest matching version", () => {
   const results = [
     { id: "https://openalex.org/W1", title: "RoFormer: Enhanced transformer with Rotary Position Embedding", referenced_works_count: 56 },

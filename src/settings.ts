@@ -124,6 +124,8 @@ export interface ExcaliBrainSettings {
   renderAlias: boolean;
   /** Ordered comma-separated frontmatter fields used as display-name fallbacks. */
   nameFields: string;
+  /** Name fields used while "Use frontmatter display names" / the toolbar alias toggle is off. Empty = file name. */
+  plainNameFields: string;
   nodeTitleScript: string;
   backgroundColor: string;
   excludeFilepaths: string[];
@@ -274,6 +276,12 @@ export interface ExcaliBrainSettings {
   paperImageFolder: string;
   /** Child property linking a paper note to its imported full-text note. */
   paperArticleField: string;
+  /** Show a paper's abstract when hovering a node in the Plex. */
+  paperHoverAbstract: boolean;
+  /** Properties checked in order for the hover abstract. */
+  paperAbstractFields: string;
+  /** Property that stores the translated abstract (written by Save to note / Add to vault). */
+  paperAbstractProperty: string;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -288,6 +296,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   inverseArrowDirection: true,
   renderAlias: true,
   nameFields: "aliases",
+  plainNameFields: "",
   nodeTitleScript: "",
   backgroundColor: "#0c3e6aff",
   excludeFilepaths: [],
@@ -404,6 +413,9 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   paperDownloadImages: true,
   paperImageFolder: "images",
   paperArticleField: "Full text",
+  paperHoverAbstract: true,
+  paperAbstractFields: "abstract_zh, abstract, summary",
+  paperAbstractProperty: "abstract_zh",
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -524,6 +536,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     childMaxHeight: Math.max(120, Math.min(900, Number(old.childMaxHeight ?? DEFAULT_SETTINGS.childMaxHeight))),
     noteTypeField: String(old.noteTypeField ?? DEFAULT_SETTINGS.noteTypeField),
     nameFields: String(old.nameFields ?? DEFAULT_SETTINGS.nameFields).trim() || DEFAULT_SETTINGS.nameFields,
+    plainNameFields: typeof old.plainNameFields === "string" ? old.plainNameFields.trim() : "",
     kplexInitialized: Boolean(old.kplexInitialized),
     startInPopout: Boolean(old.startInPopout),
     lastActivePath: String(old.lastActivePath ?? ""),
@@ -577,6 +590,9 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     paperDownloadImages: old.paperDownloadImages !== false,
     paperImageFolder: typeof old.paperImageFolder === "string" && old.paperImageFolder.trim() ? old.paperImageFolder.trim() : DEFAULT_SETTINGS.paperImageFolder,
     paperArticleField: typeof old.paperArticleField === "string" && old.paperArticleField.trim() ? old.paperArticleField.trim() : DEFAULT_SETTINGS.paperArticleField,
+    paperHoverAbstract: old.paperHoverAbstract !== false,
+    paperAbstractFields: typeof old.paperAbstractFields === "string" && old.paperAbstractFields.trim() ? old.paperAbstractFields : DEFAULT_SETTINGS.paperAbstractFields,
+    paperAbstractProperty: typeof old.paperAbstractProperty === "string" && old.paperAbstractProperty.trim() ? old.paperAbstractProperty.trim() : DEFAULT_SETTINGS.paperAbstractProperty,
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",
@@ -1740,6 +1756,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Plex background", control: { type: "color", key: "backgroundColorHex" } },
               { name: "Use frontmatter display names", desc: "Use the first non-empty value from the configured name fields. Turn this off to always show the file name.", control: { type: "toggle", key: "renderAlias" } },
               { name: "Name fields", desc: "Comma-separated frontmatter fields checked in order. Text and list values are supported; the first non-empty value is used, then K-Plex falls back to the file name. Example: title, aliases, backup_names.", control: { type: "text", key: "nameFields" } },
+              { name: "Name fields when display names are off", desc: "Fields shown when display names are switched off from the toolbar, for example title. Leave empty to show file names. Use this to switch between two names, such as a translated alias and the original title.", control: { type: "text", key: "plainNameFields" } },
               { name: "Show full tag names", control: { type: "toggle", key: "showFullTagName" } },
             ],
           },
@@ -1860,6 +1877,9 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Reference property", desc: "Property a paper uses to list the papers it cites. Cited papers appear above the paper; papers citing it appear below.", control: { type: "text", key: "paperReferenceField" } },
               { name: "Paper folder", desc: "Where added papers are created. Leave empty to use Obsidian's default location for new notes.", control: { type: "folder", key: "paperFolder" } },
               { name: "Show paper details in the sidecar", desc: "Open Paper details beside the Plex so you can keep browsing the graph. When off, or when K-Plex is in a side panel, a dialog is used.", control: { type: "toggle", key: "paperDetailsInSidecar" } },
+              { name: "Show abstract on hover", desc: "Hovering a node shows its abstract in a card you can pin, move and close. Uses only what is already in the note: no network access.", control: { type: "toggle", key: "paperHoverAbstract" } },
+              { name: "Abstract properties", desc: "Properties checked in order for the hover card, for example abstract_zh, abstract, summary. When none is set, the abstract section of the note is used.", control: { type: "text", key: "paperAbstractFields" } },
+              { name: "Translated abstract property", desc: "Save to note and Add to vault store the translated abstract in this property.", control: { type: "text", key: "paperAbstractProperty" } },
               { name: "Double-click shows paper details", desc: "Double-clicking a paper node other than the center shows its Paper details in the sidecar instead of opening the note. The center node still opens its note.", control: { type: "toggle", key: "paperDoubleClickDetails" } },
               { name: "Note type for added papers", desc: `Value written to “${this.ebPlugin.settings.noteTypeField || "Note type"}” so paper nodes can be styled and filtered.`, control: { type: "text", key: "paperNoteType" } },
               { name: "Papers per page", desc: "How many references or citing papers to load at a time.", control: { type: "slider", key: "paperListLimit", min: 10, max: 200, step: 10 } },
@@ -2032,7 +2052,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
 
     const settingKey = key as keyof ExcaliBrainSettings;
     (this.ebPlugin.settings as unknown as Record<string, unknown>)[settingKey] = value;
-    if (key === "renderAlias" || key === "nameFields") {
+    if (key === "renderAlias" || key === "nameFields" || key === "plainNameFields") {
       await this.ebPlugin.saveSettings(false, false);
       this.ebPlugin.index.refreshDisplayNames();
       return;

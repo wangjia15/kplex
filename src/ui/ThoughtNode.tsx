@@ -41,7 +41,7 @@ export function ThoughtNode({
   connectionState?: ConnectionDragState;
   onActivate: (node: PositionedNode) => void;
   onOpen: (node: PositionedNode) => void;
-  onHoverNode: (node: PositionedNode) => void;
+  onHoverNode: (node: PositionedNode, pointerType?: string) => void;
   onHoverGate: (node: PositionedNode, gate: GateSide) => void;
   onHoverEnd: () => void;
   onHoverPreview: (node: PositionedNode, target: HTMLElement, event: PointerEvent) => void;
@@ -112,7 +112,7 @@ export function ThoughtNode({
     data-kplex-path={node.page.path}
     onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => { onNodePointerDown(node, e); }}
     onPointerEnter={(e: ReactPointerEvent<HTMLDivElement>) => {
-      onHoverNode(node);
+      onHoverNode(node, e.nativeEvent.pointerType);
       // Obsidian-style page preview is intentionally explicit: hold Ctrl/Cmd while entering
       // a thought. Without the modifier no preview is scheduled at all, which avoids timer
       // churn while moving across a dense Plex.

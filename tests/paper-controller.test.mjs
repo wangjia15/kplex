@@ -133,6 +133,8 @@ const plugin = {
     paperTargetLanguage: "zh-CN",
     paperTranslateOnImport: true,
     paperNoteAbstractFormat: "sections",
+    paperAbstractFields: "abstract_zh, abstract, summary",
+    paperAbstractProperty: "abstract_zh",
     hierarchy,
   },
   app: {
@@ -219,6 +221,7 @@ assert.equal(created[0].path, "Papers/Su 2021 - Train Short, Test Long.md");
 assert.equal(created[0].fm.arxiv, "2108.12409");
 assert.equal(created[0].fm["Note type"], "Paper");
 assert(created[0].body.includes("## Abstract") && created[0].body.includes("## 摘要（简体中文）"), "translate-on-import writes both sections");
+assert(typeof created[0].fm.abstract_zh === "string" && created[0].fm.abstract_zh.startsWith("译"), "the translated abstract is also stored in frontmatter");
 assert.deepEqual(relationCalls.at(-1), ["create", "notes/roformer.md", "parent", refPage.path, "References"]);
 await controller.addPaper(references.items[1], roformer, "references", lookup);
 assert.equal(created.length, 1, "a second add reuses the note created a moment ago");
@@ -278,6 +281,20 @@ await controller.addPaper(offline.items[1], mamba, "references", controller.buil
 assert.deepEqual(relationCalls.at(-1), ["create", "notes/3det-mamba.md", "parent", "notes/attention.md", "References"], "Link from a parsed reference");
 const citingOnline = await controller.listPapers(controller.idsForPage(roformer), roformer, "", "citations", 0, 50);
 assert.equal(citingOnline.source, "semantic-scholar");
+
+// Hover abstract: properties in order, then the note body; results cached per file revision.
+const hoverFile = addFile("notes/hover.md", { summary: "短摘要", abstract_zh: "中文摘要。第二句。" }, "Body");
+hoverFile.stat = { mtime: 1 };
+const hoverPage = pageFor(hoverFile);
+assert.deepEqual(await controller.abstractPreview(hoverPage), { text: "中文摘要。第二句。", source: "abstract_zh", translated: true });
+const bodyOnly = addFile("notes/body-only.md", { title: "X" }, "Intro\n\n> Abstract:We study rotary embeddings.\nComments: 12 pages\n");
+bodyOnly.stat = { mtime: 1 };
+assert.deepEqual(await controller.abstractPreview(pageFor(bodyOnly)), { text: "We study rotary embeddings.", source: "note", translated: false });
+const translatedSection = addFile("notes/translated.md", {}, "## Abstract\n\nEnglish.\n\n## 摘要（简体中文）\n\n中文段落。\n");
+translatedSection.stat = { mtime: 1 };
+assert.equal((await controller.abstractPreview(pageFor(translatedSection))).text, "中文段落。", "a saved translated section is preferred over the original");
+assert.equal(await controller.abstractPreview({ ...hoverPage, file: null }), null);
+assert.equal(frontmatter.get("notes/roformer.md").abstract_zh.length > 0, true, "Save to note stores the translated abstract property");
 
 // Unload aborts outstanding modal work.
 const abort = controller.createAbortController();

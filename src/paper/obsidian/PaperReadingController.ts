@@ -4,9 +4,18 @@ import type { GraphPage } from "../../types";
 import { normalizeFieldName } from "../../index/fieldParser";
 import { isOtherPaperLink, paperIdsFromValue, paperKey, parseFieldList, parsePaperId, titlePaperId, uniquePaperIds } from "../PaperIdentifier";
 import { PaperMetadataService } from "../PaperMetadataService";
-import { appendAbstractSections, missingPaperProperties, paperFileStem, paperFrontmatter, paperNoteBody, uniqueStem } from "../PaperNoteBuilder";
+import { appendAbstractSections, missingPaperProperties, paperFileStem, paperFrontmatter, paperNoteBody, translatedParagraphs, uniqueStem } from "../PaperNoteBuilder";
 import { isAbortError, PaperServiceError, throwIfAborted, type PaperId, type PaperListKind, type PaperListPage, type PaperRecord } from "../PaperTypes";
 import { referencesFromNote } from "../ReferenceParser";
+import { extractAbstract } from "../AbstractExtract";
+import { LruCache } from "../LruCache";
+
+export type AbstractPreview = {
+  text: string;
+  /** Property name or "note" when taken from the note body. */
+  source: string;
+  translated: boolean;
+};
 import { TranslationService, type TranslationResult } from "../translation/TranslationService";
 import { obsidianHttp, windowSleep } from "./ObsidianHttp";
 import { articleImageName, imagePrefix } from "../ArticleSources";
@@ -24,6 +33,7 @@ export class PaperReadingController {
   readonly metadata: PaperMetadataService;
   readonly translation: TranslationService;
   private readonly controllers = new Set<AbortController>();
+  private readonly abstractCache = new LruCache<string, AbstractPreview | null>(300);
 
   constructor(private readonly plugin: ExcaliBrainPlugin) {
     const now = () => Date.now();
@@ -130,6 +140,38 @@ export class PaperReadingController {
       if (file) return this.plugin.index.get(file.path) ?? null;
     }
     return null;
+  }
+
+  /**
+   * Abstract for the hover card, from local data only: the configured properties in order, then a
+   * translated abstract section, then the note's own Abstract section. Cached per file revision.
+   */
+  async abstractPreview(page: GraphPage): Promise<AbstractPreview | null> {
+    const file = page.file;
+    if (!file || file.extension !== "md" || page.transient) return null;
+    const key = `${file.path}|${file.stat.mtime}|${this.plugin.settings.paperAbstractFields}`;
+    const cached = this.abstractCache.get(key);
+    if (cached !== undefined) return cached;
+    let result: AbstractPreview | null = null;
+    const frontmatter = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (frontmatter) {
+      const byName = new Map(Object.entries(frontmatter).map(([name, value]) => [normalizeFieldName(name), [name, value] as const]));
+      for (const wanted of parseFieldList(this.plugin.settings.paperAbstractFields)) {
+        const entry = byName.get(normalizeFieldName(wanted));
+        const value = entry?.[1];
+        const text = typeof value === "string" ? value.trim() : Array.isArray(value) ? value.filter((item) => typeof item === "string").join("\n\n").trim() : "";
+        if (text) {
+          result = { text, source: entry?.[0] ?? wanted, translated: /[\u3400-\u9fff]/.test(text) };
+          break;
+        }
+      }
+    }
+    if (!result) {
+      const extracted = extractAbstract(await this.plugin.app.vault.cachedRead(file));
+      if (extracted) result = { text: extracted.text, source: "note", translated: extracted.translated };
+    }
+    this.abstractCache.set(key, result);
+    return result;
   }
 
   /** Identifiers for a list record: its ids, or a title hint for title-only references. */
@@ -273,6 +315,10 @@ export class PaperReadingController {
       Boolean(vault.getFileByPath(normalizePath(folder ? `${folder}/${candidate}.md` : `${candidate}.md`))));
     const body = paperNoteBody(full, translation, this.plugin.settings.paperNoteAbstractFormat, this.plugin.settings.paperTargetLanguage);
     const frontmatter = paperFrontmatter(full, this.plugin.settings.noteTypeField, this.plugin.settings.paperNoteType);
+    const abstractProperty = this.plugin.settings.paperAbstractProperty.trim();
+    if (translation && abstractProperty) {
+      frontmatter[abstractProperty] = translatedParagraphs(translation, this.plugin.settings.paperTargetLanguage).join("\n\n");
+    }
     const file = await this.plugin.createPaperNoteFile(folder, stem, body, frontmatter);
     if (!file) return null;
     const page = this.plugin.index.insertCreatedFile(file, [full.title]);
@@ -393,6 +439,10 @@ export class PaperReadingController {
     if (!file || file.extension !== "md") return { properties: 0, abstract: false };
     const existing = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     const missing = missingPaperProperties(existing, record);
+    const abstractProperty = this.plugin.settings.paperAbstractProperty.trim();
+    if (translation && abstractProperty && !Object.keys(existing).some((key) => key.toLowerCase() === abstractProperty.toLowerCase())) {
+      missing[abstractProperty] = translatedParagraphs(translation, this.plugin.settings.paperTargetLanguage).join("\n\n");
+    }
     const properties = Object.keys(missing).length;
     if (properties) {
       await this.plugin.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {

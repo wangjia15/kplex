@@ -291,7 +291,7 @@ Turn on **Settings → Paper reading → Enable paper reading** to use K-Plex as
 - **Import full text** saves an arXiv article as Markdown (formulas kept, figures optionally downloaded to an images folder), or opens it for Obsidian Web Clipper.
 - Double-click a paper node to show its details in the sidecar; double-click an image node to view the image there. The **Images** filter shows or hides figure nodes.
 
-See the [paper reading guide](docs/PAPER_READING.md) for identifiers, settings and privacy details.
+See the [paper reading guide](docs/PAPER_READING.md) for identifiers, settings and privacy details, and the [Chinese user manual with a worked example vault](docs/PAPER_READING_MANUAL.zh-CN.md) (中文使用手册).
 
 ## Mobile and touch
 
