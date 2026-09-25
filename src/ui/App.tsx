@@ -400,6 +400,7 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
             onShowSiblingsChange={(show) => void setSiblingVisibility(show)}
             visibility={{
               showAttachments: plugin.settings.showAttachments,
+              showImageNodes: plugin.settings.showImageNodes,
               showVirtualNodes: plugin.settings.showVirtualNodes,
               showInferredNodes: plugin.settings.showInferredNodes,
               showPageNodes: plugin.settings.showPageNodes,

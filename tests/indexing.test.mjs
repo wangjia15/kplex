@@ -372,7 +372,11 @@ for (const [path, name] of [
   ["src/editor/OntologySuggester.js", "OntologySuggester"],
   ["src/ui/AddToOntologyModal.js", "AddToOntologyModal"],
   ["src/ui/NoteTypeModal.js", "NoteTypeModal"],
+  ["src/ui/PaperDetailsModal.js", "PaperDetailsModal"],
+  ["src/ui/PaperReadingIntroModal.js", "PaperReadingIntroModal"],
+  ["src/paper/obsidian/PaperReadingController.js", "PaperReadingController"],
 ]) writeRuntimeStub(path, `exports.${name} = class {};`);
+writeRuntimeStub("src/ui/PaperView.js", `exports.KPLEX_PAPER_VIEW_TYPE = "kplex-paper"; exports.PaperView = class {};`);
 writeRuntimeStub("src/ui/DeleteNodeModal.js", `exports.DeleteNodeConfirmationModal = class {}; exports.RemainingNodeReferencesModal = class {};`);
 writeRuntimeStub("src/ui/viewProfile.js", `
 exports.activeLayoutProfile = () => null;

@@ -2815,3 +2815,304 @@ body.kplex-filter-panel-open .tooltip { z-index: 100300; }
     align-items: center;
   }
 }
+
+/* ------------------------------------------------------------------------------------------
+ * Paper reading mode
+ * ---------------------------------------------------------------------------------------- */
+
+.kplex-paper-modal {
+  width: min(880px, 94vw);
+}
+
+.kplex-paper-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+.kplex-paper-view {
+  padding: var(--size-4-4);
+}
+
+.kplex-paper-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  align-items: center;
+}
+
+.kplex-paper-nav.is-empty {
+  display: none;
+}
+
+.kplex-paper-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+}
+
+.kplex-paper-translation {
+  margin: 0 0 var(--size-4-2);
+  user-select: text;
+}
+
+a.kplex-paper-row-title {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.kplex-paper-row-title:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.kplex-paper-title {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  line-height: var(--line-height-tight);
+}
+
+.kplex-paper-title-translation,
+.kplex-paper-row-translation {
+  color: var(--text-muted);
+}
+
+.kplex-paper-meta,
+.kplex-paper-row-meta,
+.kplex-paper-stats,
+.kplex-paper-provider,
+.kplex-paper-muted,
+.kplex-paper-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.kplex-paper-stats,
+.kplex-paper-links,
+.kplex-paper-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-3);
+  align-items: center;
+}
+
+.kplex-paper-links {
+  font-size: var(--font-ui-small);
+  margin-top: var(--size-4-1);
+}
+
+.kplex-paper-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+.kplex-paper-abstract {
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  padding: var(--size-4-3);
+}
+
+.kplex-paper-abstract-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  margin-bottom: var(--size-4-2);
+}
+
+.kplex-paper-abstract-label {
+  font-weight: var(--font-semibold);
+  flex: 1 1 auto;
+}
+
+.kplex-paper-abstract-body p {
+  margin: 0 0 var(--size-4-2);
+  user-select: text;
+}
+
+.kplex-paper-view-toggle {
+  display: inline-flex;
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.kplex-paper-view-toggle button {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-2-1) var(--size-4-2);
+  height: auto;
+}
+
+.kplex-paper-view-toggle button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.kplex-paper-bilingual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+  user-select: text;
+}
+
+.kplex-paper-bilingual-paragraph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.kplex-paper-bilingual-target {
+  color: var(--text-muted);
+  padding-left: var(--size-4-3);
+  border-left: 2px solid var(--interactive-accent);
+  margin-top: var(--size-2-1);
+}
+
+.kplex-paper-provider {
+  margin-top: var(--size-4-2);
+}
+
+.kplex-paper-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.kplex-paper-button-icon {
+  display: inline-flex;
+}
+
+.kplex-paper-button-icon svg {
+  width: var(--icon-s);
+  height: var(--icon-s);
+}
+
+.kplex-paper-button.kplex-paper-icon-only > span:not(.kplex-paper-button-icon) {
+  display: none;
+}
+
+.kplex-paper-button.is-busy {
+  opacity: 0.6;
+}
+
+.kplex-paper-tabs {
+  display: flex;
+  gap: var(--size-4-1);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+
+.kplex-paper-tab {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.kplex-paper-tab.is-active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.kplex-paper-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  align-items: center;
+}
+
+.kplex-paper-filter {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.kplex-paper-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  align-items: center;
+}
+
+.kplex-paper-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.kplex-paper-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--size-4-2);
+  align-items: start;
+  padding: var(--size-4-2) var(--size-2-2);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+
+.kplex-paper-row.is-linked {
+  background: var(--background-secondary);
+}
+
+.kplex-paper-check {
+  margin-top: var(--size-2-2);
+}
+
+.kplex-paper-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
+.kplex-paper-row-title {
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+
+.kplex-paper-row-actions {
+  display: flex;
+  gap: var(--size-2-2);
+  align-items: center;
+}
+
+.kplex-paper-badge {
+  border-radius: var(--radius-s);
+  padding: 0 var(--size-4-1);
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.kplex-paper-row-detail {
+  grid-column: 2 / 4;
+}
+
+.kplex-paper-list-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3) 0;
+}
+
+@media (max-width: 600px) {
+  .kplex-paper-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .kplex-paper-row-actions {
+    grid-column: 2;
+  }
+
+  .kplex-paper-row-detail {
+    grid-column: 1 / 3;
+  }
+}

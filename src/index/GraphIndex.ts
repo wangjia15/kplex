@@ -1740,6 +1740,11 @@ export class GraphIndex {
     const isAttachment = Boolean(page.file && page.file.extension !== "md");
     if (!settings.showVirtualNodes && isVirtual) return false;
     if (!settings.showAttachments && isAttachment) return false;
+    if (settings.showImageNodes === false) {
+      if (isAttachment && page.file && GraphIndex.IMAGE_EXTENSIONS.has(page.file.extension.toLowerCase())) return false;
+      // Web-linked figures (for example articles imported without downloading images).
+      if (page.url && /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)(?:[?#]|$)/i.test(page.url)) return false;
+    }
     if (!settings.showFolderNodes && page.isFolder) return false;
     if (!settings.showTagNodes && page.isTag) return false;
     if (!settings.showPageNodes && !page.isFolder && !page.isTag && !isAttachment && !page.url) return false;
@@ -1784,6 +1789,7 @@ export class GraphIndex {
       settings.showInferredNodes ? "1" : "0",
       settings.showVirtualNodes ? "1" : "0",
       settings.showAttachments ? "1" : "0",
+      settings.showImageNodes ? "1" : "0",
       settings.showFolderNodes ? "1" : "0",
       settings.showTagNodes ? "1" : "0",
       settings.showPageNodes ? "1" : "0",

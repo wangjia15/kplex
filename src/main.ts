@@ -15,6 +15,11 @@ import { AddToOntologyModal, type OntologyAssignmentRole } from "./ui/AddToOntol
 import { NoteTypeModal } from "./ui/NoteTypeModal";
 import { activeLayoutProfile, currentDeviceClass, effectiveViewSettings, layoutProfileKey } from "./ui/viewProfile";
 import { perfNow } from "./util/perf";
+import { PaperReadingController } from "./paper/obsidian/PaperReadingController";
+import { PaperDetailsModal } from "./ui/PaperDetailsModal";
+import type { PaperTarget } from "./ui/PaperDetailsPanel";
+import { KPLEX_PAPER_VIEW_TYPE, PaperView } from "./ui/PaperView";
+import { PaperReadingIntroModal } from "./ui/PaperReadingIntroModal";
 
 type LoadAwareView = FileView & { _loaded?: boolean };
 
@@ -39,10 +44,12 @@ const isUnknownRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const MANAGED_CREATED_PATH_TTL_MS = 4_000;
+const IMAGE_FILE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"]);
 
 export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
   index!: GraphIndex;
+  paperReading!: PaperReadingController;
   private rebuildTimer: number | null = null;
   private indexDirty = true;
   private linkedDocumentLeaf: WorkspaceLeaf | null = null;
@@ -132,9 +139,11 @@ export default class ExcaliBrainPlugin extends Plugin {
     }
 
     this.index = new GraphIndex(this);
+    this.paperReading = new PaperReadingController(this);
 
     this.registerView(EXCALIBRAIN_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ExcaliBrainView(leaf, this));
     this.registerView(KPLEX_SIDEPANEL_VIEW_TYPE, (leaf: WorkspaceLeaf) => new KplexSidepanelView(leaf, this));
+    this.registerView(KPLEX_PAPER_VIEW_TYPE, (leaf: WorkspaceLeaf) => new PaperView(leaf, this));
     this.registerHoverLinkSource(EXCALIBRAIN_VIEW_TYPE, { display: "K-Plex", defaultMod: false });
     this.registerHoverLinkSource(KPLEX_SIDEPANEL_VIEW_TYPE, { display: "K-Plex", defaultMod: false });
     this.addSettingTab(new ExcaliBrainSettingTab(this.app, this));
@@ -204,6 +213,17 @@ export default class ExcaliBrainPlugin extends Plugin {
       callback: () => void this.syncKplexWithMostRecentTab(),
     });
     this.registerOntologyCommands();
+    this.addCommand({
+      id: "kplex-paper-details",
+      name: "Show paper details",
+      checkCallback: (checking) => {
+        if (!this.settings.paperReadingEnabled) return false;
+        const page = this.commandCentralPage();
+        if (!page || !this.paperReading.isPaperPage(page)) return false;
+        if (!checking) void this.openPaperDetails(page, this.searchTargetLeaf());
+        return true;
+      },
+    });
     this.addCommand({
       id: "excalibrain-focus-active-note",
       name: "Focus active note",
@@ -401,6 +421,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   onunload(): void {
     this.dismissKplexMenu();
+    this.paperReading?.unload();
     if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
     if (this.startupInitializationTimer !== null) window.clearTimeout(this.startupInitializationTimer);
     for (const element of [...this.linkedLeafHighlightTimers.keys()]) this.clearLinkedLeafHighlight(element);
@@ -919,7 +940,8 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (!leaf || this.isManagedSidecarLeaf(leaf)) return false;
     const viewState = leaf.getViewState();
     if (viewState.type === EXCALIBRAIN_VIEW_TYPE || viewState.type === KPLEX_SIDEPANEL_VIEW_TYPE) return false;
-    if (viewState.type === "empty" || leaf.view instanceof FileView) return true;
+    // The sidecar may show Paper details; it is still the companion document slot.
+    if (viewState.type === "empty" || viewState.type === KPLEX_PAPER_VIEW_TYPE || leaf.view instanceof FileView) return true;
 
     // Background tabs can be DeferredView instances. Inspect serialized view state instead
     // of assuming leaf.view is already a FileView (Obsidian 1.7.2+ deferred views).
@@ -3657,6 +3679,122 @@ export default class ExcaliBrainPlugin extends Plugin {
     else if (!this.index.renameFile(page.path, file)) this.index.insertCreatedFile(file);
     await this.openInDocumentLeaf(file);
     return true;
+  }
+
+  /**
+   * Double-click routing for the sidecar: images open in the sidecar, and paper nodes other than
+   * the center show Paper details there. Returns false when the normal open behavior applies.
+   */
+  async openNodeInSidecar(page: GraphPage, hostLeaf: WorkspaceLeaf, isCenter: boolean): Promise<boolean> {
+    if (hostLeaf.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE) return false;
+    const file = page.file;
+    if (file && IMAGE_FILE_EXTENSIONS.has(file.extension.toLowerCase())) {
+      const leaf = this.ensureSidecarLeaf(hostLeaf);
+      if (!leaf) return false;
+      this.settings.sidecarLastFilePath = file.path;
+      this.settings.sidecarLastUrl = "";
+      await leaf.openFile(file, { active: false });
+      await this.saveSettings(false, false);
+      this.notifySidecar();
+      return true;
+    }
+    if (!isCenter && this.settings.paperReadingEnabled && this.settings.paperDoubleClickDetails
+        && this.settings.paperDetailsInSidecar && this.paperReading.isPaperPage(page)) {
+      await this.openPaperDetails(page, hostLeaf);
+      return true;
+    }
+    return false;
+  }
+
+  /** Navigate every mounted K-Plex view to `path` (used by Paper details "Show in Plex"). */
+  showInPlex(path: string): void {
+    if (this.index.get(path)) this.notifyNavigation(path);
+  }
+
+  /**
+   * Open Paper details for a paper node. With a K-Plex host that can have a sidecar, the details
+   * open in the sidecar (created if needed) so the Plex stays usable; otherwise a dialog is used.
+   */
+  async openPaperDetails(page: GraphPage, hostLeaf?: WorkspaceLeaf | null, onShowInPlex?: (target: GraphPage) => void): Promise<void> {
+    if (!this.settings.paperReadingEnabled) return;
+    const ids = this.paperReading.idsForPage(page);
+    if (!ids.length) return;
+    const target: PaperTarget = { ids, title: this.index.titleFor(page), pagePath: page.path, origin: null };
+    if (hostLeaf && this.settings.paperDetailsInSidecar && await this.openPaperInSidecar(hostLeaf, target)) return;
+    new PaperDetailsModal(this, target, onShowInPlex).open();
+  }
+
+  /** Show Paper details in the host's owned sidecar leaf. Returns false when no sidecar is possible. */
+  private async openPaperInSidecar(hostLeaf: WorkspaceLeaf, target: PaperTarget): Promise<boolean> {
+    const leaf = this.ensureSidecarLeaf(hostLeaf);
+    if (!leaf) return false;
+    // A paper view has no document identity; startup restore then prefers the group's visible tab.
+    this.settings.sidecarLastFilePath = "";
+    this.settings.sidecarLastUrl = "";
+    await leaf.setViewState({ type: KPLEX_PAPER_VIEW_TYPE, state: { ...target }, active: false });
+    await this.saveSettings(false, false);
+    this.notifySidecar();
+    return true;
+  }
+
+  /**
+   * Turn paper reading mode on/off. The first enable explains which services are contacted and
+   * registers the reference property as a parent ontology field.
+   */
+  async setPaperReadingEnabled(enabled: boolean): Promise<void> {
+    if (!enabled) {
+      this.settings.paperReadingEnabled = false;
+      this.paperReading.unload();
+      await this.saveSettings(false, false);
+      return;
+    }
+    if (!this.settings.paperReadingIntroduced) {
+      const accepted = await new Promise<boolean>((resolve) => {
+        new PaperReadingIntroModal(this.app, this.settings.paperReferenceField, resolve).open();
+      });
+      if (!accepted) {
+        this.settings.paperReadingEnabled = false;
+        await this.saveSettings(false, false);
+        return;
+      }
+      this.settings.paperReadingIntroduced = true;
+    }
+    this.settings.paperReadingEnabled = true;
+    await this.saveSettings(false, false);
+    await this.paperReading.ensureReferenceOntology();
+  }
+
+  /** Create a vault folder (and parents) if needed. */
+  async ensureVaultFolder(folderPath: string): Promise<void> {
+    await this.ensureFolderPath(folderPath);
+  }
+
+  /**
+   * Create an imported paper note. The file is published through the managed-create path so the
+   * vault:create event does not schedule a rebuild; the caller inserts it into the index.
+   */
+  async createPaperNoteFile(folder: string, stem: string, body: string, frontmatter: Record<string, unknown>): Promise<TFile | null> {
+    const normalizedFolder = folder ? normalizePath(folder) : "";
+    await this.ensureFolderPath(normalizedFolder);
+    const destination = normalizePath(normalizedFolder ? `${normalizedFolder}/${stem}.md` : `${stem}.md`);
+    if (this.app.vault.getFileByPath(destination)) {
+      new Notice(`A file already exists at ${destination}.`, 3000);
+      return null;
+    }
+    this.managedCreatedPaths.set(destination, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
+    let file: TFile;
+    try {
+      file = this.rememberManagedCreatedFile(await this.app.vault.create(destination, body));
+    } catch (error) {
+      this.managedCreatedPaths.delete(destination);
+      throw error;
+    }
+    this.pruneManagedMetadataWrites();
+    this.managedMetadataWrites.set(file.path, Date.now() + 15000);
+    await this.app.fileManager.processFrontMatter(file, (target: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(frontmatter)) target[key] = value;
+    });
+    return file;
   }
 
   async createGhostNote(page: GraphPage): Promise<void> {

@@ -280,6 +280,19 @@ Imported ExcaliBrain `primaryTagField` data is retained for compatibility, but i
 
 Graph Lenses complement property-value styles when you want temporary, context-specific styling rather than a permanent visual identity.
 
+## Paper reading
+
+Turn on **Settings → Paper reading → Enable paper reading** to use K-Plex as a literature map. It is off by default, and nothing is sent to an online service until you use it.
+
+- Right-click a paper node (a note with a DOI or arXiv id, or a doi.org / arxiv.org link) and choose **Paper details…**. Details open in the sidecar beside the Plex.
+- Browse its **References** and **Cited by** lists. Click a paper to read its details in the sidecar, then use **Back** to return.
+- Switch abstracts between **Original**, **Bilingual** (sentence by sentence) and translation only, using Google Translate or Bing Translator.
+- **Add to vault** creates a paper note with its metadata and abstract, including for the paper you are viewing; **Link** connects a paper you already have. Cited papers appear above a paper and papers citing it appear below.
+- **Import full text** saves an arXiv article as Markdown (formulas kept, figures optionally downloaded to an images folder), or opens it for Obsidian Web Clipper.
+- Double-click a paper node to show its details in the sidecar; double-click an image node to view the image there. The **Images** filter shows or hides figure nodes.
+
+See the [paper reading guide](docs/PAPER_READING.md) for identifiers, settings and privacy details.
+
 ## Mobile and touch
 
 K-Plex has explicit touch interaction rather than relying on desktop mouse events translated by the browser.
@@ -332,7 +345,8 @@ Sibling relative size (30–85%) is under **Plex behavior → Layout & sizing**.
 2. **Ontology** — separate pages for relationship fields, editor suggestions and discovered/unassigned vault properties
 3. **Visual styling** — canvas options plus dedicated **Node styling** and **Link styling** pages
 4. **Sidecar** — companion-pane behavior and Markdown mode
-5. **Compatibility** — ExcaliBrain settings import
+5. **Paper reading** — references, citations, abstracts and translation for papers
+6. **Compatibility** — ExcaliBrain settings import
 
 ## Help, issues and contributing
 

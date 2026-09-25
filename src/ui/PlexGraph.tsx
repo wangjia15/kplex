@@ -662,6 +662,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     settings.showPageNodes ? "1" : "0",
     settings.showURLNodes ? "1" : "0",
     settings.showAttachments ? "1" : "0",
+    settings.showImageNodes ? "1" : "0",
     settings.showVirtualNodes ? "1" : "0",
     settings.showInferredNodes ? "1" : "0",
     settings.inferAllLinksAsFriends ? "1" : "0",
@@ -2054,13 +2055,17 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (target && Date.now() >= suppressActivateUntil.current) onActivate(target);
   };
 
-  const openNode = (page: GraphPage): void => {
+  const openNode = (page: GraphPage, isCenter = false): void => {
     if (page.transient?.kind === "section") {
       void plugin.openSection(page);
       return;
     }
     const target = persistentPageFor(page);
-    if (target) onOpen(target);
+    if (!target) return;
+    // Images and (non-center) paper nodes open in the sidecar when one is possible.
+    void plugin.openNodeInSidecar(target, hostLeaf, isCenter).then((handled) => {
+      if (!handled) onOpen(target);
+    });
   };
 
   const showNodeContextMenuAt = (node: PositionedNode, clientX: number, clientY: number): void => {
@@ -2102,6 +2107,13 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         .setTitle(pinned ? "Unpin note" : "Pin note")
         .setIcon(pinned ? "pin-off" : "pin")
         .onClick(() => void plugin.togglePinned(persistent.path)));
+    }
+
+    if (persistent && page.transient?.kind !== "section" && plugin.paperReading.isPaperPage(persistent)) {
+      menu.addItem((item) => item
+        .setTitle("Paper details…")
+        .setIcon("book-open")
+        .onClick(() => void plugin.openPaperDetails(persistent, hostLeaf, (target) => onActivate(target))));
     }
 
     if (persistent && !persistent.isFolder && !persistent.isTag && !persistent.url &&
@@ -2276,7 +2288,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       flair={activeRelationshipFlair === baseNode.page.path}
       connectionState={connectionStateFor(baseNode)}
       onActivate={() => activateNode(baseNode.page)}
-      onOpen={() => openNode(baseNode.page)}
+      onOpen={() => openNode(baseNode.page, baseNode.role === "center")}
       onHoverNode={() => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "node", path: baseNode.page.path }); }}
       onHoverGate={(_, gate) => { if (!connectDrag && !nodeDrag) scheduleHoverIntent({ kind: "gate", path: baseNode.page.path, gate }); }}
       onHoverEnd={() => { if (!connectDrag && !nodeDrag) clearHoverIntent(true); }}
@@ -2427,7 +2439,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
               }}
               title={`${child.label} — ${child.relation.page.path}`}
               onClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onActivate(child.relation.page); }}
-              onDoubleClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); onOpen(child.relation.page); }}
+              onDoubleClick={(event: MouseEvent<HTMLDivElement>) => { event.stopPropagation(); openNode(child.relation.page); }}
               onPointerEnter={(event: PointerEvent<HTMLDivElement>) => {
                 if (event.nativeEvent.ctrlKey || event.nativeEvent.metaKey) {
                   plugin.triggerHoverPreview(child.relation.page, event.currentTarget, event.nativeEvent, neighborhood?.center.file?.path ?? "");

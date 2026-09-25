@@ -4,6 +4,7 @@ import {
   Modal,
   Notice,
   PluginSettingTab,
+  SecretComponent,
   getIcon,
   getIconIds,
   type SettingDefinitionItem,
@@ -11,6 +12,7 @@ import {
 import type ExcaliBrainPlugin from "./main";
 import type { Arrowhead, Hierarchy, LinkStyle, NodeStyle } from "./types";
 import { sanitizeGraphLensDefinitions, type GraphLensDefinition } from "./lens/GraphLens";
+import { TRANSLATION_LANGUAGES } from "./paper/translation/TranslationTypes";
 
 export const DEFAULT_LINK_STYLE: LinkStyle = {
   strokeColor: "#696969ff",
@@ -70,6 +72,10 @@ export type SidecarMarkdownMode = "preview" | "source";
 export type AttachmentImageDisplay = "label" | "thumbnail-label" | "image";
 export type NewNodeType = "markdown" | "excalidraw";
 export type DocumentSyncMode = "off" | "recent" | "pinned";
+export type PaperTranslatorChoice = "google" | "bing";
+export type PaperAbstractView = "original" | "bilingual" | "translation";
+export type PaperArticleImport = "builtin" | "web-clipper";
+export type PaperNoteAbstractFormat = "sections" | "bilingual" | "translation";
 export type NodeSortOrder = "name-asc" | "name-desc" | "modified-desc" | "modified-asc" | "created-desc" | "created-asc" | "connections-desc" | "connections-asc";
 
 function sanitizeNodeSortOrder(value: unknown): NodeSortOrder {
@@ -125,6 +131,8 @@ export interface ExcaliBrainSettings {
   toggleEmbedTogglesAutoOpen: boolean;
   showInferredNodes: boolean;
   showAttachments: boolean;
+  /** Show image attachment nodes (for example figures embedded in imported articles). */
+  showImageNodes: boolean;
   showURLNodes: boolean;
   showVirtualNodes: boolean;
   showFolderNodes: boolean;
@@ -228,6 +236,44 @@ export interface ExcaliBrainSettings {
   deletePromptInitialized: boolean;
   /** Ask for confirmation before deleting a real note file from the node context menu. */
   confirmFileDelete: boolean;
+  /** Paper reading mode master switch. Off by default: no paper/translation network calls when off. */
+  paperReadingEnabled: boolean;
+  /** Whether the first-enable explanation (services, fields) has been shown and accepted. */
+  paperReadingIntroduced: boolean;
+  /** Comma-separated properties searched for DOI / arXiv / paper URLs. */
+  paperIdFields: string;
+  /** Ontology property a citing paper uses to list the papers it cites (a parent field). */
+  paperReferenceField: string;
+  /** Folder for imported paper notes; empty uses Obsidian's new-note location. */
+  paperFolder: string;
+  /** Style-property value written to imported paper notes. */
+  paperNoteType: string;
+  /** References/citations fetched per page. */
+  paperListLimit: number;
+  /** Optional contact email for OpenAlex's polite pool. */
+  paperContactEmail: string;
+  /** Name of an Obsidian secret holding an optional Semantic Scholar API key. */
+  paperS2ApiKeySecret: string;
+  paperTranslator: PaperTranslatorChoice;
+  paperTargetLanguage: string;
+  /** Last abstract view chosen in Paper details. */
+  paperAbstractView: PaperAbstractView;
+  paperTranslateTitles: boolean;
+  paperTranslateOnImport: boolean;
+  paperNoteAbstractFormat: PaperNoteAbstractFormat;
+  /** Open Paper details in the K-Plex sidecar instead of a dialog when a sidecar is possible. */
+  paperDetailsInSidecar: boolean;
+  /** Double-clicking a paper node other than the center shows Paper details in the sidecar. */
+  paperDoubleClickDetails: boolean;
+  /** How Import full text works: built-in arXiv import, or open the page for Obsidian Web Clipper. */
+  paperArticleImport: PaperArticleImport;
+  /** Folder for imported full-text articles. */
+  paperArticleFolder: string;
+  /** Download article figures into the image folder instead of linking to the web. */
+  paperDownloadImages: boolean;
+  paperImageFolder: string;
+  /** Child property linking a paper note to its imported full-text note. */
+  paperArticleField: string;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -249,6 +295,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   toggleEmbedTogglesAutoOpen: true,
   showInferredNodes: true,
   showAttachments: true,
+  showImageNodes: true,
   showURLNodes: true,
   showVirtualNodes: true,
   showFolderNodes: false,
@@ -334,7 +381,29 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   editNewNodeAfterCreate: false,
   newNodeDefaultType: "markdown",
   deletePromptInitialized: false,
-  confirmFileDelete: true
+  confirmFileDelete: true,
+  paperReadingEnabled: false,
+  paperReadingIntroduced: false,
+  paperIdFields: "doi, DOI, arxiv, arXiv, url, source",
+  paperReferenceField: "References",
+  paperFolder: "Papers",
+  paperNoteType: "Paper",
+  paperListLimit: 50,
+  paperContactEmail: "",
+  paperS2ApiKeySecret: "",
+  paperTranslator: "google",
+  paperTargetLanguage: "zh-CN",
+  paperAbstractView: "original",
+  paperTranslateTitles: false,
+  paperTranslateOnImport: false,
+  paperNoteAbstractFormat: "sections",
+  paperDetailsInSidecar: true,
+  paperDoubleClickDetails: true,
+  paperArticleImport: "builtin",
+  paperArticleFolder: "Papers/Articles",
+  paperDownloadImages: true,
+  paperImageFolder: "images",
+  paperArticleField: "Full text",
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -486,6 +555,28 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     newNodeDefaultType: old.newNodeDefaultType === "excalidraw" ? "excalidraw" : "markdown",
     deletePromptInitialized: Boolean(old.deletePromptInitialized),
     confirmFileDelete: old.confirmFileDelete !== false,
+    paperReadingEnabled: old.paperReadingEnabled === true,
+    paperReadingIntroduced: old.paperReadingIntroduced === true,
+    paperIdFields: typeof old.paperIdFields === "string" && old.paperIdFields.trim() ? old.paperIdFields : DEFAULT_SETTINGS.paperIdFields,
+    paperReferenceField: typeof old.paperReferenceField === "string" && old.paperReferenceField.trim() ? old.paperReferenceField.trim() : DEFAULT_SETTINGS.paperReferenceField,
+    paperFolder: typeof old.paperFolder === "string" ? old.paperFolder.trim() : DEFAULT_SETTINGS.paperFolder,
+    paperNoteType: typeof old.paperNoteType === "string" ? old.paperNoteType.trim() : DEFAULT_SETTINGS.paperNoteType,
+    paperListLimit: Math.max(10, Math.min(200, Math.round(finite(old.paperListLimit, DEFAULT_SETTINGS.paperListLimit)))),
+    paperContactEmail: typeof old.paperContactEmail === "string" ? old.paperContactEmail.trim() : "",
+    paperS2ApiKeySecret: typeof old.paperS2ApiKeySecret === "string" ? old.paperS2ApiKeySecret : "",
+    paperTranslator: old.paperTranslator === "bing" ? "bing" : "google",
+    paperTargetLanguage: typeof old.paperTargetLanguage === "string" && old.paperTargetLanguage.trim() ? old.paperTargetLanguage : DEFAULT_SETTINGS.paperTargetLanguage,
+    paperAbstractView: old.paperAbstractView === "bilingual" || old.paperAbstractView === "translation" ? old.paperAbstractView : "original",
+    paperTranslateTitles: old.paperTranslateTitles === true,
+    paperTranslateOnImport: old.paperTranslateOnImport === true,
+    paperNoteAbstractFormat: old.paperNoteAbstractFormat === "bilingual" || old.paperNoteAbstractFormat === "translation" ? old.paperNoteAbstractFormat : "sections",
+    paperDetailsInSidecar: old.paperDetailsInSidecar !== false,
+    paperDoubleClickDetails: old.paperDoubleClickDetails !== false,
+    paperArticleImport: old.paperArticleImport === "web-clipper" ? "web-clipper" : "builtin",
+    paperArticleFolder: typeof old.paperArticleFolder === "string" ? old.paperArticleFolder.trim() : DEFAULT_SETTINGS.paperArticleFolder,
+    paperDownloadImages: old.paperDownloadImages !== false,
+    paperImageFolder: typeof old.paperImageFolder === "string" && old.paperImageFolder.trim() ? old.paperImageFolder.trim() : DEFAULT_SETTINGS.paperImageFolder,
+    paperArticleField: typeof old.paperArticleField === "string" && old.paperArticleField.trim() ? old.paperArticleField.trim() : DEFAULT_SETTINGS.paperArticleField,
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",
@@ -1542,6 +1633,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Ghost / unresolved nodes", control: { type: "toggle", key: "showVirtualNodes" } },
               { name: "Web links", control: { type: "toggle", key: "showURLNodes" } },
               { name: "Attachments", control: { type: "toggle", key: "showAttachments" } },
+              { name: "Images", desc: "Show image attachments, such as figures embedded in notes, as nodes. Hidden when attachments are hidden.", control: { type: "toggle", key: "showImageNodes" } },
               { name: "Folders", control: { type: "toggle", key: "showFolderNodes" } },
               { name: "Tags", control: { type: "toggle", key: "showTagNodes" } },
               { name: "Markdown pages", control: { type: "toggle", key: "showPageNodes" } },
@@ -1745,6 +1837,76 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
       },
       {
         type: "page",
+        name: "Paper reading",
+        desc: "References, citations, abstracts and translation for papers with a DOI or arXiv id.",
+        items: [
+          {
+            type: "group",
+            heading: "Paper reading mode",
+            items: [
+              {
+                name: "Enable paper reading",
+                desc: "Adds Paper details to paper nodes: browse references and cited-by papers, read abstracts, translate them and add papers to your vault. Paper data comes from Semantic Scholar, OpenAlex and arXiv; translation uses Google or Bing. Nothing is sent until you open these features.",
+                control: { type: "toggle", key: "paperReadingEnabled" },
+              },
+            ],
+          },
+          {
+            type: "group",
+            heading: "Papers",
+            visible: () => this.ebPlugin.settings.paperReadingEnabled,
+            items: [
+              { name: "Identifier properties", desc: "Comma-separated properties checked for a DOI, arXiv id or paper link, in order.", control: { type: "text", key: "paperIdFields" } },
+              { name: "Reference property", desc: "Property a paper uses to list the papers it cites. Cited papers appear above the paper; papers citing it appear below.", control: { type: "text", key: "paperReferenceField" } },
+              { name: "Paper folder", desc: "Where added papers are created. Leave empty to use Obsidian's default location for new notes.", control: { type: "folder", key: "paperFolder" } },
+              { name: "Show paper details in the sidecar", desc: "Open Paper details beside the Plex so you can keep browsing the graph. When off, or when K-Plex is in a side panel, a dialog is used.", control: { type: "toggle", key: "paperDetailsInSidecar" } },
+              { name: "Double-click shows paper details", desc: "Double-clicking a paper node other than the center shows its Paper details in the sidecar instead of opening the note. The center node still opens its note.", control: { type: "toggle", key: "paperDoubleClickDetails" } },
+              { name: "Note type for added papers", desc: `Value written to “${this.ebPlugin.settings.noteTypeField || "Note type"}” so paper nodes can be styled and filtered.`, control: { type: "text", key: "paperNoteType" } },
+              { name: "Papers per page", desc: "How many references or citing papers to load at a time.", control: { type: "slider", key: "paperListLimit", min: 10, max: 200, step: 10 } },
+              { name: "Contact email", desc: "Optional. Sent to OpenAlex so requests use its more reliable polite pool.", control: { type: "text", key: "paperContactEmail", placeholder: "you@example.com" } },
+              {
+                name: "Semantic Scholar API key",
+                desc: "Optional. Choose a secret holding a free Semantic Scholar key to avoid shared rate limits.",
+                render: (setting) => {
+                  setting.addComponent((el) => new SecretComponent(this.app, el)
+                    .setValue(this.ebPlugin.settings.paperS2ApiKeySecret)
+                    .onChange(async (value) => {
+                      this.ebPlugin.settings.paperS2ApiKeySecret = value;
+                      await this.ebPlugin.saveSettings(false, false);
+                    }));
+                },
+              },
+            ],
+          },
+          {
+            type: "group",
+            heading: "Full text",
+            visible: () => this.ebPlugin.settings.paperReadingEnabled,
+            items: [
+              { name: "Import full text with", desc: "Built-in import converts arXiv's HTML version to Markdown, keeping formulas as LaTeX. Web Clipper opens the article in your browser so you can clip it with Obsidian Web Clipper and its own template and folder.", control: { type: "dropdown", key: "paperArticleImport", defaultValue: "builtin", options: { builtin: "Built-in import", "web-clipper": "Obsidian Web Clipper" } } },
+              { name: "Article folder", desc: "Where imported articles are saved. Leave empty to use the paper folder.", control: { type: "folder", key: "paperArticleFolder" } },
+              { name: "Download images", desc: "Save article figures in the vault so they work offline. When off, figures link to the web.", control: { type: "toggle", key: "paperDownloadImages" } },
+              { name: "Image folder", desc: "Where downloaded figures are saved.", control: { type: "folder", key: "paperImageFolder" } },
+              { name: "Full-text property", desc: "Property on a paper note that links its imported full text. The full text appears below the paper.", control: { type: "text", key: "paperArticleField" } },
+            ],
+          },
+          {
+            type: "group",
+            heading: "Translation",
+            visible: () => this.ebPlugin.settings.paperReadingEnabled,
+            items: [
+              { name: "Translation service", desc: "If the chosen service fails, the other one is tried automatically.", control: { type: "dropdown", key: "paperTranslator", defaultValue: "google", options: { google: "Google Translate", bing: "Bing Translator" } } },
+              { name: "Translate to", control: { type: "dropdown", key: "paperTargetLanguage", defaultValue: "zh-CN", options: TRANSLATION_LANGUAGES } },
+              { name: "Default abstract view", desc: "Show abstracts in the original language, sentence by sentence with a translation, or in the translation only. Translation only also shows translated titles.", control: { type: "dropdown", key: "paperAbstractView", defaultValue: "original", options: { original: "Original", bilingual: "Bilingual", translation: "Translation only" } } },
+              { name: "Translate paper titles", desc: "Show a translated title under each reference and citing paper.", control: { type: "toggle", key: "paperTranslateTitles" } },
+              { name: "Translate when adding papers", desc: "Include the translated abstract in notes created by Add to vault.", control: { type: "toggle", key: "paperTranslateOnImport" } },
+              { name: "Abstract format in notes", control: { type: "dropdown", key: "paperNoteAbstractFormat", defaultValue: "sections", options: { sections: "Original and translation sections", bilingual: "Sentence-by-sentence bilingual", translation: "Translation only" } } },
+            ],
+          },
+        ],
+      },
+      {
+        type: "page",
         name: "Compatibility",
         desc: "Migration and legacy ExcaliBrain interoperability.",
         items: [
@@ -1846,6 +2008,25 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
     if (key === "baseNodeStyle.gateRadius") {
       this.ebPlugin.settings.baseNodeStyle.gateRadius = Number(value);
       await this.ebPlugin.saveSettings(false);
+      return;
+    }
+
+    if (key === "paperReadingEnabled") {
+      await this.ebPlugin.setPaperReadingEnabled(Boolean(value));
+      this.update();
+      return;
+    }
+    if (key === "paperReferenceField") {
+      const field = String(value).trim() || DEFAULT_SETTINGS.paperReferenceField;
+      this.ebPlugin.settings.paperReferenceField = field;
+      await this.ebPlugin.saveSettings(false, false);
+      if (this.ebPlugin.settings.paperReadingEnabled) await this.ebPlugin.paperReading.ensureReferenceOntology();
+      return;
+    }
+    if (key.startsWith("paper")) {
+      (this.ebPlugin.settings as unknown as Record<string, unknown>)[key] = value;
+      // Paper-reading preferences are presentation/network settings; never notify the index.
+      await this.ebPlugin.saveSettings(false, false);
       return;
     }
 

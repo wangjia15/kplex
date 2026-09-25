@@ -24,6 +24,7 @@ export { EMPTY_PLEX_FILTER } from "../lens/SimplePlexFilter";
 export type GraphFilterLayoutMode = "keep" | "reflow";
 export type PlexVisibilitySetting =
   | "showAttachments"
+  | "showImageNodes"
   | "showVirtualNodes"
   | "showInferredNodes"
   | "showPageNodes"
@@ -512,6 +513,7 @@ export function PlexFilter({
         {[
           ["showPageNodes", "Markdown", "Show or hide Markdown notes"],
           ["showAttachments", "Attachments", "Show or hide attachment nodes"],
+          ["showImageNodes", "Images", "Show or hide image nodes"],
           ["showFolderNodes", "Folders", "Show or hide folder nodes"],
           ["showTagNodes", "Tags", "Show or hide tag nodes"],
           ["showURLNodes", "Web links", "Show or hide web-link nodes"],
