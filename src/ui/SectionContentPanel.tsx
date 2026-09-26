@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { SectionContent, SectionFigure } from "../index/SectionExpansion";
+import type { PdfCropResolver } from "../index/PdfCropRenderer";
+import { FigureImage } from "./FigureImage";
 import { SECTION_PANEL, SECTION_PANEL_LIMITS, sectionQuoteLines, type SectionPanel } from "./layout";
+import { MathText } from "./MathText";
+import { containsMath } from "./mathSegments";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { ResizeHandle } from "./ResizeHandle";
 
@@ -12,27 +16,34 @@ const stopMouse = (event: ReactPointerEvent<HTMLElement>) => {
 };
 
 /**
- * Highlights and figures of one expanded section, drawn under its card. Positions come from the
- * scene (canvas coordinates), so the panel pans and zooms with the Plex.
+ * Reading content of one expanded section, drawn under its card: highlighted passages with their
+ * comments, and — as a branch of its own — the figures. Positions come from the scene (canvas
+ * coordinates), so a panel pans and zooms with the Plex.
  */
-export function SectionContentPanel({ panel, content, showHighlights, showFigures, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onResize, onContextMenu }: {
+export function SectionContentPanel({ panel, content, crops, canvasScale, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onMove, onResize, onContextMenu }: {
   panel: SectionPanel;
   content: SectionContent;
-  showHighlights: boolean;
-  showFigures: boolean;
-  onToggleCollapse: (sectionId: string) => void;
+  crops: PdfCropResolver;
+  /** Current Plex zoom, so a drag follows the pointer at any zoom level. */
+  canvasScale: () => number;
+  onToggleCollapse: (panelId: string) => void;
   onOpenHighlight: (line: number, linkTarget?: string) => void;
   onFigureEnter: (figure: SectionFigure, element: HTMLElement) => void;
   onFigureLeave: () => void;
   onFigurePin: (figure: SectionFigure, element: HTMLElement) => void;
-  onResize: (sectionId: string, width: number, height: number) => void;
-  onContextMenu: (sectionId: string, event: MouseEvent<HTMLDivElement>) => void;
+  onMove: (panelId: string, dx: number, dy: number) => void;
+  onResize: (panelId: string, width: number, height: number) => void;
+  onContextMenu: (panelId: string, event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
+  const [draftOffset, setDraftOffset] = useState<{ dx: number; dy: number } | null>(null);
+  const drag = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
   const width = draftSize?.width ?? panel.width;
   const height = draftSize?.height ?? panel.height;
-  const highlights = showHighlights ? content.highlights : [];
-  const figures = showFigures ? content.figures : [];
+  const figuresPanel = panel.kind === "figures";
+  const highlights = figuresPanel ? [] : content.highlights;
+  const figures = figuresPanel ? content.figures : [];
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // The Plex zooms on wheel; let a panel with overflowing content scroll instead.
@@ -46,19 +57,47 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
     return () => el.removeEventListener("wheel", wheel);
   }, [panel.collapsed]);
 
-  const summary = [
-    highlights.length ? count(highlights.length, "highlight", "highlights") : "",
-    figures.length ? count(figures.length, "figure", "figures") : "",
-  ].filter(Boolean).join(" · ");
+  // The header doubles as the drag handle: a press that travels moves the panel, a plain click
+  // still folds it.
+  const startDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "touch" || event.button !== 0) return;
+    event.stopPropagation();
+    drag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const active = drag.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const dx = event.clientX - active.startX;
+    const dy = event.clientY - active.startY;
+    if (!active.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+    active.moved = true;
+    const scale = Math.max(0.05, canvasScale());
+    setDraftOffset({ dx: dx / scale, dy: dy / scale });
+  };
+  const endDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const active = drag.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    drag.current = null;
+    const offset = draftOffset;
+    setDraftOffset(null);
+    if (!active.moved || !offset) return;
+    suppressClick.current = true;
+    onMove(panel.panelId, offset.dx, offset.dy);
+  };
+
+  const summary = figuresPanel
+    ? count(figures.length, "figure", "figures")
+    : count(highlights.length, "highlight", "highlights");
 
   return <div
-    className={`kplex-section-panel${panel.collapsed ? " is-collapsed" : ""}`}
-    style={{ left: panel.left, top: panel.top, width, height }}
-    data-kplex-section-panel={panel.sectionId}
+    className={`kplex-section-panel${figuresPanel ? " is-figures" : ""}${panel.collapsed ? " is-collapsed" : ""}${draftOffset ? " is-dragging" : ""}`}
+    style={{ left: panel.left + (draftOffset?.dx ?? 0), top: panel.top + (draftOffset?.dy ?? 0), width, height }}
+    data-kplex-section-panel={panel.panelId}
     onContextMenu={(event: MouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      onContextMenu(panel.sectionId, event);
+      onContextMenu(panel.panelId, event);
     }}
     onClick={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
     onDoubleClick={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
@@ -68,11 +107,20 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
       className="kplex-section-panel-header"
       style={{ height: SECTION_PANEL.header }}
       aria-expanded={!panel.collapsed}
-      aria-label={panel.collapsed ? "Show section content" : "Hide section content"}
-      onPointerDown={stopMouse}
-      onClick={() => onToggleCollapse(panel.sectionId)}
+      aria-label={panel.collapsed
+        ? (figuresPanel ? "Show figures" : "Show section content")
+        : (figuresPanel ? "Hide figures" : "Hide section content")}
+      onPointerDown={startDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onClick={() => {
+        if (suppressClick.current) { suppressClick.current = false; return; }
+        onToggleCollapse(panel.panelId);
+      }}
     >
       <ObsidianIcon name={panel.collapsed ? "chevron-right" : "chevron-down"} size={12} />
+      {figuresPanel && <ObsidianIcon name="image" size={12} />}
       <span className="kplex-section-panel-summary">{summary}</span>
     </button>
     {!panel.collapsed && <div ref={bodyRef} className="kplex-section-panel-body">
@@ -88,7 +136,12 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
           onPointerDown={stopMouse}
           onClick={() => onOpenHighlight(item.line, item.linkTarget)}
         >
-          <span className="kplex-section-quote-text" style={{ maxHeight: sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight }}>{item.text}</span>
+          {/* A typeset formula is taller than the source text it replaces, so a quote carrying
+              maths is never clipped to an estimated line count. */}
+          <span
+            className="kplex-section-quote-text"
+            style={containsMath(item.text) ? undefined : { maxHeight: sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight }}
+          ><MathText text={item.text} /></span>
         </button>
         {item.comments.map((comment, commentIndex) => <div
           key={`c-${commentIndex}`}
@@ -97,7 +150,7 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
           onPointerDown={stopMouse}
         >
           <ObsidianIcon name="message-square" size={10} />
-          <span className="kplex-section-comment-text">{comment}</span>
+          <span className="kplex-section-comment-text"><MathText text={comment} /></span>
         </div>)}
       </div>)}
       {figures.length > 0 && <div className="kplex-section-figures">
@@ -113,9 +166,9 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
           onClick={(event: MouseEvent<HTMLButtonElement>) => onFigurePin(figure, event.currentTarget)}
         >
           <span className="kplex-section-figure-image">
-            <img src={figure.src} alt={figure.caption ? "" : (figure.alt || "Figure")} loading="lazy" decoding="async" draggable={false} />
+            <FigureImage figure={figure} crops={crops} />
           </span>
-          <span className="kplex-section-figure-caption">{figure.caption || " "}</span>
+          <span className="kplex-section-figure-caption">{figure.caption || " "}</span>
         </button>)}
       </div>}
     </div>}
@@ -127,7 +180,7 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
       onDraft={(nextWidth, nextHeight) => setDraftSize({ width: nextWidth, height: nextHeight })}
       onCommit={(nextWidth, nextHeight) => {
         setDraftSize(null);
-        onResize(panel.sectionId, nextWidth, nextHeight);
+        onResize(panel.panelId, nextWidth, nextHeight);
       }}
     />
   </div>;

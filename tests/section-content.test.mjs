@@ -114,6 +114,71 @@ try {
   const adjacent = extractSectionContent(nativeCallout.split('\n\n')[0] + '\n' + nativeCallout.split('\n\n')[0]);
   assert.equal(adjacent.highlights.length, 2);
   assert.equal(extractSectionContent('> [!NOTE] Ordinary note\n> > Quote').highlights.length, 0);
+  // A selection callout is text only: no page region to render.
+  assert.equal(nativeContent.figures.length, 0);
+
+  // PDF++ rectangular annotation: the region becomes a figure, captioned with its extracted text.
+  const rectCallout = [
+    '> [!PDF|yellow] [[papers/ar-mot.pdf#page=4&rect=42.84,372.24,569.16,736.56&color=yellow|ar-mot, p.4]]',
+    '> 页面展示了一个多模块流水线示意图。',
+    '> > Fig. 2. Framework of AR-MOT.',
+    '>',
+    '> **AI 精读 · Fig. 2**',
+  ].join('\n');
+  const rectContent = extractSectionContent(rectCallout);
+  assert.equal(rectContent.figures.length, 1);
+  assert.deepEqual(rectContent.figures[0].pdf, { page: 4, rect: [42.84, 372.24, 569.16, 736.56] });
+  assert.equal(rectContent.figures[0].target, 'papers/ar-mot.pdf');
+  assert.equal(rectContent.figures[0].external, false);
+  assert.equal(rectContent.figures[0].caption, 'Fig. 2. Framework of AR-MOT.');
+  assert.equal(rectContent.figures[0].alt, 'ar-mot, p.4');
+  assert.equal(rectContent.figures[0].line, 0);
+  // The annotation text and its comments stay visible as a quote as well.
+  assert.equal(rectContent.highlights.length, 1);
+  assert.equal(rectContent.highlights[0].text, 'Fig. 2. Framework of AR-MOT.');
+
+  // A cropped embed outside a callout is a figure; a plain PDF embed is not.
+  const embeds = extractSectionContent([
+    '![[paper.pdf#page=3&rect=26,473,589,757|paper, p.3]]',
+    '![[paper.pdf#page=3]]',
+    '![[diagram.png|A diagram]]',
+  ].join('\n'));
+  assert.equal(embeds.figures.length, 2);
+  assert.deepEqual(embeds.figures[0].pdf, { page: 3, rect: [26, 473, 589, 757] });
+  assert.equal(embeds.figures[0].caption, 'paper, p.3');
+  assert.equal(embeds.figures[1].target, 'diagram.png');
+  assert.equal(embeds.figures[1].pdf, undefined);
+  assert.equal(embeds.figures[1].alt, 'A diagram');
+  // Malformed regions are ignored rather than rendered at a guessed position.
+  assert.equal(extractSectionContent('![[paper.pdf#page=0&rect=1,2,3,4]]').figures.length, 0);
+  assert.equal(extractSectionContent('![[paper.pdf#page=2&rect=1,2,3]]').figures.length, 0);
+
+  // Formula segmentation for highlights and their comments (rendering itself needs Obsidian).
+  const mathPath = join(root, "src/ui/mathSegments.ts");
+  const mathSource = readFileSync(mathPath, "utf8");
+  assert(!/from\s+["']obsidian["']/.test(mathSource), "mathSegments must stay host-free");
+  const mathOut = join(temp, "mathSegments.js");
+  writeFileSync(mathOut, ts.transpileModule(mathSource, {
+    compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS, strict: true },
+    fileName: mathPath,
+  }).outputText);
+  const { splitMath, containsMath } = require(mathOut);
+
+  assert.deepEqual(splitMath("plain text only"), [{ math: false, value: "plain text only" }]);
+  assert.equal(containsMath("plain text only"), false);
+  assert.deepEqual(splitMath("where $x_i$ is the token"), [
+    { math: false, value: "where " },
+    { math: true, value: "x_i", display: false },
+    { math: false, value: " is the token" },
+  ]);
+  const block = splitMath("Given\n$$\ns_{j} = \\mathrm{Concat}(a,\\ b)\n$$\nwe obtain");
+  assert.deepEqual(block.map((segment) => segment.math), [false, true, false]);
+  assert.equal(block[1].display, true);
+  assert.equal(block[1].value, "s_{j} = \\mathrm{Concat}(a,\\ b)");
+  // Prices and lone dollars are text, not formulas.
+  assert.equal(containsMath("costs $5 and $6 per run"), false);
+  assert.equal(containsMath("a lone $ sign"), false);
+  assert.equal(containsMath("$$ $$"), false);
 
   console.log("section content tests passed");
 } finally {

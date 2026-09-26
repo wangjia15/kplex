@@ -26,6 +26,14 @@ export type SectionFigureRef = {
   alt: string;
   /** 0-based line relative to the section start. */
   line: number;
+  /** Region of a PDF page (a PDF++ rectangular annotation) to render as the figure image. */
+  pdf?: PdfRegion;
+};
+
+/** A page region in PDF user-space points, as PDF++ writes it into a `rect=` link subpath. */
+export type PdfRegion = {
+  page: number;
+  rect: readonly [number, number, number, number];
 };
 
 export type SectionContentRaw = {
@@ -169,6 +177,15 @@ function pdfHighlightTarget(raw: string): string | undefined {
   return decoded.includes("#") && decoded.split("#")[0].toLowerCase().endsWith(".pdf") ? decoded : undefined;
 }
 
+/** The page/rect region of a PDF++ rectangular annotation link, when the target carries one. */
+export function pdfRegionFromTarget(target: string): PdfRegion | undefined {
+  const subpath = target.slice(target.indexOf("#") + 1);
+  const page = Number(subpath.match(/(?:^|&)page=(\d+)/)?.[1]);
+  const parts = subpath.match(/(?:^|&)rect=([-\d.,]+)/)?.[1]?.split(",").map(Number);
+  if (!Number.isInteger(page) || page < 1 || parts?.length !== 4 || parts.some((value) => !Number.isFinite(value))) return undefined;
+  return { page, rect: [parts[0], parts[1], parts[2], parts[3]] };
+}
+
 type Match = { start: number; end: number; text: string; color: string | null; linkTarget?: string };
 
 function lineHighlights(line: string): Match[] {
@@ -235,7 +252,7 @@ function captionBelow(lines: string[], index: number): string {
 }
 
 /** PDF++ callout: header anchor, nested blockquote passage, then outer comment text. */
-function pdfCallout(lines: string[], start: number): { highlight: SectionHighlight; end: number } | null {
+function pdfCallout(lines: string[], start: number): { highlight: SectionHighlight; figure?: SectionFigureRef; end: number } | null {
   const header = lines[start].match(/^\s*>\s*\[!([^\]|]+)(?:\|([^\]]+))?\][+-]?\s*(.*)$/i);
   if (!header) return null;
   const linkTarget = pdfHighlightTarget(header[3]);
@@ -256,8 +273,20 @@ function pdfCallout(lines: string[], start: number): { highlight: SectionHighlig
   const comment = plainCommentText(comments.join("\n"));
   const name = header[2]?.trim().toLowerCase();
   const color = name && /^(?:yellow|red|green|blue|purple|orange|pink|cyan)$/.test(name) ? name : null;
-  return { highlight: { text: plainInlineText(quote.join(" ")), color, comments: comment ? [comment] : [],
-    line: start, ...(linkTarget ? { linkTarget } : {}) }, end };
+  const text = plainInlineText(quote.join(" "));
+  const highlight: SectionHighlight = { text, color, comments: comment ? [comment] : [],
+    line: start, ...(linkTarget ? { linkTarget } : {}) };
+
+  // A rectangular annotation is a cropped region of the page: show the region itself as a figure,
+  // captioned with the text PDF++ extracted from it.
+  const region = linkTarget ? pdfRegionFromTarget(linkTarget) : undefined;
+  if (!region || !linkTarget) return { highlight, end };
+  const alias = plainInlineText(header[3]);
+  return {
+    highlight,
+    figure: { target: linkTarget.split("#")[0], external: false, caption: text, alt: alias, line: start, pdf: region },
+    end,
+  };
 }
 
 export function extractSectionContent(sectionText: string, footnotes: ReadonlyMap<string, string> = new Map()): SectionContentRaw {
@@ -294,6 +323,7 @@ export function extractSectionContent(sectionText: string, footnotes: ReadonlyMa
     const callout = pdfCallout(lines, index);
     if (callout) {
       highlights.push(callout.highlight);
+      if (callout.figure) figures.push(callout.figure);
       index = callout.end;
       continue;
     }
@@ -302,10 +332,19 @@ export function extractSectionContent(sectionText: string, footnotes: ReadonlyMa
       highlights.push({ text: match.text, color: match.color, comments: trailingComments(line, match.end, footnotes), line: index, ...(match.linkTarget ? { linkTarget: match.linkTarget } : {}) });
     }
 
-    for (const match of line.matchAll(/!\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g)) {
+    for (const match of line.matchAll(/!\[\[([^\]|#]+)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\]/g)) {
       const target = match[1].trim();
+      // PDF++ renders `![[file.pdf#page=N&rect=…]]` as a cropped page region, not a PDF viewer.
+      if (target.toLowerCase().endsWith(".pdf")) {
+        const region = match[2] ? pdfRegionFromTarget(`#${match[2]}`) : undefined;
+        if (region) {
+          const alias = plainInlineText(match[3] ?? "");
+          figures.push({ target, external: false, caption: captionBelow(lines, index) || alias, alt: alias, line: index, pdf: region });
+        }
+        continue;
+      }
       if (!isImageTarget(target, false)) continue;
-      const alt = meaningfulAlt(match[2] ?? "", target);
+      const alt = meaningfulAlt(match[3] ?? "", target);
       figures.push({ target, external: false, alt, caption: captionBelow(lines, index) || alt, line: index });
     }
     for (const match of line.matchAll(/!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)/g)) {

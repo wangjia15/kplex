@@ -1,5 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type { SectionFigure } from "../index/SectionExpansion";
+import type { PdfCropResolver } from "../index/PdfCropRenderer";
+import { FigureImage } from "./FigureImage";
 import { ObsidianIcon } from "./ObsidianIcon";
 
 export type FigureCardState = {
@@ -17,8 +19,9 @@ export const FIGURE_CARD_WIDTH = 480;
  * closed, can be dragged by their header and resized. Positions are viewport-relative, so panning
  * or zooming the Plex does not move a pinned card.
  */
-export function FigureCard({ card, onPin, onClose, onMove, onOpenLine, onPointerEnter, onPointerLeave }: {
+export function FigureCard({ card, crops, onPin, onClose, onMove, onOpenLine, onPointerEnter, onPointerLeave }: {
   card: FigureCardState;
+  crops: PdfCropResolver;
   onPin: (id: string) => void;
   onClose: (id: string) => void;
   onMove: (id: string, left: number, top: number) => void;
@@ -91,7 +94,7 @@ export function FigureCard({ card, onPin, onClose, onMove, onOpenLine, onPointer
       </div>
     </div>
     <div className="kplex-figure-card-body">
-      <img src={figure.src} alt={figure.alt || figure.caption} decoding="async" draggable={false} />
+      <FigureImage figure={figure} crops={crops} />
       {figure.caption && <div className="kplex-figure-card-caption">{figure.caption}</div>}
     </div>
   </div>;

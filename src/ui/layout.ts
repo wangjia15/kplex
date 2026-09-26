@@ -26,8 +26,24 @@ export type SectionTreeEdge = {
   targetPath: string;
 };
 
-/** Reading-content panel (highlights and figures) placed directly below a section card. */
+/** Folder-tree connector from a section card (or highlights panel) to the panel hanging off it. */
+export type SectionPanelEdge = {
+  id: string;
+  sectionPath: string;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+};
+
+/**
+ * A panel below a section card: the highlights panel hangs off the card, and the figures panel
+ * hangs off the highlights panel as its own branch.
+ */
 export type SectionPanel = {
+  /** Identity for folding/resizing: the section id, or `<section id>#figures`. */
+  panelId: string;
+  kind: SectionPanelKind;
   sectionId: string;
   sectionPath: string;
   left: number;
@@ -42,8 +58,11 @@ export type PlexScene = {
   edges: PositionedEdge[];
   zoneViewports: Partial<Record<ScrollZone, ZoneViewport>>;
   sectionTreeEdges?: SectionTreeEdge[];
+  sectionPanelEdges?: SectionPanelEdge[];
   sectionPanels?: SectionPanel[];
 };
+
+export type SectionPanelKind = "highlights" | "figures";
 
 export const SECTION_CARD_LIMITS = { minWidth: 120, maxWidth: 640, minHeight: 28, maxHeight: 320 } as const;
 export const SECTION_PANEL_LIMITS = { minWidth: 200, maxWidth: 960, minHeight: 64, maxHeight: 1400 } as const;
@@ -57,23 +76,25 @@ export type SectionContentOptions = {
 
 /** Metrics shared by the layout estimate and styles.css (.kplex-section-panel*). */
 export const SECTION_PANEL = {
-  width: 300,
+  width: 340,
   indent: 26,
   gap: 6,
   header: 24,
   padding: 6,
-  maxBody: 320,
+  maxBody: 560,
   quoteLineHeight: 16,
-  quoteMaxLines: 4,
+  quoteMaxLines: 12,
   quoteChrome: 10,
   commentLineHeight: 15,
   commentChrome: 6,
   commentGap: 3,
   commentIndent: 16,
   itemGap: 4,
-  figureColumns: 3,
-  figureTileHeight: 98,
+  figureColumns: 2,
+  figureTileHeight: 150,
   figureGap: 6,
+  /** Extra vertical room for a rendered formula compared with the same text on one line. */
+  mathLineHeight: 26,
 } as const;
 
 /** Rough rendered width in average Latin character units; CJK glyphs count double. */
@@ -98,28 +119,47 @@ export function sectionQuoteLines(text: string, panelWidth: number = SECTION_PAN
 export function sectionPanelSize(
   content: import("../index/SectionExpansion").SectionContent,
   options: SectionContentOptions,
-  sectionId: string,
+  panelId: string,
   size: SectionSizeOverride = {},
 ): { width: number; height: number; collapsed: boolean } | null {
   const highlights = options.showHighlights ? content.highlights : [];
-  const figures = options.showFigures ? content.figures : [];
-  if (!highlights.length && !figures.length) return null;
+  if (!highlights.length) return null;
   const width = size.panelWidth ?? SECTION_PANEL.width;
-  if (options.collapsed.has(sectionId)) return { width, height: SECTION_PANEL.header, collapsed: true };
+  if (options.collapsed.has(panelId)) return { width, height: SECTION_PANEL.header, collapsed: true };
   // A user-set height is kept as is; the body scrolls when content is taller.
   if (size.panelHeight !== undefined) return { width, height: size.panelHeight, collapsed: false };
   let body = SECTION_PANEL.padding * 2;
   for (const item of highlights) {
-    body += sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight + SECTION_PANEL.quoteChrome + SECTION_PANEL.itemGap;
+    body += sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight + SECTION_PANEL.quoteChrome + SECTION_PANEL.itemGap
+      + mathExtraHeight(item.text);
     for (const comment of item.comments) {
-      body += SECTION_PANEL.commentGap + SECTION_PANEL.commentChrome + sectionCommentLines(comment, width) * SECTION_PANEL.commentLineHeight;
+      body += SECTION_PANEL.commentGap + SECTION_PANEL.commentChrome + sectionCommentLines(comment, width) * SECTION_PANEL.commentLineHeight
+        + mathExtraHeight(comment);
     }
   }
-  if (figures.length) {
-    const rows = Math.ceil(figures.length / SECTION_PANEL.figureColumns);
-    body += rows * SECTION_PANEL.figureTileHeight + (rows - 1) * SECTION_PANEL.figureGap + (highlights.length ? SECTION_PANEL.figureGap : 0);
-  }
   return { width, height: SECTION_PANEL.header + Math.min(SECTION_PANEL.maxBody, body), collapsed: false };
+}
+
+/** Size of the figures branch. It is a panel of its own so images get room to be readable. */
+export function sectionFiguresPanelSize(
+  content: import("../index/SectionExpansion").SectionContent,
+  options: SectionContentOptions,
+  panelId: string,
+  size: SectionSizeOverride = {},
+): { width: number; height: number; collapsed: boolean } | null {
+  const figures = options.showFigures ? content.figures : [];
+  if (!figures.length) return null;
+  const width = size.figuresWidth ?? SECTION_PANEL.width;
+  if (options.collapsed.has(panelId)) return { width, height: SECTION_PANEL.header, collapsed: true };
+  if (size.figuresHeight !== undefined) return { width, height: size.figuresHeight, collapsed: false };
+  const rows = Math.ceil(figures.length / SECTION_PANEL.figureColumns);
+  const body = SECTION_PANEL.padding * 2 + rows * SECTION_PANEL.figureTileHeight + (rows - 1) * SECTION_PANEL.figureGap;
+  return { width, height: SECTION_PANEL.header + Math.min(SECTION_PANEL.maxBody, body), collapsed: false };
+}
+
+/** Display formulas are typeset taller than the source text they replace. */
+function mathExtraHeight(text: string): number {
+  return (text.match(/\$\$/g)?.length ?? 0) / 2 * SECTION_PANEL.mathLineHeight;
 }
 
 export function gateDiameter(style: NodeStyle): number {
@@ -699,6 +739,10 @@ export function buildSectionExpandedScene(
   };
 
   const sectionPanels: SectionPanel[] = [];
+  const sectionPanelEdges: SectionPanelEdge[] = [];
+  // Panels hang off their card the way child sections do: a spine drops from the parent's
+  // lower-left port and turns into the panel's left edge, beside its header.
+  const structuralInset = 14;
   // extraBelow pushes the bottom cluster under the content panel; rightEdge keeps right-side
   // neighbours clear of a panel wider than its card.
   const addRelationGroup = (sectionNode: PositionedNode, items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2) => {
@@ -765,8 +809,13 @@ export function buildSectionExpandedScene(
     const topRows = Math.ceil(relations.parent.length / 3);
     const bottomRows = Math.ceil(relations.child.length / 3);
     const clusterAbove = Math.max(topRows * relationRowStep + (topRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
-    const panelSize = contentOptions ? sectionPanelSize(section.content, contentOptions, section.id, sectionSizes.get(section.id)) : null;
-    const panelBlock = panelSize ? SECTION_PANEL.gap + panelSize.height : 0;
+    const sectionSize = sectionSizes.get(section.id);
+    const figuresPanelId = `${section.id}#figures`;
+    const panelSize = contentOptions ? sectionPanelSize(section.content, contentOptions, section.id, sectionSize) : null;
+    const figuresSize = contentOptions ? sectionFiguresPanelSize(section.content, contentOptions, figuresPanelId, sectionSize) : null;
+    // Reserved before the card is placed; the exact value is corrected once the panels are laid out.
+    const panelBlock = (panelSize ? SECTION_PANEL.gap + panelSize.height + Math.max(0, sectionSize?.panelDy ?? 0) : 0)
+      + (figuresSize ? SECTION_PANEL.gap + figuresSize.height + Math.max(0, sectionSize?.figuresDy ?? 0) : 0);
     const clusterBelow = Math.max(panelBlock + bottomRows * relationRowStep + (bottomRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
     const node = makeSectionNode(section, depth, relations);
     cursorY += clusterAbove;
@@ -777,20 +826,73 @@ export function buildSectionExpandedScene(
     sectionNodeById.set(section.id, node);
     scene.nodes.push(node);
     const cardLeft = node.x - node.width / 2;
+    const cardBottom = node.y + node.height / 2;
+    const panelLeft = cardLeft + SECTION_PANEL.indent;
+    let panelCursor = cardBottom;
+    let highlightsPanel: SectionPanel | null = null;
     if (panelSize) {
-      sectionPanels.push({
+      // A dragged panel keeps its own place; the offset is stored relative to this layout spot.
+      highlightsPanel = {
+        panelId: section.id,
+        kind: "highlights",
         sectionId: section.id,
         sectionPath: section.page.path,
-        left: cardLeft + SECTION_PANEL.indent,
-        top: node.y + node.height / 2 + SECTION_PANEL.gap,
+        left: panelLeft + (sectionSize?.panelDx ?? 0),
+        top: panelCursor + SECTION_PANEL.gap + (sectionSize?.panelDy ?? 0),
         width: panelSize.width,
         height: panelSize.height,
         collapsed: panelSize.collapsed,
+      };
+      sectionPanels.push(highlightsPanel);
+      sectionPanelEdges.push({
+        id: `section-panel-edge:${section.id}`,
+        sectionPath: section.page.path,
+        fromX: cardLeft + structuralInset,
+        fromY: cardBottom,
+        toX: highlightsPanel.left,
+        toY: highlightsPanel.top + SECTION_PANEL.header / 2,
+      });
+      panelCursor += SECTION_PANEL.gap + panelSize.height;
+    }
+    // Figures branch off the highlights panel, indented one more step; with no highlights they
+    // hang directly off the section card.
+    const figuresLeft = panelLeft + (panelSize ? SECTION_PANEL.indent : 0);
+    let figuresPanel: SectionPanel | null = null;
+    if (figuresSize) {
+      figuresPanel = {
+        panelId: figuresPanelId,
+        kind: "figures",
+        sectionId: section.id,
+        sectionPath: section.page.path,
+        left: figuresLeft + (sectionSize?.figuresDx ?? 0),
+        top: panelCursor + SECTION_PANEL.gap + (sectionSize?.figuresDy ?? 0),
+        width: figuresSize.width,
+        height: figuresSize.height,
+        collapsed: figuresSize.collapsed,
+      };
+      sectionPanels.push(figuresPanel);
+      sectionPanelEdges.push({
+        id: `section-panel-edge:${figuresPanelId}`,
+        sectionPath: section.page.path,
+        fromX: (highlightsPanel?.left ?? cardLeft) + structuralInset,
+        fromY: highlightsPanel ? highlightsPanel.top + highlightsPanel.height : cardBottom,
+        toX: figuresPanel.left,
+        toY: figuresPanel.top + SECTION_PANEL.header / 2,
       });
     }
-    const rightEdge = Math.max(node.x + node.width / 2, panelSize ? cardLeft + SECTION_PANEL.indent + panelSize.width : -Infinity);
+    // Neighbours and the next section clear wherever the panels actually ended up.
+    const panelsBottom = Math.max(
+      cardBottom,
+      highlightsPanel ? highlightsPanel.top + highlightsPanel.height : -Infinity,
+      figuresPanel ? figuresPanel.top + figuresPanel.height : -Infinity,
+    );
+    const rightEdge = Math.max(
+      node.x + node.width / 2,
+      highlightsPanel ? highlightsPanel.left + highlightsPanel.width : -Infinity,
+      figuresPanel ? figuresPanel.left + figuresPanel.width : -Infinity,
+    );
     addRelationGroup(node, relations.parent, "parent");
-    addRelationGroup(node, relations.child, "child", panelBlock);
+    addRelationGroup(node, relations.child, "child", Math.max(0, panelsBottom - cardBottom));
     addRelationGroup(node, relations.left, "left");
     addRelationGroup(node, relations.right, "right", 0, rightEdge);
   }
@@ -808,6 +910,7 @@ export function buildSectionExpandedScene(
   }
 
   scene.sectionTreeEdges = sectionTreeEdges;
+  scene.sectionPanelEdges = sectionPanelEdges;
   scene.sectionPanels = sectionPanels;
   if (showCrossLinks) appendVisibleCrossLinks(scene.nodes, scene.edges, index, settings, expansion.centerNeighborhood.center.path);
   return scene;

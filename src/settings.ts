@@ -78,7 +78,9 @@ export type PaperArticleImport = "builtin" | "web-clipper";
 export type PaperNoteAbstractFormat = "sections" | "bilingual" | "translation";
 export type NodeSortOrder = "name-asc" | "name-desc" | "modified-desc" | "modified-asc" | "created-desc" | "created-asc" | "connections-desc" | "connections-asc";
 
-const SECTION_SIZE_FIELDS = ["cardWidth", "cardHeight", "panelWidth", "panelHeight"] as const;
+const SECTION_SIZE_FIELDS = ["cardWidth", "cardHeight", "panelWidth", "panelHeight", "figuresWidth", "figuresHeight"] as const;
+/** Drag offsets may be negative, and zero simply means "where the layout put it". */
+const SECTION_OFFSET_FIELDS = ["panelDx", "panelDy", "figuresDx", "figuresDy"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,6 +99,10 @@ function sanitizeSectionSizes(value: unknown): Record<string, Record<string, Sec
       for (const field of SECTION_SIZE_FIELDS) {
         const n = size[field];
         if (typeof n === "number" && Number.isFinite(n) && n > 0) entry[field] = Math.round(n);
+      }
+      for (const field of SECTION_OFFSET_FIELDS) {
+        const n = size[field];
+        if (typeof n === "number" && Number.isFinite(n) && Math.round(n) !== 0) entry[field] = Math.round(n);
       }
       if (Object.keys(entry).length) clean[key] = entry;
     }

@@ -1042,14 +1042,17 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (linkTarget && sourcePath) void plugin.openSectionHighlightTarget(linkTarget, sourcePath, hostLeaf);
     else openCenterLine(line);
   };
-  const toggleSectionPanel = (sectionId: string) => {
+  const toggleSectionPanel = (panelId: string) => {
     preserveCameraOnNextLayout.current = true;
     setCollapsedSectionPanels((current) => {
       const next = new Set(current);
-      if (next.has(sectionId)) next.delete(sectionId); else next.add(sectionId);
+      if (next.has(panelId)) next.delete(panelId); else next.add(panelId);
       return next;
     });
   };
+  /** Panels are addressed as `<section id>` (highlights) or `<section id>#figures`. */
+  const panelSection = (panelId: string) => panelId.split("#")[0];
+  const isFiguresPanel = (panelId: string) => panelId.endsWith("#figures");
   const updateSectionSize = (sectionId: string, change: SectionSizeOverride | null) => {
     const section = sectionExpansion?.sections.find((candidate) => candidate.id === sectionId);
     if (!sectionExpansion || !section) return;
@@ -1076,12 +1079,32 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     // Presentation-only state: save without notifying or rebuilding the index.
     void plugin.saveSettings(false, false);
   };
-  const resizeSectionPanel = (sectionId: string, width: number, height: number) => {
-    // A folded panel only changes width; its height is the header until it is unfolded.
-    updateSectionSize(sectionId, collapsedSectionPanels.has(sectionId) ? { panelWidth: width } : { panelWidth: width, panelHeight: height });
+  const moveSectionPanel = (panelId: string, dx: number, dy: number) => {
+    const sectionId = panelSection(panelId);
+    const current = sectionSizes.get(sectionId);
+    // The panel already sits at its stored offset, so a drag adds to it.
+    const change: SectionSizeOverride = isFiguresPanel(panelId)
+      ? { figuresDx: Math.round((current?.figuresDx ?? 0) + dx), figuresDy: Math.round((current?.figuresDy ?? 0) + dy) }
+      : { panelDx: Math.round((current?.panelDx ?? 0) + dx), panelDy: Math.round((current?.panelDy ?? 0) + dy) };
+    updateSectionSize(sectionId, change);
   };
-  const showSectionPanelMenu = (sectionId: string, event: MouseEvent<HTMLDivElement>) => {
+  const resetSectionPanelPosition = (panelId: string) => {
+    updateSectionSize(panelSection(panelId), isFiguresPanel(panelId)
+      ? { figuresDx: undefined, figuresDy: undefined }
+      : { panelDx: undefined, panelDy: undefined });
+  };
+  const resizeSectionPanel = (panelId: string, width: number, height: number) => {
+    // A folded panel only changes width; its height is the header until it is unfolded.
+    const folded = collapsedSectionPanels.has(panelId);
+    const change: SectionSizeOverride = isFiguresPanel(panelId)
+      ? (folded ? { figuresWidth: width } : { figuresWidth: width, figuresHeight: height })
+      : (folded ? { panelWidth: width } : { panelWidth: width, panelHeight: height });
+    updateSectionSize(panelSection(panelId), change);
+  };
+  const showSectionPanelMenu = (panelId: string, event: MouseEvent<HTMLDivElement>) => {
     const menu = new Menu();
+    const sectionId = panelSection(panelId);
+    const figures = isFiguresPanel(panelId);
     const section = sectionExpansion?.sections.find((candidate) => candidate.id === sectionId);
     if (section) {
       menu.addItem((item) => item
@@ -1090,16 +1113,31 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         .onClick(() => void plugin.openSection(section.page)));
     }
     const size = sectionSizes.get(sectionId);
+    const sized = figures
+      ? size?.figuresWidth !== undefined || size?.figuresHeight !== undefined
+      : size?.panelWidth !== undefined || size?.panelHeight !== undefined;
     menu.addItem((item) => item
       .setTitle("Reset panel size")
       .setIcon("rotate-ccw")
-      .setDisabled(size?.panelWidth === undefined && size?.panelHeight === undefined)
-      .onClick(() => updateSectionSize(sectionId, { panelWidth: undefined, panelHeight: undefined })));
-    const collapsed = collapsedSectionPanels.has(sectionId);
+      .setDisabled(!sized)
+      .onClick(() => updateSectionSize(sectionId, figures
+        ? { figuresWidth: undefined, figuresHeight: undefined }
+        : { panelWidth: undefined, panelHeight: undefined })));
+    const moved = figures
+      ? size?.figuresDx !== undefined || size?.figuresDy !== undefined
+      : size?.panelDx !== undefined || size?.panelDy !== undefined;
     menu.addItem((item) => item
-      .setTitle(collapsed ? "Show this section's content" : "Hide this section's content")
+      .setTitle("Move back to its place")
+      .setIcon("undo-2")
+      .setDisabled(!moved)
+      .onClick(() => resetSectionPanelPosition(panelId)));
+    const collapsed = collapsedSectionPanels.has(panelId);
+    menu.addItem((item) => item
+      .setTitle(collapsed
+        ? (figures ? "Show this section's figures" : "Show this section's highlights")
+        : (figures ? "Hide this section's figures" : "Hide this section's highlights"))
       .setIcon(collapsed ? "eye" : "eye-off")
-      .onClick(() => toggleSectionPanel(sectionId)));
+      .onClick(() => toggleSectionPanel(panelId)));
     addSectionContentMenuItems(menu);
     const doc = viewport.current?.ownerDocument ?? document;
     plugin.showKplexMenuAtPosition(menu, { x: event.clientX, y: event.clientY }, doc);
@@ -2413,7 +2451,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           .onClick(() => updateSectionFolds(() => new Set(sectionExpansion.sections.filter((section) => section.childIds.length).map((section) => section.id)))));
         if (sectionSizes.size) {
           menu.addItem((item) => item
-            .setTitle("Reset all section sizes")
+            .setTitle("Reset all section sizes and positions")
             .setIcon("rotate-ccw")
             .onClick(() => resetAllSectionSizes()));
         }
@@ -2436,12 +2474,16 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           .setDisabled(!size)
           .onClick(() => updateSectionSize(sectionId, null)));
       }
-      if (sectionId && scene.sectionPanels?.some((panel) => panel.sectionId === sectionId)) {
-        const collapsed = collapsedSectionPanels.has(sectionId);
+      for (const panel of scene.sectionPanels ?? []) {
+        if (!sectionId || panel.sectionId !== sectionId) continue;
+        const collapsed = collapsedSectionPanels.has(panel.panelId);
+        const figures = panel.kind === "figures";
         menu.addItem((item) => item
-          .setTitle(collapsed ? "Show this section's content" : "Hide this section's content")
+          .setTitle(collapsed
+            ? (figures ? "Show this section's figures" : "Show this section's highlights")
+            : (figures ? "Hide this section's figures" : "Hide this section's highlights"))
           .setIcon(collapsed ? "eye" : "eye-off")
-          .onClick(() => toggleSectionPanel(sectionId)));
+          .onClick(() => toggleSectionPanel(panel.panelId)));
       }
       addSectionContentMenuItems(menu);
       if (section?.childIds.length) {
@@ -2794,6 +2836,13 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           <marker id="excalibrain-dot" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto" markerUnits="strokeWidth"><circle cx="4" cy="4" r="2.6" fill="context-stroke" /></marker>
           <marker id="excalibrain-bar" markerWidth="8" markerHeight="10" refX="4" refY="5" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M4,1 L4,9" stroke="context-stroke" strokeWidth="1.8" /></marker>
         </defs>
+        {(scene.sectionPanelEdges ?? []).filter((panelEdge) => visibleNodePaths.has(panelEdge.sectionPath)).map((panelEdge) => <path
+          key={panelEdge.id}
+          className="kplex-section-tree-edge is-panel"
+          d={`M ${panelEdge.fromX} ${panelEdge.fromY} L ${panelEdge.fromX} ${panelEdge.toY} L ${panelEdge.toX} ${panelEdge.toY}`}
+          fill="none"
+          vectorEffect="non-scaling-stroke"
+        />)}
         {(scene.sectionTreeEdges ?? []).map((treeEdge) => {
           const source = renderedNodeMap.get(treeEdge.sourcePath) ?? scene.nodes.find((node) => node.page.path === treeEdge.sourcePath);
           const target = renderedNodeMap.get(treeEdge.targetPath) ?? scene.nodes.find((node) => node.page.path === treeEdge.targetPath);
@@ -2866,16 +2915,17 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           const content = layoutSectionExpansion?.sections.find((section) => section.id === panel.sectionId)?.content;
           if (!content || !visibleNodePaths.has(panel.sectionPath)) return null;
           return <SectionContentPanel
-            key={`section-panel:${panel.sectionId}`}
+            key={`section-panel:${panel.panelId}`}
             panel={panel}
             content={content}
-            showHighlights={sectionContentOptions.showHighlights}
-            showFigures={sectionContentOptions.showFigures}
+            crops={plugin.pdfCrops}
+            canvasScale={() => camera.current.scale}
             onToggleCollapse={toggleSectionPanel}
             onOpenHighlight={openSectionHighlight}
             onFigureEnter={scheduleFigureCard}
             onFigureLeave={hideFigureCard}
             onFigurePin={pinFigureCard}
+            onMove={moveSectionPanel}
             onResize={resizeSectionPanel}
             onContextMenu={showSectionPanelMenu}
           />;
@@ -2899,6 +2949,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     {figureCards.map((card) => <FigureCard
       key={card.id}
       card={card}
+      crops={plugin.pdfCrops}
       onPin={toggleFigurePin}
       onClose={(id) => setFigureCards((cards) => cards.filter((item) => item.id !== id))}
       onMove={(id, left, top) => setFigureCards((cards) => cards.map((item) => item.id === id ? { ...item, left, top } : item))}

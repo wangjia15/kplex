@@ -4,11 +4,12 @@ import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neigh
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadataCooperative, type ParsedBodyMetadata } from "./fieldParser";
 import type { GraphIndex } from "./GraphIndex";
 import { collectFootnotes, extractSectionContent, type SectionHighlight } from "./SectionContent";
+import type { PdfCropRequest } from "./PdfCropRenderer";
 import { applyEvidenceToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
 
 export type SectionFigure = {
-  /** Browser-loadable source: a vault resource URL or the external image URL. */
+  /** Browser-loadable source: a vault resource URL or the external image URL. Empty for a PDF crop. */
   src: string;
   /** Vault path of a local image, when it resolves. */
   path: string | null;
@@ -16,6 +17,8 @@ export type SectionFigure = {
   alt: string;
   /** 0-based line in the source note. */
   line: number;
+  /** A PDF++ rectangular annotation: the image is rendered on demand from this page region. */
+  crop?: PdfCropRequest;
 };
 
 /** Reading content shown under a section card. Presentation data only; never persisted. */
@@ -259,6 +262,12 @@ function resolveSectionContent(app: App, sourcePath: string, sectionText: string
     try { target = decodeURIComponent(target); } catch { target = figure.target; }
     const file = app.metadataCache.getFirstLinkpathDest(target, sourcePath);
     if (!file) continue;
+    if (figure.pdf) {
+      // The image is a region of the PDF page; rendering happens lazily in the view.
+      figures.push({ src: "", path: file.path, caption: figure.caption, alt: figure.alt, line,
+        crop: { path: file.path, mtime: file.stat.mtime, region: figure.pdf } });
+      continue;
+    }
     figures.push({ src: app.vault.getResourcePath(file), path: file.path, caption: figure.caption, alt: figure.alt, line });
   }
   return {

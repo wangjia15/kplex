@@ -246,6 +246,7 @@ for (const file of [
   "src/index/GraphBuilder.ts",
   "src/index/GraphIndex.ts",
   "src/index/SectionContent.ts",
+  "src/index/PdfCropRenderer.ts",
   "src/index/SectionExpansion.ts",
   "src/index/style.ts",
   "src/lens/GraphPredicate.ts",
@@ -1246,25 +1247,75 @@ try {
   };
   const contentOptions = { showHighlights: true, showFigures: true, collapsed: new Set() };
   const contentScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions);
-  const panel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id);
-  assert(panel, "A section with highlights or figures gets a content panel");
-  assert.equal(contentScene.sectionPanels.length, 1, "Sections without content get no panel");
+  const panel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id && item.kind === "highlights");
+  const figuresPanel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id && item.kind === "figures");
+  assert(panel, "A section with highlights gets a content panel");
+  assert(figuresPanel, "Figures get a panel of their own");
+  assert.equal(panel.panelId, rootOne.id);
+  assert.equal(figuresPanel.panelId, `${rootOne.id}#figures`);
+  assert.equal(contentScene.sectionPanels.length, 2, "Sections without content get no panel");
   const rootOneNode = contentScene.nodes.find((node) => node.page.path === rootOne.page.path);
   const childANode = contentScene.nodes.find((node) => node.page.path === childA.page.path);
   assert(panel.top >= rootOneNode.y + rootOneNode.height / 2, "Panel sits below its section card");
-  assert(childANode.y - childANode.height / 2 >= panel.top + panel.height, "Next section starts below the panel");
+  // The figures panel branches off the highlights panel: below it and indented one step further.
+  assert(figuresPanel.top >= panel.top + panel.height, "Figures hang below the highlights panel");
+  assert(figuresPanel.left > panel.left, "Figures are indented under their highlights panel");
+  assert(childANode.y - childANode.height / 2 >= figuresPanel.top + figuresPanel.height, "Next section starts below both panels");
+  // Hiding figures leaves the highlights panel attached to the card.
+  const highlightsOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showFigures: false });
+  assert.equal(highlightsOnly.sectionPanels.length, 1);
+  assert.equal(highlightsOnly.sectionPanels[0].kind, "highlights");
+  const figuresOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showHighlights: false });
+  assert.equal(figuresOnly.sectionPanels.length, 1);
+  assert.equal(figuresOnly.sectionPanels[0].kind, "figures");
+  assert.equal(figuresOnly.sectionPanels[0].left, panel.left, "Without highlights, figures hang off the card itself");
+  // Connectors: the highlights panel hangs off the card's lower-left port, the figures panel off
+  // the highlights panel, each turning into the target's left edge beside its header.
+  const cardEdge = contentScene.sectionPanelEdges.find((edge) => edge.id === `section-panel-edge:${rootOne.id}`);
+  const figuresEdge = contentScene.sectionPanelEdges.find((edge) => edge.id === `section-panel-edge:${rootOne.id}#figures`);
+  assert(cardEdge && figuresEdge, "Both panels are connected to what they branch off");
+  assert.equal(cardEdge.sectionPath, rootOne.page.path);
+  assert.equal(cardEdge.toX, panel.left);
+  assert.equal(Math.round(cardEdge.fromY), Math.round(rootOneNode.y + rootOneNode.height / 2));
+  assert(cardEdge.fromX > rootOneNode.x - rootOneNode.width / 2 && cardEdge.fromX < panel.left);
+  assert.equal(figuresEdge.toX, figuresPanel.left);
+  assert.equal(figuresEdge.fromY, panel.top + panel.height, "Figures branch from the panel's bottom");
+  assert(figuresEdge.fromX > panel.left && figuresEdge.fromX < figuresPanel.left);
+
+  // A dragged panel keeps its offset, stays connected, and still pushes the next section down.
+  const movedSizes = new Map([[rootOne.id, { panelDx: 40, panelDy: 24, figuresDx: -10, figuresDy: 60 }]]);
+  const movedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions, movedSizes);
+  const movedPanel = movedScene.sectionPanels.find((item) => item.kind === "highlights");
+  const movedFigures = movedScene.sectionPanels.find((item) => item.kind === "figures");
+  assert.equal(movedPanel.left, panel.left + 40);
+  assert.equal(movedPanel.top, panel.top + 24);
+  assert.equal(movedFigures.left, figuresPanel.left - 10);
+  const movedCardEdge = movedScene.sectionPanelEdges.find((edge) => edge.id === `section-panel-edge:${rootOne.id}`);
+  assert.equal(movedCardEdge.toX, movedPanel.left, "The connector follows the panel it was dragged to");
+  assert.equal(movedScene.sectionPanelEdges.find((edge) => edge.id === `section-panel-edge:${rootOne.id}#figures`).fromY,
+    movedPanel.top + movedPanel.height);
+  const movedChildA = movedScene.nodes.find((node) => node.page.path === childA.page.path);
+  assert(movedChildA.y - movedChildA.height / 2 >= movedFigures.top + movedFigures.height, "Next section clears dragged panels");
+
   const collapsedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, collapsed: new Set([rootOne.id]) });
   assert(collapsedScene.sectionPanels[0].height < panel.height, "A folded panel reserves only its header");
+  // Each panel folds on its own.
+  const foldedFigures = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, collapsed: new Set([`${rootOne.id}#figures`]) });
+  assert.equal(foldedFigures.sectionPanels.find((item) => item.kind === "highlights").height, panel.height);
+  assert(foldedFigures.sectionPanels.find((item) => item.kind === "figures").height < figuresPanel.height);
   const hiddenHighlights = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showFigures: false, showHighlights: false });
   assert.equal(hiddenHighlights.sectionPanels.length, 0, "Hiding highlights and figures removes the panel");
   assert.equal(fullTreeScene.sectionPanels.length, 0, "No content options means no panels");
 
   // User-resized cards and panels: sizes are honoured, the card keeps its top edge, and the
   // following section moves down to clear the larger panel.
-  const sizes = new Map([[rootOne.id, { cardWidth: 400, cardHeight: 80, panelWidth: 520, panelHeight: 600 }]]);
+  const sizes = new Map([[rootOne.id, { cardWidth: 400, cardHeight: 80, panelWidth: 520, panelHeight: 600, figuresWidth: 460, figuresHeight: 300 }]]);
   const resizedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions, sizes);
   const resizedNode = resizedScene.nodes.find((node) => node.page.path === rootOne.page.path);
-  const resizedPanel = resizedScene.sectionPanels[0];
+  const resizedPanel = resizedScene.sectionPanels.find((item) => item.kind === "highlights");
+  const resizedFigures = resizedScene.sectionPanels.find((item) => item.kind === "figures");
+  assert.equal(resizedFigures.width, 460);
+  assert.equal(resizedFigures.height, 300);
   assert.equal(resizedNode.width, 400);
   assert.equal(resizedNode.height, 80);
   assert.equal(resizedNode.customSize, true);
@@ -1272,7 +1323,7 @@ try {
   assert.equal(resizedPanel.width, 520);
   assert.equal(resizedPanel.height, 600);
   const resizedChildA = resizedScene.nodes.find((node) => node.page.path === childA.page.path);
-  assert(resizedChildA.y - resizedChildA.height / 2 >= resizedPanel.top + resizedPanel.height, "Next section clears a resized panel");
+  assert(resizedChildA.y - resizedChildA.height / 2 >= resizedFigures.top + resizedFigures.height, "Next section clears the resized panels");
 
   // Assertions 51–53: warm-start cache and runtime patching. Resolved relations are persisted
   // alongside evidence so IndexedDB restore does not replay the full truth table, while a normal

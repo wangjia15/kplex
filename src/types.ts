@@ -161,7 +161,20 @@ export type NodeVisual = {
 };
 
 /** User-resized section card / content panel size. Presentation state only. */
-export type SectionSizeOverride = { cardWidth?: number; cardHeight?: number; panelWidth?: number; panelHeight?: number };
+export type SectionSizeOverride = {
+  cardWidth?: number;
+  cardHeight?: number;
+  panelWidth?: number;
+  panelHeight?: number;
+  /** The figures panel branching off the highlights panel is sized independently. */
+  figuresWidth?: number;
+  figuresHeight?: number;
+  /** Where the user dragged each panel, relative to the position the layout gives it. */
+  panelDx?: number;
+  panelDy?: number;
+  figuresDx?: number;
+  figuresDy?: number;
+};
 
 export type PositionedNode = {
   page: GraphPage;

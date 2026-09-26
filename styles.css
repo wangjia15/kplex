@@ -3349,7 +3349,7 @@ a.kplex-paper-row-title:hover {
 .kplex-section-figures {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -3359,7 +3359,7 @@ a.kplex-paper-row-title:hover {
   align-items: stretch;
   gap: 4px;
   box-sizing: border-box;
-  height: 98px;
+  height: 150px;
   padding: 0;
   border: var(--border-width) solid var(--background-modifier-border);
   border-radius: var(--radius-s);
@@ -3373,18 +3373,22 @@ a.kplex-paper-row-title:hover {
   border-color: var(--interactive-accent);
 }
 
+/* The image box owns the tile's free height; the picture letterboxes inside it whatever its
+   aspect ratio, so a tall page region can never push the caption out of the tile. */
 .kplex-section-figure-image {
-  display: flex;
-  flex: 0 0 64px;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   background: var(--background-primary);
 }
 
-.kplex-section-figure-image img {
-  max-width: 100%;
-  max-height: 100%;
+.kplex-section-figure-image img,
+.kplex-section-figure-image .kplex-figure-image-pending {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -3437,6 +3441,71 @@ a.kplex-paper-row-title:hover {
   max-width: 100%;
   margin: 0 auto;
   background: var(--background-secondary);
+}
+
+/* Panel connectors are the same folder-tree spine as section cards, one step quieter. */
+.kplex-section-tree-edge.is-panel {
+  opacity: .6;
+}
+
+.kplex-section-panel-header {
+  cursor: grab;
+}
+
+.kplex-section-panel.is-dragging {
+  z-index: 4;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  cursor: grabbing;
+}
+
+.kplex-section-panel.is-dragging .kplex-section-panel-header {
+  cursor: grabbing;
+}
+
+/* The figures branch hangs off the highlights panel and reads as its child. */
+.kplex-section-panel.is-figures {
+  border-style: dashed;
+}
+
+.kplex-section-panel.is-figures .kplex-section-panel-body {
+  padding: 6px;
+}
+
+/* Formulas inside highlights and their comments, typeset by Obsidian's MathJax. */
+.kplex-math {
+  display: inline;
+}
+
+.kplex-math.is-display {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  margin: 2px 0;
+  text-align: center;
+}
+
+.kplex-math mjx-container {
+  font-size: 1em;
+}
+
+/* Matches MathJax's own display rule so the formula keeps the panel's tight rhythm. */
+.kplex-math.is-display mjx-container[jax="CHTML"][display="true"] {
+  margin: 0;
+}
+
+/* Quiet placeholder while a PDF annotation region is being rendered. */
+.kplex-figure-image-pending {
+  display: block;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-height: 24px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+}
+
+.kplex-figure-card-body .kplex-figure-image-pending {
+  min-height: 120px;
 }
 
 .kplex-figure-card-caption {

@@ -1,5 +1,6 @@
 import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, parseLinktext, setIcon, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { GraphIndex } from "./index/GraphIndex";
+import { PdfCropRenderer } from "./index/PdfCropRenderer";
 import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type DocumentSyncMode, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
 import { EXCALIBRAIN_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, ExcaliBrainView, KplexSidepanelView } from "./ui/ExcaliBrainView";
 import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
@@ -50,6 +51,8 @@ export default class ExcaliBrainPlugin extends Plugin {
   settings: ExcaliBrainSettings = DEFAULT_SETTINGS;
   index!: GraphIndex;
   paperReading!: PaperReadingController;
+  /** Rendered PDF-annotation regions shown as section figures. Presentation cache only. */
+  pdfCrops!: PdfCropRenderer;
   private rebuildTimer: number | null = null;
   private indexDirty = true;
   private linkedDocumentLeaf: WorkspaceLeaf | null = null;
@@ -140,6 +143,7 @@ export default class ExcaliBrainPlugin extends Plugin {
 
     this.index = new GraphIndex(this);
     this.paperReading = new PaperReadingController(this);
+    this.pdfCrops = new PdfCropRenderer(this.app);
 
     this.registerView(EXCALIBRAIN_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ExcaliBrainView(leaf, this));
     this.registerView(KPLEX_SIDEPANEL_VIEW_TYPE, (leaf: WorkspaceLeaf) => new KplexSidepanelView(leaf, this));
@@ -435,6 +439,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     this.visibleKplexLeaves.clear();
     this.graphLensListeners.clear();
     this.linkedDocumentLeaf = null;
+    this.pdfCrops?.dispose();
     this.index?.destroy();
   }
 
@@ -503,6 +508,7 @@ export default class ExcaliBrainPlugin extends Plugin {
       this.scheduleRebuild("vault:create");
     }));
     this.registerEvent(this.app.vault.on("delete", (deleted) => {
+      if (deleted instanceof TFile && deleted.extension.toLowerCase() === "pdf") this.pdfCrops?.invalidate(deleted.path);
       if (deleted instanceof TFile && deleted.extension === "md") {
         // Deleting Markdown changes materialization, not the identity of the graph endpoint. Keep
         // the same GraphPage alive as a ghost so an active central note does not fall back to the
@@ -533,6 +539,7 @@ export default class ExcaliBrainPlugin extends Plugin {
         return;
       }
 
+      if (renamed.extension.toLowerCase() === "pdf") this.pdfCrops?.invalidate(oldPath);
       const newPath = renamed.path;
       let changed = false;
       if (this.settings.lastActivePath === oldPath) {
