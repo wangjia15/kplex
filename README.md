@@ -204,6 +204,7 @@ Each section can show what you marked while reading, right under its heading:
 - **Highlight quotes**: text highlighted with `==text==` or `<mark>` (as written by the [Sidebar Highlights](https://github.com/trevware/obsidian-sidebar-highlights) plugin), in its highlight color, with any comments attached to it. Click a quote to jump to it in the note.
 - **Figures**: embedded images with their captions (alt text, or a "Figure 1: …" / italic line directly below the image). Hover a figure to see it in full; click it, or use the pin button, to keep it open. Pinned figures can be moved and resized.
 - Click a panel's header to fold it. Right-click a section or the center note to hide or show all highlights and figures, or only the highlight quotes or only the figures. The same options are under **Settings → Plex behavior → Note sections**.
+- Drag the bottom-right corner of a section or its panel to resize it. Each note remembers these sizes. Use **Reset size**, **Reset panel size** or **Reset all section sizes** in the context menu to go back to the default.
 
 Highlights added while the note is expanded appear automatically.
 

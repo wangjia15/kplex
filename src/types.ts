@@ -160,6 +160,9 @@ export type NodeVisual = {
   alt: string;
 };
 
+/** User-resized section card / content panel size. Presentation state only. */
+export type SectionSizeOverride = { cardWidth?: number; cardHeight?: number; panelWidth?: number; panelHeight?: number };
+
 export type PositionedNode = {
   page: GraphPage;
   role: Role | "center";

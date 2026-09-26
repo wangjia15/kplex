@@ -10,7 +10,7 @@ import {
   type SettingDefinitionItem,
 } from "obsidian";
 import type ExcaliBrainPlugin from "./main";
-import type { Arrowhead, Hierarchy, LinkStyle, NodeStyle } from "./types";
+import type { Arrowhead, Hierarchy, LinkStyle, NodeStyle, SectionSizeOverride } from "./types";
 import { sanitizeGraphLensDefinitions, type GraphLensDefinition } from "./lens/GraphLens";
 import { TRANSLATION_LANGUAGES } from "./paper/translation/TranslationTypes";
 
@@ -77,6 +77,33 @@ export type PaperAbstractView = "original" | "bilingual" | "translation";
 export type PaperArticleImport = "builtin" | "web-clipper";
 export type PaperNoteAbstractFormat = "sections" | "bilingual" | "translation";
 export type NodeSortOrder = "name-asc" | "name-desc" | "modified-desc" | "modified-asc" | "created-desc" | "created-asc" | "connections-desc" | "connections-asc";
+
+const SECTION_SIZE_FIELDS = ["cardWidth", "cardHeight", "panelWidth", "panelHeight"] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Keep only finite, positive numeric size fields; drop empty notes/sections. */
+function sanitizeSectionSizes(value: unknown): Record<string, Record<string, SectionSizeOverride>> {
+  const out: Record<string, Record<string, SectionSizeOverride>> = {};
+  if (!isRecord(value)) return out;
+  for (const [path, sections] of Object.entries(value)) {
+    if (!isRecord(sections)) continue;
+    const clean: Record<string, SectionSizeOverride> = {};
+    for (const [key, size] of Object.entries(sections)) {
+      if (!isRecord(size)) continue;
+      const entry: SectionSizeOverride = {};
+      for (const field of SECTION_SIZE_FIELDS) {
+        const n = size[field];
+        if (typeof n === "number" && Number.isFinite(n) && n > 0) entry[field] = Math.round(n);
+      }
+      if (Object.keys(entry).length) clean[key] = entry;
+    }
+    if (Object.keys(clean).length) out[path] = clean;
+  }
+  return out;
+}
 
 function sanitizeNodeSortOrder(value: unknown): NodeSortOrder {
   switch (value) {
@@ -288,6 +315,8 @@ export interface ExcaliBrainSettings {
   sectionShowHighlights: boolean;
   /** Show embedded images and their captions under sections. */
   sectionShowFigures: boolean;
+  /** Resized section cards/panels: note path -> section key -> size. */
+  sectionSizes: Record<string, Record<string, SectionSizeOverride>>;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -425,6 +454,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sectionShowContent: true,
   sectionShowHighlights: true,
   sectionShowFigures: true,
+  sectionSizes: {},
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -605,6 +635,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     sectionShowContent: old.sectionShowContent !== false,
     sectionShowHighlights: old.sectionShowHighlights !== false,
     sectionShowFigures: old.sectionShowFigures !== false,
+    sectionSizes: sanitizeSectionSizes(old.sectionSizes),
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",

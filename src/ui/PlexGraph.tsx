@@ -3,10 +3,10 @@ import { Menu, Platform, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
 import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
-import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, NodeVisual, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, NodeVisual, PositionedEdge, PositionedNode, Role, ScrollZone, SectionSizeOverride } from "../types";
 import { LinkDirection, RelationType } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
-import { buildScene, buildSectionExpandedScene, SECTION_CARD_LIMITS, type SectionContentOptions, type SectionSizeOverride, effectiveLabelLimit, expandedChildReserve, gateDiameter, siblingScale, type ZoneViewport } from "./layout";
+import { buildScene, buildSectionExpandedScene, SECTION_CARD_LIMITS, type SectionContentOptions, effectiveLabelLimit, expandedChildReserve, gateDiameter, siblingScale, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ABSTRACT_CARD_WIDTH, AbstractCard, type AbstractCardState } from "./AbstractCard";
 import { FIGURE_CARD_WIDTH, FigureCard, type FigureCardState } from "./FigureCard";
@@ -700,8 +700,19 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(new Set());
   // Section content panels folded to their header. View-local and reset with the center.
   const [collapsedSectionPanels, setCollapsedSectionPanels] = useState<Set<string>>(new Set());
-  // User-resized section cards and content panels. View-local and reset with the center.
-  const [sectionSizes, setSectionSizes] = useState<Map<string, SectionSizeOverride>>(new Map());
+  // User-resized section cards and content panels, remembered per note (settings.sectionSizes)
+  // under stable heading-path keys and mapped to the current section ids here.
+  const [sectionSizeRevision, setSectionSizeRevision] = useState(0);
+  const sectionSizes = useMemo(() => {
+    const sizes = new Map<string, SectionSizeOverride>();
+    const saved = sectionExpansion ? plugin.settings.sectionSizes[sectionExpansion.centerPath] : undefined;
+    if (!sectionExpansion || !saved) return sizes;
+    for (const section of sectionExpansion.sections) {
+      const size = saved[section.key];
+      if (size) sizes.set(section.id, size);
+    }
+    return sizes;
+  }, [plugin, sectionExpansion, sectionSizeRevision]);
   const sectionContentOptions = useMemo<SectionContentOptions | null>(() => settings.sectionShowContent
     ? { showHighlights: settings.sectionShowHighlights, showFigures: settings.sectionShowFigures, collapsed: collapsedSectionPanels }
     : null, [settings.sectionShowContent, settings.sectionShowHighlights, settings.sectionShowFigures, collapsedSectionPanels]);
@@ -1035,17 +1046,30 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     });
   };
   const updateSectionSize = (sectionId: string, change: SectionSizeOverride | null) => {
+    const section = sectionExpansion?.sections.find((candidate) => candidate.id === sectionId);
+    if (!sectionExpansion || !section) return;
+    const notePath = sectionExpansion.centerPath;
+    const all = plugin.settings.sectionSizes;
+    const saved = { ...all[notePath] };
+    if (!change) delete saved[section.key];
+    else {
+      const merged: SectionSizeOverride = { ...saved[section.key], ...change };
+      for (const key of Object.keys(merged) as Array<keyof SectionSizeOverride>) if (merged[key] === undefined) delete merged[key];
+      if (Object.keys(merged).length) saved[section.key] = merged; else delete saved[section.key];
+    }
+    if (Object.keys(saved).length) all[notePath] = saved; else delete all[notePath];
+    persistSectionSizes();
+  };
+  const resetAllSectionSizes = () => {
+    if (!sectionExpansion) return;
+    delete plugin.settings.sectionSizes[sectionExpansion.centerPath];
+    persistSectionSizes();
+  };
+  const persistSectionSizes = () => {
     preserveCameraOnNextLayout.current = true;
-    setSectionSizes((current) => {
-      const next = new Map(current);
-      if (!change) next.delete(sectionId);
-      else {
-        const merged: SectionSizeOverride = { ...next.get(sectionId), ...change };
-        for (const key of Object.keys(merged) as Array<keyof SectionSizeOverride>) if (merged[key] === undefined) delete merged[key];
-        if (Object.keys(merged).length) next.set(sectionId, merged); else next.delete(sectionId);
-      }
-      return next;
-    });
+    setSectionSizeRevision((value) => value + 1);
+    // Presentation-only state: save without notifying or rebuilding the index.
+    void plugin.saveSettings(false, false);
   };
   const resizeSectionPanel = (sectionId: string, width: number, height: number) => {
     // A folded panel only changes width; its height is the header until it is unfolded.
@@ -1143,7 +1167,6 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     setSectionExpansion(null);
     setExpandedSectionIds(new Set());
     setCollapsedSectionPanels(new Set());
-    setSectionSizes(new Map());
     sectionFoldCenter.current = null;
     setSceneTransitioning(true);
     if (sceneTransitionTimer.current !== null) window.clearTimeout(sceneTransitionTimer.current);
@@ -2387,10 +2410,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           menu.addItem((item) => item
             .setTitle("Reset all section sizes")
             .setIcon("rotate-ccw")
-            .onClick(() => {
-              preserveCameraOnNextLayout.current = true;
-              setSectionSizes(new Map());
-            }));
+            .onClick(() => resetAllSectionSizes()));
         }
         addSectionContentMenuItems(menu);
       }

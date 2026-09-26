@@ -26,6 +26,8 @@ export type SectionContent = {
 
 export type ExpandedSection = {
   id: string;
+  /** Stable identity across edits: the heading path from the outline root (plus a duplicate index). */
+  key: string;
   page: GraphPage;
   neighborhood: Neighborhood;
   level: number;
@@ -47,6 +49,7 @@ type SectionProjectionSource = {
     parentId: string | null;
     childIds: string[];
     content: SectionContent;
+    key: string;
   }>;
 };
 
@@ -229,6 +232,20 @@ function sectionTarget(page: GraphPage, sectionId: string): GraphPage {
   return clone;
 }
 
+/** Keys that survive edits elsewhere in the note: parent key + heading text (+ #n for repeats). */
+function stableSectionKeys(headings: HeadingRange[]): Map<string, string> {
+  const keys = new Map<string, string>();
+  const seen = new Map<string, number>();
+  for (const heading of headings) {
+    const parentKey = heading.parentId ? keys.get(heading.parentId) ?? "" : "";
+    const base = `${parentKey}\u0000${heading.heading}`;
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    keys.set(heading.id, count ? `${base}#${count}` : base);
+  }
+  return keys;
+}
+
 function resolveSectionContent(app: App, sourcePath: string, sectionText: string, lineOffset: number, footnotes: ReadonlyMap<string, string>): SectionContent {
   const raw = extractSectionContent(sectionText, footnotes);
   const figures: SectionFigure[] = [];
@@ -272,6 +289,7 @@ export async function buildCentralSectionExpansion(
   if (!headings.length) return null;
   const firstHeadingLine = headings[0].line;
   const footnotes = collectFootnotes(content);
+  const sectionKeys = stableSectionKeys(headings);
   const cache = plugin.app.metadataCache.getFileCache(file);
   const links = sourceLinks(cache);
   const preambleTargets = new Set<string>();
@@ -402,9 +420,10 @@ export async function buildCentralSectionExpansion(
     }
     // heading.line is 1-based; content lines are 0-based for editor navigation.
     const sectionContent = resolveSectionContent(plugin.app, file.path, sectionText, heading.line - 1, footnotes);
-    sections.push({ id: heading.id, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [], content: sectionContent });
+    const key = sectionKeys.get(heading.id) ?? heading.id;
+    sections.push({ id: heading.id, key, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [], content: sectionContent });
     projectionSections.push({
-      id: heading.id, page: sectionPage, evidenceByTarget: byTarget, level: heading.level,
+      id: heading.id, key, page: sectionPage, evidenceByTarget: byTarget, level: heading.level,
       parentId: heading.parentId, childIds: [], content: sectionContent,
     });
   }
@@ -469,7 +488,7 @@ export function projectCentralSectionExpansion(
       explanations.set(`${page.path}\u0000${target.path}`, explainResolvedRelationship(page, target, items, plugin.settings.inferAllLinksAsFriends));
     }
     return {
-      id: raw.id, page, neighborhood, level: raw.level, parentId: raw.parentId, childIds: [...raw.childIds], content: raw.content,
+      id: raw.id, key: raw.key, page, neighborhood, level: raw.level, parentId: raw.parentId, childIds: [...raw.childIds], content: raw.content,
     };
   });
 

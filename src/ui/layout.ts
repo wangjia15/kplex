@@ -1,5 +1,5 @@
 import type { ExcaliBrainSettings } from "../settings";
-import type { GraphPage, Neighborhood, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
+import type { GraphPage, Neighborhood, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone, SectionSizeOverride } from "../types";
 import { RelationType } from "../types";
 import { resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import type { GraphIndex } from "../index/GraphIndex";
@@ -44,9 +44,6 @@ export type PlexScene = {
   sectionTreeEdges?: SectionTreeEdge[];
   sectionPanels?: SectionPanel[];
 };
-
-/** User-resized section card / content panel sizes, keyed by section id. View-local state. */
-export type SectionSizeOverride = { cardWidth?: number; cardHeight?: number; panelWidth?: number; panelHeight?: number };
 
 export const SECTION_CARD_LIMITS = { minWidth: 120, maxWidth: 640, minHeight: 28, maxHeight: 320 } as const;
 export const SECTION_PANEL_LIMITS = { minWidth: 200, maxWidth: 960, minHeight: 64, maxHeight: 1400 } as const;

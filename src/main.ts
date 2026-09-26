@@ -513,6 +513,10 @@ export default class ExcaliBrainPlugin extends Plugin {
         this.managedCreatedFiles.delete(deleted);
         this.renameMetadataSuppressions.delete(deleted.path);
         this.index?.dematerializeFile(deleted.path);
+        if (this.settings.sectionSizes[deleted.path]) {
+          delete this.settings.sectionSizes[deleted.path];
+          void this.saveSettings(false, false);
+        }
         // A metadata event may already have queued an incremental patch for this file. Once the
         // file is gone that patch is meaningless; do not let an empty patch backlog escalate into
         // an authoritative full-vault rebuild a moment after dematerialization.
@@ -542,6 +546,12 @@ export default class ExcaliBrainPlugin extends Plugin {
       const history = this.settings.navigationHistory.map((path) => path === oldPath ? newPath : path);
       if (history.some((path, index) => path !== this.settings.navigationHistory[index])) {
         this.settings.navigationHistory = [...new Set(history)];
+        changed = true;
+      }
+      const sectionSizes = this.settings.sectionSizes[oldPath];
+      if (sectionSizes) {
+        delete this.settings.sectionSizes[oldPath];
+        this.settings.sectionSizes[newPath] = sectionSizes;
         changed = true;
       }
       const pinned = this.settings.pinnedNodes.map((path) => path === oldPath ? newPath : path);

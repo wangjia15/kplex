@@ -1214,6 +1214,10 @@ try {
   assert.equal(grandchild.parentId, childA.id);
   assert.equal(rootTwo.parentId, null);
   for (const section of sectionTree.sections) assert.equal(index.get(section.page.path), undefined);
+  // Remembered section sizes use keys built from the heading path, not line numbers.
+  assert.equal(new Set(sectionTree.sections.map((section) => section.key)).size, sectionTree.sections.length, "Section keys are unique");
+  assert.equal(grandchild.key, `${childA.key}\u0000Grandchild`, "A section key extends its parent's key with its heading");
+  assert(!/section:\d/.test(grandchild.key), "Section keys do not depend on line numbers");
 
   // Assertions 48–50: folding is layout/view state only. A folded outline parent becomes the
   // visible projection source for all hidden-descendant relations, while provenance still points
@@ -2027,6 +2031,7 @@ try {
     lastActivePath: "Folder/Old.md",
     navigationHistory: ["Start.md", "Folder/Old.md", "Folder/Old.md"],
     pinnedNodes: ["Folder/Old.md", "Pinned.md"],
+    sectionSizes: { "Folder/Old.md": { "\u0000Intro": { cardWidth: 320 } } },
   };
   renameCoordinator.saveSettings = async () => {};
   renameCoordinator.scheduleRebuild = (reason) => { rebuildReasons.push(reason); };
@@ -2039,6 +2044,7 @@ try {
   assert.equal(renameCoordinator.settings.lastActivePath, "Moved/New.md");
   assert.deepEqual(renameCoordinator.settings.navigationHistory, ["Start.md", "Moved/New.md"]);
   assert.deepEqual(renameCoordinator.settings.pinnedNodes, ["Moved/New.md", "Pinned.md"]);
+  assert.deepEqual(renameCoordinator.settings.sectionSizes, { "Moved/New.md": { "\u0000Intro": { cardWidth: 320 } } }, "Remembered section sizes follow a renamed note");
   assert.deepEqual(fastRenameCalls, [["Folder/Old.md", "Moved/New.md"]]);
   assert.equal(renameCoordinator.dirtyMarkdownPaths.size, 0, "A clean rename must not enqueue a Markdown patch");
   assert.deepEqual(rebuildReasons, [], "A TFile rename must not schedule a full rebuild");
