@@ -201,10 +201,11 @@ A Markdown note can be expanded from the center into its heading hierarchy. This
 
 Each section can show what you marked while reading, right under its heading:
 
-- **Highlight quotes**: text highlighted with `==text==` or `<mark>` (as written by the [Sidebar Highlights](https://github.com/trevware/obsidian-sidebar-highlights) plugin), in its highlight color, with any comments attached to it. Click a quote to jump to it in the note.
-- **Figures**: embedded images with their captions (alt text, or a "Figure 1: …" / italic line directly below the image). Hover a figure to see it in full; click it, or use the pin button, to keep it open. Pinned figures can be moved and resized.
+- **Highlight quotes**: text highlighted with `==text==` or `<mark>` (as written by the [Sidebar Highlights](https://github.com/trevware/obsidian-sidebar-highlights) plugin), in its highlight color, with any comments attached to it. Click a quote to jump to it in the note. PDF highlights made with [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) jump to the exact passage in the PDF, opened in the Sidecar.
+- **Formulas**: LaTeX written between dollar signs is typeset inside quotes and comments, so a highlighted equation reads the way it does in the note.
+- **Figures**: embedded images with their captions (alt text, or a "Figure 1: …" / italic line directly below the image), shown in a panel of their own that branches off the highlights. A rectangular PDF++ annotation is shown as the region of the page it marks. Hover a figure to see it in full; click it, or use the pin button, to keep it open. Pinned figures can be moved and resized.
 - Click a panel's header to fold it. Right-click a section or the center note to hide or show all highlights and figures, or only the highlight quotes or only the figures. The same options are under **Settings → Plex behavior → Note sections**.
-- Drag the bottom-right corner of a section or its panel to resize it. Each note remembers these sizes. Use **Reset size**, **Reset panel size** or **Reset all section sizes** in the context menu to go back to the default.
+- Drag a panel by its header to move it, and drag the bottom-right corner of a section or panel to resize it. Each note remembers where you put things. Use **Move back to its place**, **Reset size**, **Reset panel size** or **Reset all section sizes and positions** in the context menu to go back to the default.
 
 Highlights added while the note is expanded appear automatically.
 
