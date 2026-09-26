@@ -1,4 +1,4 @@
-import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, setIcon, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, normalizePath, parseLinktext, setIcon, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { GraphIndex } from "./index/GraphIndex";
 import { DEFAULT_SETTINGS, ExcaliBrainSettingTab, migrateAndMergeSettings, type DocumentSyncMode, type ExcaliBrainSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
 import { EXCALIBRAIN_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, ExcaliBrainView, KplexSidepanelView } from "./ui/ExcaliBrainView";
@@ -1447,7 +1447,7 @@ export default class ExcaliBrainPlugin extends Plugin {
     if (suppression && Date.now() >= suppression.until) this.transientDocumentFollowSuppression = null;
     else if (suppression?.path === file.path) return false;
 
-    if (!this.syncLeafToKplexEnabled()) return false;
+    if (this.settings.viewLocked || !this.syncLeafToKplexEnabled()) return false;
     this.validateLinkedDocumentLeaf();
     const leaf = this.settings.documentSyncMode === "pinned" ? this.linkedDocumentLeaf : this.findRecentDocumentLeaf();
     return this.fileForLeaf(leaf)?.path === file.path;
@@ -3309,6 +3309,36 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   async relationshipEvidenceSections(evidence: RelationEvidence): Promise<RelationshipSourceSection[]> {
     return (await this.relationshipEvidenceSectionsBatch([evidence])).get(evidence.id) ?? [];
+  }
+
+  /**
+   * Open the PDF anchor (for example a PDF++ `#page=…&selection=…` subpath) carried by a
+   * highlighted section quote in this view's companion sidecar, falling back to a new tab.
+   */
+  async openSectionHighlightTarget(linkTarget: string, sourcePath: string, hostLeaf?: WorkspaceLeaf): Promise<void> {
+    const { path, subpath } = parseLinktext(linkTarget);
+    const file = this.app.metadataCache.getFirstLinkpathDest(path, sourcePath);
+    if (!file) {
+      new Notice(`Cannot find ${path}.`, 3000);
+      return;
+    }
+    const sidecarLeaf = hostLeaf ? this.ensureSidecarLeaf(hostLeaf) : null;
+    const leaf = sidecarLeaf ?? this.app.workspace.getLeaf("tab");
+    this.lastDocumentLeaf = leaf;
+    if (sidecarLeaf) {
+      // Inspecting the quoted PDF passage must not recenter the Plex on the PDF.
+      this.transientDocumentFollowSuppression = { path: file.path, until: Date.now() + 1800 };
+      this.settings.sidecarLastFilePath = file.path;
+      this.settings.sidecarLastUrl = "";
+    }
+    // The PDF view (and PDF++) apply the page/selection subpath from ephemeral state.
+    await leaf.openFile(file, { active: !sidecarLeaf, eState: { subpath } });
+    if (sidecarLeaf) {
+      await this.saveSettings(false, false);
+      this.notifySidecar();
+    } else {
+      await this.app.workspace.revealLeaf(leaf);
+    }
   }
 
   async openRelationshipEvidenceLocation(

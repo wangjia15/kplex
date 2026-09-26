@@ -15,13 +15,13 @@ const stopMouse = (event: ReactPointerEvent<HTMLElement>) => {
  * Highlights and figures of one expanded section, drawn under its card. Positions come from the
  * scene (canvas coordinates), so the panel pans and zooms with the Plex.
  */
-export function SectionContentPanel({ panel, content, showHighlights, showFigures, onToggleCollapse, onOpenLine, onFigureEnter, onFigureLeave, onFigurePin, onResize, onContextMenu }: {
+export function SectionContentPanel({ panel, content, showHighlights, showFigures, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onResize, onContextMenu }: {
   panel: SectionPanel;
   content: SectionContent;
   showHighlights: boolean;
   showFigures: boolean;
   onToggleCollapse: (sectionId: string) => void;
-  onOpenLine: (line: number) => void;
+  onOpenHighlight: (line: number, linkTarget?: string) => void;
   onFigureEnter: (figure: SectionFigure, element: HTMLElement) => void;
   onFigureLeave: () => void;
   onFigurePin: (figure: SectionFigure, element: HTMLElement) => void;
@@ -86,7 +86,7 @@ export function SectionContentPanel({ panel, content, showHighlights, showFigure
           className="kplex-section-quote"
           aria-label={item.text.slice(0, 600)}
           onPointerDown={stopMouse}
-          onClick={() => onOpenLine(item.line)}
+          onClick={() => onOpenHighlight(item.line, item.linkTarget)}
         >
           <span className="kplex-section-quote-text" style={{ maxHeight: sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight }}>{item.text}</span>
         </button>

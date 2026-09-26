@@ -247,6 +247,8 @@ export interface ExcaliBrainSettings {
   relationDefaultFields: { parent: string; child: string; left: string; right: string; previous: string; next: string };
   /** How K-Plex is paired with a note tab. */
   documentSyncMode: DocumentSyncMode;
+  /** Keep the Plex center fixed when other tabs or files become active. Controlled from the toolbar. */
+  viewLocked: boolean;
   /** Animation speed multiplier: 0 disables motion; 1 is normal; 2 is very fast. */
   animationSpeed: number;
   /** Named local Graph Lenses. Definitions are persisted; evaluation is limited to the visible Plex. */
@@ -417,6 +419,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sidecarLastUrl: "",
   relationDefaultFields: { parent: "Parent", child: "Child", left: "Friend", right: "Challenger", previous: "Previous", next: "Next" },
   documentSyncMode: "off",
+  viewLocked: false,
   animationSpeed: 0.5,
   graphLenses: [],
   thumbnailProperty: "thumbnail",
@@ -598,6 +601,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
       next: String(old.relationDefaultFields?.next ?? DEFAULT_SETTINGS.relationDefaultFields.next),
     },
     documentSyncMode,
+    viewLocked: old.viewLocked === true,
     animationSpeed: Math.max(0, Math.min(2, finite(old.animationSpeed, 1))),
     graphLenses: sanitizeGraphLensDefinitions(old.graphLenses),
     thumbnailProperty: String(old.thumbnailProperty ?? DEFAULT_SETTINGS.thumbnailProperty).trim() || DEFAULT_SETTINGS.thumbnailProperty,

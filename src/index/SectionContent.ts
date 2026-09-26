@@ -9,6 +9,8 @@
 
 export type SectionHighlight = {
   text: string;
+  /** PDF selection target carried by the highlighted passage, when present. */
+  linkTarget?: string;
   /** CSS colour from the markup, when one is given. */
   color: string | null;
   comments: string[];
@@ -103,6 +105,7 @@ export function plainInlineText(value: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, "\"")
+    .replace(/&#91;/g, "[").replace(/&#93;/g, "]").replace(/&#124;/g, "|")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -154,7 +157,19 @@ function maskInlineCode(line: string): string {
   return line.replace(/`[^`\n]*`/g, (match) => " ".repeat(match.length));
 }
 
-type Match = { start: number; end: number; text: string; color: string | null };
+/** Preserve a PDF anchor from a link inside the highlight for direct quote navigation. */
+function pdfHighlightTarget(raw: string): string | undefined {
+  const wiki = raw.match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
+  const markdown = raw.match(/\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))\s*\)/);
+  const target = wiki?.[1] ?? markdown?.[1] ?? markdown?.[2];
+  if (!target) return undefined;
+  let decoded = target;
+  try { decoded = decodeURIComponent(target); } catch { /* Keep a valid unencoded vault target. */ }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(decoded)) return undefined;
+  return decoded.includes("#") && decoded.split("#")[0].toLowerCase().endsWith(".pdf") ? decoded : undefined;
+}
+
+type Match = { start: number; end: number; text: string; color: string | null; linkTarget?: string };
 
 function lineHighlights(line: string): Match[] {
   const masked = maskInlineCode(line);
@@ -162,7 +177,10 @@ function lineHighlights(line: string): Match[] {
   const push = (start: number, end: number, raw: string, color: string | null) => {
     if (found.some((item) => start < item.end && end > item.start)) return;
     const text = plainInlineText(raw);
-    if (text) found.push({ start, end, text, color });
+    if (text) {
+      const linkTarget = pdfHighlightTarget(raw);
+      found.push({ start, end, text, color, ...(linkTarget ? { linkTarget } : {}) });
+    }
   };
   for (const match of masked.matchAll(/<mark\b([^>]*)>(.*?)<\/mark>/gi)) {
     const start = match.index;
@@ -216,6 +234,32 @@ function captionBelow(lines: string[], index: number): string {
   return "";
 }
 
+/** PDF++ callout: header anchor, nested blockquote passage, then outer comment text. */
+function pdfCallout(lines: string[], start: number): { highlight: SectionHighlight; end: number } | null {
+  const header = lines[start].match(/^\s*>\s*\[!([^\]|]+)(?:\|([^\]]+))?\][+-]?\s*(.*)$/i);
+  if (!header) return null;
+  const linkTarget = pdfHighlightTarget(header[3]);
+  if (header[1].toLowerCase() !== "pdf" && !linkTarget) return null;
+  const quote: string[] = [];
+  const comments: string[] = [];
+  let end = start;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\s*>\s*\[!/.test(lines[i])) break;
+    const outer = lines[i].match(/^\s*>\s?(.*)$/);
+    if (!outer) break;
+    end = i;
+    const nested = outer[1].match(/^>\s?(.*)$/);
+    if (nested) quote.push(nested[1]);
+    else comments.push(outer[1]);
+  }
+  if (!quote.some((part) => part.trim())) return null;
+  const comment = plainCommentText(comments.join("\n"));
+  const name = header[2]?.trim().toLowerCase();
+  const color = name && /^(?:yellow|red|green|blue|purple|orange|pink|cyan)$/.test(name) ? name : null;
+  return { highlight: { text: plainInlineText(quote.join(" ")), color, comments: comment ? [comment] : [],
+    line: start, ...(linkTarget ? { linkTarget } : {}) }, end };
+}
+
 export function extractSectionContent(sectionText: string, footnotes: ReadonlyMap<string, string> = new Map()): SectionContentRaw {
   const highlights: SectionHighlight[] = [];
   const figures: SectionFigureRef[] = [];
@@ -247,8 +291,15 @@ export function extractSectionContent(sectionText: string, footnotes: ReadonlyMa
       inFootnote = false;
     }
 
+    const callout = pdfCallout(lines, index);
+    if (callout) {
+      highlights.push(callout.highlight);
+      index = callout.end;
+      continue;
+    }
+
     for (const match of lineHighlights(line)) {
-      highlights.push({ text: match.text, color: match.color, comments: trailingComments(line, match.end, footnotes), line: index });
+      highlights.push({ text: match.text, color: match.color, comments: trailingComments(line, match.end, footnotes), line: index, ...(match.linkTarget ? { linkTarget: match.linkTarget } : {}) });
     }
 
     for (const match of line.matchAll(/!\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g)) {

@@ -1037,6 +1037,11 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     const sourcePath = sectionExpansion?.centerPath;
     if (sourcePath) void plugin.openRelationshipEvidenceLocation({ path: sourcePath, line }, hostLeaf);
   };
+  const openSectionHighlight = (line: number, linkTarget?: string) => {
+    const sourcePath = sectionExpansion?.centerPath;
+    if (linkTarget && sourcePath) void plugin.openSectionHighlightTarget(linkTarget, sourcePath, hostLeaf);
+    else openCenterLine(line);
+  };
   const toggleSectionPanel = (sectionId: string) => {
     preserveCameraOnNextLayout.current = true;
     setCollapsedSectionPanels((current) => {
@@ -2867,7 +2872,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
             showHighlights={sectionContentOptions.showHighlights}
             showFigures={sectionContentOptions.showFigures}
             onToggleCollapse={toggleSectionPanel}
-            onOpenLine={openCenterLine}
+            onOpenHighlight={openSectionHighlight}
             onFigureEnter={scheduleFigureCard}
             onFigureLeave={hideFigureCard}
             onFigurePin={pinFigureCard}

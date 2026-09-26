@@ -285,6 +285,12 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
     plugin.showKplexMenuAtMouseEvent(menu, event.nativeEvent);
   };
 
+  const toggleViewLock = async () => {
+    plugin.settings.viewLocked = !plugin.settings.viewLocked;
+    await plugin.saveSettings(false, false);
+    forceRender((value) => value + 1);
+  };
+
   const toggleExpandedView = async () => {
     plugin.settings.graphDepth = plugin.settings.graphDepth === 2 ? 1 : 2;
     await plugin.saveSettings(false, false);
@@ -418,6 +424,12 @@ export function ExcaliBrainApp({ plugin, surface, hostLeaf }: { plugin: ExcaliBr
               aria-label={`${syncTitle}. Click for sync actions and link mode.`}
               onClick={showDocumentSyncMenu}
             ><ObsidianIcon name={syncIcon} size={17} /></button>
+            <ToolButton
+              icon={plugin.settings.viewLocked ? "lock" : "lock-open"}
+              title={plugin.settings.viewLocked ? "View locked: switching tabs does not change the Plex" : "Lock view: keep the Plex when switching tabs"}
+              on={plugin.settings.viewLocked}
+              onClick={() => void toggleViewLock()}
+            />
             <ToolButton
               icon="type"
               title={plugin.settings.renderAlias ? "Display aliases: on" : "Display aliases: off"}

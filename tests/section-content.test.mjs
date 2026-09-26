@@ -85,6 +85,36 @@ try {
   assert.equal(unsafe.highlights[0].color, null);
   assert.equal(plainInlineText("see [link](http://a) and `code`"), "see link and code");
 
+  const pdfQuote = '<mark style="background-color: #ffd000">[[paper.pdf#page=1&selection=69,0,75,29&color=yellow|Result &#91;25&#93;]]</mark>[^pdf]';
+  const pdfContent = extractSectionContent(pdfQuote, new Map([["pdf", "AI comment"]]));
+  assert.equal(pdfContent.highlights[0].text, "Result [25]");
+  assert.equal(pdfContent.highlights[0].linkTarget, "paper.pdf#page=1&selection=69,0,75,29&color=yellow");
+  assert.deepEqual(pdfContent.highlights[0].comments, ["AI comment"]);
+  const markdownPdf = extractSectionContent('<mark>[Result](<folder/my%20paper.pdf#page=2&selection=1,0,2,3>)</mark>');
+  assert.equal(markdownPdf.highlights[0].linkTarget, "folder/my paper.pdf#page=2&selection=1,0,2,3");
+  assert.equal(extractSectionContent('<mark>[[Note|Text]]</mark>').highlights[0].linkTarget, undefined);
+  assert.equal(extractSectionContent('<mark>[Text](https://example.com/paper.pdf#page=1)</mark>').highlights[0].linkTarget, undefined);
+
+  const nativeCallout = [
+    '> [!PDF|note] [[paper.pdf#page=1&selection=87,0,144,23&color=note|paper, p.1]]',
+    '> > Present in 3D scenes [31].',
+    '> > Point clouds are irregular.',
+    '>',
+    '> **AI · method**：VoteNet uses PointNet++.',
+    '',
+    '## Next section',
+    '==another highlight==',
+  ].join("\n");
+  const nativeContent = extractSectionContent(nativeCallout);
+  assert.equal(nativeContent.highlights.length, 2);
+  assert.equal(nativeContent.highlights[0].text, 'Present in 3D scenes [31]. Point clouds are irregular.');
+  assert.equal(nativeContent.highlights[0].linkTarget, 'paper.pdf#page=1&selection=87,0,144,23&color=note');
+  assert.deepEqual(nativeContent.highlights[0].comments, ['AI · method：VoteNet uses PointNet++.']);
+  assert.equal(nativeContent.highlights[1].text, 'another highlight');
+  const adjacent = extractSectionContent(nativeCallout.split('\n\n')[0] + '\n' + nativeCallout.split('\n\n')[0]);
+  assert.equal(adjacent.highlights.length, 2);
+  assert.equal(extractSectionContent('> [!NOTE] Ordinary note\n> > Quote').highlights.length, 0);
+
   console.log("section content tests passed");
 } finally {
   rmSync(temp, { recursive: true, force: true });
