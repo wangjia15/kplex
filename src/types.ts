@@ -174,6 +174,8 @@ export type PositionedNode = {
   label: string;
   neighbourCount: number;
   gateStats: GateStats;
+  /** Size set by the user (resizable section cards); the full label wraps instead of truncating. */
+  customSize?: boolean;
 };
 
 export type PositionedEdge = {

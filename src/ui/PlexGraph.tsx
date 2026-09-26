@@ -6,13 +6,15 @@ import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
 import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, NodeVisual, PositionedEdge, PositionedNode, Role, ScrollZone } from "../types";
 import { LinkDirection, RelationType } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
-import { buildScene, buildSectionExpandedScene, effectiveLabelLimit, expandedChildReserve, gateDiameter, siblingScale, type ZoneViewport } from "./layout";
+import { buildScene, buildSectionExpandedScene, SECTION_CARD_LIMITS, type SectionContentOptions, type SectionSizeOverride, effectiveLabelLimit, expandedChildReserve, gateDiameter, siblingScale, type ZoneViewport } from "./layout";
 import { ThoughtNode, type ConnectionDragState } from "./ThoughtNode";
 import { ABSTRACT_CARD_WIDTH, AbstractCard, type AbstractCardState } from "./AbstractCard";
+import { FIGURE_CARD_WIDTH, FigureCard, type FigureCardState } from "./FigureCard";
+import { SectionContentPanel } from "./SectionContentPanel";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { RelationshipExplanationModal } from "./RelationshipExplanationModal";
 import { RenameNoteModal } from "./RenameNoteModal";
-import { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSectionExpansion, type CentralSectionExpansion } from "../index/SectionExpansion";
+import { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSectionExpansion, type CentralSectionExpansion, type SectionFigure } from "../index/SectionExpansion";
 import { GraphPredicateEngine, type CompiledGraphPredicate, type GraphPredicateEdgeContext } from "../lens/GraphPredicate";
 import { graphLensEdgeStyle, graphLensNodeStyle, matchesGraphLenses, type CompiledGraphLensSet } from "../lens/GraphLens";
 
@@ -642,6 +644,27 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   // actually changes. This removes the largest source of wasted work in dense Plex scenes.
   const persistentNeighborhood = useMemo(() => index.getNeighborhood(activePath), [index, activePath, renderRevision]);
   const [sectionExpanded, setSectionExpanded] = useState(false);
+  // Highlights and figures change without any semantic graph change (for example a highlight added
+  // from Sidebar Highlights), so re-read the expanded note when the file itself is modified.
+  const [sectionFileRevision, setSectionFileRevision] = useState(0);
+  const expandedCenterPath = sectionExpanded ? persistentNeighborhood?.center.file?.path ?? null : null;
+  useEffect(() => {
+    if (!expandedCenterPath) return;
+    let timer: number | null = null;
+    const ref = plugin.app.vault.on("modify", (file) => {
+      if (file.path !== expandedCenterPath) return;
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        preserveCameraOnNextLayout.current = true;
+        setSectionFileRevision((value) => value + 1);
+      }, 400);
+    });
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      plugin.app.vault.offref(ref);
+    };
+  }, [plugin, expandedCenterPath]);
   const sectionEvidenceRevision = useMemo(() => {
     if (!sectionExpanded || !persistentNeighborhood?.center.file || persistentNeighborhood.center.file.extension !== "md") return "";
     const center = persistentNeighborhood.center;
@@ -649,13 +672,14 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     return [
       center.path,
       center.mtime ?? 0,
+      sectionFileRevision,
       ...localEvidence.map((entry) => {
         const target = index.get(entry.targetPath);
         const evidenceIds = entry.evidence.map((item) => item.id).join(",");
         return `${entry.targetPath}:${target?.mtime ?? 0}:${target?.name ?? ""}:${evidenceIds}`;
       }),
     ].join("|");
-  }, [index, sectionExpanded, persistentNeighborhood?.center.path, persistentNeighborhood?.center.mtime, renderRevision]);
+  }, [index, sectionExpanded, persistentNeighborhood?.center.path, persistentNeighborhood?.center.mtime, renderRevision, sectionFileRevision]);
   const [sectionExpansion, setSectionExpansion] = useState<CentralSectionExpansion | null>(null);
   const sectionProjectionRevision = [
     settings.showFolderNodes ? "1" : "0",
@@ -674,6 +698,13 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     ? projectCentralSectionExpansion(plugin, index, sectionExpansion)
     : null, [sectionExpansion, plugin, index, sectionProjectionRevision]);
   const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(new Set());
+  // Section content panels folded to their header. View-local and reset with the center.
+  const [collapsedSectionPanels, setCollapsedSectionPanels] = useState<Set<string>>(new Set());
+  // User-resized section cards and content panels. View-local and reset with the center.
+  const [sectionSizes, setSectionSizes] = useState<Map<string, SectionSizeOverride>>(new Map());
+  const sectionContentOptions = useMemo<SectionContentOptions | null>(() => settings.sectionShowContent
+    ? { showHighlights: settings.sectionShowHighlights, showFigures: settings.sectionShowFigures, collapsed: collapsedSectionPanels }
+    : null, [settings.sectionShowContent, settings.sectionShowHighlights, settings.sectionShowFigures, collapsedSectionPanels]);
   const sectionFoldCenter = useRef<string | null>(null);
   const [sceneTransitioning, setSceneTransitioning] = useState(false);
   const previousNodeRects = useRef<Map<string, { left: number; top: number; width: number; height: number }>>(new Map());
@@ -720,8 +751,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     return filterNeighborhoodForLenses(neighborhood, neighborhood.center, predicateEngine, index, predicate, lenses);
   }, [neighborhood, globalFiltering, filterLayoutMode, layoutSectionExpansion, predicateEngine, index, predicate, lenses, predicateRevision]);
   const scene = useMemo(() => layoutNeighborhood
-    ? (layoutSectionExpansion ? buildSectionExpandedScene(layoutSectionExpansion, index, settings, expandedSectionIds, showCrossLinks) : buildScene(layoutNeighborhood, index, settings, showCrossLinks))
-    : { nodes: [], edges: [], zoneViewports: {} }, [layoutNeighborhood, layoutSectionExpansion, expandedSectionIds, index, settings, layoutRevision, showCrossLinks]);
+    ? (layoutSectionExpansion ? buildSectionExpandedScene(layoutSectionExpansion, index, settings, expandedSectionIds, showCrossLinks, sectionContentOptions, sectionSizes) : buildScene(layoutNeighborhood, index, settings, showCrossLinks))
+    : { nodes: [], edges: [], zoneViewports: {} }, [layoutNeighborhood, layoutSectionExpansion, expandedSectionIds, sectionContentOptions, sectionSizes, index, settings, layoutRevision, showCrossLinks]);
   const [nodeVisuals, setNodeVisuals] = useState<Map<string, NodeVisual>>(new Map());
   const visualRefreshTimers = useRef(new Map<string, number>());
   const visualPages = useMemo(() => [...new Map(
@@ -923,6 +954,136 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     setAbstractCards((cards) => cards.filter((card) => card.pinned));
   }, [activePath]);
 
+  // ---- Section figure cards ----------------------------------------------------------------
+  const [figureCards, setFigureCards] = useState<FigureCardState[]>([]);
+  const figureShowTimer = useRef<number | null>(null);
+  const figureHideTimer = useRef<number | null>(null);
+  const clearFigureTimers = () => {
+    if (figureShowTimer.current !== null) window.clearTimeout(figureShowTimer.current);
+    if (figureHideTimer.current !== null) window.clearTimeout(figureHideTimer.current);
+    figureShowTimer.current = null;
+    figureHideTimer.current = null;
+  };
+  const figureCardPosition = (element: HTMLElement): { left: number; top: number } | null => {
+    const el = viewport.current;
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    const rect = element.getBoundingClientRect();
+    let left = rect.right - box.left + 10;
+    if (left + FIGURE_CARD_WIDTH > el.clientWidth - 8) left = rect.left - box.left - FIGURE_CARD_WIDTH - 10;
+    left = Math.max(8, Math.min(left, el.clientWidth - FIGURE_CARD_WIDTH - 8));
+    const top = Math.max(8, Math.min(rect.top - box.top - 40, el.clientHeight - 320));
+    return { left, top };
+  };
+  const hideFigureCard = () => {
+    if (figureShowTimer.current !== null) window.clearTimeout(figureShowTimer.current);
+    figureShowTimer.current = null;
+    if (figureHideTimer.current !== null) window.clearTimeout(figureHideTimer.current);
+    // A short grace period lets the pointer travel from the thumbnail into the card to pin it.
+    figureHideTimer.current = window.setTimeout(() => {
+      figureHideTimer.current = null;
+      setFigureCards((cards) => cards.filter((card) => card.pinned));
+    }, 300);
+  };
+  const scheduleFigureCard = (figure: SectionFigure, element: HTMLElement) => {
+    clearFigureTimers();
+    figureShowTimer.current = window.setTimeout(() => {
+      figureShowTimer.current = null;
+      const position = figureCardPosition(element);
+      if (!position) return;
+      setFigureCards((cards) => cards.some((card) => card.pinned && card.figure.src === figure.src)
+        ? cards.filter((card) => card.pinned)
+        : [...cards.filter((card) => card.pinned), { id: "hover", figure, ...position, pinned: false }]);
+    }, 350);
+  };
+  const pinFigureCard = (figure: SectionFigure, element: HTMLElement) => {
+    clearFigureTimers();
+    const position = figureCardPosition(element);
+    if (!position) return;
+    setFigureCards((cards) => {
+      if (cards.some((card) => card.pinned && card.figure.src === figure.src)) return cards.filter((card) => card.pinned);
+      const pinned = cards.filter((card) => card.pinned);
+      const hover = cards.find((card) => !card.pinned && card.figure.src === figure.src);
+      return [...pinned.slice(-7), { id: `pin-${Date.now()}`, figure, left: hover?.left ?? position.left, top: hover?.top ?? position.top, pinned: true }];
+    });
+  };
+  const toggleFigurePin = (id: string) => {
+    setFigureCards((cards) => {
+      const card = cards.find((item) => item.id === id);
+      if (!card) return cards;
+      // Unpinning closes the card; pinning keeps it (at most 8 pinned cards).
+      if (card.pinned) return cards.filter((item) => item.id !== id);
+      const pinned = cards.filter((item) => item.pinned);
+      return [...pinned.slice(-7), { ...card, id: `pin-${Date.now()}`, pinned: true }];
+    });
+  };
+  useEffect(() => () => clearFigureTimers(), []);
+  useEffect(() => {
+    clearFigureTimers();
+    setFigureCards((cards) => cards.filter((card) => card.pinned));
+  }, [activePath]);
+  const openCenterLine = (line: number) => {
+    const sourcePath = sectionExpansion?.centerPath;
+    if (sourcePath) void plugin.openRelationshipEvidenceLocation({ path: sourcePath, line }, hostLeaf);
+  };
+  const toggleSectionPanel = (sectionId: string) => {
+    preserveCameraOnNextLayout.current = true;
+    setCollapsedSectionPanels((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) next.delete(sectionId); else next.add(sectionId);
+      return next;
+    });
+  };
+  const updateSectionSize = (sectionId: string, change: SectionSizeOverride | null) => {
+    preserveCameraOnNextLayout.current = true;
+    setSectionSizes((current) => {
+      const next = new Map(current);
+      if (!change) next.delete(sectionId);
+      else {
+        const merged: SectionSizeOverride = { ...next.get(sectionId), ...change };
+        for (const key of Object.keys(merged) as Array<keyof SectionSizeOverride>) if (merged[key] === undefined) delete merged[key];
+        if (Object.keys(merged).length) next.set(sectionId, merged); else next.delete(sectionId);
+      }
+      return next;
+    });
+  };
+  const resizeSectionPanel = (sectionId: string, width: number, height: number) => {
+    // A folded panel only changes width; its height is the header until it is unfolded.
+    updateSectionSize(sectionId, collapsedSectionPanels.has(sectionId) ? { panelWidth: width } : { panelWidth: width, panelHeight: height });
+  };
+  const showSectionPanelMenu = (sectionId: string, event: MouseEvent<HTMLDivElement>) => {
+    const menu = new Menu();
+    const section = sectionExpansion?.sections.find((candidate) => candidate.id === sectionId);
+    if (section) {
+      menu.addItem((item) => item
+        .setTitle("Open section")
+        .setIcon("heading")
+        .onClick(() => void plugin.openSection(section.page)));
+    }
+    const size = sectionSizes.get(sectionId);
+    menu.addItem((item) => item
+      .setTitle("Reset panel size")
+      .setIcon("rotate-ccw")
+      .setDisabled(size?.panelWidth === undefined && size?.panelHeight === undefined)
+      .onClick(() => updateSectionSize(sectionId, { panelWidth: undefined, panelHeight: undefined })));
+    const collapsed = collapsedSectionPanels.has(sectionId);
+    menu.addItem((item) => item
+      .setTitle(collapsed ? "Show this section's content" : "Hide this section's content")
+      .setIcon(collapsed ? "eye" : "eye-off")
+      .onClick(() => toggleSectionPanel(sectionId)));
+    addSectionContentMenuItems(menu);
+    const doc = viewport.current?.ownerDocument ?? document;
+    plugin.showKplexMenuAtPosition(menu, { x: event.clientX, y: event.clientY }, doc);
+  };
+  const setSectionContentSetting = (key: "sectionShowContent" | "sectionShowHighlights" | "sectionShowFigures", value: boolean) => {
+    plugin.settings[key] = value;
+    settings[key] = value;
+    preserveCameraOnNextLayout.current = true;
+    setLayoutRevision((current) => current + 1);
+    // Presentation-only: notify mounted views, never rebuild the index.
+    void plugin.saveSettings(false);
+  };
+
   const clearEdgeTooltip = () => {
     if (edgeTooltipTimer.current !== null) window.clearTimeout(edgeTooltipTimer.current);
     edgeTooltipTimer.current = null;
@@ -981,6 +1142,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     setSectionExpanded(false);
     setSectionExpansion(null);
     setExpandedSectionIds(new Set());
+    setCollapsedSectionPanels(new Set());
+    setSectionSizes(new Map());
     sectionFoldCenter.current = null;
     setSceneTransitioning(true);
     if (sceneTransitionTimer.current !== null) window.clearTimeout(sceneTransitionTimer.current);
@@ -1147,6 +1310,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     for (const zone of ZONES) {
       const panel = scene.zoneViewports[zone];
       if (!panel) continue;
+      includeRect(panel.left - 12, panel.top - 12, panel.left + panel.width + 12, panel.top + panel.height + 12);
+    }
+    for (const panel of scene.sectionPanels ?? []) {
       includeRect(panel.left - 12, panel.top - 12, panel.left + panel.width + 12, panel.top + panel.height + 12);
     }
 
@@ -1790,7 +1956,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     if (e.pointerType === "touch") {
       // Empty bounded lists own one-finger vertical scrolling. A thought/edge inside such a list
       // still belongs to the graph so pinch can begin over visible content, not only bare canvas.
-      const scrollSurface = target.closest(".kplex-zone-scroll, .kplex-expanded-scroll");
+      const scrollSurface = target.closest(".kplex-zone-scroll, .kplex-expanded-scroll, .kplex-section-panel-body");
       const graphTarget = target.closest(".excalibrain-thought, .excalibrain-edge-hit");
       if (scrollSurface && !graphTarget) return;
       e.preventDefault();
@@ -2126,6 +2292,23 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     });
   };
 
+  const addSectionContentMenuItems = (menu: Menu): void => {
+    menu.addSeparator();
+    menu.addItem((item) => item
+      .setTitle(settings.sectionShowContent ? "Hide highlights and figures" : "Show highlights and figures")
+      .setIcon(settings.sectionShowContent ? "eye-off" : "eye")
+      .onClick(() => setSectionContentSetting("sectionShowContent", !settings.sectionShowContent)));
+    if (!settings.sectionShowContent) return;
+    menu.addItem((item) => item
+      .setTitle(settings.sectionShowHighlights ? "Hide highlight quotes" : "Show highlight quotes")
+      .setIcon("highlighter")
+      .onClick(() => setSectionContentSetting("sectionShowHighlights", !settings.sectionShowHighlights)));
+    menu.addItem((item) => item
+      .setTitle(settings.sectionShowFigures ? "Hide figures" : "Show figures")
+      .setIcon("image")
+      .onClick(() => setSectionContentSetting("sectionShowFigures", !settings.sectionShowFigures)));
+  };
+
   const showNodeContextMenuAt = (node: PositionedNode, clientX: number, clientY: number): void => {
     const page = node.page;
     const persistent = persistentPageFor(page);
@@ -2200,6 +2383,16 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           .setTitle("Unfold all sections")
           .setIcon("list-tree")
           .onClick(() => updateSectionFolds(() => new Set(sectionExpansion.sections.filter((section) => section.childIds.length).map((section) => section.id)))));
+        if (sectionSizes.size) {
+          menu.addItem((item) => item
+            .setTitle("Reset all section sizes")
+            .setIcon("rotate-ccw")
+            .onClick(() => {
+              preserveCameraOnNextLayout.current = true;
+              setSectionSizes(new Map());
+            }));
+        }
+        addSectionContentMenuItems(menu);
       }
     }
 
@@ -2209,6 +2402,23 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         .setTitle("Open section")
         .setIcon("heading")
         .onClick(() => void plugin.openSection(page)));
+      const sectionId = section?.id;
+      if (sectionId) {
+        const size = sectionSizes.get(sectionId);
+        menu.addItem((item) => item
+          .setTitle("Reset size")
+          .setIcon("rotate-ccw")
+          .setDisabled(!size)
+          .onClick(() => updateSectionSize(sectionId, null)));
+      }
+      if (sectionId && scene.sectionPanels?.some((panel) => panel.sectionId === sectionId)) {
+        const collapsed = collapsedSectionPanels.has(sectionId);
+        menu.addItem((item) => item
+          .setTitle(collapsed ? "Show this section's content" : "Hide this section's content")
+          .setIcon(collapsed ? "eye" : "eye-off")
+          .onClick(() => toggleSectionPanel(sectionId)));
+      }
+      addSectionContentMenuItems(menu);
       if (section?.childIds.length) {
         const descendants = new Set<string>();
         const collect = (id: string) => {
@@ -2365,6 +2575,10 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       onGatePointerDown={(_, gate, event) => startGateDrag(baseNode, gate, event)}
       onNodePointerDown={(_, event) => startNodeDrag(baseNode, event)}
       onContextMenu={(_, event) => showNodeContextMenu(baseNode, event)}
+      resize={baseNode.page.transient?.kind === "section" && baseNode.page.transient.sectionId ? (() => {
+        const sectionId = baseNode.page.transient.sectionId;
+        return { limits: SECTION_CARD_LIMITS, onCommit: (width: number, height: number) => updateSectionSize(sectionId, { cardWidth: width, cardHeight: height }) };
+      })() : undefined}
       sectionFold={baseNode.page.transient?.kind === "section" ? (() => {
         const section = sectionExpansion?.sections.find((candidate) => candidate.id === baseNode.page.transient?.sectionId);
         if (!section) return undefined;
@@ -2623,6 +2837,24 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
           return panel ? renderScrollZone(zone, panel) : null;
         })}
         {settings.graphDepth === 2 && expandedClusters.map(renderExpandedCluster)}
+        {sectionContentOptions && (scene.sectionPanels ?? []).map((panel) => {
+          const content = layoutSectionExpansion?.sections.find((section) => section.id === panel.sectionId)?.content;
+          if (!content || !visibleNodePaths.has(panel.sectionPath)) return null;
+          return <SectionContentPanel
+            key={`section-panel:${panel.sectionId}`}
+            panel={panel}
+            content={content}
+            showHighlights={sectionContentOptions.showHighlights}
+            showFigures={sectionContentOptions.showFigures}
+            onToggleCollapse={toggleSectionPanel}
+            onOpenLine={openCenterLine}
+            onFigureEnter={scheduleFigureCard}
+            onFigureLeave={hideFigureCard}
+            onFigurePin={pinFigureCard}
+            onResize={resizeSectionPanel}
+            onContextMenu={showSectionPanelMenu}
+          />;
+        })}
         {draggedBaseNode && renderNode(draggedBaseNode, renderedNodeMap.get(draggedBaseNode.page.path) ?? draggedBaseNode)}
       </div>
     </div>
@@ -2637,6 +2869,17 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       onPointerEnter={() => { if (abstractHideTimer.current !== null) window.clearTimeout(abstractHideTimer.current); abstractHideTimer.current = null; }}
       onPointerLeave={() => { if (!card.pinned) hideAbstractCard(); }}
       onShowDetails={(page) => void plugin.openPaperDetails(page, hostLeaf, (target) => onActivate(target))}
+    />)}
+
+    {figureCards.map((card) => <FigureCard
+      key={card.id}
+      card={card}
+      onPin={toggleFigurePin}
+      onClose={(id) => setFigureCards((cards) => cards.filter((item) => item.id !== id))}
+      onMove={(id, left, top) => setFigureCards((cards) => cards.map((item) => item.id === id ? { ...item, left, top } : item))}
+      onOpenLine={openCenterLine}
+      onPointerEnter={() => { if (figureHideTimer.current !== null) window.clearTimeout(figureHideTimer.current); figureHideTimer.current = null; }}
+      onPointerLeave={() => { if (!card.pinned) hideFigureCard(); }}
     />)}
 
     {edgeHoverTooltip && <div

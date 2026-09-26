@@ -26,12 +26,104 @@ export type SectionTreeEdge = {
   targetPath: string;
 };
 
+/** Reading-content panel (highlights and figures) placed directly below a section card. */
+export type SectionPanel = {
+  sectionId: string;
+  sectionPath: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  collapsed: boolean;
+};
+
 export type PlexScene = {
   nodes: PositionedNode[];
   edges: PositionedEdge[];
   zoneViewports: Partial<Record<ScrollZone, ZoneViewport>>;
   sectionTreeEdges?: SectionTreeEdge[];
+  sectionPanels?: SectionPanel[];
 };
+
+/** User-resized section card / content panel sizes, keyed by section id. View-local state. */
+export type SectionSizeOverride = { cardWidth?: number; cardHeight?: number; panelWidth?: number; panelHeight?: number };
+
+export const SECTION_CARD_LIMITS = { minWidth: 120, maxWidth: 640, minHeight: 28, maxHeight: 320 } as const;
+export const SECTION_PANEL_LIMITS = { minWidth: 200, maxWidth: 960, minHeight: 64, maxHeight: 1400 } as const;
+
+export type SectionContentOptions = {
+  showHighlights: boolean;
+  showFigures: boolean;
+  /** Sections whose panel is folded to its header. */
+  collapsed: ReadonlySet<string>;
+};
+
+/** Metrics shared by the layout estimate and styles.css (.kplex-section-panel*). */
+export const SECTION_PANEL = {
+  width: 300,
+  indent: 26,
+  gap: 6,
+  header: 24,
+  padding: 6,
+  maxBody: 320,
+  quoteLineHeight: 16,
+  quoteMaxLines: 4,
+  quoteChrome: 10,
+  commentLineHeight: 15,
+  commentChrome: 6,
+  commentGap: 3,
+  commentIndent: 16,
+  itemGap: 4,
+  figureColumns: 3,
+  figureTileHeight: 98,
+  figureGap: 6,
+} as const;
+
+/** Rough rendered width in average Latin character units; CJK glyphs count double. */
+function textUnits(text: string): number {
+  let units = 0;
+  for (const char of text) units += char.charCodeAt(0) > 0x2e80 ? 2 : 1;
+  return units;
+}
+
+/** Comment branches are shown in full: lines at the narrower, indented branch width. */
+export function sectionCommentLines(text: string, panelWidth: number = SECTION_PANEL.width): number {
+  const unitsPerLine = Math.max(12, (panelWidth - 60) / 6);
+  return text.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(textUnits(line) / unitsPerLine)), 0);
+}
+
+/** Lines a quote will occupy in the panel, capped by the clamp (a wider panel fits more per line). */
+export function sectionQuoteLines(text: string, panelWidth: number = SECTION_PANEL.width): number {
+  const unitsPerLine = Math.max(12, (panelWidth - 32) / 6.1);
+  return clamp(Math.ceil(textUnits(text) / unitsPerLine), 1, SECTION_PANEL.quoteMaxLines);
+}
+
+export function sectionPanelSize(
+  content: import("../index/SectionExpansion").SectionContent,
+  options: SectionContentOptions,
+  sectionId: string,
+  size: SectionSizeOverride = {},
+): { width: number; height: number; collapsed: boolean } | null {
+  const highlights = options.showHighlights ? content.highlights : [];
+  const figures = options.showFigures ? content.figures : [];
+  if (!highlights.length && !figures.length) return null;
+  const width = size.panelWidth ?? SECTION_PANEL.width;
+  if (options.collapsed.has(sectionId)) return { width, height: SECTION_PANEL.header, collapsed: true };
+  // A user-set height is kept as is; the body scrolls when content is taller.
+  if (size.panelHeight !== undefined) return { width, height: size.panelHeight, collapsed: false };
+  let body = SECTION_PANEL.padding * 2;
+  for (const item of highlights) {
+    body += sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight + SECTION_PANEL.quoteChrome + SECTION_PANEL.itemGap;
+    for (const comment of item.comments) {
+      body += SECTION_PANEL.commentGap + SECTION_PANEL.commentChrome + sectionCommentLines(comment, width) * SECTION_PANEL.commentLineHeight;
+    }
+  }
+  if (figures.length) {
+    const rows = Math.ceil(figures.length / SECTION_PANEL.figureColumns);
+    body += rows * SECTION_PANEL.figureTileHeight + (rows - 1) * SECTION_PANEL.figureGap + (highlights.length ? SECTION_PANEL.figureGap : 0);
+  }
+  return { width, height: SECTION_PANEL.header + Math.min(SECTION_PANEL.maxBody, body), collapsed: false };
+}
 
 export function gateDiameter(style: NodeStyle): number {
   // Keep a generous hit target in CSS, but visually the gate should remain subordinate to
@@ -479,6 +571,8 @@ export function buildSectionExpandedScene(
   settings: ExcaliBrainSettings,
   expandedSectionIds: ReadonlySet<string> = new Set(expansion.sections.filter((section) => section.childIds.length).map((section) => section.id)),
   showCrossLinks = true,
+  contentOptions: SectionContentOptions | null = null,
+  sectionSizes: ReadonlyMap<string, SectionSizeOverride> = new Map(),
 ): PlexScene {
   const sectionPaths = new Set(expansion.sections.map((section) => section.page.path));
   const baseNeighborhood: Neighborhood = {
@@ -583,11 +677,19 @@ export function buildSectionExpandedScene(
   const sectionNodeById = new Map<string, PositionedNode>();
   let cursorY = startY;
 
+  let naturalHeight = 0;
   const makeSectionNode = (section: import("../index/SectionExpansion").ExpandedSection, depth: number, relations: ReturnType<typeof collectForVisibleSection>): PositionedNode => {
     const pseudo: Neighbour = { page: section.page, role: "child", relationType: RelationType.DEFINED, typeDefinition: "section", linkDirection: null };
     const node = makeNode(pseudo, "child", index, settings);
     node.width = Math.max(172, Math.min(286, node.width + mix(16, 2)));
     node.height = Math.max(32, node.height + mix(3, -1));
+    naturalHeight = node.height;
+    const size = sectionSizes.get(section.id);
+    if (size?.cardWidth !== undefined || size?.cardHeight !== undefined) {
+      node.width = clamp(size.cardWidth ?? node.width, SECTION_CARD_LIMITS.minWidth, SECTION_CARD_LIMITS.maxWidth);
+      node.height = clamp(size.cardHeight ?? node.height, SECTION_CARD_LIMITS.minHeight, SECTION_CARD_LIMITS.maxHeight);
+      node.customSize = true;
+    }
     // x is the card centre; rootLeft is the left edge of the first heading card.
     node.x = rootLeft + node.width / 2 + depth * depthIndent;
     node.gateStats = {
@@ -599,7 +701,10 @@ export function buildSectionExpandedScene(
     return node;
   };
 
-  const addRelationGroup = (sectionNode: PositionedNode, items: SourcedNeighbour[], role: Exclude<Role, "sibling">) => {
+  const sectionPanels: SectionPanel[] = [];
+  // extraBelow pushes the bottom cluster under the content panel; rightEdge keeps right-side
+  // neighbours clear of a panel wider than its card.
+  const addRelationGroup = (sectionNode: PositionedNode, items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2) => {
     const nodes = items.map((item) => makeNode(item.relation, role, index, settings));
     const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
     const direction = role === "left" || role === "previous" ? -1 : role === "right" || role === "next" ? 1 : 0;
@@ -611,7 +716,9 @@ export function buildSectionExpandedScene(
       const maxHeight = Math.max(0, ...nodes.map((node) => node.height));
       const lateralStep = Math.max(relationLateralStep, maxHeight + relationMinGap);
       nodes.forEach((node, itemIndex) => {
-        node.x = sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + relationHorizontalGap);
+        node.x = direction > 0
+          ? rightEdge + node.width / 2 + relationHorizontalGap
+          : sectionNode.x + direction * (sectionNode.width / 2 + node.width / 2 + relationHorizontalGap);
         node.y = sectionNode.y + (itemIndex - (nodes.length - 1) / 2) * lateralStep;
       });
     } else {
@@ -630,7 +737,7 @@ export function buildSectionExpandedScene(
         const rowStep = Math.max(relationRowStep, rowHeight + relationMinGap);
         for (const node of rowNodes) {
           node.x = x + node.width / 2;
-          node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (relationVerticalGap + rowOffset);
+          node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (relationVerticalGap + rowOffset + (role === "parent" ? 0 : extraBelow));
           x += node.width + relationMinGap;
         }
         rowOffset += rowStep;
@@ -661,17 +768,34 @@ export function buildSectionExpandedScene(
     const topRows = Math.ceil(relations.parent.length / 3);
     const bottomRows = Math.ceil(relations.child.length / 3);
     const clusterAbove = Math.max(topRows * relationRowStep + (topRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
-    const clusterBelow = Math.max(bottomRows * relationRowStep + (bottomRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
+    const panelSize = contentOptions ? sectionPanelSize(section.content, contentOptions, section.id, sectionSizes.get(section.id)) : null;
+    const panelBlock = panelSize ? SECTION_PANEL.gap + panelSize.height : 0;
+    const clusterBelow = Math.max(panelBlock + bottomRows * relationRowStep + (bottomRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
     const node = makeSectionNode(section, depth, relations);
     cursorY += clusterAbove;
-    node.y = cursorY;
-    cursorY += node.height / 2 + clusterBelow + verticalGap;
+    // Keep the card's top edge where a default-height card would start, so a resized card grows
+    // downwards from the handle the user dragged.
+    node.y = node.customSize ? cursorY - naturalHeight / 2 + node.height / 2 : cursorY;
+    cursorY = node.y + node.height / 2 + clusterBelow + verticalGap;
     sectionNodeById.set(section.id, node);
     scene.nodes.push(node);
+    const cardLeft = node.x - node.width / 2;
+    if (panelSize) {
+      sectionPanels.push({
+        sectionId: section.id,
+        sectionPath: section.page.path,
+        left: cardLeft + SECTION_PANEL.indent,
+        top: node.y + node.height / 2 + SECTION_PANEL.gap,
+        width: panelSize.width,
+        height: panelSize.height,
+        collapsed: panelSize.collapsed,
+      });
+    }
+    const rightEdge = Math.max(node.x + node.width / 2, panelSize ? cardLeft + SECTION_PANEL.indent + panelSize.width : -Infinity);
     addRelationGroup(node, relations.parent, "parent");
-    addRelationGroup(node, relations.child, "child");
+    addRelationGroup(node, relations.child, "child", panelBlock);
     addRelationGroup(node, relations.left, "left");
-    addRelationGroup(node, relations.right, "right");
+    addRelationGroup(node, relations.right, "right", 0, rightEdge);
   }
 
   for (const { section } of visible) {
@@ -687,6 +811,7 @@ export function buildSectionExpandedScene(
   }
 
   scene.sectionTreeEdges = sectionTreeEdges;
+  scene.sectionPanels = sectionPanels;
   if (showCrossLinks) appendVisibleCrossLinks(scene.nodes, scene.edges, index, settings, expansion.centerNeighborhood.center.path);
   return scene;
 }

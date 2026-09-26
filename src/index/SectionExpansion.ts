@@ -3,8 +3,26 @@ import type ExcaliBrainPlugin from "../main";
 import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neighborhood, type Relation, type Role } from "../types";
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadataCooperative, type ParsedBodyMetadata } from "./fieldParser";
 import type { GraphIndex } from "./GraphIndex";
+import { collectFootnotes, extractSectionContent, type SectionHighlight } from "./SectionContent";
 import { applyEvidenceToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
+
+export type SectionFigure = {
+  /** Browser-loadable source: a vault resource URL or the external image URL. */
+  src: string;
+  /** Vault path of a local image, when it resolves. */
+  path: string | null;
+  caption: string;
+  alt: string;
+  /** 0-based line in the source note. */
+  line: number;
+};
+
+/** Reading content shown under a section card. Presentation data only; never persisted. */
+export type SectionContent = {
+  highlights: SectionHighlight[];
+  figures: SectionFigure[];
+};
 
 export type ExpandedSection = {
   id: string;
@@ -13,6 +31,7 @@ export type ExpandedSection = {
   level: number;
   parentId: string | null;
   childIds: string[];
+  content: SectionContent;
 };
 
 type EvidenceTargetMap = Map<string, { target: GraphPage; evidence: RelationEvidence[] }>;
@@ -27,6 +46,7 @@ type SectionProjectionSource = {
     level: number;
     parentId: string | null;
     childIds: string[];
+    content: SectionContent;
   }>;
 };
 
@@ -209,6 +229,27 @@ function sectionTarget(page: GraphPage, sectionId: string): GraphPage {
   return clone;
 }
 
+function resolveSectionContent(app: App, sourcePath: string, sectionText: string, lineOffset: number, footnotes: ReadonlyMap<string, string>): SectionContent {
+  const raw = extractSectionContent(sectionText, footnotes);
+  const figures: SectionFigure[] = [];
+  for (const figure of raw.figures) {
+    const line = lineOffset + figure.line;
+    if (figure.external) {
+      figures.push({ src: figure.target, path: null, caption: figure.caption, alt: figure.alt, line });
+      continue;
+    }
+    let target = figure.target;
+    try { target = decodeURIComponent(target); } catch { target = figure.target; }
+    const file = app.metadataCache.getFirstLinkpathDest(target, sourcePath);
+    if (!file) continue;
+    figures.push({ src: app.vault.getResourcePath(file), path: file.path, caption: figure.caption, alt: figure.alt, line });
+  }
+  return {
+    highlights: raw.highlights.map((item) => ({ ...item, line: lineOffset + item.line })),
+    figures,
+  };
+}
+
 function sourceLinks(cache: CachedMetadata | null): CacheLink[] {
   return cache?.links ?? [];
 }
@@ -230,6 +271,7 @@ export async function buildCentralSectionExpansion(
   const headings = scanHeadings(content);
   if (!headings.length) return null;
   const firstHeadingLine = headings[0].line;
+  const footnotes = collectFootnotes(content);
   const cache = plugin.app.metadataCache.getFileCache(file);
   const links = sourceLinks(cache);
   const preambleTargets = new Set<string>();
@@ -358,10 +400,12 @@ export async function buildCentralSectionExpansion(
       if (!sectionPage.neighbours.has(target.path)) continue;
       explanations.set(`${sectionPage.path}\u0000${target.path}`, explainResolvedRelationship(sectionPage, target, items, plugin.settings.inferAllLinksAsFriends));
     }
-    sections.push({ id: heading.id, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [] });
+    // heading.line is 1-based; content lines are 0-based for editor navigation.
+    const sectionContent = resolveSectionContent(plugin.app, file.path, sectionText, heading.line - 1, footnotes);
+    sections.push({ id: heading.id, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [], content: sectionContent });
     projectionSections.push({
       id: heading.id, page: sectionPage, evidenceByTarget: byTarget, level: heading.level,
-      parentId: heading.parentId, childIds: [],
+      parentId: heading.parentId, childIds: [], content: sectionContent,
     });
   }
 
@@ -425,7 +469,7 @@ export function projectCentralSectionExpansion(
       explanations.set(`${page.path}\u0000${target.path}`, explainResolvedRelationship(page, target, items, plugin.settings.inferAllLinksAsFriends));
     }
     return {
-      id: raw.id, page, neighborhood, level: raw.level, parentId: raw.parentId, childIds: [...raw.childIds],
+      id: raw.id, page, neighborhood, level: raw.level, parentId: raw.parentId, childIds: [...raw.childIds], content: raw.content,
     };
   });
 

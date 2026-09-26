@@ -1,9 +1,10 @@
-import { type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { GateSide, NodeVisual, PositionedNode } from "../types";
 import { alphaHexToCss } from "../index/style";
 import type { ExcaliBrainSettings } from "../settings";
 import { effectiveLabelLimit, gateDiameter } from "./layout";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { ResizeHandle, type SizeLimits } from "./ResizeHandle";
 
 const GATES: GateSide[] = ["top", "bottom", "left", "right"];
 export type ConnectionDragState = "normal" | "candidate" | "blocked" | "origin";
@@ -29,6 +30,7 @@ export function ThoughtNode({
   onContextMenu,
   sectionFold,
   visual,
+  resize,
 }: {
   node: PositionedNode;
   settings: ExcaliBrainSettings;
@@ -49,6 +51,8 @@ export function ThoughtNode({
   onNodePointerDown: (node: PositionedNode, event: ReactPointerEvent<HTMLDivElement>) => void;
   onContextMenu?: (node: PositionedNode, event: MouseEvent<HTMLDivElement>) => void;
   visual?: NodeVisual;
+  /** Section cards can be resized; the size is committed on release. */
+  resize?: { limits: SizeLimits; onCommit: (width: number, height: number) => void };
   sectionFold?: {
     hasChildren: boolean;
     expanded: boolean;
@@ -59,12 +63,13 @@ export function ThoughtNode({
   };
 }) {
   const style = node.style;
+  const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
   const isSection = node.page.transient?.kind === "section";
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";
   const prefix = style.prefix ?? "";
   const label = `${prefix}${node.label}`;
   const max = effectiveLabelLimit(settings, style.maxLabelLength ?? 30, node.role === "center");
-  const display = label.length > max ? `${label.slice(0, Math.max(1, max - 1))}…` : label;
+  const display = node.customSize || draftSize || label.length <= max ? label : `${label.slice(0, Math.max(1, max - 1))}…`;
   const click = (e: MouseEvent) => { e.stopPropagation(); onActivate(node); };
   const fill = alphaHexToCss(style.backgroundColor, "rgba(0,0,0,.42)");
   const pattern = style.fillStyle === "hachure"
@@ -76,8 +81,8 @@ export function ThoughtNode({
   const nodeCss = {
     left: node.x - node.width / 2,
     top: node.y - node.height / 2,
-    width: node.width,
-    height: node.height,
+    width: draftSize?.width ?? node.width,
+    height: draftSize?.height ?? node.height,
     background: isSection ? undefined : pattern,
     color: isSection ? undefined : alphaHexToCss(style.textColor, "white"),
     borderColor: isSection ? undefined : alphaHexToCss(style.borderColor, "rgba(255,255,255,.18)"),
@@ -104,6 +109,7 @@ export function ThoughtNode({
     isSection ? "is-kplex-section" : "",
     visual ? "has-node-visual" : "",
     visual?.mode === "replace" ? "is-node-image-only" : "",
+    node.customSize || draftSize ? "has-custom-size" : "",
   ].filter(Boolean).join(" ");
 
   return <div
@@ -162,6 +168,17 @@ export function ThoughtNode({
         : `${sectionFold.foldedTitle ?? "Unfold section children"}${sectionFold.hiddenDescendantCount ? ` · ${sectionFold.hiddenDescendantCount} hidden` : ""}`}
       onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); }}
       onClick={(e: MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); sectionFold.onToggle(); }}
+    />}
+    {resize && <ResizeHandle
+      width={draftSize?.width ?? node.width}
+      height={draftSize?.height ?? node.height}
+      limits={resize.limits}
+      label="Drag to resize"
+      onDraft={(width, height) => setDraftSize({ width, height })}
+      onCommit={(width, height) => {
+        setDraftSize(null);
+        resize.onCommit(width, height);
+      }}
     />}
     {GATES.map((gate) => {
       const stat = node.gateStats[gate];

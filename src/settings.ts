@@ -282,6 +282,12 @@ export interface ExcaliBrainSettings {
   paperAbstractFields: string;
   /** Property that stores the translated abstract (written by Save to note / Add to vault). */
   paperAbstractProperty: string;
+  /** Show highlights and figures under each section when a note is expanded to sections. */
+  sectionShowContent: boolean;
+  /** Show highlighted passages as quotes under sections. */
+  sectionShowHighlights: boolean;
+  /** Show embedded images and their captions under sections. */
+  sectionShowFigures: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -416,6 +422,9 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   paperHoverAbstract: true,
   paperAbstractFields: "abstract_zh, abstract, summary",
   paperAbstractProperty: "abstract_zh",
+  sectionShowContent: true,
+  sectionShowHighlights: true,
+  sectionShowFigures: true,
 };
 
 const norm = (value: string) => value.toLowerCase().replaceAll(" ", "-").trim();
@@ -593,6 +602,9 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     paperHoverAbstract: old.paperHoverAbstract !== false,
     paperAbstractFields: typeof old.paperAbstractFields === "string" && old.paperAbstractFields.trim() ? old.paperAbstractFields : DEFAULT_SETTINGS.paperAbstractFields,
     paperAbstractProperty: typeof old.paperAbstractProperty === "string" && old.paperAbstractProperty.trim() ? old.paperAbstractProperty.trim() : DEFAULT_SETTINGS.paperAbstractProperty,
+    sectionShowContent: old.sectionShowContent !== false,
+    sectionShowHighlights: old.sectionShowHighlights !== false,
+    sectionShowFigures: old.sectionShowFigures !== false,
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
     followActiveFile: documentSyncMode !== "off",
@@ -1655,6 +1667,15 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Markdown pages", control: { type: "toggle", key: "showPageNodes" } },
               { name: "Excluded path prefixes", desc: "Comma-separated path prefixes that stay hidden from the Plex.", control: { type: "textarea", key: "excludeFilepathsCsv", rows: 4 } },
               { name: "Gate counts", desc: "Show the number of currently visible relationships beside each gate.", control: { type: "toggle", key: "showNeighborCount" } },
+            ]
+          },
+          {
+            type: "group",
+            heading: "Note sections",
+            items: [
+              { name: "Show section content", desc: "When a note is expanded to sections, show its highlights and figures under each section.", control: { type: "toggle", key: "sectionShowContent" } },
+              { name: "Highlight quotes", desc: "Quote highlighted text, with its comments, under the section it belongs to.", control: { type: "toggle", key: "sectionShowHighlights" } },
+              { name: "Figures", desc: "Show embedded images with their captions. Hover an image to see it in full and pin it.", control: { type: "toggle", key: "sectionShowFigures" } },
             ]
           },
           {

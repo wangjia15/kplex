@@ -245,6 +245,7 @@ for (const file of [
   "src/index/IndexedDbCache.ts",
   "src/index/GraphBuilder.ts",
   "src/index/GraphIndex.ts",
+  "src/index/SectionContent.ts",
   "src/index/SectionExpansion.ts",
   "src/index/style.ts",
   "src/lens/GraphPredicate.ts",
@@ -1230,6 +1231,44 @@ try {
   );
   assert(projectedGrandchild, "Folded Root One must project Grandchild relationship evidence upward");
   assert.equal(index.get(rootOne.page.path), undefined);
+
+  // Section reading content: a panel under a section card pushes the following sections down
+  // and never overlaps the next card; folding a panel to its header shrinks the reservation.
+  const withContent = {
+    ...sectionTree,
+    sections: sectionTree.sections.map((section) => section.id === rootOne.id
+      ? { ...section, content: { highlights: [{ text: "A highlighted passage", color: null, comments: ["note"], line: 3 }], figures: [{ src: "app://x.png", path: "x.png", caption: "Figure 1", alt: "", line: 5 }] } }
+      : section),
+  };
+  const contentOptions = { showHighlights: true, showFigures: true, collapsed: new Set() };
+  const contentScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions);
+  const panel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id);
+  assert(panel, "A section with highlights or figures gets a content panel");
+  assert.equal(contentScene.sectionPanels.length, 1, "Sections without content get no panel");
+  const rootOneNode = contentScene.nodes.find((node) => node.page.path === rootOne.page.path);
+  const childANode = contentScene.nodes.find((node) => node.page.path === childA.page.path);
+  assert(panel.top >= rootOneNode.y + rootOneNode.height / 2, "Panel sits below its section card");
+  assert(childANode.y - childANode.height / 2 >= panel.top + panel.height, "Next section starts below the panel");
+  const collapsedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, collapsed: new Set([rootOne.id]) });
+  assert(collapsedScene.sectionPanels[0].height < panel.height, "A folded panel reserves only its header");
+  const hiddenHighlights = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showFigures: false, showHighlights: false });
+  assert.equal(hiddenHighlights.sectionPanels.length, 0, "Hiding highlights and figures removes the panel");
+  assert.equal(fullTreeScene.sectionPanels.length, 0, "No content options means no panels");
+
+  // User-resized cards and panels: sizes are honoured, the card keeps its top edge, and the
+  // following section moves down to clear the larger panel.
+  const sizes = new Map([[rootOne.id, { cardWidth: 400, cardHeight: 80, panelWidth: 520, panelHeight: 600 }]]);
+  const resizedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions, sizes);
+  const resizedNode = resizedScene.nodes.find((node) => node.page.path === rootOne.page.path);
+  const resizedPanel = resizedScene.sectionPanels[0];
+  assert.equal(resizedNode.width, 400);
+  assert.equal(resizedNode.height, 80);
+  assert.equal(resizedNode.customSize, true);
+  assert.equal(Math.round(resizedNode.y - resizedNode.height / 2), Math.round(rootOneNode.y - rootOneNode.height / 2), "A resized card keeps its top edge");
+  assert.equal(resizedPanel.width, 520);
+  assert.equal(resizedPanel.height, 600);
+  const resizedChildA = resizedScene.nodes.find((node) => node.page.path === childA.page.path);
+  assert(resizedChildA.y - resizedChildA.height / 2 >= resizedPanel.top + resizedPanel.height, "Next section clears a resized panel");
 
   // Assertions 51–53: warm-start cache and runtime patching. Resolved relations are persisted
   // alongside evidence so IndexedDB restore does not replay the full truth table, while a normal

@@ -3189,3 +3189,307 @@ a.kplex-paper-row-title:hover {
 .kplex-abstract-card-source {
   padding: 0 var(--size-4-3) var(--size-4-2);
 }
+
+/* Section reading content: highlights and figures under an expanded section card.
+   Heights mirror SECTION_PANEL in src/ui/layout.ts. */
+.kplex-section-panel {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+  cursor: default;
+}
+
+.kplex-section-panel.is-collapsed {
+  background: var(--background-secondary);
+}
+
+.kplex-section-panel-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--size-2-2);
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 var(--size-4-2);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.kplex-section-panel-header:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.kplex-section-panel-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kplex-section-panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+}
+
+.kplex-section-quote {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  padding: 4px 6px 4px 8px;
+  border: none;
+  border-left: 3px solid var(--kplex-quote-color, var(--text-highlight-bg));
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 11.5px;
+  font-weight: normal;
+  line-height: 16px;
+  text-align: start;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.kplex-section-quote:hover {
+  background: var(--background-modifier-hover);
+}
+
+.kplex-section-quote-text {
+  display: block;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Comments branch off their highlight and are shown in full. */
+.kplex-section-quote-group {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kplex-section-comment {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 3px 6px;
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary-alt);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 15px;
+  cursor: text;
+  user-select: text;
+}
+
+.kplex-section-comment > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+/* Branch: every comment draws the spine through its own height (the last one stops at its
+   middle) plus a horizontal tick, so any number of comments forms one continuous tree. */
+.kplex-section-comment::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: -4px;
+  bottom: -1px;
+  border-left: 1.5px solid var(--kplex-quote-color, var(--text-highlight-bg));
+}
+
+.kplex-section-comment:last-child::before {
+  bottom: auto;
+  height: 14px;
+}
+
+.kplex-section-comment::after {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 10px;
+  width: 9px;
+  border-top: 1.5px solid var(--kplex-quote-color, var(--text-highlight-bg));
+}
+
+.kplex-section-comment-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kplex-section-figures {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.kplex-section-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 98px;
+  padding: 0;
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  box-shadow: none;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.kplex-section-figure:hover {
+  border-color: var(--interactive-accent);
+}
+
+.kplex-section-figure-image {
+  display: flex;
+  flex: 0 0 64px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.kplex-section-figure-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.kplex-section-figure-caption {
+  display: block;
+  max-height: 26px;
+  overflow: hidden;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 13px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.excalibrain-plex.is-pinch-gesturing .kplex-section-panel {
+  box-shadow: none;
+}
+
+/* Full-size figure card; shares the abstract card frame. Pinned cards can be resized. */
+.kplex-figure-card {
+  max-height: min(80vh, calc(100% - 16px));
+  overflow: hidden;
+}
+
+.kplex-figure-card.is-pinned {
+  resize: both;
+  min-width: 220px;
+  min-height: 160px;
+}
+
+.kplex-figure-card-title {
+  max-height: 2.6em;
+  overflow: hidden;
+}
+
+.kplex-figure-card-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  min-height: 0;
+  overflow: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+.kplex-figure-card-body img {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  background: var(--background-secondary);
+}
+
+.kplex-figure-card-caption {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  user-select: text;
+}
+
+/* Resizable section cards and content panels: bottom-right corner handle. */
+.kplex-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+
+.kplex-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--text-faint);
+  border-bottom: 1.5px solid var(--text-faint);
+}
+
+.excalibrain-thought:hover > .kplex-resize-handle,
+.kplex-section-panel:hover > .kplex-resize-handle,
+.kplex-resize-handle:active {
+  opacity: 1;
+}
+
+.kplex-resize-handle:hover::after {
+  border-color: var(--interactive-accent);
+}
+
+/* A resized section card shows its whole heading, wrapping as needed. */
+.excalibrain-thought.has-custom-size .excalibrain-thought-label {
+  align-items: flex-start;
+  max-height: 100%;
+}
+
+.excalibrain-thought.has-custom-size .excalibrain-thought-label > span:last-child {
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}

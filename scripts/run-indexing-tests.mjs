@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-for (const suite of ["tests/indexing.test.mjs", "tests/paper.test.mjs", "tests/paper-controller.test.mjs"]) {
+for (const suite of ["tests/indexing.test.mjs", "tests/paper.test.mjs", "tests/paper-controller.test.mjs", "tests/section-content.test.mjs"]) {
   const result = spawnSync(process.execPath, [suite], {
     cwd: process.cwd(),
     stdio: "inherit",
