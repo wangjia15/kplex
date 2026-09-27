@@ -174,6 +174,8 @@ export type SectionSizeOverride = {
   panelDy?: number;
   figuresDx?: number;
   figuresDy?: number;
+  /** Nodes linked from this section that the user dragged: target path -> [dx, dy]. */
+  nodeOffsets?: Record<string, [number, number]>;
 };
 
 export type PositionedNode = {
@@ -192,6 +194,10 @@ export type PositionedNode = {
   gateStats: GateStats;
   /** Size set by the user (resizable section cards); the full label wraps instead of truncating. */
   customSize?: boolean;
+  /** The full label wraps onto several lines (nodes linked from a note section). */
+  wrapLabel?: boolean;
+  /** Set on nodes linked from a note section: the owning section id. */
+  sectionId?: string;
 };
 
 export type PositionedEdge = {

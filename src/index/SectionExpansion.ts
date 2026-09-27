@@ -3,7 +3,7 @@ import type ExcaliBrainPlugin from "../main";
 import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neighborhood, type Relation, type Role } from "../types";
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadataCooperative, type ParsedBodyMetadata } from "./fieldParser";
 import type { GraphIndex } from "./GraphIndex";
-import { collectFootnotes, extractSectionContent, type SectionHighlight } from "./SectionContent";
+import { collectFootnotes, extractSectionContent, type SectionFigureRef, type SectionHighlight } from "./SectionContent";
 import type { PdfCropRequest } from "./PdfCropRenderer";
 import { applyEvidenceToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
@@ -21,9 +21,12 @@ export type SectionFigure = {
   crop?: PdfCropRequest;
 };
 
+/** A highlighted passage, with the image it wraps resolved for display. */
+export type SectionContentHighlight = Omit<SectionHighlight, "figure"> & { figure?: SectionFigure };
+
 /** Reading content shown under a section card. Presentation data only; never persisted. */
 export type SectionContent = {
-  highlights: SectionHighlight[];
+  highlights: SectionContentHighlight[];
   figures: SectionFigure[];
 };
 
@@ -249,31 +252,36 @@ function stableSectionKeys(headings: HeadingRange[]): Map<string, string> {
   return keys;
 }
 
+function resolveSectionFigure(app: App, sourcePath: string, figure: SectionFigureRef, line: number): SectionFigure | null {
+  if (figure.external) return { src: figure.target, path: null, caption: figure.caption, alt: figure.alt, line };
+  let target = figure.target;
+  try { target = decodeURIComponent(target); } catch { target = figure.target; }
+  const file = app.metadataCache.getFirstLinkpathDest(target, sourcePath);
+  if (!file) return null;
+  if (figure.pdf) {
+    // The image is a region of the PDF page; rendering happens lazily in the view.
+    return { src: "", path: file.path, caption: figure.caption, alt: figure.alt, line,
+      crop: { path: file.path, mtime: file.stat.mtime, region: figure.pdf } };
+  }
+  return { src: app.vault.getResourcePath(file), path: file.path, caption: figure.caption, alt: figure.alt, line };
+}
+
 function resolveSectionContent(app: App, sourcePath: string, sectionText: string, lineOffset: number, footnotes: ReadonlyMap<string, string>): SectionContent {
   const raw = extractSectionContent(sectionText, footnotes);
   const figures: SectionFigure[] = [];
   for (const figure of raw.figures) {
-    const line = lineOffset + figure.line;
-    if (figure.external) {
-      figures.push({ src: figure.target, path: null, caption: figure.caption, alt: figure.alt, line });
-      continue;
-    }
-    let target = figure.target;
-    try { target = decodeURIComponent(target); } catch { target = figure.target; }
-    const file = app.metadataCache.getFirstLinkpathDest(target, sourcePath);
-    if (!file) continue;
-    if (figure.pdf) {
-      // The image is a region of the PDF page; rendering happens lazily in the view.
-      figures.push({ src: "", path: file.path, caption: figure.caption, alt: figure.alt, line,
-        crop: { path: file.path, mtime: file.stat.mtime, region: figure.pdf } });
-      continue;
-    }
-    figures.push({ src: app.vault.getResourcePath(file), path: file.path, caption: figure.caption, alt: figure.alt, line });
+    const resolved = resolveSectionFigure(app, sourcePath, figure, lineOffset + figure.line);
+    if (resolved) figures.push(resolved);
   }
-  return {
-    highlights: raw.highlights.map((item) => ({ ...item, line: lineOffset + item.line })),
-    figures,
-  };
+  const highlights: SectionContentHighlight[] = [];
+  for (const { figure, ...item } of raw.highlights) {
+    const line = lineOffset + item.line;
+    const resolved = figure ? resolveSectionFigure(app, sourcePath, figure, lineOffset + figure.line) : null;
+    // An image-only highlight whose image is missing has nothing left to show.
+    if (!resolved && !item.text) continue;
+    highlights.push({ ...item, line, ...(resolved ? { figure: resolved } : {}) });
+  }
+  return { highlights, figures };
 }
 
 function sourceLinks(cache: CachedMetadata | null): CacheLink[] {

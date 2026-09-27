@@ -3123,7 +3123,7 @@ a.kplex-paper-row-title:hover {
   z-index: 96;
   display: flex;
   flex-direction: column;
-  max-height: min(420px, calc(100% - 16px));
+  max-height: min(520px, calc(100% - 16px));
   border: var(--border-width) solid var(--background-modifier-border-hover);
   border-radius: var(--radius-m);
   background: var(--background-primary);
@@ -3174,6 +3174,21 @@ a.kplex-paper-row-title:hover {
   padding: var(--size-4-2) var(--size-4-3);
   line-height: 1.55;
   user-select: text;
+}
+
+.kplex-abstract-card-images {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.kplex-abstract-card-images img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
 }
 
 .kplex-abstract-card-body p {
@@ -3282,8 +3297,33 @@ a.kplex-paper-row-title:hover {
 
 .kplex-section-quote-text {
   display: block;
+  white-space: pre-line;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* An image the highlight wraps is shown inside the quote itself. */
+.kplex-section-quote-figure {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+}
+
+.kplex-section-quote-figure img,
+.kplex-section-quote-figure .kplex-figure-image-pending {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.kplex-section-quote-text.is-caption {
+  color: var(--text-muted);
+  font-size: 10.5px;
 }
 
 /* Comments branch off their highlight and are shown in full. */
@@ -3561,4 +3601,169 @@ a.kplex-paper-row-title:hover {
   white-space: normal;
   overflow-wrap: anywhere;
   text-overflow: clip;
+}
+
+/* Nodes linked from a note section show their whole title on as many lines as it needs. */
+.excalibrain-thought.has-wrapped-label .excalibrain-thought-label {
+  max-height: 100%;
+}
+
+.excalibrain-thought.has-wrapped-label .excalibrain-thought-label > span:last-child {
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  line-height: 1.3;
+}
+
+/* Reading theme switcher sits at the right end of the panel header. */
+.kplex-section-panel-header {
+  padding-right: 28px;
+}
+
+.kplex-section-panel-theme {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.kplex-section-panel-theme:hover {
+  color: var(--text-normal);
+}
+
+/* Reading themes. They restyle surfaces and type only; line metrics stay the same so the
+   layout estimate holds for every theme. */
+
+/* Paper: warm page, serif reading type, comments as margin notes. */
+.kplex-section-panel.kplex-reading-theme-paper {
+  border-color: color-mix(in srgb, var(--background-modifier-border) 70%, #b89b62);
+  background: color-mix(in srgb, var(--background-primary) 84%, #e9d8ae);
+}
+
+.kplex-reading-theme-paper .kplex-section-panel-body {
+  border-top-color: color-mix(in srgb, var(--background-modifier-border) 60%, #b89b62);
+}
+
+.kplex-reading-theme-paper .kplex-section-quote {
+  border-left-width: 2px;
+  background: transparent;
+  font-family: Georgia, "Iowan Old Style", "Songti SC", "Noto Serif CJK SC", serif;
+}
+
+.kplex-reading-theme-paper .kplex-section-quote:hover {
+  background: color-mix(in srgb, var(--background-primary) 70%, #e9d8ae);
+}
+
+.kplex-reading-theme-paper .kplex-section-comment {
+  border-color: transparent;
+  border-left: 2px solid color-mix(in srgb, #b89b62 60%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--background-primary) 74%, #e9d8ae);
+  color: var(--text-normal);
+  font-family: Georgia, "Iowan Old Style", "Songti SC", "Noto Serif CJK SC", serif;
+}
+
+.kplex-reading-theme-paper .kplex-section-figure,
+.kplex-reading-theme-paper .kplex-section-quote-figure {
+  background: color-mix(in srgb, var(--background-primary) 92%, #e9d8ae);
+}
+
+/* Marker: each passage is washed in its own highlight colour, comments are sticky notes. */
+.kplex-reading-theme-marker .kplex-section-quote {
+  border-left: none;
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--kplex-quote-color, var(--text-highlight-bg)) 26%, var(--background-primary));
+}
+
+.kplex-reading-theme-marker .kplex-section-quote:hover {
+  background: color-mix(in srgb, var(--kplex-quote-color, var(--text-highlight-bg)) 38%, var(--background-primary));
+}
+
+.kplex-reading-theme-marker .kplex-section-comment {
+  border-color: color-mix(in srgb, var(--color-yellow) 40%, transparent);
+  background: color-mix(in srgb, var(--color-yellow) 14%, var(--background-primary));
+  color: var(--text-normal);
+}
+
+/* Night: a dim, low-glare page for long reading sessions in either app theme. */
+.kplex-section-panel.kplex-reading-theme-night {
+  border-color: #2e323c;
+  background: #1b1d23;
+  color: #d8d3c4;
+}
+
+.kplex-reading-theme-night .kplex-section-panel-header,
+.kplex-reading-theme-night .kplex-section-panel-theme {
+  color: #8f8b80;
+}
+
+.kplex-reading-theme-night .kplex-section-panel-header:hover,
+.kplex-reading-theme-night .kplex-section-panel-theme:hover {
+  background: #252830;
+  color: #e6e1d3;
+}
+
+.kplex-reading-theme-night .kplex-section-panel-body {
+  border-top-color: #2e323c;
+}
+
+.kplex-reading-theme-night .kplex-section-quote {
+  background: #22252c;
+  color: #d8d3c4;
+}
+
+.kplex-reading-theme-night .kplex-section-quote:hover {
+  background: #2a2e37;
+}
+
+.kplex-reading-theme-night .kplex-section-quote-text.is-caption,
+.kplex-reading-theme-night .kplex-section-figure-caption {
+  color: #9c978a;
+}
+
+.kplex-reading-theme-night .kplex-section-comment {
+  border-color: #33373f;
+  background: #262930;
+  color: #b9b4a6;
+}
+
+.kplex-reading-theme-night .kplex-section-figure,
+.kplex-reading-theme-night .kplex-section-figure-image,
+.kplex-reading-theme-night .kplex-section-quote-figure {
+  background: #15171c;
+}
+
+/* Minimal: no card chrome, only a coloured rule beside each passage. */
+.kplex-section-panel.kplex-reading-theme-minimal {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.kplex-reading-theme-minimal .kplex-section-panel-body {
+  border-top-color: transparent;
+}
+
+.kplex-reading-theme-minimal .kplex-section-quote {
+  border-left-width: 1.5px;
+  background: transparent;
+}
+
+.kplex-reading-theme-minimal .kplex-section-quote:hover {
+  background: var(--background-modifier-hover);
+}
+
+.kplex-reading-theme-minimal .kplex-section-comment {
+  border-color: transparent;
+  background: transparent;
 }

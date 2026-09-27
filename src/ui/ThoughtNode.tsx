@@ -69,7 +69,8 @@ export function ThoughtNode({
   const prefix = style.prefix ?? "";
   const label = `${prefix}${node.label}`;
   const max = effectiveLabelLimit(settings, style.maxLabelLength ?? 30, node.role === "center");
-  const display = node.customSize || draftSize || label.length <= max ? label : `${label.slice(0, Math.max(1, max - 1))}…`;
+  // Section cards are sized to their heading, so only CSS ellipsis trims a title past the width cap.
+  const display = isSection || node.wrapLabel || node.customSize || draftSize || label.length <= max ? label : `${label.slice(0, Math.max(1, max - 1))}…`;
   const click = (e: MouseEvent) => { e.stopPropagation(); onActivate(node); };
   const fill = alphaHexToCss(style.backgroundColor, "rgba(0,0,0,.42)");
   const pattern = style.fillStyle === "hachure"
@@ -110,6 +111,7 @@ export function ThoughtNode({
     visual ? "has-node-visual" : "",
     visual?.mode === "replace" ? "is-node-image-only" : "",
     node.customSize || draftSize ? "has-custom-size" : "",
+    node.wrapLabel && !node.customSize && !draftSize ? "has-wrapped-label" : "",
   ].filter(Boolean).join(" ");
 
   return <div

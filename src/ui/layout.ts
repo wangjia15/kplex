@@ -83,7 +83,7 @@ export const SECTION_PANEL = {
   padding: 6,
   maxBody: 560,
   quoteLineHeight: 16,
-  quoteMaxLines: 12,
+  quoteMaxLines: 20,
   quoteChrome: 10,
   commentLineHeight: 15,
   commentChrome: 6,
@@ -93,6 +93,9 @@ export const SECTION_PANEL = {
   figureColumns: 2,
   figureTileHeight: 150,
   figureGap: 6,
+  /** Height of an image shown inside a highlight quote (plus its gap to the quote text). */
+  quoteFigureHeight: 150,
+  quoteFigureGap: 4,
   /** Extra vertical room for a rendered formula compared with the same text on one line. */
   mathLineHeight: 26,
 } as const;
@@ -104,6 +107,21 @@ function textUnits(text: string): number {
   return units;
 }
 
+/** Text shown under a quote: the passage itself, or the caption of an image-only highlight. */
+export function sectionQuoteText(item: { text: string; figure?: { caption: string } }): string {
+  return item.text || item.figure?.caption || "";
+}
+
+/** Default section card width: the heading mark, the full title and the card padding. */
+function sectionCardWidth(title: string, fontSize: number): number {
+  const labelFont = clamp(fontSize * 0.62, 10, 16);
+  return clamp(Math.ceil(66 + textUnits(title) * labelFont * 0.56), SECTION_CARD_DEFAULT_WIDTH.min, SECTION_CARD_DEFAULT_WIDTH.max);
+}
+
+const SECTION_CARD_DEFAULT_WIDTH = { min: 172, max: 460 } as const;
+/** Width at which a section-linked node's title starts wrapping onto more lines. */
+const SECTION_RELATION_WRAP_WIDTH = 240;
+
 /** Comment branches are shown in full: lines at the narrower, indented branch width. */
 export function sectionCommentLines(text: string, panelWidth: number = SECTION_PANEL.width): number {
   const unitsPerLine = Math.max(12, (panelWidth - 60) / 6);
@@ -113,7 +131,8 @@ export function sectionCommentLines(text: string, panelWidth: number = SECTION_P
 /** Lines a quote will occupy in the panel, capped by the clamp (a wider panel fits more per line). */
 export function sectionQuoteLines(text: string, panelWidth: number = SECTION_PANEL.width): number {
   const unitsPerLine = Math.max(12, (panelWidth - 32) / 6.1);
-  return clamp(Math.ceil(textUnits(text) / unitsPerLine), 1, SECTION_PANEL.quoteMaxLines);
+  const lines = text.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(textUnits(line) / unitsPerLine)), 0);
+  return clamp(lines, 1, SECTION_PANEL.quoteMaxLines);
 }
 
 export function sectionPanelSize(
@@ -130,8 +149,10 @@ export function sectionPanelSize(
   if (size.panelHeight !== undefined) return { width, height: size.panelHeight, collapsed: false };
   let body = SECTION_PANEL.padding * 2;
   for (const item of highlights) {
-    body += sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight + SECTION_PANEL.quoteChrome + SECTION_PANEL.itemGap
-      + mathExtraHeight(item.text);
+    const text = sectionQuoteText(item);
+    body += (text ? sectionQuoteLines(text, width) * SECTION_PANEL.quoteLineHeight + mathExtraHeight(text) : 0)
+      + (item.figure ? SECTION_PANEL.quoteFigureHeight + (text ? SECTION_PANEL.quoteFigureGap : 0) : 0)
+      + SECTION_PANEL.quoteChrome + SECTION_PANEL.itemGap;
     for (const comment of item.comments) {
       body += SECTION_PANEL.commentGap + SECTION_PANEL.commentChrome + sectionCommentLines(comment, width) * SECTION_PANEL.commentLineHeight
         + mathExtraHeight(comment);
@@ -704,7 +725,6 @@ export function buildSectionExpandedScene(
   // These reserves determine section-to-section outline spacing, so keep them on the compact
   // section curve. The semantic nodes themselves are spaced with relationMix above.
   const clusterBaseGap = mix(56, 30);
-  const clusterLateralReserve = mix(18, 9);
   const relationMinGap = relationMix(8, 4);
   const startY = normalBottom + sectionStartGap;
   const centerNode = scene.nodes.find((node) => node.role === "center");
@@ -718,7 +738,8 @@ export function buildSectionExpandedScene(
   const makeSectionNode = (section: import("../index/SectionExpansion").ExpandedSection, depth: number, relations: ReturnType<typeof collectForVisibleSection>): PositionedNode => {
     const pseudo: Neighbour = { page: section.page, role: "child", relationType: RelationType.DEFINED, typeDefinition: "section", linkDirection: null };
     const node = makeNode(pseudo, "child", index, settings);
-    node.width = Math.max(172, Math.min(286, node.width + mix(16, 2)));
+    // A heading card fits its whole title (up to a readable cap) rather than the node label limit.
+    node.width = sectionCardWidth(node.label, node.style.fontSize ?? 18);
     node.height = Math.max(32, node.height + mix(3, -1));
     naturalHeight = node.height;
     const size = sectionSizes.get(section.id);
@@ -745,8 +766,37 @@ export function buildSectionExpandedScene(
   const structuralInset = 14;
   // extraBelow pushes the bottom cluster under the content panel; rightEdge keeps right-side
   // neighbours clear of a panel wider than its card.
-  const addRelationGroup = (sectionNode: PositionedNode, items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2) => {
-    const nodes = items.map((item) => makeNode(item.relation, role, index, settings));
+  // Nodes linked from a section show their whole title: a fixed width and as many lines as needed.
+  const makeRelationNode = (item: SourcedNeighbour, role: Exclude<Role, "sibling">): PositionedNode => {
+    const node = makeNode(item.relation, role, index, settings);
+    const label = `${node.style.prefix ?? ""}${node.label}`;
+    const font = clamp((node.style.fontSize ?? 18) * 0.62, 10, 16);
+    const chrome = 34 + (node.style.icon ? 18 : 0);
+    const singleLine = Math.ceil(chrome + textUnits(label) * font * 0.56);
+    if (singleLine <= SECTION_RELATION_WRAP_WIDTH) {
+      node.width = Math.max(node.width, singleLine);
+    } else {
+      node.width = SECTION_RELATION_WRAP_WIDTH;
+      const lines = Math.ceil(textUnits(label) * font * 0.56 / (SECTION_RELATION_WRAP_WIDTH - chrome));
+      node.height = Math.max(node.height, Math.ceil(lines * font * 1.3 + 12));
+    }
+    node.wrapLabel = true;
+    return node;
+  };
+  // Rows of up to three above/below a card, spaced by their tallest node.
+  const rowsSpan = (nodes: PositionedNode[]): number => {
+    let span = 0;
+    for (let start = 0; start < nodes.length; start += 3) {
+      const rowHeight = Math.max(0, ...nodes.slice(start, start + 3).map((node) => node.height));
+      span += Math.max(relationRowStep, rowHeight + relationMinGap);
+    }
+    return span;
+  };
+  const lateralSpan = (nodes: PositionedNode[]): number => nodes.length > 1
+    ? (nodes.length - 1) * Math.max(relationLateralStep, Math.max(...nodes.map((node) => node.height)) + relationMinGap)
+    : 0;
+
+  const addRelationGroup = (sectionNode: PositionedNode, sectionId: string, nodes: PositionedNode[], items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2) => {
     const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
     const direction = role === "left" || role === "previous" ? -1 : role === "right" || role === "next" ? 1 : 0;
 
@@ -785,7 +835,15 @@ export function buildSectionExpandedScene(
       }
     }
 
+    const offsets = sectionSizes.get(sectionId)?.nodeOffsets;
     nodes.forEach((node, itemIndex) => {
+      // A node the user dragged keeps its place relative to the layout position.
+      const offset = offsets?.[node.page.transient?.actualPath ?? node.page.path];
+      if (offset) {
+        node.x += offset[0];
+        node.y += offset[1];
+      }
+      node.sectionId = sectionId;
       scene.nodes.push(node);
       const sourced = items[itemIndex];
       scene.edges.push({
@@ -805,10 +863,14 @@ export function buildSectionExpandedScene(
 
   for (const { section, depth } of visible) {
     const relations = collectForVisibleSection(section);
-    const lateralCount = Math.max(relations.left.length, relations.right.length);
-    const topRows = Math.ceil(relations.parent.length / 3);
-    const bottomRows = Math.ceil(relations.child.length / 3);
-    const clusterAbove = Math.max(topRows * relationRowStep + (topRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
+    const built = {
+      parent: relations.parent.map((item) => makeRelationNode(item, "parent")),
+      child: relations.child.map((item) => makeRelationNode(item, "child")),
+      left: relations.left.map((item) => makeRelationNode(item, "left")),
+      right: relations.right.map((item) => makeRelationNode(item, "right")),
+    };
+    const lateralReserve = Math.max(lateralSpan(built.left), lateralSpan(built.right)) / 2;
+    const clusterAbove = Math.max(rowsSpan(built.parent) + (built.parent.length ? clusterBaseGap : 0), lateralReserve);
     const sectionSize = sectionSizes.get(section.id);
     const figuresPanelId = `${section.id}#figures`;
     const panelSize = contentOptions ? sectionPanelSize(section.content, contentOptions, section.id, sectionSize) : null;
@@ -816,7 +878,7 @@ export function buildSectionExpandedScene(
     // Reserved before the card is placed; the exact value is corrected once the panels are laid out.
     const panelBlock = (panelSize ? SECTION_PANEL.gap + panelSize.height + Math.max(0, sectionSize?.panelDy ?? 0) : 0)
       + (figuresSize ? SECTION_PANEL.gap + figuresSize.height + Math.max(0, sectionSize?.figuresDy ?? 0) : 0);
-    const clusterBelow = Math.max(panelBlock + bottomRows * relationRowStep + (bottomRows ? clusterBaseGap : 0), lateralCount > 1 ? (lateralCount - 1) * clusterLateralReserve : 0);
+    const clusterBelow = Math.max(panelBlock + rowsSpan(built.child) + (built.child.length ? clusterBaseGap : 0), lateralReserve);
     const node = makeSectionNode(section, depth, relations);
     cursorY += clusterAbove;
     // Keep the card's top edge where a default-height card would start, so a resized card grows
@@ -891,10 +953,10 @@ export function buildSectionExpandedScene(
       highlightsPanel ? highlightsPanel.left + highlightsPanel.width : -Infinity,
       figuresPanel ? figuresPanel.left + figuresPanel.width : -Infinity,
     );
-    addRelationGroup(node, relations.parent, "parent");
-    addRelationGroup(node, relations.child, "child", Math.max(0, panelsBottom - cardBottom));
-    addRelationGroup(node, relations.left, "left");
-    addRelationGroup(node, relations.right, "right", 0, rightEdge);
+    addRelationGroup(node, section.id, built.parent, relations.parent, "parent");
+    addRelationGroup(node, section.id, built.child, relations.child, "child", Math.max(0, panelsBottom - cardBottom));
+    addRelationGroup(node, section.id, built.left, relations.left, "left");
+    addRelationGroup(node, section.id, built.right, relations.right, "right", 0, rightEdge);
   }
 
   for (const { section } of visible) {

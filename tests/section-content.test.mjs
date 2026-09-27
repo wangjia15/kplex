@@ -153,6 +153,49 @@ try {
   assert.equal(extractSectionContent('![[paper.pdf#page=0&rect=1,2,3,4]]').figures.length, 0);
   assert.equal(extractSectionContent('![[paper.pdf#page=2&rect=1,2,3]]').figures.length, 0);
 
+  // A highlight wrapping an image shows the image, not its path.
+  const imageMarks = extractSectionContent([
+    '<mark style="background: #45b7d1;">![[images/intro.png]]</mark>[^3]',
+    '',
+    'Figure 1: Comparisons between methods.',
+    '==![[images/pipeline.png]]==',
+    'Text ==with ![](https://example.com/a.png) inside== here.',
+  ].join("\n"), new Map([["3", "see intro"]]));
+  assert.equal(imageMarks.highlights.length, 3);
+  assert.equal(imageMarks.highlights[0].text, "");
+  assert.equal(imageMarks.highlights[0].figure.target, "images/intro.png");
+  assert.equal(imageMarks.highlights[0].figure.caption, "Figure 1: Comparisons between methods.");
+  assert.deepEqual(imageMarks.highlights[0].comments, ["see intro"]);
+  assert.equal(imageMarks.highlights[1].figure.target, "images/pipeline.png");
+  assert.equal(imageMarks.highlights[2].text, "with inside");
+  assert.equal(imageMarks.highlights[2].figure.external, true);
+  assert.equal(imageMarks.figures.length, 3);
+
+  // PDF++ callouts: a region callout shows its crop inside the quote; an embedded image too.
+  const regionCallout = extractSectionContent([
+    '> [!PDF|yellow] [[paper.pdf#page=1&rect=318.24,356.4,593.64,657.36|paper, p.1]]',
+    '> > Fig. 1. Comparison of paradigms.',
+  ].join("\n"));
+  assert.deepEqual(regionCallout.highlights[0].figure.pdf, { page: 1, rect: [318.24, 356.4, 593.64, 657.36] });
+  assert.equal(regionCallout.highlights[0].text, "Fig. 1. Comparison of paradigms.");
+  const imageCallout = extractSectionContent([
+    '> [!PDF|yellow] [[paper.pdf#page=4&selection=1,2,3,4|paper, p.4]]',
+    '> > Framework is re![[paper.pdf#page=4&rect=26,473,589,757|paper, p.4]]sponsible here.',
+  ].join("\n"));
+  assert.equal(imageCallout.highlights[0].figure.pdf.page, 4);
+  assert(!imageCallout.highlights[0].text.includes("paper, p.4"));
+
+  // A bilingual callout keeps the blank line between the original and its translation.
+  const bilingual = extractSectionContent([
+    '> [!PDF|yellow] [[paper.pdf#page=1&selection=1,2,3,4&color=yellow|paper, p.1]]',
+    '> > However, they often suffer from spurious correlations.',
+    '> >',
+    '> > 然而，它们常常过度依赖虚假相关性。',
+    '>',
+    '> **AI 精读 · method**',
+  ].join("\n"));
+  assert.equal(bilingual.highlights[0].text, "However, they often suffer from spurious correlations.\n\n然而，它们常常过度依赖虚假相关性。");
+
   // Formula segmentation for highlights and their comments (rendering itself needs Obsidian).
   const mathPath = join(root, "src/ui/mathSegments.ts");
   const mathSource = readFileSync(mathPath, "utf8");

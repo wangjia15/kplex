@@ -21,6 +21,8 @@ import { obsidianHttp, windowSleep } from "./ObsidianHttp";
 import { articleImageName, imagePrefix } from "../ArticleSources";
 import { downloadImage, fetchArticle, replaceTokens, tidyMarkdown } from "./ArticleImporter";
 
+const PREVIEW_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"]);
+
 export type ArticleImportProgress = (message: string) => void;
 
 /**
@@ -140,6 +142,20 @@ export class PaperReadingController {
       if (file) return this.plugin.index.get(file.path) ?? null;
     }
     return null;
+  }
+
+  /** Images embedded in a note (its figures), for the hover card. Local vault files only. */
+  previewImages(page: GraphPage, limit = 3): Array<{ src: string; path: string }> {
+    const file = page.file;
+    if (!file || file.extension !== "md") return [];
+    const out: Array<{ src: string; path: string }> = [];
+    for (const embed of this.plugin.app.metadataCache.getFileCache(file)?.embeds ?? []) {
+      const target = this.plugin.app.metadataCache.getFirstLinkpathDest(embed.link.split("#")[0], file.path);
+      if (!target || !PREVIEW_IMAGE_EXTENSIONS.has(target.extension.toLowerCase()) || out.some((item) => item.path === target.path)) continue;
+      out.push({ src: this.plugin.app.vault.getResourcePath(target), path: target.path });
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   /**

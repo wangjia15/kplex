@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent
 import { Menu, Platform, type WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { GraphIndex } from "../index/GraphIndex";
-import type { ExcaliBrainSettings, KplexViewSurface } from "../settings";
+import { SECTION_READING_THEMES, type ExcaliBrainSettings, type KplexViewSurface, type SectionReadingTheme } from "../settings";
 import type { GateRole, GateSide, GraphPage, Neighbour, Neighborhood, NodeStyle, NodeVisual, PositionedEdge, PositionedNode, Role, ScrollZone, SectionSizeOverride } from "../types";
 import { LinkDirection, RelationType } from "../types";
 import { alphaHexToCss, resolveLinkStyle, resolveNodeStyle } from "../index/style";
@@ -929,13 +929,16 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const scheduleAbstractCard = (node: PositionedNode, pointerType?: string) => {
     if (pointerType !== "mouse" && pointerType !== "pen") return;
     if (!plugin.settings.paperReadingEnabled || !plugin.settings.paperHoverAbstract) return;
-    if (node.page.transient || node.page.file?.extension !== "md") return;
+    // A node linked from a section is a view of the real note: show that note's abstract.
+    const actual = node.page.transient?.kind === "section-target" ? index.get(node.page.transient.actualPath ?? "") : node.page.transient ? null : node.page;
+    if (!actual || actual.file?.extension !== "md") return;
     clearAbstractTimers();
-    const path = node.page.path;
+    const elementPath = node.page.path;
+    const path = actual.path;
     abstractShowTimer.current = window.setTimeout(() => {
       abstractShowTimer.current = null;
       const el = viewport.current;
-      const nodeEl = el ? Array.from(el.querySelectorAll<HTMLElement>("[data-kplex-path]")).find((candidate) => candidate.dataset.kplexPath === path) : null;
+      const nodeEl = el ? Array.from(el.querySelectorAll<HTMLElement>("[data-kplex-path]")).find((candidate) => candidate.dataset.kplexPath === elementPath) : null;
       if (!el || !nodeEl) return;
       const box = el.getBoundingClientRect();
       const rect = nodeEl.getBoundingClientRect();
@@ -1088,6 +1091,18 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       : { panelDx: Math.round((current?.panelDx ?? 0) + dx), panelDy: Math.round((current?.panelDy ?? 0) + dy) };
     updateSectionSize(sectionId, change);
   };
+  const moveSectionNode = (sectionId: string, path: string, dx: number, dy: number) => {
+    const offsets = { ...sectionSizes.get(sectionId)?.nodeOffsets };
+    const [x, y] = offsets[path] ?? [0, 0];
+    const next: [number, number] = [Math.round(x + dx), Math.round(y + dy)];
+    if (next[0] || next[1]) offsets[path] = next; else delete offsets[path];
+    updateSectionSize(sectionId, { nodeOffsets: Object.keys(offsets).length ? offsets : undefined });
+  };
+  const resetSectionNodePosition = (sectionId: string, path: string) => {
+    const offsets = { ...sectionSizes.get(sectionId)?.nodeOffsets };
+    delete offsets[path];
+    updateSectionSize(sectionId, { nodeOffsets: Object.keys(offsets).length ? offsets : undefined });
+  };
   const resetSectionPanelPosition = (panelId: string) => {
     updateSectionSize(panelSection(panelId), isFiguresPanel(panelId)
       ? { figuresDx: undefined, figuresDy: undefined }
@@ -1139,6 +1154,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       .setIcon(collapsed ? "eye" : "eye-off")
       .onClick(() => toggleSectionPanel(panelId)));
     addSectionContentMenuItems(menu);
+    menu.addSeparator();
+    addReadingThemeMenuItems(menu);
     const doc = viewport.current?.ownerDocument ?? document;
     plugin.showKplexMenuAtPosition(menu, { x: event.clientX, y: event.clientY }, doc);
   };
@@ -1149,6 +1166,32 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     setLayoutRevision((current) => current + 1);
     // Presentation-only: notify mounted views, never rebuild the index.
     void plugin.saveSettings(false);
+  };
+
+  const setSectionReadingTheme = (theme: SectionReadingTheme) => {
+    if (settings.sectionReadingTheme === theme) return;
+    plugin.settings.sectionReadingTheme = theme;
+    settings.sectionReadingTheme = theme;
+    setLayoutRevision((current) => current + 1);
+    // Presentation-only: notify mounted views, never rebuild the index.
+    void plugin.saveSettings(false);
+  };
+
+  const addReadingThemeMenuItems = (menu: Menu): void => {
+    for (const theme of SECTION_READING_THEMES) {
+      menu.addItem((item) => item
+        .setTitle(theme.name)
+        .setIcon(theme.icon)
+        .setChecked(settings.sectionReadingTheme === theme.id)
+        .onClick(() => setSectionReadingTheme(theme.id)));
+    }
+  };
+
+  const showReadingThemeMenu = (position: { x: number; y: number }) => {
+    const menu = new Menu();
+    addReadingThemeMenuItems(menu);
+    const doc = viewport.current?.ownerDocument ?? document;
+    plugin.showKplexMenuAtPosition(menu, position, doc);
   };
 
   const clearEdgeTooltip = () => {
@@ -1922,7 +1965,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
   const startNodeDrag = (node: PositionedNode, event: PointerEvent<HTMLDivElement>) => {
     const target = event.target as Element;
     if (target.closest("[data-kplex-gate], button")) return;
-    if (event.button !== 0 || !normalizedRole(node.role) || node.page.isFolder || node.page.isTag || node.page.transient || neighborhood?.center.isFolder || neighborhood?.center.isTag) return;
+    const sectionLinked = Boolean(node.sectionId && node.page.transient?.kind === "section-target");
+    if (event.button !== 0 || !normalizedRole(node.role) || node.page.isFolder || node.page.isTag || (node.page.transient && !sectionLinked) || neighborhood?.center.isFolder || neighborhood?.center.isTag) return;
     clearHoverIntent(true);
     event.preventDefault();
     event.stopPropagation();
@@ -2208,7 +2252,11 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       if (touchLongPress.current?.pointerId === e.pointerId) cancelTouchLongPress();
       const original = scene.nodes.find((node) => node.page.path === drag.path);
       const dragDistance = Math.hypot(e.clientX - drag.startClientX, e.clientY - drag.startClientY);
-      if (drag.moved) {
+      if (drag.moved && original?.sectionId) {
+        // A node linked from a section is moved freely; its place is remembered with the section.
+        suppressActivateUntil.current = Date.now() + 220;
+        moveSectionNode(original.sectionId, original.page.transient?.actualPath ?? original.page.path, drag.x - original.x, drag.y - original.y);
+      } else if (drag.moved) {
         suppressActivateUntil.current = Date.now() + 220;
         const draggedNode = renderedNodeMap.get(drag.path);
         const center = neighborhood?.center;
@@ -2249,7 +2297,9 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         // Starting a potential relationship-relink drag uses pointer capture. Some Chromium/React
         // combinations then suppress the synthetic click, so make a tap explicitly navigate.
         suppressActivateUntil.current = Date.now() + 180;
-        onActivate(original.page);
+        // Section-linked nodes are views of a real note; navigate to that note.
+        const target = persistentPageFor(original.page);
+        if (target) onActivate(target);
       }
       setNodeDrag(null);
       if (e.pointerType === "touch") {
@@ -2382,6 +2432,16 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
     const isMarkdown = Boolean(persistent?.file?.extension === "md");
     const canExpand = canExpandCentralSections(persistent, activePath);
     const menu = new Menu();
+
+    const owningSection = node.sectionId;
+    const linkedPath = page.transient?.actualPath ?? page.path;
+    if (owningSection && sectionSizes.get(owningSection)?.nodeOffsets?.[linkedPath]) {
+      menu.addItem((item) => item
+        .setTitle("Move back to its place")
+        .setIcon("undo-2")
+        .onClick(() => resetSectionNodePosition(owningSection, linkedPath)));
+      menu.addSeparator();
+    }
 
     if (persistent && !persistent.isFolder && !persistent.isTag && !persistent.url && page.transient?.kind !== "section") {
       menu.addItem((item) => item
@@ -2928,6 +2988,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
             onMove={moveSectionPanel}
             onResize={resizeSectionPanel}
             onContextMenu={showSectionPanelMenu}
+            theme={settings.sectionReadingTheme}
+            onThemeMenu={showReadingThemeMenu}
           />;
         })}
         {draggedBaseNode && renderNode(draggedBaseNode, renderedNodeMap.get(draggedBaseNode.page.path) ?? draggedBaseNode)}

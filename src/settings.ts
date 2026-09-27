@@ -104,6 +104,16 @@ function sanitizeSectionSizes(value: unknown): Record<string, Record<string, Sec
         const n = size[field];
         if (typeof n === "number" && Number.isFinite(n) && Math.round(n) !== 0) entry[field] = Math.round(n);
       }
+      if (isRecord(size.nodeOffsets)) {
+        const offsets: Record<string, [number, number]> = {};
+        for (const [target, offset] of Object.entries(size.nodeOffsets)) {
+          if (!Array.isArray(offset) || offset.length !== 2) continue;
+          const [dx, dy] = offset;
+          if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) continue;
+          if (Math.round(dx) || Math.round(dy)) offsets[target] = [Math.round(dx), Math.round(dy)];
+        }
+        if (Object.keys(offsets).length) entry.nodeOffsets = offsets;
+      }
       if (Object.keys(entry).length) clean[key] = entry;
     }
     if (Object.keys(clean).length) out[path] = clean;
@@ -323,8 +333,25 @@ export interface ExcaliBrainSettings {
   sectionShowHighlights: boolean;
   /** Show embedded images and their captions under sections. */
   sectionShowFigures: boolean;
+  /** Visual theme of the highlight/figure panels under note sections. */
+  sectionReadingTheme: SectionReadingTheme;
   /** Resized section cards/panels: note path -> section key -> size. */
   sectionSizes: Record<string, Record<string, SectionSizeOverride>>;
+}
+
+/** Reading themes for section panels. Presentation only; switching never touches the index. */
+export const SECTION_READING_THEMES = [
+  { id: "default", name: "Default", icon: "layout-panel-top" },
+  { id: "paper", name: "Paper", icon: "scroll-text" },
+  { id: "marker", name: "Marker", icon: "highlighter" },
+  { id: "night", name: "Night", icon: "moon" },
+  { id: "minimal", name: "Minimal", icon: "minus" },
+] as const;
+
+export type SectionReadingTheme = typeof SECTION_READING_THEMES[number]["id"];
+
+export function isSectionReadingTheme(value: unknown): value is SectionReadingTheme {
+  return SECTION_READING_THEMES.some((theme) => theme.id === value);
 }
 
 export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
@@ -463,6 +490,7 @@ export const DEFAULT_SETTINGS: ExcaliBrainSettings = {
   sectionShowContent: true,
   sectionShowHighlights: true,
   sectionShowFigures: true,
+  sectionReadingTheme: "default",
   sectionSizes: {},
 };
 
@@ -645,6 +673,7 @@ export function migrateAndMergeSettings(raw: unknown): ExcaliBrainSettings {
     sectionShowContent: old.sectionShowContent !== false,
     sectionShowHighlights: old.sectionShowHighlights !== false,
     sectionShowFigures: old.sectionShowFigures !== false,
+    sectionReadingTheme: isSectionReadingTheme(old.sectionReadingTheme) ? old.sectionReadingTheme : DEFAULT_SETTINGS.sectionReadingTheme,
     sectionSizes: sanitizeSectionSizes(old.sectionSizes),
     // Keep legacy flags coherent for imported settings and older code paths.
     autoOpenCentralDocument: documentSyncMode !== "off",
@@ -1717,6 +1746,7 @@ export class ExcaliBrainSettingTab extends PluginSettingTab {
               { name: "Show section content", desc: "When a note is expanded to sections, show its highlights and figures under each section.", control: { type: "toggle", key: "sectionShowContent" } },
               { name: "Highlight quotes", desc: "Quote highlighted text, with its comments, under the section it belongs to.", control: { type: "toggle", key: "sectionShowHighlights" } },
               { name: "Figures", desc: "Show embedded images with their captions. Hover an image to see it in full and pin it.", control: { type: "toggle", key: "sectionShowFigures" } },
+              { name: "Reading theme", desc: "Look of the highlight and figure panels. You can also switch it from the palette button on any panel.", control: { type: "dropdown", key: "sectionReadingTheme", defaultValue: "default", options: Object.fromEntries(SECTION_READING_THEMES.map((theme) => [theme.id, theme.name])) } },
             ]
           },
           {

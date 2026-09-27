@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type 
 import type { SectionContent, SectionFigure } from "../index/SectionExpansion";
 import type { PdfCropResolver } from "../index/PdfCropRenderer";
 import { FigureImage } from "./FigureImage";
-import { SECTION_PANEL, SECTION_PANEL_LIMITS, sectionQuoteLines, type SectionPanel } from "./layout";
+import type { SectionReadingTheme } from "../settings";
+import { SECTION_PANEL, SECTION_PANEL_LIMITS, sectionQuoteLines, sectionQuoteText, type SectionPanel } from "./layout";
 import { MathText } from "./MathText";
 import { containsMath } from "./mathSegments";
 import { ObsidianIcon } from "./ObsidianIcon";
@@ -20,7 +21,7 @@ const stopMouse = (event: ReactPointerEvent<HTMLElement>) => {
  * comments, and — as a branch of its own — the figures. Positions come from the scene (canvas
  * coordinates), so a panel pans and zooms with the Plex.
  */
-export function SectionContentPanel({ panel, content, crops, canvasScale, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onMove, onResize, onContextMenu }: {
+export function SectionContentPanel({ panel, content, crops, canvasScale, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onMove, onResize, onContextMenu, theme, onThemeMenu }: {
   panel: SectionPanel;
   content: SectionContent;
   crops: PdfCropResolver;
@@ -34,6 +35,8 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
   onMove: (panelId: string, dx: number, dy: number) => void;
   onResize: (panelId: string, width: number, height: number) => void;
   onContextMenu: (panelId: string, event: MouseEvent<HTMLDivElement>) => void;
+  theme: SectionReadingTheme;
+  onThemeMenu: (position: { x: number; y: number }) => void;
 }) {
   const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
   const [draftOffset, setDraftOffset] = useState<{ dx: number; dy: number } | null>(null);
@@ -91,7 +94,7 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
     : count(highlights.length, "highlight", "highlights");
 
   return <div
-    className={`kplex-section-panel${figuresPanel ? " is-figures" : ""}${panel.collapsed ? " is-collapsed" : ""}${draftOffset ? " is-dragging" : ""}`}
+    className={`kplex-section-panel kplex-reading-theme-${theme}${figuresPanel ? " is-figures" : ""}${panel.collapsed ? " is-collapsed" : ""}${draftOffset ? " is-dragging" : ""}`}
     style={{ left: panel.left + (draftOffset?.dx ?? 0), top: panel.top + (draftOffset?.dy ?? 0), width, height }}
     data-kplex-section-panel={panel.panelId}
     onContextMenu={(event: MouseEvent<HTMLDivElement>) => {
@@ -123,8 +126,25 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
       {figuresPanel && <ObsidianIcon name="image" size={12} />}
       <span className="kplex-section-panel-summary">{summary}</span>
     </button>
+    <button
+      type="button"
+      className="kplex-section-panel-theme clickable-icon"
+      style={{ height: SECTION_PANEL.header }}
+      aria-label="Reading theme"
+      onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => event.stopPropagation()}
+      onClick={(event: MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        onThemeMenu({ x: rect.left, y: rect.bottom });
+      }}
+    >
+      <ObsidianIcon name="palette" size={12} />
+    </button>
     {!panel.collapsed && <div ref={bodyRef} className="kplex-section-panel-body">
-      {highlights.map((item, index) => <div
+      {highlights.map((item, index) => {
+        const text = sectionQuoteText(item);
+        const figure = item.figure;
+        return <div
         key={`h-${index}`}
         className="kplex-section-quote-group"
         style={{ "--kplex-quote-color": item.color ?? undefined } as CSSProperties}
@@ -132,16 +152,26 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
         <button
           type="button"
           className="kplex-section-quote"
-          aria-label={item.text.slice(0, 600)}
+          aria-label={(text || figure?.alt || "Image").slice(0, 600)}
           onPointerDown={stopMouse}
           onClick={() => onOpenHighlight(item.line, item.linkTarget)}
         >
+          {figure && <span
+            className="kplex-section-quote-figure"
+            style={{ height: SECTION_PANEL.quoteFigureHeight }}
+            onPointerEnter={(event: ReactPointerEvent<HTMLSpanElement>) => {
+              if (event.pointerType === "mouse" || event.pointerType === "pen") onFigureEnter(figure, event.currentTarget);
+            }}
+            onPointerLeave={onFigureLeave}
+          >
+            <FigureImage figure={figure} crops={crops} />
+          </span>}
           {/* A typeset formula is taller than the source text it replaces, so a quote carrying
               maths is never clipped to an estimated line count. */}
-          <span
-            className="kplex-section-quote-text"
-            style={containsMath(item.text) ? undefined : { maxHeight: sectionQuoteLines(item.text, width) * SECTION_PANEL.quoteLineHeight }}
-          ><MathText text={item.text} /></span>
+          {text && <span
+            className={`kplex-section-quote-text${item.text ? "" : " is-caption"}`}
+            style={containsMath(text) ? undefined : { maxHeight: sectionQuoteLines(text, width) * SECTION_PANEL.quoteLineHeight }}
+          ><MathText text={text} /></span>}
         </button>
         {item.comments.map((comment, commentIndex) => <div
           key={`c-${commentIndex}`}
@@ -152,7 +182,8 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
           <ObsidianIcon name="message-square" size={10} />
           <span className="kplex-section-comment-text"><MathText text={comment} /></span>
         </div>)}
-      </div>)}
+      </div>;
+      })}
       {figures.length > 0 && <div className="kplex-section-figures">
         {figures.map((figure, index) => <button
           key={`f-${index}`}

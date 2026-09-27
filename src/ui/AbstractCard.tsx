@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type ExcaliBrainPlugin from "../main";
 import type { AbstractPreview } from "../paper/obsidian/PaperReadingController";
 import type { GraphPage } from "../types";
@@ -32,6 +32,7 @@ export function AbstractCard({ plugin, card, onPin, onClose, onMove, onPointerEn
   const page = plugin.index.get(card.path) ?? null;
   const [preview, setPreview] = useState<AbstractPreview | null | undefined>(undefined);
   const drag = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
+  const images = useMemo(() => page ? plugin.paperReading.previewImages(page) : [], [plugin, page]);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export function AbstractCard({ plugin, card, onPin, onClose, onMove, onPointerEn
     return () => el.removeEventListener("wheel", stop);
   }, [preview]);
 
-  if (!page || preview === null) return null;
+  if (!page || (preview === null && !images.length)) return null;
   const title = plugin.index.titleFor(page);
   const isPaper = plugin.paperReading.isPaperPage(page);
 
@@ -111,7 +112,10 @@ export function AbstractCard({ plugin, card, onPin, onClose, onMove, onPointerEn
     <div ref={bodyRef} className="kplex-abstract-card-body">
       {preview === undefined
         ? <div className="kplex-abstract-card-muted">Loading…</div>
-        : preview.text.split(/\n\s*\n/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+        : preview?.text.split(/\n\s*\n/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      {images.length > 0 && <div className="kplex-abstract-card-images">
+        {images.map((image) => <img key={image.path} src={image.src} alt="" loading="lazy" decoding="async" draggable={false} />)}
+      </div>}
     </div>
     {preview && <div className="kplex-abstract-card-source">
       {preview.source === "note" ? "From the note" : `From ${preview.source}`}

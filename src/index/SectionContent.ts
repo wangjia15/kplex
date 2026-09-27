@@ -16,6 +16,8 @@ export type SectionHighlight = {
   comments: string[];
   /** 0-based line relative to the section start. */
   line: number;
+  /** An image the highlight wraps (or a PDF++ region/image callout), shown inside the quote. */
+  figure?: SectionFigureRef;
 };
 
 export type SectionFigureRef = {
@@ -186,18 +188,18 @@ export function pdfRegionFromTarget(target: string): PdfRegion | undefined {
   return { page, rect: [parts[0], parts[1], parts[2], parts[3]] };
 }
 
-type Match = { start: number; end: number; text: string; color: string | null; linkTarget?: string };
+type Match = { start: number; end: number; text: string; color: string | null; linkTarget?: string; embed?: ImageEmbed };
 
 function lineHighlights(line: string): Match[] {
   const masked = maskInlineCode(line);
   const found: Match[] = [];
   const push = (start: number, end: number, raw: string, color: string | null) => {
     if (found.some((item) => start < item.end && end > item.start)) return;
-    const text = plainInlineText(raw);
-    if (text) {
-      const linkTarget = pdfHighlightTarget(raw);
-      found.push({ start, end, text, color, ...(linkTarget ? { linkTarget } : {}) });
-    }
+    const embeds = imageEmbeds(raw);
+    const text = plainInlineText(withoutEmbeds(raw, embeds));
+    if (!text && !embeds.length) return;
+    const linkTarget = pdfHighlightTarget(raw);
+    found.push({ start, end, text, color, ...(linkTarget ? { linkTarget } : {}), ...(embeds.length ? { embed: embeds[0] } : {}) });
   };
   for (const match of masked.matchAll(/<mark\b([^>]*)>(.*?)<\/mark>/gi)) {
     const start = match.index;
@@ -237,6 +239,50 @@ function meaningfulAlt(alt: string, target: string): string {
   return text;
 }
 
+/** An image embed in Markdown text: an image file, a web image, or a PDF++ page region. */
+type ImageEmbed = { start: number; end: number; target: string; external: boolean; alt: string; pdf?: PdfRegion };
+
+function imageEmbeds(text: string): ImageEmbed[] {
+  const embeds: ImageEmbed[] = [];
+  for (const match of text.matchAll(/!\[\[([^\]|#]+)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\]/g)) {
+    const target = match[1].trim();
+    const start = match.index;
+    const end = start + match[0].length;
+    // PDF++ renders `![[file.pdf#page=N&rect=…]]` as a cropped page region, not a PDF viewer.
+    if (target.toLowerCase().endsWith(".pdf")) {
+      const region = match[2] ? pdfRegionFromTarget(`#${match[2]}`) : undefined;
+      if (region) embeds.push({ start, end, target, external: false, alt: plainInlineText(match[3] ?? ""), pdf: region });
+      continue;
+    }
+    if (isImageTarget(target, false)) embeds.push({ start, end, target, external: false, alt: meaningfulAlt(match[3] ?? "", target) });
+  }
+  for (const match of text.matchAll(/!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)/g)) {
+    const target = (match[2] ?? match[3]).trim();
+    const external = /^[a-z][a-z0-9+.-]*:\/\//i.test(target);
+    if (!isImageTarget(target, external)) continue;
+    const alt = meaningfulAlt(match[1], target) || meaningfulAlt(match[4] ?? "", target);
+    embeds.push({ start: match.index, end: match.index + match[0].length, target, external, alt });
+  }
+  return embeds.sort((a, b) => a.start - b.start);
+}
+
+/** Text with its image embeds cut out, so a quote does not show an image path as prose. */
+function withoutEmbeds(text: string, embeds: readonly ImageEmbed[]): string {
+  let out = "";
+  let cursor = 0;
+  for (const embed of embeds) {
+    if (embed.start < cursor) continue;
+    out += `${text.slice(cursor, embed.start)} `;
+    cursor = embed.end;
+  }
+  return out + text.slice(cursor);
+}
+
+function embedFigure(embed: ImageEmbed, caption: string, line: number): SectionFigureRef {
+  return { target: embed.target, external: embed.external, alt: embed.alt, caption: caption || embed.alt, line,
+    ...(embed.pdf ? { pdf: embed.pdf } : {}) };
+}
+
 /** A caption line directly below an image: "Figure 3: …", "图 2 …" or a fully italic line. */
 function captionBelow(lines: string[], index: number): string {
   for (let i = index + 1; i < Math.min(lines.length, index + 3); i += 1) {
@@ -273,20 +319,29 @@ function pdfCallout(lines: string[], start: number): { highlight: SectionHighlig
   const comment = plainCommentText(comments.join("\n"));
   const name = header[2]?.trim().toLowerCase();
   const color = name && /^(?:yellow|red|green|blue|purple|orange|pink|cyan)$/.test(name) ? name : null;
-  const text = plainInlineText(quote.join(" "));
+  const quoted = quote.join("\n");
+  const embeds = imageEmbeds(quoted);
+  // Blank lines separate paragraphs (for example an original sentence and its translation).
+  const text = withoutEmbeds(quoted, embeds)
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) => plainInlineText(paragraph))
+    .filter(Boolean)
+    .join("\n\n");
   const highlight: SectionHighlight = { text, color, comments: comment ? [comment] : [],
     line: start, ...(linkTarget ? { linkTarget } : {}) };
 
   // A rectangular annotation is a cropped region of the page: show the region itself as a figure,
   // captioned with the text PDF++ extracted from it.
   const region = linkTarget ? pdfRegionFromTarget(linkTarget) : undefined;
-  if (!region || !linkTarget) return { highlight, end };
+  if (!region || !linkTarget) {
+    // A text selection may still quote an image; show it inside the highlight.
+    if (embeds.length) highlight.figure = embedFigure(embeds[0], text, start);
+    return { highlight, end };
+  }
   const alias = plainInlineText(header[3]);
-  return {
-    highlight,
-    figure: { target: linkTarget.split("#")[0], external: false, caption: text, alt: alias, line: start, pdf: region },
-    end,
-  };
+  const figure: SectionFigureRef = { target: linkTarget.split("#")[0], external: false, caption: text, alt: alias, line: start, pdf: region };
+  highlight.figure = figure;
+  return { highlight, figure, end };
 }
 
 export function extractSectionContent(sectionText: string, footnotes: ReadonlyMap<string, string> = new Map()): SectionContentRaw {
@@ -328,32 +383,14 @@ export function extractSectionContent(sectionText: string, footnotes: ReadonlyMa
       continue;
     }
 
+    const embeds = imageEmbeds(line);
+    const caption = embeds.length ? captionBelow(lines, index) : "";
     for (const match of lineHighlights(line)) {
-      highlights.push({ text: match.text, color: match.color, comments: trailingComments(line, match.end, footnotes), line: index, ...(match.linkTarget ? { linkTarget: match.linkTarget } : {}) });
+      highlights.push({ text: match.text, color: match.color, comments: trailingComments(line, match.end, footnotes), line: index,
+        ...(match.linkTarget ? { linkTarget: match.linkTarget } : {}),
+        ...(match.embed ? { figure: embedFigure(match.embed, caption, index) } : {}) });
     }
-
-    for (const match of line.matchAll(/!\[\[([^\]|#]+)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\]/g)) {
-      const target = match[1].trim();
-      // PDF++ renders `![[file.pdf#page=N&rect=…]]` as a cropped page region, not a PDF viewer.
-      if (target.toLowerCase().endsWith(".pdf")) {
-        const region = match[2] ? pdfRegionFromTarget(`#${match[2]}`) : undefined;
-        if (region) {
-          const alias = plainInlineText(match[3] ?? "");
-          figures.push({ target, external: false, caption: captionBelow(lines, index) || alias, alt: alias, line: index, pdf: region });
-        }
-        continue;
-      }
-      if (!isImageTarget(target, false)) continue;
-      const alt = meaningfulAlt(match[3] ?? "", target);
-      figures.push({ target, external: false, alt, caption: captionBelow(lines, index) || alt, line: index });
-    }
-    for (const match of line.matchAll(/!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^)\s]+))(?:\s+["']([^"']*)["'])?\s*\)/g)) {
-      const target = (match[2] ?? match[3]).trim();
-      const external = /^[a-z][a-z0-9+.-]*:\/\//i.test(target);
-      if (!isImageTarget(target, external)) continue;
-      const alt = meaningfulAlt(match[1], target) || meaningfulAlt(match[4] ?? "", target);
-      figures.push({ target, external, alt, caption: captionBelow(lines, index) || alt, line: index });
-    }
+    for (const embed of embeds) figures.push(embedFigure(embed, caption, index));
   }
   return { highlights, figures };
 }
