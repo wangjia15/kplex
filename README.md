@@ -191,19 +191,21 @@ For a detailed walkthrough, see [Graph Lenses](docs/GRAPH_LENSES.md).
 A Markdown note can be expanded from the center into its heading hierarchy. This gives you a temporary document outline directly inside the Plex without permanently adding headings to the vault graph.
 
 - Heading levels become a foldable tree.
-- Relationships found inside a section attach to that section.
+- Relationships found inside a section attach to that section. Their nodes show the full note or paper title, wrapping onto more lines when needed, and can be dragged anywhere; each note remembers where you put them (**Move back to its place** in the node's context menu resets one). With paper reading on, hovering one shows its abstract and figures in a card you can pin.
 - YAML/frontmatter and content before the first heading stay attached to the central note.
 - Folded sections project hidden descendant relationships onto the nearest visible section while retaining their original source for explanation.
 - Double-click / tap a section to open the source note at that heading.
+- Section cards are wide enough for their whole heading by default.
 - Use **Fold all sections** and **Unfold all sections** for larger documents.
 
 ### Highlights and figures
 
 Each section can show what you marked while reading, right under its heading:
 
-- **Highlight quotes**: text highlighted with `==text==` or `<mark>` (as written by the [Sidebar Highlights](https://github.com/trevware/obsidian-sidebar-highlights) plugin), in its highlight color, with any comments attached to it. Click a quote to jump to it in the note. PDF highlights made with [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) jump to the exact passage in the PDF, opened in the Sidecar.
+- **Highlight quotes**: text highlighted with `==text==` or `<mark>` (as written by the [Sidebar Highlights](https://github.com/trevware/obsidian-sidebar-highlights) plugin), in its highlight color, with any comments attached to it. Click a quote to jump to it in the note. PDF highlights made with [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) jump to the exact passage in the PDF, opened in the Sidecar. When a highlight wraps an image, or a PDF++ callout marks a page region or quotes an image, the image is shown inside the quote. Paragraph breaks in a quote, such as between an original sentence and its translation, are kept.
 - **Formulas**: LaTeX written between dollar signs is typeset inside quotes and comments, so a highlighted equation reads the way it does in the note.
 - **Figures**: embedded images with their captions (alt text, or a "Figure 1: …" / italic line directly below the image), shown in a panel of their own that branches off the highlights. A rectangular PDF++ annotation is shown as the region of the page it marks. Hover a figure to see it in full; click it, or use the pin button, to keep it open. Pinned figures can be moved and resized.
+- **Reading themes**: choose Default, Paper, Marker, Night or Minimal from the palette button on any panel header, the panel's context menu, or **Settings → Plex behavior → Note sections → Reading theme**.
 - Click a panel's header to fold it. Right-click a section or the center note to hide or show all highlights and figures, or only the highlight quotes or only the figures. The same options are under **Settings → Plex behavior → Note sections**.
 - Drag a panel by its header to move it, and drag the bottom-right corner of a section or panel to resize it. Each note remembers where you put things. Use **Move back to its place**, **Reset size**, **Reset panel size** or **Reset all section sizes and positions** in the context menu to go back to the default.
 
