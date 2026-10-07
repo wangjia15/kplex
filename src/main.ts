@@ -9,6 +9,7 @@ import { CreateFolderNoteModal } from "./ui/CreateFolderNoteModal";
 import { MaterializeGhostModal, type GhostMaterializationKind, type GhostMaterializationLocation } from "./ui/MaterializeGhostModal";
 import { DeleteNodeConfirmationModal, RemainingNodeReferencesModal, type RemainingNodeReference } from "./ui/DeleteNodeModal";
 import { LinkDirection, type GateRole, type GraphPage, type RelationshipRole } from "./types";
+import { obttsReadApi } from "./readAloud";
 import { OntologySuggester } from "./editor/OntologySuggester";
 import { extractLinksFromValue, normalizeFieldName, parseBodyMetadata } from "./index/fieldParser";
 import type { RelationEvidence } from "./index/RelationEvidence";
@@ -19,7 +20,8 @@ import { perfNow } from "./util/perf";
 import { PaperReadingController } from "./paper/obsidian/PaperReadingController";
 import { PaperDetailsModal } from "./ui/PaperDetailsModal";
 import type { PaperTarget } from "./ui/PaperDetailsPanel";
-import { KPLEX_PAPER_VIEW_TYPE, PaperView } from "./ui/PaperView";
+import { KPLEX_PAPER_VIEW_TYPE, PaperView, paperTargetFromState } from "./ui/PaperView";
+import { paperTargetKey } from "./ui/PaperDetailsPanel";
 import { PaperReadingIntroModal } from "./ui/PaperReadingIntroModal";
 
 type LoadAwareView = FileView & { _loaded?: boolean };
@@ -57,6 +59,8 @@ export default class ExcaliBrainPlugin extends Plugin {
   private indexDirty = true;
   private linkedDocumentLeaf: WorkspaceLeaf | null = null;
   private lastDocumentLeaf: WorkspaceLeaf | null = null;
+  /** Newest paper-details pane of this session; further papers split off it instead of replacing it. */
+  private lastPaperDetailsLeaf: WorkspaceLeaf | null = null;
   private readonly hoverParent: HoverParent = { hoverPopover: null };
   private reactiveIndexListenersRegistered = false;
   private openKplexViews = 0;
@@ -2408,6 +2412,26 @@ export default class ExcaliBrainPlugin extends Plugin {
     });
   }
 
+  /**
+   * Speaks a reading panel's text through the Markdown Read Aloud (obtts) plugin.
+   * `sourcePath` grounds the reader's jump-back-to-source on the panel's note; when the K-Plex
+   * sidecar companion is available the reader opens there, exactly like provenance navigation
+   * temporarily reuses that pane — ordinary sidecar sync resumes on the next navigation.
+   */
+  readAloud(text: string, title: string, sourcePath?: string, hostLeaf?: WorkspaceLeaf): void {
+    if (!text.trim()) return;
+    const api = obttsReadApi(this.app);
+    if (!api) {
+      new Notice("Enable the Markdown Read Aloud plugin to read aloud.", 3000);
+      return;
+    }
+    const docUri = sourcePath ? this.app.vault.getFileByPath(sourcePath) ?? undefined : undefined;
+    // A paper-details pane is never sacrificed for the reader; reading opens as its own tab then.
+    const sidecar = hostLeaf ? this.availableSidecarLeaf(hostLeaf) : null;
+    const leaf = sidecar && sidecar.view.getViewType() !== KPLEX_PAPER_VIEW_TYPE ? sidecar : undefined;
+    void api.readText(text, title, { docUri, leaf });
+  }
+
   ontologyFieldsForRole(role: RelationshipRole): string[] {
     const h = this.settings.hierarchy;
     switch (role) {
@@ -3773,15 +3797,43 @@ export default class ExcaliBrainPlugin extends Plugin {
 
   /** Show Paper details in the host's owned sidecar leaf. Returns false when no sidecar is possible. */
   private async openPaperInSidecar(hostLeaf: WorkspaceLeaf, target: PaperTarget): Promise<boolean> {
-    const leaf = this.ensureSidecarLeaf(hostLeaf);
-    if (!leaf) return false;
-    // A paper view has no document identity; startup restore then prefers the group's visible tab.
-    this.settings.sidecarLastFilePath = "";
-    this.settings.sidecarLastUrl = "";
+    const sidecar = this.ensureSidecarLeaf(hostLeaf);
+    if (!sidecar) return false;
+    const leaf = this.paperPaneFor(target, sidecar);
+    if (leaf === sidecar) {
+      // The sidecar now hosts a paper view, which has no document identity; startup restore
+      // then prefers the group's visible tab. A paper that lands in its own pane leaves the
+      // sidecar's remembered document untouched.
+      this.settings.sidecarLastFilePath = "";
+      this.settings.sidecarLastUrl = "";
+    }
     await leaf.setViewState({ type: KPLEX_PAPER_VIEW_TYPE, state: { ...target }, active: false });
+    this.lastPaperDetailsLeaf = leaf;
     await this.saveSettings(false, false);
     this.notifySidecar();
     return true;
+  }
+
+  /**
+   * Paper panes never overwrite anything: the same paper reuses its pane, an empty sidecar
+   * hosts the first paper, and everything else — an occupied sidecar (document, reader or
+   * another paper) — keeps its content while the paper opens in a fresh split beside it.
+   */
+  private paperPaneFor(target: PaperTarget, sidecar: WorkspaceLeaf): WorkspaceLeaf {
+    const key = paperTargetKey(target);
+    const paperLeaves = this.app.workspace.getLeavesOfType(KPLEX_PAPER_VIEW_TYPE);
+    for (const leaf of paperLeaves) {
+      const shown = paperTargetFromState(leaf.getViewState().state);
+      if (shown && paperTargetKey(shown) === key) return leaf;
+    }
+    if (sidecar.getViewState().type === "empty") return sidecar;
+    const attachedPaperLeaf = paperLeaves.find((leaf) => this.leafIsAttached(leaf)) ?? null;
+    const newest = this.lastPaperDetailsLeaf
+      && this.leafIsAttached(this.lastPaperDetailsLeaf)
+      && this.lastPaperDetailsLeaf.view.getViewType() === KPLEX_PAPER_VIEW_TYPE
+      ? this.lastPaperDetailsLeaf
+      : null;
+    return this.app.workspace.createLeafBySplit(newest ?? attachedPaperLeaf ?? sidecar, "vertical", false);
   }
 
   /**

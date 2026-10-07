@@ -485,9 +485,19 @@ export class PaperDetailsPanel {
     const bar = block.createDiv({ cls: "kplex-paper-abstract-bar" });
     bar.createSpan({ cls: "kplex-paper-abstract-label", text: "Abstract" });
     const body = block.createDiv({ cls: "kplex-paper-abstract-body" });
+    // Appended last so the language toggle keeps its full width; reading falls back to the TL;DR.
+    const addSpeakButton = (): void => {
+      const speak = iconButton(bar, "volume-2", "Read abstract aloud", "kplex-paper-icon-only");
+      speak.addEventListener("click", () => {
+        const text = record.abstract || record.tldr || "";
+        const note = this.notePage();
+        this.plugin.readAloud(text, record.title, note?.file?.path);
+      });
+    };
 
     if (!record.abstract) {
       body.createDiv({ cls: "kplex-paper-muted", text: record.tldr ? `TL;DR: ${record.tldr}` : "No abstract is available for this paper." });
+      addSpeakButton();
       return;
     }
 
@@ -502,6 +512,7 @@ export class PaperDetailsPanel {
       button.addEventListener("click", () => this.setView(view));
       return [view, button] as const;
     });
+    addSpeakButton();
 
     const paint = (): void => {
       const view = this.view;

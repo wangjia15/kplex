@@ -120,6 +120,26 @@ export function plainInlineText(value: string): string {
     .trim();
 }
 
+/**
+ * The text a reading panel's read-aloud control speaks: for a content panel each quote with its
+ * comments, for a figures panel the captions. Structural types only, so the host-free test
+ * suite can exercise it without the scene graph.
+ */
+export function sectionPanelSpeechText(
+  content: { highlights: { text: string; comments: string[]; figure?: { caption: string } }[]; figures: { caption: string; alt: string }[] },
+  figuresPanel: boolean,
+): string {
+  const blocks = figuresPanel
+    ? content.figures.map((figure) => figure.caption || figure.alt)
+    : content.highlights.map((item) => {
+      const quote = item.text || item.figure?.caption || "";
+      const comments = item.comments.join("\n");
+      if (quote && comments) return `${quote}\n${comments}`;
+      return quote || comments;
+    });
+  return blocks.filter((block) => block.trim() !== "").join("\n\n");
+}
+
 function styleColor(attributes: string, properties: string[]): string | null {
   const style = attributes.match(/style\s*=\s*["']([^"']*)["']/i)?.[1] ?? "";
   for (const property of properties) {

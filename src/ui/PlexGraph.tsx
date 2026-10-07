@@ -2972,7 +2972,8 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
         })}
         {settings.graphDepth === 2 && expandedClusters.map(renderExpandedCluster)}
         {sectionContentOptions && (scene.sectionPanels ?? []).map((panel) => {
-          const content = layoutSectionExpansion?.sections.find((section) => section.id === panel.sectionId)?.content;
+          const section = layoutSectionExpansion?.sections.find((candidate) => candidate.id === panel.sectionId);
+          const content = section?.content;
           if (!content || !visibleNodePaths.has(panel.sectionPath)) return null;
           return <SectionContentPanel
             key={`section-panel:${panel.panelId}`}
@@ -2990,6 +2991,19 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
             onContextMenu={showSectionPanelMenu}
             theme={settings.sectionReadingTheme}
             onThemeMenu={showReadingThemeMenu}
+            onReadAloud={(text) => {
+              // panel.sectionPath is synthetic (`kplex-section:note.md:heading`); the backing
+              // note lives on the section's transient identity. No baseLine: a panel reads
+              // concatenated quotes, so exact line navigation cannot be promised.
+              const transient = section?.page.transient;
+              const sourcePath = transient?.kind === "section" ? transient.sourcePath : undefined;
+              const noteTitle = sourcePath?.split("/").pop()?.replace(/\.md$/, "");
+              const heading = section?.page.name;
+              const title = noteTitle && heading && heading !== noteTitle
+                ? `${noteTitle} — ${heading}`
+                : noteTitle ?? heading ?? "Section";
+              plugin.readAloud(text, title, sourcePath, hostLeaf);
+            }}
           />;
         })}
         {draggedBaseNode && renderNode(draggedBaseNode, renderedNodeMap.get(draggedBaseNode.page.path) ?? draggedBaseNode)}
@@ -3000,6 +3014,7 @@ export function PlexGraph({ plugin, index, settings, surface, hostLeaf, predicat
       key={card.id}
       plugin={plugin}
       card={card}
+      hostLeaf={hostLeaf}
       onPin={toggleAbstractPin}
       onClose={(id) => setAbstractCards((cards) => cards.filter((item) => item.id !== id))}
       onMove={(id, left, top) => setAbstractCards((cards) => cards.map((item) => item.id === id ? { ...item, left, top } : item))}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import type { WorkspaceLeaf } from "obsidian";
 import type ExcaliBrainPlugin from "../main";
 import type { AbstractPreview } from "../paper/obsidian/PaperReadingController";
 import type { GraphPage } from "../types";
@@ -19,9 +20,11 @@ export const ABSTRACT_CARD_WIDTH = 360;
  * closed and can be dragged by their header. Positions are viewport-relative (not canvas), so
  * panning or zooming the Plex does not move a pinned card.
  */
-export function AbstractCard({ plugin, card, onPin, onClose, onMove, onPointerEnter, onPointerLeave, onShowDetails }: {
+export function AbstractCard({ plugin, card, hostLeaf, onPin, onClose, onMove, onPointerEnter, onPointerLeave, onShowDetails }: {
   plugin: ExcaliBrainPlugin;
   card: AbstractCardState;
+  /** K-Plex leaf showing this card, so read-aloud can target its sidecar companion. */
+  hostLeaf?: WorkspaceLeaf;
   onPin: (id: string) => void;
   onClose: (id: string) => void;
   onMove: (id: string, left: number, top: number) => void;
@@ -96,6 +99,17 @@ export function AbstractCard({ plugin, card, onPin, onClose, onMove, onPointerEn
       <div className="kplex-abstract-card-actions">
         {isPaper && <button type="button" className="clickable-icon" aria-label="Paper details" onClick={() => onShowDetails(page)}>
           <ObsidianIcon name="book-open" size={14} />
+        </button>}
+        {preview?.text && <button
+          type="button"
+          className="clickable-icon"
+          aria-label="Read abstract aloud"
+          onClick={(event) => {
+            event.stopPropagation();
+            plugin.readAloud(preview.text, title, page.file?.path, hostLeaf);
+          }}
+        >
+          <ObsidianIcon name="volume-2" size={14} />
         </button>}
         <button
           type="button"

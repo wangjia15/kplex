@@ -95,6 +95,26 @@ try {
   assert.equal(extractSectionContent('<mark>[[Note|Text]]</mark>').highlights[0].linkTarget, undefined);
   assert.equal(extractSectionContent('<mark>[Text](https://example.com/paper.pdf#page=1)</mark>').highlights[0].linkTarget, undefined);
 
+  // Read-aloud text for a section reading panel: quotes with their comments, or figure captions.
+  const { sectionPanelSpeechText } = require(out);
+  const speechContent = {
+    highlights: [
+      { text: "First quote", comments: ["note one"], figure: undefined },
+      { text: "", comments: [], figure: { caption: "Fig 1 caption" } },
+      { text: "Second quote", comments: ["c1", "c2"], figure: undefined },
+    ],
+    figures: [
+      { caption: "", alt: "fallback alt" },
+      { caption: "Real caption", alt: "ignored" },
+    ],
+  };
+  assert.equal(
+    sectionPanelSpeechText(speechContent, false),
+    "First quote\nnote one\n\nFig 1 caption\n\nSecond quote\nc1\nc2",
+  );
+  assert.equal(sectionPanelSpeechText(speechContent, true), "fallback alt\n\nReal caption");
+  assert.equal(sectionPanelSpeechText({ highlights: [], figures: [] }, false), "");
+
   const nativeCallout = [
     '> [!PDF|note] [[paper.pdf#page=1&selection=87,0,144,23&color=note|paper, p.1]]',
     '> > Present in 3D scenes [31].',

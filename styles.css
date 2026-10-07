@@ -2918,6 +2918,7 @@ a.kplex-paper-row-title:hover {
 .kplex-paper-abstract-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--size-4-2);
   margin-bottom: var(--size-4-2);
 }
@@ -2934,6 +2935,7 @@ a.kplex-paper-row-title:hover {
 
 .kplex-paper-view-toggle {
   display: inline-flex;
+  flex-shrink: 0;
   border: var(--border-width) solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   overflow: hidden;
@@ -3642,6 +3644,32 @@ a.kplex-paper-row-title:hover {
   color: var(--text-normal);
 }
 
+.kplex-section-panel-read {
+  position: absolute;
+  top: 0;
+  right: 26px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.kplex-section-panel-read:hover:not(:disabled) {
+  color: var(--text-normal);
+}
+
+.kplex-section-panel-read:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Reading themes. They restyle surfaces and type only; line metrics stay the same so the
    layout estimate holds for every theme. */
 
@@ -3704,12 +3732,14 @@ a.kplex-paper-row-title:hover {
 }
 
 .kplex-reading-theme-night .kplex-section-panel-header,
-.kplex-reading-theme-night .kplex-section-panel-theme {
+.kplex-reading-theme-night .kplex-section-panel-theme,
+.kplex-reading-theme-night .kplex-section-panel-read {
   color: #8f8b80;
 }
 
 .kplex-reading-theme-night .kplex-section-panel-header:hover,
-.kplex-reading-theme-night .kplex-section-panel-theme:hover {
+.kplex-reading-theme-night .kplex-section-panel-theme:hover,
+.kplex-reading-theme-night .kplex-section-panel-read:hover:not(:disabled) {
   background: #252830;
   color: #e6e1d3;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { sectionPanelSpeechText } from "../index/SectionContent";
 import type { SectionContent, SectionFigure } from "../index/SectionExpansion";
 import type { PdfCropResolver } from "../index/PdfCropRenderer";
 import { FigureImage } from "./FigureImage";
@@ -21,7 +22,7 @@ const stopMouse = (event: ReactPointerEvent<HTMLElement>) => {
  * comments, and — as a branch of its own — the figures. Positions come from the scene (canvas
  * coordinates), so a panel pans and zooms with the Plex.
  */
-export function SectionContentPanel({ panel, content, crops, canvasScale, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onMove, onResize, onContextMenu, theme, onThemeMenu }: {
+export function SectionContentPanel({ panel, content, crops, canvasScale, onToggleCollapse, onOpenHighlight, onFigureEnter, onFigureLeave, onFigurePin, onMove, onResize, onContextMenu, theme, onThemeMenu, onReadAloud }: {
   panel: SectionPanel;
   content: SectionContent;
   crops: PdfCropResolver;
@@ -37,6 +38,8 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
   onContextMenu: (panelId: string, event: MouseEvent<HTMLDivElement>) => void;
   theme: SectionReadingTheme;
   onThemeMenu: (position: { x: number; y: number }) => void;
+  /** Speaks the panel's own text (quotes + comments, or figure captions) through obtts. */
+  onReadAloud: (text: string) => void;
 }) {
   const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
   const [draftOffset, setDraftOffset] = useState<{ dx: number; dy: number } | null>(null);
@@ -47,6 +50,7 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
   const figuresPanel = panel.kind === "figures";
   const highlights = figuresPanel ? [] : content.highlights;
   const figures = figuresPanel ? content.figures : [];
+  const speechText = sectionPanelSpeechText(content, figuresPanel);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // The Plex zooms on wheel; let a panel with overflowing content scroll instead.
@@ -139,6 +143,20 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
       }}
     >
       <ObsidianIcon name="palette" size={12} />
+    </button>
+    <button
+      type="button"
+      className="kplex-section-panel-read clickable-icon"
+      style={{ height: SECTION_PANEL.header }}
+      aria-label="Read panel aloud"
+      disabled={!speechText.trim()}
+      onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => event.stopPropagation()}
+      onClick={(event: MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        onReadAloud(speechText);
+      }}
+    >
+      <ObsidianIcon name="volume-2" size={12} />
     </button>
     {!panel.collapsed && <div ref={bodyRef} className="kplex-section-panel-body">
       {highlights.map((item, index) => {

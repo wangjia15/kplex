@@ -236,6 +236,7 @@ for (const file of [
   "src/types.ts",
   "src/util/perf.ts",
   "src/main.ts",
+  "src/readAloud.ts",
   "src/index/fieldParser.ts",
   "src/index/MetadataParser.ts",
   "src/index/RelationEvidence.ts",
@@ -378,7 +379,9 @@ for (const [path, name] of [
   ["src/ui/PaperReadingIntroModal.js", "PaperReadingIntroModal"],
   ["src/paper/obsidian/PaperReadingController.js", "PaperReadingController"],
 ]) writeRuntimeStub(path, `exports.${name} = class {};`);
-writeRuntimeStub("src/ui/PaperView.js", `exports.KPLEX_PAPER_VIEW_TYPE = "kplex-paper"; exports.PaperView = class {};`);
+writeRuntimeStub("src/ui/PaperView.js", `exports.KPLEX_PAPER_VIEW_TYPE = "kplex-paper"; exports.PaperView = class {};
+exports.paperTargetFromState = (s) => s && Array.isArray(s.ids) && s.ids.length ? { ids: s.ids, title: "", pagePath: null, origin: null } : null;`);
+writeRuntimeStub("src/ui/PaperDetailsPanel.js", `exports.paperTargetKey = (t) => (t.ids || []).map((i) => i.kind + ":" + i.value).join("|");`);
 writeRuntimeStub("src/ui/DeleteNodeModal.js", `exports.DeleteNodeConfirmationModal = class {}; exports.RemainingNodeReferencesModal = class {};`);
 writeRuntimeStub("src/ui/viewProfile.js", `
 exports.activeLayoutProfile = () => null;
@@ -2110,6 +2113,59 @@ try {
   assert(renameCoordinator.dirtyMarkdownPaths.has("Moved/New.md"), "A real content revision after rename must still use the incremental patch path");
   assert.deepEqual(rebuildReasons, ["metadata:changed"]);
 
+// ---------------------------------------------------------------------------
+// Paper pane allocation: opening paper details must never overwrite an occupied
+// sidecar (document or reader) or another paper; only an empty sidecar or an
+// existing same-paper pane is reused.
+// ---------------------------------------------------------------------------
+{
+  const { KPLEX_PAPER_VIEW_TYPE: PAPER_TYPE } = require(join(temp, "src/ui/PaperView.js"));
+  const makeLeaf = (viewType, state) => ({
+    view: { getViewType: () => viewType },
+    viewState: state,
+    getViewState() { return this.viewState; },
+  });
+  const docSidecar = makeLeaf("markdown", { type: "markdown", state: { file: "Notes/Paper A.md" } });
+  const emptySidecar = makeLeaf("empty", { type: "empty", state: {} });
+  const otherPaperLeaf = makeLeaf(PAPER_TYPE, { type: PAPER_TYPE, state: { ids: [{ kind: "doi", value: "10.9/other" }] } });
+  const samePaperLeaf = makeLeaf(PAPER_TYPE, { type: PAPER_TYPE, state: { ids: [{ kind: "doi", value: "10.1/x" }] } });
+  const target = { ids: [{ kind: "doi", value: "10.1/x" }], title: "D-FINE", pagePath: null, origin: null };
+  let splitAnchor = null;
+  const splits = [];
+  const paper = Object.create(ExcaliBrainPlugin.prototype);
+  paper.app = {
+    workspace: {
+      iterateAllLeaves: (visit) => { for (const leaf of paperLeaves) visit(leaf); },
+      getLeavesOfType: (type) => type === PAPER_TYPE ? [...paperLeaves] : [],
+      createLeafBySplit: (anchor) => { splitAnchor = anchor; const leaf = makeLeaf("empty", { type: "empty", state: {} }); splits.push(leaf); paperLeaves.push(leaf); return leaf; },
+    },
+  };
+  const allocate = (t, sidecar, leaves) => {
+    paperLeaves = leaves;
+    paper.lastPaperDetailsLeaf = null;
+    splitAnchor = null;
+    return paper.paperPaneFor(t, sidecar);
+  };
+  let paperLeaves = [];
+
+  // PA1 — the blocker: an occupied document sidecar is NOT reused for the first paper.
+  const fresh = allocate(target, docSidecar, []);
+  assert.ok(fresh !== docSidecar && splits.includes(fresh), "PA1: occupied sidecar gets a new split, document untouched");
+  assert.equal(splitAnchor, docSidecar, "PA1: the new pane splits off the sidecar");
+
+  // PA2 — an empty sidecar (freshly created) hosts the first paper.
+  assert.equal(allocate(target, emptySidecar, []), emptySidecar, "PA2: empty sidecar reused, no split");
+
+  // PA3 — an existing pane showing the same paper is reused.
+  assert.equal(allocate(target, docSidecar, [samePaperLeaf]), samePaperLeaf, "PA3: same paper reuses its pane");
+
+  // PA4 — a different paper already showing: new split anchored on that paper pane.
+  const beside = allocate({ ...target, ids: [{ kind: "doi", value: "10.2/y" }] }, docSidecar, [otherPaperLeaf]);
+  assert.ok(beside !== otherPaperLeaf && beside !== docSidecar, "PA4: further paper opens its own pane");
+  assert.equal(splitAnchor, otherPaperLeaf, "PA4: split anchors on the existing paper pane");
+
+  console.log("Paper pane allocation: assertions PA1–PA4 PASS");
+}
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P17 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");
@@ -2120,3 +2176,4 @@ try {
   index.destroy();
   rmSync(temp, { recursive: true, force: true });
 }
+
