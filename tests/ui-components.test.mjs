@@ -1325,7 +1325,7 @@ test("ActionButton rendered browser behavior", () => {
 function attachmentRenameBrowserEntry() {
   return `
 import {canDragNodeLink,startNodeLinkDrag,finishNodeLinkDrag} from ${JSON.stringify(join(root,"src/adapters/obsidian/nodeLinkDrag.ts"))};
-import React, { useId, useMemo } from "react";
+import React, { useId, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { alphaHexToCss, resolveNodeStyle, currentNodeColorStyle, nodePaint, nodePaintFallbacks } from ${JSON.stringify(join(root, "src/index/style.ts"))};
@@ -2135,7 +2135,7 @@ test("Native hotkey pills support disable, customize, restore, conflicts and rec
 /** Keep native compact titles separate from accessible naming without altering gate or preview ownership. */
 function nodeTooltipBrowserEntry() {
  return `
-import React, {useId} from 'react';
+import React, {useId,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 import {nodePaint,nodePaintFallbacks} from ${JSON.stringify(join(root,'src/index/style.ts'))};
@@ -2202,7 +2202,7 @@ test('nodes retain compact delayed titles and accessible names without a duplica
 /** Render the real gate markup across partial/cached/unavailable structural count states. */
 function structuralGateCountsBrowserEntry() {
  return `
-import React, {useId} from 'react';
+import React, {useId,useState} from 'react';
 import {flushSync} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 import {nodePaint,nodePaintFallbacks} from ${JSON.stringify(join(root,'src/index/style.ts'))};
@@ -2261,7 +2261,7 @@ test('tag and folder lateral gates show exact zero independently of partial hier
 /** Render the actual ThoughtNode text and geometry for long titles/aliases across independent density values. */
 function typographyLabelsBrowserEntry() {
   return `
-import React, { useId } from "react";
+import React, { useId, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { alphaHexToCss, nodePaint, nodePaintFallbacks } from ${JSON.stringify(join(root, "src/index/style.ts"))};
@@ -2359,7 +2359,7 @@ const page=path=>({path,name:path,file:{extension:'md'},aliases:[],tags:[],style
 const index={titleFor:p=>p.name,neighbourCount:()=>0,gateStats:()=>({}),neighbours:()=>[],visibleRelationshipsWithin:()=>[]};
 let layoutNeighborhood={center:page('Center.md'),parents:[],children:[{page:page('Child.md'),role:'child',relationType:1}],leftFriends:[],rightFriends:[],siblings:[]};
 let semanticRevision=0;
-const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,showCrossLinks=false,globalFiltering=false,centralEditorSize=undefined;
+const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,showCrossLinks=false,globalFiltering=false,centralEditorSize=undefined,sectionContentOptions=null,sectionSizes={};
 const profileSurface='tab',compiledGraphLenses={lenses:[],errors:[],usesFrontmatter:false},centerMode={embedCentralNode:false,centralNodeMarkdownMode:'source'};
 const plugin={settings:{baseNodeStyle:{fontSize:18,textColor:'#abcdef'},centralNodeStyle:{fontSize:30},baseLinkStyle:{},noteTypeStyles:{},tagNodeStyles:{},tagStyleList:[],hierarchyLinkStyles:{},graphLenses:[],
  compactingFactor:2,horizontalCompactingFactor:2,graphDepth:1,baseFontSize:12.4,compactView:false,maxItemCount:100,parentColumns:2,childColumns:5,parentMaxHeight:300,childMaxHeight:400,friendMaxHeight:350,siblingMaxHeight:250,siblingRelativeSize:50,minLinkLength:18,wrapNodeLabels:false},getViewSettings(){return {...this.settings}}};
@@ -2421,7 +2421,7 @@ const pages=new Map(['Center','A','B','C','D','E'].map(name=>[name,page(name)]))
 const pairs={A:[['B','child','ab'],['C','parent','ac'],['D','left','ad'],['E','right','ae']],B:[['A','parent','ab'],['C','left','unrelated']],C:[['A','child','ac'],['B','right','unrelated']],D:[['A','right','ad']],E:[['A','left','ae']]};
 const counters={layout:0,adjacency:0},buildScene=(...args)=>{counters.layout++;return realBuildScene(...args)};
 const index={titleFor:p=>p.name,neighbourCount:()=>0,gateStats:()=>({}),neighbours:()=>[],visibleRelationshipsWithin(source,targets){counters.adjacency++;return(pairs[source.path]??[]).filter(([path])=>targets.has(path)).map(([path,role,typeDefinition])=>({page:pages.get(path),role,typeDefinition,relationType:1,linkDirection:1}))}};
-const renderRevision=0,sectionExpansion=null;
+const renderRevision=0,sectionExpansion=null,sectionContentOptions=null,sectionSizes={};
 const settings={ontologyPairingVersion:1,hierarchy:{hidden:[],parents:[],children:[],leftFriends:[],rightFriends:[],previous:[],next:[],exclusions:[]},baseNodeStyle:{fontSize:18},centralNodeStyle:{fontSize:30},baseLinkStyle:{},hierarchyLinkStyles:{ab:{showLabel:true,fontSize:12,strokeWidth:3}},noteTypeStyles:{},tagNodeStyles:{},tagStyleList:[],compactingFactor:2,horizontalCompactingFactor:2,graphDepth:1,baseFontSize:12.4,maxItemCount:100,parentColumns:2,childColumns:5,parentMaxHeight:300,childMaxHeight:400,friendMaxHeight:350,siblingMaxHeight:250,siblingRelativeSize:50,minLinkLength:18};
 const layoutNeighborhood={center:pages.get('Center'),parents:[],children:['A','B','C','D','E'].map(path=>({page:pages.get(path),role:'child',relationType:1})),leftFriends:[],rightFriends:[],siblings:[]};
 const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,globalFiltering=false,centralEditorSize=undefined,neighborhood=layoutNeighborhood,activePath='Center',hostLeaf={};let semanticRevision=0;

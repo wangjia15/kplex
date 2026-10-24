@@ -44,7 +44,7 @@ export function parseBingResponse(text: string): string {
   const translation = asString(asRecord(asArray(first?.translations)[0])?.text);
   if (!translation) {
     const status = asRecord(body)?.statusCode;
-    throw new PaperServiceError(`Bing Translator returned no text${status ? ` (status ${String(status)})` : ""}.`);
+    throw new PaperServiceError(`Bing Translator returned no text${typeof status === "number" || typeof status === "string" ? ` (status ${status})` : ""}.`);
   }
   return translation;
 }

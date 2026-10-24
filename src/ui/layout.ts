@@ -1216,19 +1216,6 @@ export function buildSectionExpandedScene(
     node.wrapLabel = true;
     return node;
   };
-  // Rows of up to three above/below a card, spaced by their tallest node.
-  const rowsSpan = (nodes: PositionedNode[]): number => {
-    let span = 0;
-    for (let start = 0; start < nodes.length; start += 3) {
-      const rowHeight = Math.max(0, ...nodes.slice(start, start + 3).map((node) => node.height));
-      span += Math.max(relationRowStep, rowHeight + relationMinVerticalGap);
-    }
-    return span;
-  };
-  const lateralSpan = (nodes: PositionedNode[]): number => nodes.length > 1
-    ? (nodes.length - 1) * Math.max(relationLateralStep, Math.max(...nodes.map((node) => node.height)) + relationMinHorizontalGap)
-    : 0;
-
   const addRelationGroup = (sectionNode: PositionedNode, sectionId: string, nodes: PositionedNode[], items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2, clearanceHeight = sectionNode.height) => {
     const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
     const direction = role === "left" || role === "previous" || (settings.lateralArrangement === "left" && role === "right")

@@ -193,7 +193,8 @@ function sanitizeSectionSizes(value: unknown): Record<string, Record<string, Sec
         const offsets: Record<string, [number, number]> = {};
         for (const [target, offset] of Object.entries(size.nodeOffsets)) {
           if (!Array.isArray(offset) || offset.length !== 2) continue;
-          const [dx, dy] = offset;
+          const dx: unknown = offset[0];
+          const dy: unknown = offset[1];
           if (typeof dx !== "number" || typeof dy !== "number" || !Number.isFinite(dx) || !Number.isFinite(dy)) continue;
           if (Math.round(dx) || Math.round(dy)) offsets[target] = [Math.round(dx), Math.round(dy)];
         }

@@ -1,6 +1,6 @@
 /** Finite native-control boundary for real Chromium editor tests; installed types/native lanes remain authoritative. */
 export const nativeColorControls = `
-export const setIcon=()=>{}; export const setTooltip=()=>{}; export class SearchComponent{} export class ButtonComponent{}
+export const setIcon=()=>{}; export const setTooltip=()=>{}; export class SearchComponent{} export class SecretComponent{} export class ButtonComponent{}
 export const Platform={}; export const getIconIds=()=>[]; export class App{} export class Scope{} export class ExtraButtonComponent{}
 export class AbstractInputSuggest {constructor(app,input){this.app=app;this.input=input} setValue(value){this.input.value=value} close(){}}
 export class PluginSettingTab {update(){} constructor(app,plugin){this.app=app;this.plugin=plugin;this.containerEl=createDiv();document.body.append(this.containerEl)} hide(){}}

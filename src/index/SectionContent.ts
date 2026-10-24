@@ -236,7 +236,7 @@ function lineHighlights(line: string): Match[] {
     const start = match.index;
     push(start, start + match[0].length, line.slice(start, start + match[0].length).replace(/^<font\b[^>]*>|<\/font>$/gi, ""), color);
   }
-  for (const match of masked.matchAll(/==(?=\S)(.+?)(?<=\S)==/g)) {
+  for (const match of masked.matchAll(/==(\S(?:.*?\S)?)==/g)) {
     const start = match.index;
     push(start, start + match[0].length, line.slice(start + 2, start + match[0].length - 2), null);
   }

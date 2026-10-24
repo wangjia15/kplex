@@ -171,10 +171,10 @@ export class PaperReadingController {
     let result: AbstractPreview | null = null;
     const frontmatter = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
     if (frontmatter) {
-      const byName = new Map(Object.entries(frontmatter).map(([name, value]) => [normalizeFieldName(name), [name, value] as const]));
+      const byName = new Map(Object.entries(frontmatter).map(([name, value]) => [normalizeFieldName(name), [name, value as unknown] as const]));
       for (const wanted of parseFieldList(this.plugin.settings.paperAbstractFields)) {
         const entry = byName.get(normalizeFieldName(wanted));
-        const value = entry?.[1];
+        const value: unknown = entry?.[1];
         const text = typeof value === "string" ? value.trim() : Array.isArray(value) ? value.filter((item) => typeof item === "string").join("\n\n").trim() : "";
         if (text) {
           result = { text, source: entry?.[0] ?? wanted, translated: /[\u3400-\u9fff]/.test(text) };

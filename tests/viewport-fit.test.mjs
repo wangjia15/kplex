@@ -90,7 +90,7 @@ test('same-center navigation-origin changes retain outline expansion while genui
   };
   visit(source);assert(effect);
   const ctx={activePath:'Center.md',navigationOrigin:'follow',settings:{animationSpeed:1},transitionPath:{current:'Center.md'},sectionFoldCenter:{current:'Center.md'},
-    setSectionExpanded(){ctx.expanded=false},setSectionExpansion(){ctx.expansion=null},setExpandedSectionIds(ids){ctx.ids=ids}};
+    setSectionExpanded(){ctx.expanded=false},setSectionExpansion(){ctx.expansion=null},setExpandedSectionIds(ids){ctx.ids=ids},setCollapsedSectionPanels(panels){ctx.collapsedPanels=panels}};
   const js=ts.transpileModule(`const effect=${effect.arguments[0].getText(source)};const deps=${effect.arguments[1].getText(source)};`,{compilerOptions:{target:ts.ScriptTarget.ES2021}}).outputText;
   let previous;
   /** Run only when the production effect's actual dependency values change. */
