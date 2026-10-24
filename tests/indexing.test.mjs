@@ -1,9 +1,22 @@
+import {runStartupAdmission} from './support/startupAdmission.mjs';
+import {runStartupSourceConvergence} from './support/startupSourceConvergence.mjs';
+/**
+ * Exercises compiled production indexing, persistence, parser, settings and scene workflows against
+ * finite Vault/Obsidian doubles. The archived compatibility oracle remains intact; only approved
+ * product deltas are overlaid explicitly. Temporary emitted modules are retired in cleanup; this
+ * fixture does not substitute for real Obsidian/native or physical-device acceptance.
+ */
 import assert from "node:assert/strict";
+import { legacyGraphCheckpointWriter } from "./support/legacyGraphCheckpointWriter.mjs";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runSettingsIndependence } from "./support/settingsIndependence.mjs";
+import { applyDefaultDateRoleFixture } from "./support/dateRoleFixture.mjs";
+import { runSectionProjectionCases } from "./support/sectionProjection.mjs";
+import { canonicalGraph, canonicalNeighborhood, canonicalPair, canonicalScene } from "./support/canonicalGraph.mjs";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -15,8 +28,9 @@ const temp = mkdtempSync(join(tmpdir(), "kplex-index-test-"));
 // managed leaf, so the implementation must never adopt an arbitrary adjacent/pinned user tab.
 const mainSource = readFileSync(join(root, "src/main.ts"), "utf8");
 
-const appSource = readFileSync(join(root, "src/ui/App.tsx"), "utf8");
+const appSource = readFileSync(join(root, "src/ui/App.tsx"), "utf8").replace(/\r\n/g, "\n");
 const newRelatedSource = readFileSync(join(root, "src/ui/NewRelatedNoteModal.ts"), "utf8");
+const draggableDialogSource = readFileSync(join(root, "src/ui/components/DraggableDialog.ts"), "utf8");
 const ghostModalSource = readFileSync(join(root, "src/ui/MaterializeGhostModal.ts"), "utf8");
 const plexGraphSource = readFileSync(join(root, "src/ui/PlexGraph.tsx"), "utf8");
 const deleteNodeModalSource = readFileSync(join(root, "src/ui/DeleteNodeModal.ts"), "utf8");
@@ -25,21 +39,118 @@ const thoughtNodeSource = readFileSync(join(root, "src/ui/ThoughtNode.tsx"), "ut
 const plexFilterSource = readFileSync(join(root, "src/ui/PlexFilter.tsx"), "utf8");
 const simpleFilterSource = readFileSync(join(root, "src/lens/SimplePlexFilter.ts"), "utf8");
 const longPressTooltipSource = readFileSync(join(root, "src/ui/LongPressTooltip.ts"), "utf8");
-assert(newRelatedSource.includes('"aria-label": "Create placeholder node"'), "Create-related UI must offer a placeholder-only action");
-assert(newRelatedSource.includes("plugin.createPlaceholderRelatedPage(origin, role"), "Placeholder action must create only a relationship-backed virtual node");
-assert(newRelatedSource.includes("void createNew(defaultCreateType)"), "Ctrl/Cmd+Enter must keep using the shared Markdown/Excalidraw default rather than the placeholder action");
+const graphBuilderSource = readFileSync(join(root, "src/index/GraphBuilder.ts"), "utf8");
+const graphIndexSource = readFileSync(join(root, "src/index/GraphIndex.ts"), "utf8");
+const infoBubbleSource = readFileSync(join(root, "src/ui/components/InfoBubble.tsx"), "utf8");
+assert(graphBuilderSource.includes("path: file.path, mtime: file.stat.mtime, size: file.stat.size"), "Patch/full-build revision fences must capture the source path as well as stat data");
+assert(graphBuilderSource.includes("this.app.vault.getFileByPath(revision.path) === file"), "Awaited graph work must reject renamed/deleted TFile identities before publication");
+assert(graphBuilderSource.includes("publishFileCommit?: PatchFilePublisher"), "Incremental publication must expose one explicit synchronous per-file commit contract");
+assert(graphIndexSource.includes("private publishIncrementalFile: PatchFilePublisher"), "GraphIndex must own the coherent graph/fingerprint/search/cache observer boundary");
+assert(graphBuilderSource.includes("async buildStructuralBaseline()"), "Cold startup must have a low-cost structure/link baseline before Markdown ingestion");
+assert(graphIndexSource.includes("async rebuildProgressively("), "GraphIndex must own progressive cold-start publication");
+assert(mainSource.includes("this.index.rebuildProgressively(this.startupGraphSeedPaths()"), "Initial cold startup must use the progressive index path");
+assert(mainSource.includes('this.performRebuild(false, false, "startup:initial-index", true)'), "Cold startup must not accidentally set the force flag that bypasses progressive publication");
+assert(mainSource.includes("this.index.size > 0 && !structuralDirty && this.dirtyMarkdownPaths.size === 0"), "An empty cold index must not take the clean-index early return");
+const startupSeedSource = mainSource.slice(mainSource.indexOf("  private startupGraphSeedPaths()"), mainSource.indexOf("  /** Resolve a missing center", mainSource.indexOf("  private startupGraphSeedPaths()")));
+assert(startupSeedSource.indexOf("this.settings.lastActivePath") < startupSeedSource.indexOf("this.app.workspace.getActiveFile()"), "Warm/cold previews must prioritize the persisted K-Plex center over transient Obsidian startup focus");
+assert(appSource.includes('translate("index.incompleteBubble")'), "Startup indexing guidance must be localized and anchored from the K-Plex shell");
+assert(appSource.includes("setShowStartupIndexBubble(false)"), "Ready startup must clear bubble state so an ordinary later update cannot reopen it");
+assert(appSource.includes('type="button"') && appSource.includes("aria-expanded={open}"), "The index status marker must be a semantic interactive control for click/touch and keyboard access");
+assert(appSource.includes("onMouseEnter={onHoverStart}") && appSource.includes("onDoubleClick=") && appSource.includes('taps.current.complete("index-status"'), "Index status retains hover hints and opens its summary from double-click/double-tap");
+assert(mainSource.includes('this.translator("index.statusIndexingProgress", { indexed: indexedFiles, total: totalFiles })'), "Progressive indexing status must show localized indexed-file progress");
+assert(mainSource.includes("this.index.indexedMarkdownFileCount()"), "Index status progress must come from published Markdown sources rather than graph node count");
+assert(mainSource.includes("this.settings.startupIndexInfoBubbleSeen = true") && mainSource.includes("void this.saveSettings(false, false)"), "Startup indexing guidance must persist its one-time seen state when claimed");
+assert(appSource.includes('!plugin.index.isOnDemandMode() && ["indexing", "saving-cache", "updating"].includes(indexStatus.phase)')
+  && appSource.includes('translate("index.filesIndexed", { indexed: indexStatus.indexedFiles, total: indexStatus.totalFiles })')
+  && appSource.includes("indexStatus.label"), "Full-index progress must remain visible, but on-demand mode must not show the misleading published-files/whole-vault ratio");
+// Exercise the production hook's notification/visibility behavior without loading the full Obsidian UI.
+// It previously retained "Preparing local graph" after the host had reached "Local graph ready"
+// when a readiness event arrived before effect subscription or while native leaf geometry was hidden.
+{
+  const appModule = ts.createSourceFile("App.tsx", appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const hook = appModule.statements.find(/** Locate the real hook independently of neighboring documentation. */ node => ts.isFunctionDeclaration(node) && node.name?.text === "useIndexStatus");
+  assert(hook, "Locate the mounted index-status subscription hook");
+  const hookJs = ts.transpileModule(hook.getText(appModule), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText;
+  const pending = { coordinator: new Set(), index: new Set(), presentation: new Set(), visibility: new Set() };
+  const subscribe = (channel) => (listener) => {
+    pending[channel].add(listener);
+    return () => { pending[channel].delete(listener); };
+  };
+  const emit = (channel) => { for (const callback of pending[channel]) callback(); };
+  const preparing = { upToDate: false, phase: "updating", label: "Preparing local graph", indexedFiles: 4, totalFiles: 73 };
+  const ready = { ...preparing, upToDate: true, phase: "ready", label: "Local graph ready" };
+  let live = preparing;
+  let visible = false;
+  let displayed;
+  let commits = 0;
+  let installEffect;
+  const useState = (initial) => {
+    displayed ??= initial();
+    return [displayed, (value) => { displayed = typeof value === "function" ? value(displayed) : value; commits += 1; }];
+  };
+  const useRef = (initial) => ({ current: initial });
+  const useEffect = (effect) => { installEffect = effect; };
+  const useIndexStatusUnderTest = new Function("useState", "useRef", "useEffect", `${hookJs}\nreturn useIndexStatus;`)(useState, useRef, useEffect);
+  const plugin = {
+    getIndexStatus: () => live,
+    isKplexLeafVisible: () => visible,
+    subscribeIndexStatus: subscribe("coordinator"),
+    subscribeKplexVisibility: subscribe("visibility"),
+    index: { subscribe: subscribe("index"), subscribePresentation: subscribe("presentation") },
+  };
+  assert.deepEqual(useIndexStatusUnderTest(plugin, {}), preparing);
+  live = ready; // The initial asynchronous build finishes between render and subscription.
+  const cleanup = installEffect();
+  assert.equal(displayed.label, "Local graph ready", "Mount subscription must catch a completed status without another host notification");
+  assert.equal(commits, 1);
+  live = { ...ready, label: "Loading URL titles" };
+  emit("index");
+  assert.equal(commits, 1, "Hidden ready surfaces must not rerender for frequent optional URL publications");
+  live = preparing;
+  emit("coordinator");
+  assert.equal(commits, 1, "Hidden intermediate progress must stay throttled");
+  visible = true;
+  emit("visibility");
+  assert.equal(displayed.label, "Preparing local graph", "A revealed surface must catch up with current progress");
+  live = ready;
+  visible = false; // Obsidian can temporarily report hidden geometry during a native view transition.
+  emit("coordinator");
+  assert.equal(displayed.label, "Local graph ready", "Terminal readiness must clear stale preparation even when geometry is not settled");
+  emit("presentation");
+  assert.equal(commits, 3, "Identical and hidden ready notifications must not enqueue additional renders");
+  cleanup();
+  for (const [channel, listeners] of Object.entries(pending)) {
+    assert.equal(listeners.size, 0, `Index-status hook must release ${channel} listeners`);
+  }
+}
+assert(infoBubbleSource.includes("onAdvance?: () => void"), "Reusable info bubbles must expose caller-owned sequence advancement for future onboarding/help flows");
+assert(infoBubbleSource.includes("dismissLabel?: string"), "Informational status bubbles must be able to omit an unnecessary action row");
+assert(newRelatedSource.includes('"aria-label": plugin.translator("addRelated.createPlaceholder")'), "Create-related UI must offer a localized placeholder-only action");
+assert(newRelatedSource.includes("plugin.createPlaceholderRelatedPage(refreshCapturedPage(plugin, origin), role"), "Placeholder action must create only a relationship-backed virtual node");
+assert(newRelatedSource.includes("void createNew(kind ?? defaultCreateType, intent)"), "Ctrl/Cmd+Enter must keep using the shared Markdown/Excalidraw default rather than the placeholder action");
+assert(newRelatedSource.includes('if (environment.device === "desktop")'), "Add-related drag affordance must stay desktop-only so phone/tablet modal policy remains unchanged");
+assert(newRelatedSource.includes("enableDraggableDialog({ modalEl: this.modalEl, handleEl: this.titleEl })"), "Add-related must drag through the native modal title shell rather than portable form content");
+assert(newRelatedSource.includes("this.releaseDesktopDrag?.()"), "Add-related modal close must release draggable shell resources");
+assert(draggableDialogSource.includes('ownerDocument.addEventListener("pointermove", onPointerMove, true)'), "Dialog drag must capture active pointer moves in the owning document before the Plex can pan");
+assert(draggableDialogSource.includes('ownerWindow.addEventListener("pagehide", cleanup)'), "Dialog drag must clean itself up when its owning desktop/pop-out window tears down");
 assert(ghostModalSource.includes('this.scope.register(["Mod"], "Enter"'), "Ghost materialization must support the same Ctrl/Cmd+Enter default action as create-related");
-assert(ghostModalSource.includes('setName("Location")'), "Ambiguous ghost destinations must expose a location dropdown");
-assert(ghostModalSource.includes('setButtonText("Excalidraw")'), "Ghost materialization must offer Excalidraw when the integration is available");
+assert(ghostModalSource.includes('setName(this.translate("folderPicker.label"))') && ghostModalSource.includes('createElement(MaterializationFolderInput') && ghostModalSource.includes('setClass("kplex-materialize-folder-row")'), "Ghost destinations must reuse the localized full-width folder field");
+assert(!ghostModalSource.includes('"ghost.locationConflictHelp"') && !ghostModalSource.includes('"folderPicker.help"'), "The requested compact folder row must not restore the removed guidance");
+assert(ghostModalSource.includes('setButtonText(this.translate("common.excalidraw"))'), "Ghost materialization must offer localized Excalidraw copy when the integration is available");
 assert(!appSource.includes('void plugin.openSidecar(hostLeaf, page);'), "React mount must not create a sidecar during startup restore; plugin-level restore owns re-association");
 assert(appSource.includes("plugin.isStartupInitializing() && plugin.settings.lastActivePath"), "A restored K-Plex view must keep its persisted center while Obsidian startup tab ordering is unstable");
-assert(appSource.includes('setTitle("Show linked/pinned tab")'), "The pin/link menu must provide an explicit way to reveal the linked document tab");
-assert(appSource.includes("plugin.showLinkedDocumentLeaf()"), "Show linked/pinned tab must reveal the actual resolved sync target");
+assert(appSource.includes('getDraggedFile(plugin.app)') && appSource.includes('onDragOver={handlePlexDragOver}') && appSource.includes('onDrop={handlePlexDrop}'), "K-Plex surfaces must accept supported Obsidian File Explorer file drops");
+assert(appSource.includes('pendingFileExplorerDropRef.current = file') && appSource.includes('activatePendingFileExplorerDrop'), "A dropped note that is not indexed yet must activate when partial indexing publishes it");
+assert(appSource.includes("pendingFileExplorerDropRef.current = null;\n    activePathRef.current = target.path"), "An explicit navigation must supersede an older pending File Explorer drop");
+assert(appSource.includes('setTitle(translate("app.showLinkedTab"))'), "The pin/link menu must provide an explicit localized way to reveal the linked document tab");
+assert(appSource.includes("plugin.showLinkedDocumentLeaf(hostLeaf)"), "Show linked/pinned tab must reveal this Plex's resolved sync target");
 const ensureSidecarStart = mainSource.indexOf("  private ensureSidecarLeaf(");
 const ensureSidecarEnd = mainSource.indexOf("  async openMarkdownInSidecar(", ensureSidecarStart);
 const ensureSidecarSource = mainSource.slice(ensureSidecarStart, ensureSidecarEnd);
 assert(ensureSidecarStart >= 0 && ensureSidecarEnd > ensureSidecarStart);
-assert(ensureSidecarSource.includes("createSidecarLeaf(hostLeaf, this.settings.sidecarPosition)"), "Sidecar must create a dedicated companion leaf");
+assert(ensureSidecarSource.includes("createSidecarLeaf(hostLeaf, session.preferences.sidecarPosition)"), "Sidecar must create a dedicated companion on this Plex's chosen side");
 assert(!ensureSidecarSource.includes("findVisibleAdjacentDocumentLeaf"), "Sidecar must not adopt an arbitrary adjacent document leaf");
 assert(!ensureSidecarSource.includes("leaf = this.linkedDocumentLeaf"), "Sidecar must not adopt a separately pinned document leaf");
 const sidecarPositionStart = mainSource.indexOf("  getSidecarPosition(");
@@ -62,32 +173,35 @@ const settingDefinitionsStart = settingsSource.indexOf("  getSettingDefinitions(
 const settingDefinitionsEnd = settingsSource.indexOf("  getControlValue(", settingDefinitionsStart);
 const settingDefinitionsSource = settingsSource.slice(settingDefinitionsStart, settingDefinitionsEnd);
 assert(!settingDefinitionsSource.includes('name: "Note tab link"'), "Live note-tab synchronization state must not be duplicated in Settings");
-assert(settingDefinitionsSource.includes('name: "Sibling relative size (%)"'));
-assert(settingDefinitionsSource.includes('name: "Cross-link opacity (%)"'));
-assert(settingDefinitionsSource.includes('name: "Node styling"'), "Node styling must be a Visual styling subpage");
-assert(settingDefinitionsSource.includes('name: "Link styling"'), "Link styling must be a Visual styling subpage");
-assert(settingDefinitionsSource.includes('name: "Style property"'), "K-Plex must expose one clear property-value style selector");
-assert(settingDefinitionsSource.includes('name: "Name fields"'), "Display-name field precedence must be configurable");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.sibling.relative.size")'));
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.cross.link.opacity")'));
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.node.styling")'), "Node styling must be a localized Visual styling subpage");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.link.styling")'), "Link styling must be a localized Visual styling subpage");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.style.property")'), "K-Plex must expose one clear localized property-value style selector");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.name.fields")'), "Display-name field precedence must be configurable through localized UI");
 assert(settingsSource.includes('nameFields: "aliases"'), "Aliases must remain the default display-name field for backward compatibility");
 assert(!settingDefinitionsSource.includes('name: "Primary tag field"'), "Legacy primaryTagField must remain migration-only instead of appearing as a second style selector");
-assert(settingDefinitionsSource.includes('name: "Property-value styles"'), "Large node-style collections must open through the searchable manager");
-assert(settingDefinitionsSource.includes('name: "Relationship-specific styles"'), "Relationship-specific link appearance must open through the searchable manager");
+assert(settingDefinitionsSource.includes('name: translate("styles.nodeTitle")'), "Combined property and imported-tag styles must open through the localized searchable manager");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.relationship.specific.styles")'), "Relationship-specific link appearance must open through the localized searchable manager");
 assert(!settingDefinitionsSource.includes('heading: "Connector styles by ontology"'), "Ontology must not expand one connector-style row per relationship field");
-const ontologyPageStart = settingDefinitionsSource.indexOf('name: "Ontology"');
-const visualStylingPageStart = settingDefinitionsSource.indexOf('name: "Visual styling"');
+const ontologyPageStart = settingDefinitionsSource.indexOf('name: translate("settings.ui.ontology")');
+const visualStylingPageStart = settingDefinitionsSource.indexOf('name: translate("settings.ui.visual.styling")');
 assert(ontologyPageStart >= 0 && visualStylingPageStart > ontologyPageStart);
 const ontologyPageSource = settingDefinitionsSource.slice(ontologyPageStart, visualStylingPageStart);
-assert(!ontologyPageSource.includes('Relationship-specific styles'), "Ontology semantics and visual link styling must stay separate");
-assert(settingsSource.includes('text: "Custom styles"'), "Relationship link styles must default to a compact custom-only view");
-assert(settingsSource.includes('placeholder: "Search relationship properties…"'), "Ontology link styles must be searchable");
-assert(settingsSource.includes('placeholder: "Search node styles…"'), "Property-value node styles must be searchable");
+assert(!ontologyPageSource.includes('settings.ui.relationship.specific.styles'), "Ontology semantics and visual link styling must stay separate");
+assert(settingsSource.includes('text: this.translate("styles.customStyles")'), "Relationship link styles must default to a compact localized custom-only view");
+assert(settingsSource.includes('placeholder: this.translate("styles.searchRelationshipPlaceholder")'), "Ontology link styles must use a localized search placeholder");
+assert(settingsSource.includes('placeholder: this.translate("styles.searchNodePlaceholder")'), "Property-value node styles must use a localized search placeholder");
 assert(settingsSource.includes("class NodeStyleValueSuggest extends AbstractInputSuggest"), "Node style values must use an Obsidian input suggester");
 assert(settingsSource.includes("getIconIds()"), "Lucide icon names must come from Obsidian's live icon registry");
 assert(settingsSource.includes('private displayScope: "custom" | "all"'), "Ontology style filtering must not shadow Modal.scope");
-assert(settingDefinitionsSource.includes('name: "Discovered fields"'), "Ontology discovery must live on a compact subpage");
-assert(settingDefinitionsSource.includes('name: "Review unassigned fields"'), "Unassigned ontology fields must open in a searchable manager");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.discovered.fields")'), "Ontology discovery must live on a localized compact subpage");
+assert(settingDefinitionsSource.includes('name: translate("settings.ui.review.unassigned.fields")'), "Unassigned ontology fields must open in a localized searchable manager");
 assert(!settingDefinitionsSource.includes('occurrence · assign this discovered property'), "Settings must not dump every unassigned field into the page");
-assert(settingsSource.includes('class UnassignedOntologyManagerModal'), "Unassigned ontology fields need a dedicated manager");
+const ontologyManagerSource=readFileSync(join(root,"src/ui/OntologyManagerModal.ts"),"utf8");
+assert(settingsSource.includes('this.openOntologyManager("unassigned")'), "Discovered fields must route to the unified Unassigned filter");
+assert(ontologyManagerSource.includes('new StyleManagerList(')&&ontologyManagerSource.includes('unassignedOntologyFields()'), "The unified manager must reuse list mechanics and existing discovery inventory");
+assert(!ontologyPageSource.includes('type: "textarea"'), "Primary ontology configuration must use the structured shared manager/editor");
 assert(!settingsSource.includes('instead of expanding the entire collection'), "Settings UI must not contain implementation-facing copy");
 assert(settingsSource.includes('kplex-style-manager-modal'), "Style managers need bounded responsive modal styling");
 
@@ -95,7 +209,7 @@ const moveSidecarStart = mainSource.indexOf("  async moveSidecar(");
 const moveSidecarEnd = mainSource.indexOf("  async syncSidecarToPage(", moveSidecarStart);
 const moveSidecarSource = mainSource.slice(moveSidecarStart, moveSidecarEnd);
 assert(moveSidecarSource.includes("const replacement = this.createSidecarLeaf(hostLeaf, position)"), "Moving a sidecar must create the replacement before removing the old companion");
-assert(moveSidecarSource.indexOf("this.sidecarLeaves.set(hostLeaf, replacement)") < moveSidecarSource.indexOf("previousSidecar.detach()"), "Replacement ownership must be established before the old sidecar is detached");
+assert(moveSidecarSource.indexOf("this.setSidecarOwner(hostLeaf, replacement)") < moveSidecarSource.indexOf("previousSidecar.detach()"), "Replacement ownership must be established before the old sidecar is detached");
 assert(!moveSidecarSource.includes("closeSidecar(hostLeaf, false)"), "Moving a sidecar must not collapse the old split before the replacement exists");
 assert(mainSource.includes("private sidecarFootprint("), "Sidecar moves must measure the combined K-Plex + sidecar workspace footprint");
 assert(mainSource.includes("getBoundingClientRect()"), "Sidecar footprint preservation must use settled workspace geometry");
@@ -107,7 +221,59 @@ assert(mainSource.includes("restorePersistedSidecar"), "Persisted sidecar intent
 assert(mainSource.includes("restoredSidecarCandidate"), "Startup restore should re-associate a plausible native companion instead of duplicating it");
 assert(mainSource.includes("leaf.getViewState()"), "Startup sidecar matching must work with Obsidian DeferredView state");
 assert(mainSource.includes("private startupInitializing = true"), "Startup needs a short session-only guard against transient most-recent-tab state");
-assert(mainSource.includes("if (this.startupInitializing) return false;"), "Normal note-tab following must be suppressed until startup re-association finishes");
+const activeLeafChangeStart = mainSource.indexOf('this.registerEvent(this.app.workspace.on("active-leaf-change"');
+const activeLeafChangeEnd = mainSource.indexOf('this.registerEvent(this.app.workspace.on("layout-change"', activeLeafChangeStart);
+const activeLeafChangeSource = mainSource.slice(activeLeafChangeStart, activeLeafChangeEnd);
+assert(activeLeafChangeSource.includes("this.rememberLeafActivation(leaf)"), "Every active-leaf change must be appended to K-Plex's shallow navigation history");
+assert(!activeLeafChangeSource.includes("if (!this.startupInitializing)"), "Leaf-history capture must not be disabled by the startup sidecar guard");
+assert(mainSource.includes("private recentLeafHistory: WorkspaceLeaf[] = []"), "Recent-tab sync needs explicit leaf activation history independent of Obsidian's current active leaf");
+assert(mainSource.includes("const RECENT_LEAF_HISTORY_LIMIT = 20"), "Leaf navigation history must stay shallow and bounded");
+const loadedFileStart = mainSource.indexOf("  private loadedFileForLeaf(");
+const loadedFileEnd = mainSource.indexOf("  /** Best-effort Web Viewer identity.", loadedFileStart);
+const loadedFileSource = mainSource.slice(loadedFileStart, loadedFileEnd);
+assert(loadedFileSource.includes('"file" in leaf.view'), "File resolution must accept any materialized Obsidian view exposing a file, not only MarkdownView");
+assert(loadedFileSource.includes("file instanceof TFile"), "Leaf resolution must accept real vault files including attachments and Bases files");
+const rememberActivatedStart = mainSource.indexOf("  private rememberLeafActivation(");
+const rememberActivatedEnd = mainSource.indexOf("  private rememberDocumentLeaf(", rememberActivatedStart);
+const rememberActivatedSource = mainSource.slice(rememberActivatedStart, rememberActivatedEnd);
+assert(rememberActivatedSource.includes("this.recentLeafHistory.push(leaf)"), "Leaf activations must be stored in chronological order");
+assert(!rememberActivatedSource.includes("loadedFileForLeaf"), "Activation capture must not race view materialization by requiring a file during active-leaf-change");
+assert(!rememberActivatedSource.includes("webViewerUrlForLeaf"), "Activation capture must store the leaf first and defer Web Viewer qualification until resolution");
+assert(!rememberActivatedSource.includes("filter((candidate)"), "Activation history must preserve repeated navigation instead of de-duplicating leaves");
+assert(!rememberActivatedSource.includes("leafIsVisible"), "Activation history must not depend on same-group tab visibility");
+const webViewerStart = mainSource.indexOf("  private webViewerUrlForLeaf(");
+const webViewerEnd = mainSource.indexOf("  /** Record every active leaf change", webViewerStart);
+const webViewerSource = mainSource.slice(webViewerStart, webViewerEnd);
+assert(webViewerSource.includes('viewState.type !== "webviewer"'), "Web Viewer resolution must use the host's webviewer view-state identity");
+assert(webViewerSource.includes("state.url"), "Web Viewer resolution must read the current URL when present");
+const pruneRecentHistoryStart = mainSource.indexOf("  private pruneRecentLeafHistory(");
+const pruneRecentHistoryEnd = mainSource.indexOf("  private validateLinkedDocumentLeaf(", pruneRecentHistoryStart);
+const pruneRecentHistorySource = mainSource.slice(pruneRecentHistoryStart, pruneRecentHistoryEnd);
+assert(pruneRecentHistorySource.includes("getLeavesOfType(type)"), "Leaf-history validation must include background siblings in a tab group");
+assert(!pruneRecentHistorySource.includes("iterateAllLeaves"), "Leaf-history validation must not drop background siblings omitted by workspace iteration");
+assert(pruneRecentHistorySource.includes("attached.has(leaf)"), "Closed leaves must be removed without reordering surviving activation history");
+const attachedCheckSource = mainSource.slice(mainSource.indexOf("  private leafIsAttached("), mainSource.indexOf("  private leafGroupElement("));
+assert(attachedCheckSource.includes("getLeavesOfType(leaf.getViewState().type).includes(leaf)"), "Leaf attachment checks must retain background tabs in the same group");
+const findRecentDocumentStart = mainSource.indexOf("  private findRecentDocumentLeaf(");
+const findRecentDocumentEnd = mainSource.indexOf("  private fileForLeaf(", findRecentDocumentStart);
+const findRecentDocumentSource = mainSource.slice(findRecentDocumentStart, findRecentDocumentEnd);
+assert(findRecentDocumentSource.indexOf("for (let index = this.recentLeafHistory.length - 1; index >= 0; index -= 1)") < findRecentDocumentSource.indexOf("this.app.workspace.getMostRecentLeaf()"), "File-leaf resolution must walk activation history newest-to-oldest before Obsidian fallbacks");
+const historyResolverSource = findRecentDocumentSource.slice(findRecentDocumentSource.indexOf("for (let index = this.recentLeafHistory.length - 1"), findRecentDocumentSource.indexOf("if (eligible((session?.lastDocumentLeaf"));
+assert(historyResolverSource.includes("this.fileForLeaf(leaf)"), "File history must qualify each historical leaf at resolution time");
+assert(!historyResolverSource.includes("leafIsVisible"), "A previously active file tab remains valid while hidden behind K-Plex in the same tab group");
+const indexedNavigationStart = mainSource.indexOf("  private findRecentIndexedNavigationTarget(");
+const indexedNavigationEnd = mainSource.indexOf("  /** Find an existing workspace leaf", indexedNavigationStart);
+const indexedNavigationSource = mainSource.slice(indexedNavigationStart, indexedNavigationEnd);
+assert(indexedNavigationSource.includes("for (let index = this.recentLeafHistory.length - 1; index >= 0; index -= 1)"), "Pulling K-Plex from a tab must walk exact activation history newest-to-oldest");
+assert(indexedNavigationSource.includes("const file = this.fileForLeaf(leaf)"), "Any indexed vault file type may become the K-Plex center");
+assert(indexedNavigationSource.includes("this.indexedUrlPathForLeaf(leaf)"), "An indexed Web Viewer URL may become the K-Plex center");
+assert(indexedNavigationSource.includes("if (hasActivationHistory) return null"), "Recorded activation history must not fall through to workspace order and select the first tab in a group");
+const syncRecentStart = mainSource.indexOf("  async syncKplexWithMostRecentTab(");
+const syncRecentEnd = mainSource.indexOf("  async showPageInDocumentLeaf(", syncRecentStart);
+const syncRecentSource = mainSource.slice(syncRecentStart, syncRecentEnd);
+assert(syncRecentSource.includes("this.findRecentIndexedNavigationTarget(hostLeaf)"), "Sync K-Plex from recent tab must use the owner-scoped chronological file/URL resolver");
+assert(syncRecentSource.includes("this.notifyNavigation(target.path, hostLeaf)"), "Resolved file and URL targets must use the owner-scoped graph-navigation path");
+assert(mainSource.includes("if (!session || this.startupInitializing || !this.syncLeafToKplexEnabled(hostLeaf)) return false;"), "Normal note-tab following must be suppressed until startup re-association finishes");
 assert(mainSource.includes("this.sidecarMovingHosts.has(host) || this.startupInitializing"), "Transient startup geometry must not release a just-restored sidecar before its split settles");
 assert(mainSource.includes("sidecarLastFilePath"), "Sidecar content identity must be persisted independently of the graph center");
 assert(mainSource.includes("leafMatchesPersistedSidecarTarget"), "Startup re-association must prefer the sidecar's actual persisted document/URL");
@@ -119,10 +285,11 @@ const restoreSidecarSource = mainSource.slice(restoreSidecarStart, restoreSideca
 assert(!restoreSidecarSource.includes("openSidecar(hostLeaf, page)"), "Startup restore must never create an extra workspace pane when native restoration cannot be identified safely");
 assert(restoreSidecarSource.includes("waitForWorkspaceLayout(hostLeaf, 3)"), "Startup restore should wait for native split geometry before matching the companion");
 assert(mainSource.includes("rememberedGroups.size === 1"), "Startup sidecar recovery must bind only to one unambiguous tab-group on the remembered side");
-assert(mainSource.includes("this.adjacentPosition(hostLeaf, leaf) !== this.settings.sidecarPosition"), "Startup sidecar recovery must reject adjacent panes on the wrong side");
+assert(mainSource.includes("this.adjacentPosition(hostLeaf, leaf) !== session.preferences.sidecarPosition"), "Startup sidecar recovery must reject adjacent panes on the owner's wrong side");
 assert(mainSource.includes("const visible = candidates.filter((leaf) => this.leafIsVisible(leaf))"), "When the restored sidecar group has several tabs, K-Plex should adopt the tab Obsidian restored as visible");
 assert(mainSource.includes("waitForRestoredSidecarCandidate"), "Startup sidecar recovery should briefly wait for DeferredView/tab-group geometry instead of creating a split");
-assert(mainSource.includes("releaseSidecar(hostLeaf, true, true)"), "Closing a K-Plex host must preserve sidecar restore intent");
+const closeHostSource=mainSource.slice(mainSource.indexOf("  onKplexViewClosed("),mainSource.indexOf("  private async adoptInitialSourceIndex("));
+assert(closeHostSource.includes("this.deleteSidecarOwner(hostLeaf)")&&!closeHostSource.includes(".detach()")&&!closeHostSource.includes("sidecarOpen = false"), "Closing a Plex releases ownership without closing its document or rewriting saved restore intent");
 
 const stylesSource = readFileSync(join(root, "styles.css"), "utf8");
 assert(stylesSource.includes(".kplex-linked-leaf-alert"), "Linked/pinned-tab feedback must highlight the entire target leaf");
@@ -132,49 +299,49 @@ assert(mainSource.includes("element.classList.add(\"kplex-linked-leaf-alert\")")
 assert(!mainSource.includes("element.style.flexBasis"), "Sidecar footprint restoration must use Obsidian DOM style helpers rather than direct style mutation");
 assert(!mainSource.includes("tabHeaderForLeaf"), "Linked-tab feedback cleanup must not retain the obsolete tab-header bridge");
 assert(mainSource.includes("viewWindow.requestAnimationFrame"), "Sidecar/link UI scheduling should use the target leaf window for pop-out compatibility");
-const createGhostStart = mainSource.indexOf("  async createGhostNote(page: GraphPage)");
+const createGhostStart = mainSource.indexOf("  async createGhostNote(page: GraphPage, chooseFolder = false, preserveCenter = false,");
 const createGhostSource = mainSource.slice(createGhostStart);
 assert(createGhostSource.includes("ghostCreationLocations(page, validation.stem)"), "Ghost creation must resolve destinations from the graph rather than defaulting to vault root");
 assert(!createGhostSource.includes("rebuildIndex("), "Materializing a ghost node must not trigger a full graph rebuild");
 assert(mainSource.includes("this.index.semanticParentPages(page)"), "Ghost destination resolution must consider every semantic parent");
 assert(mainSource.includes("getNewFileParent(sourcePath, proposedName)"), "Ghost/create-child locations must honor Obsidian's configured new-note folder logic");
 assert(mainSource.includes("new MaterializeGhostModal("), "Ambiguous destinations or Excalidraw choices must use the materialization dialog");
-assert(mainSource.includes("this.index.renameFile(page.path, file)"), "Materializing a ghost in another folder must remap the live virtual page instead of rebuilding the vault");
+assert(mainSource.includes("this.index.materializeFile(oldPath, file)"), "Materializing a ghost must explicitly promote retained incidence instead of treating it as a native rename");
 assert(mainSource.includes("this.index?.dematerializeFile(deleted.path)"), "Deleting an active Markdown file must dematerialize the existing GraphPage instead of rebuilding/falling back to root");
 assert(mainSource.includes('this.app.vault.getFileByPath(file.path) !== file'), "Metadata events for already-deleted TFiles must be ignored instead of resurrecting a stale patch/rebuild");
 assert(mainSource.includes("this.settlePatchOnlyBacklogIfIdle()"), "Deleting a note must clear metadata-only rebuild work once no dirty Markdown paths remain");
 assert(appSource.includes("plugin.resolveNavigationFallbackPath(activePath)"), "A missing persisted center must fall back through navigation history before the vault root");
 assert(mainSource.includes("this.settings.navigationHistory.length - 1"), "Navigation fallback must walk history newest-to-oldest");
 assert(!appSource.includes("plugin.app.vault.getMarkdownFiles()[0]?.path"), "Startup must not choose an arbitrary first Markdown note when navigation history is exhausted");
-assert(plexGraphSource.includes('setTitle(persistent.file ? "Delete note…" : "Delete placeholder…")'), "Every Markdown/placeholder node context menu must expose deletion");
-assert(plexGraphSource.includes("plugin.deleteNode(persistent, hostLeaf, isCenter)"), "Node deletion must tell the workflow whether the deleted node is the active center");
+assert(plexGraphSource.includes('setTitle(translate(persistent.file ? "graph.deleteNote" : "graph.deletePlaceholder"))'), "Every Markdown/placeholder node context menu must expose localized deletion copy");
+assert(plexGraphSource.includes("plugin.deleteNode(page, hostLeaf, page.path === activePath)"), "Node deletion must tell the workflow whether the deleted node is the active center");
 assert(mainSource.includes("this.removeFromNavigationHistory(path)"), "Every deleted node must be removed from navigation history immediately");
 assert(mainSource.includes("const fallback = this.deletionFallbackPath(path)"), "Deleting the active center must choose its replacement from remaining navigation history");
 assert(mainSource.includes('return this.index.get("folder:/")?.path ?? null'), "Delete navigation must fall back to the vault root when no valid history entry remains");
-assert(mainSource.indexOf("this.removeFromNavigationHistory(path)") < mainSource.indexOf("removePropertyReferencesToNode(ghost)"), "Delete navigation/history cleanup must happen before asynchronous relationship cleanup");
+assert(mainSource.indexOf("this.removeFromNavigationHistory(path)") < mainSource.indexOf("removePropertyReferencesToNode(ghost,preview,currentTarget)"), "Delete navigation/history cleanup must happen before asynchronous relationship cleanup");
 assert(mainSource.includes("removePropertyReferencesToNode"), "Node deletion must clean document-property references before considering a ghost removable");
 assert(mainSource.includes("normalizedNoteReferenceMatches"), "Property cleanup must still recognize a note link after deleting its backing file makes Obsidian resolution unavailable");
 assert(mainSource.includes("remainingBodyReferences"), "Deletion review must include parser-backed inline body relationships that may not appear in Obsidian's link cache");
 assert(mainSource.includes("new RemainingNodeReferencesModal("), "Body references must be surfaced for manual cleanup rather than rewritten automatically");
-assert(deleteNodeModalSource.includes("Always confirm before deleting files"), "The first delete prompt must capture the persistent file-delete confirmation preference");
-assert(deleteNodeModalSource.includes("I understand, don\'t ask me again"), "Real-file delete confirmations must let the user disable future prompts from the dialog itself");
+assert(deleteNodeModalSource.includes('this.translate("delete.alwaysConfirm")'), "The first delete prompt must use localized copy for the persistent file-delete confirmation preference");
+assert(deleteNodeModalSource.includes('this.translate("delete.dontAskAgain")'), "Real-file delete confirmations must localize the option to disable future prompts");
 assert(mainSource.includes("const preferenceChanged = this.settings.confirmFileDelete !== confirmFileDelete"), "Delete confirmation preferences changed from the dialog must persist even after first use");
 assert(settingsSource.includes("confirmFileDelete: boolean"), "File-delete confirmation preference must be persisted");
 assert(createFolderNoteModalSource.includes('this.modalEl.addClass("kplex-create-folder-note-modal")'), "Folder creation must expose a scoped modal class for responsive layout styling");
 assert(createFolderNoteModalSource.includes('nameSetting.settingEl.addClass("kplex-create-folder-note-name-setting")'), "Folder creation must mark the filename row so the input can use the full modal width");
 assert(createFolderNoteModalSource.includes('this.scope.register(["Mod"], "Enter"'), "Folder creation must use the shared Ctrl/Cmd+Enter create default");
 assert(createFolderNoteModalSource.includes('this.plugin.settings.newNodeDefaultType'), "Folder creation must share the create-child Markdown/Excalidraw default");
-assert(!createFolderNoteModalSource.includes("Create placeholder"), "Folder creation must not offer a placeholder because folders require real files");
-assert(plexGraphSource.includes('const folderChildCreation = node.page.isFolder && gate === "bottom"'), "A folder child gate must be a valid creation drag origin");
-assert(plexGraphSource.includes('if (origin?.isFolder && drag.gate === "bottom")'), "Releasing a dragged folder child gate must open file-only folder creation");
-assert(thoughtNodeSource.includes('"child gate · drag to create a note in this folder"'), "Folder child gates must explain their creation gesture");
-assert(plexGraphSource.includes("plugin.openCreateInFolderModal(target, hostLeaf)"), "Dropping a regular note gate on a folder may continue to start the secondary file-only folder flow");
+assert(!createFolderNoteModalSource.includes("addRelated.createPlaceholder"), "Folder creation must not offer a placeholder because folders require real files");
+assert(plexGraphSource.includes('if (event.button !== 0 || node.page.transient) return;'), "Persistent tag and physical folder gates must remain valid structural drag origins");
+assert(plexGraphSource.includes('drag.moved && drag.gate === "bottom" && !target'), "Only an empty-space folder child-gate drop starts file creation");
+assert(thoughtNodeSource.includes('translate("node.gateFolderChild")'), "Folder child gates must explain their creation gesture through localized copy");
+assert(plexGraphSource.includes("plugin.openStructuralNodeDrop(origin, target)"), "Dropping a physical node gate onto a folder must use native move confirmation");
 assert(mainSource.includes("createNewNodeInFolder(folder: GraphPage"), "Folder creation must materialize directly in the selected folder");
 assert(newRelatedSource.includes('className: "kplex-add-related-control-row"'), "Ontology and open-for-editing controls must share the first responsive row");
 assert(newRelatedSource.includes('className: "kplex-add-related-compose-row"'), "Name search and create/link actions must share the second row");
 assert(newRelatedSource.indexOf("controlRow,") < newRelatedSource.indexOf("composeRow,"), "Relationship controls must render above the focused name row");
 assert(newRelatedSource.includes('className: "kplex-create-alias-input"'), "Create-related UI must provide an optional alias field");
-assert(newRelatedSource.includes("plugin.createWebLinkRelatedPage(origin, role, webUrl, alias, field)"), "Create-related UI must recognize and persist web-link relationships");
+assert(newRelatedSource.includes("plugin.createWebLinkRelatedPage(refreshCapturedPage(plugin, origin), role, webUrl, alias, field)"), "Create-related UI must recognize and persist web-link relationships");
 assert(mainSource.includes('const reference = alias ? `[${escapedAlias}](${url})` : url'), "Web-link aliases must be stored as Markdown link labels in document properties");
 assert(mainSource.includes('frontmatter[key] = [...aliases, alias]'), "New-note aliases must be written through Obsidian frontmatter");
 assert(appSource.includes("plugin.isManagedCreatedFile(trackedFile)"), "A selected optimistic note must survive an older in-flight index publication");
@@ -183,17 +350,17 @@ assert(!appSource.includes("plugin.settings.toolbarExpanded ?"), "Visibility con
 assert(plexFilterSource.includes("kplex-filter-visibility-grid"), "Node-type visibility controls must live in the Filter / Graph Lenses popover");
 assert(plexFilterSource.includes('option value="connections-desc"'), "Filter panel must expose connection-count sorting");
 assert(simpleFilterSource.includes("buildGraphLensSimpleConditionExpression"), "Quick filter must compile through the same field/operator model as Graph Lenses");
-assert(plexFilterSource.includes('label: "does not have tag"'), "Quick lens must expose an explicit negative tag filter");
-assert(!appSource.includes('title="Refresh K-Plex"'), "Manual full-index rebuild must stay out of the always-visible toolbar");
+assert(plexFilterSource.includes('label: translate("filter.operatorDoesNotHaveTag")'), "Quick lens must expose an explicit localized negative tag filter");
+assert(!appSource.includes('translate("toolbar.refreshKplex")'), "Manual full-index rebuild must stay out of the always-visible toolbar");
 assert(!appSource.includes('icon={isPinned ? "bookmark-check" : "bookmark"}'), "Pinning belongs in node context menus, not the toolbar");
 assert(appSource.includes('toggleToolbarSetting("renderAlias")'), "Display aliases must be an always-visible presentation toggle");
-assert(!plexFilterSource.includes('["renderAlias", "Aliases"]'), "Display aliases is presentation state, not a graph filter");
-assert(plexFilterSource.indexOf('>Node order<') < plexFilterSource.indexOf('>Quick lens<'), "Node order must precede Quick lens");
-assert(plexFilterSource.indexOf('>Quick lens<') < plexFilterSource.indexOf('>Graph lenses<'), "Quick lens must precede Graph lenses");
+assert(!plexFilterSource.includes('"renderAlias"'), "Display aliases is presentation state, not a graph filter");
+assert(plexFilterSource.indexOf('translate("filter.nodeOrder")') < plexFilterSource.indexOf('translate("filter.quickLens")'), "Node order must precede Quick lens");
+assert(plexFilterSource.indexOf('translate("filter.quickLens")') < plexFilterSource.indexOf('translate("filter.graphLenses")'), "Quick lens must precede Graph lenses");
 assert(plexFilterSource.includes("data-kplex-long-press-tooltip"), "Filter toggles must expose touch-friendly tooltips");
-assert(newRelatedSource.includes('{ value: "previous", label: "Previous" }') && newRelatedSource.includes('{ value: "next", label: "Next" }'), "Add-note relationship dropdown must include previous and next");
+assert(newRelatedSource.includes('["previous", "role.previous"]') && newRelatedSource.includes('["next", "role.next"]') && newRelatedSource.includes('plugin.translator(key)'), "Add-note relationship dropdown must include localized previous and next labels");
 assert(newRelatedSource.includes('className: "kplex-create-alias-input"'), "Add-note dialog must retain its optional alias editor");
-assert(plexGraphSource.includes('.setTitle("Add note…")'), "Node context menus must expose Add note");
+assert(plexGraphSource.includes('.setTitle(translate("graph.addNote"))'), "Node context menus must expose localized Add note copy");
 assert(plexGraphSource.includes("TOUCH_GATE_LONG_PRESS_MS"), "Touch gate long-press must enter relationship drag mode");
 assert(plexGraphSource.includes("Keep a deliberate gate hold stationary"), "A gate hold must not pan the canvas before becoming a relationship drag");
 assert(plexGraphSource.includes("NODE_RELINK_MIN_DRAG_PX"), "Small accidental node nudges must not trigger relationship relinking");
@@ -201,18 +368,18 @@ assert(stylesSource.includes("min-inline-size: 14px") && stylesSource.includes("
 assert(mainSource.includes("showKplexMenuAtPosition") && mainSource.includes("kplexMenuOutsidePointerDown"), "K-Plex context menus must be centrally dismissed by outside pointer input");
 assert(longPressTooltipSource.includes("event.stopImmediatePropagation()"), "Completed long presses must consume the synthesized button click");
 assert(longPressTooltipSource.includes("showTooltip(activeTarget)"), "Completed long presses must show the active control tooltip");
-const placeholderPathStart = mainSource.indexOf("  private placeholderPath(stem: string)");
+const placeholderPathStart = mainSource.indexOf('  private placeholderPath(stem: string, folderPath = "")');
 const placeholderPathEnd = mainSource.indexOf("  async createPlaceholderRelatedPage(", placeholderPathStart);
 assert(placeholderPathStart >= 0 && placeholderPathEnd > placeholderPathStart);
 const placeholderPathSource = mainSource.slice(placeholderPathStart, placeholderPathEnd);
-assert(placeholderPathSource.includes("return stem.trim()"), "New placeholders must use only their unresolved note name as identity");
-assert(!placeholderPathSource.includes("getNewFileParent"), "A placeholder must not receive a physical folder before it is materialized");
+assert(placeholderPathSource.includes('`${folderPath}/${stem.trim()}`'), "Explicit placeholder destinations must survive in the unresolved link identity");
+assert(!placeholderPathSource.includes("createFolder"), "A placeholder destination must not manufacture physical folders");
 
 globalThis.window = globalThis;
 
-function compile(relativePath) {
+function compile(relativePath, targetPath = relativePath) {
   const sourcePath = join(root, relativePath);
-  const outputPath = join(temp, relativePath.replace(/\.ts$/, ".js"));
+  const outputPath = join(temp, targetPath.replace(/\.tsx?$/, ".js"));
   mkdirSync(dirname(outputPath), { recursive: true });
   const source = readFileSync(sourcePath, "utf8");
   const result = ts.transpileModule(source, {
@@ -220,6 +387,7 @@ function compile(relativePath) {
       target: ts.ScriptTarget.ES2021,
       module: ts.ModuleKind.CommonJS,
       esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
       strict: true,
     },
     fileName: sourcePath,
@@ -233,21 +401,149 @@ function compile(relativePath) {
 }
 
 for (const file of [
+  "src/lang/en.ts",
+  "src/lang/catalog.ts",
+  "src/lang/de.ts",
+  "src/lang/es.ts",
+  "src/lang/fr.ts",
+  "src/lang/ja.ts",
+  "src/lang/nl.ts",
+  "src/lang/ru.ts",
+  "src/lang/zh-TW.ts",
+  "src/lang/index.ts",
   "src/types.ts",
+  "src/application/PlexFootprints.ts",
+  "src/ui/KplexDocumentSession.ts",
+  "src/core/plex/viewPresentation.ts",
+  "src/core/plex/internalHotkeys.ts",
+  "src/core/plex/markdownZoomPreferences.ts",
+  "src/core/plex/nodeImagePolicy.ts",
+  "src/core/plex/shortcutPresentation.ts",
+  "src/core/contracts/fieldName.ts",
+  "src/core/contracts/ontologyConfiguration.ts",
+  "src/core/graph/model.ts",
+  "src/core/parser/metadata.ts",
+  "src/core/parser/referenceValues.ts",
+  "src/core/graph/relations.ts",
+  "src/core/graph/evidence.ts",
+  "src/core/graph/resolver.ts",
+  "src/core/graph/source.ts",
+  "src/core/graph/sourcePolicy.ts",
+  "src/core/graph/settings.ts",
+  "src/core/graph/settingsPolicy.ts",
+  "src/core/contracts/appearance.ts",
+  "src/core/contracts/colorValue.ts",
+  "src/core/contracts/centerRecovery.ts",
+  "src/core/plex/colorPreferences.ts",
+  "src/core/plex/compassBackground.ts",
+  "src/core/plex/colorEditing.ts",
+  "src/core/plex/appearanceThemes.ts",
+  "src/adapters/obsidian/colorPresentation.ts",
+  "src/core/graph/presentation.ts",
+  "src/index/GraphPresentation.ts",
+  "src/index/LegacySnapshotPolicy.ts",
+  "src/core/graph/compiler.ts",
+  "src/core/graph/tagPaths.ts",
+  "src/core/graph/patch.ts",
+  "src/core/graph/scoped.ts",
+  "src/core/plex/predicate.ts",
+  "src/core/plex/predicateParser.ts",
+  "src/core/plex/lens.ts",
+  "src/adapters/obsidian/startupDiagnostics.ts",
+  "src/adapters/obsidian/yieldToHostTask.ts",
+  "src/adapters/obsidian/urlIdentity.ts",
+  "src/adapters/obsidian/graphContracts.ts",
+  "src/adapters/obsidian/adjacentFileLeaf.ts",
+  "src/adapters/obsidian/excalidrawIntegrationVersion.ts",
+  "src/adapters/obsidian/embeddedMarkdownLeaf.ts",
+  "src/adapters/obsidian/EmbeddedDrawingFit.ts",
+  "src/ui/components/viewportFit.ts",
+  "src/ui/structuralConnectionActions.ts",
+  "src/adapters/obsidian/tagMembership.ts",
+  "src/adapters/obsidian/embeddedMarkdownFocus.ts",
+  "src/adapters/obsidian/externalUrl.ts",
+  "src/adapters/obsidian/indexDiagnosticsReport.ts",
+  "src/adapters/obsidian/predicateContracts.ts",
+  "src/adapters/obsidian/structuralSourceCollector.ts",
+  "src/adapters/obsidian/hostLinkSourceCollector.ts",
+  "src/adapters/obsidian/ontologySourceCollector.ts",
+  "src/adapters/obsidian/metadataSourceCollector.ts",
+  "src/adapters/obsidian/relationshipMetadataWrite.ts",
+  "src/adapters/obsidian/settingsNavigation.ts",
+  "src/adapters/obsidian/settingsReconciliation.ts",
+  "src/adapters/obsidian/savedSettingsRefresh.ts",
+  "src/adapters/obsidian/settingsInput.ts",
+  "src/adapters/obsidian/hiddenPropertyName.ts",
+  "src/ui/StyleEditorModal.ts",
+  "src/ui/NotificationModal.ts",
+    "src/ui/OntologyFieldControl.ts",
+    "src/ui/components/textSettingDraft.ts",
+  "src/ui/ColorSourceModal.ts",
+  "src/ui/ColorSourceSuggest.ts",
+  "src/ui/CompassSettingsModal.tsx",
+  "src/ui/ColorPaletteModal.ts",
+  "src/ui/ColorPairModal.ts",
+  "src/ui/ColorAdoptionModal.ts",
+  "src/ui/AppearanceThemesModal.ts",
+  "src/ui/StyleManagerList.ts",
+  "src/ui/OntologyManagerModal.ts",
+  "src/ui/OntologyUsageModal.ts",
+  "src/ui/nodeMarkdownLink.ts",
+  "src/adapters/obsidian/graphFolder.ts",
+  "src/adapters/obsidian/ontologyUsage.ts",
+  "src/ui/features/ontologyPresentation.ts",
+  "src/ui/StyleColorControls.ts",
+  "src/ui/styleNumberSlider.ts",
+  "src/ui/StyleSwatchScope.ts",
+  "src/adapters/obsidian/colorChanges.ts",
+  "src/ui/ColorLiteralEditor.ts",
+  "src/ui/ColorSourceEditor.ts",
+  "src/ui/ColorPreview.ts",
+  "src/ui/ColorSwatchList.ts",
+  "src/adapters/obsidian/sampledColorValue.ts",
+  "src/core/plex/colorCounterpart.ts",
+  "src/core/plex/colorContrast.ts",
+  "src/adapters/obsidian/rgbColorControl.ts",
+  "src/adapters/obsidian/colorScope.ts",
+  "src/adapters/obsidian/colorSample.ts",
+  "src/adapters/obsidian/themePreview.ts",
+  "src/ui/HiddenFieldSetupModal.ts",
   "src/util/perf.ts",
   "src/main.ts",
   "src/readAloud.ts",
+  "src/core/plex/startupIndexPreferences.ts",
   "src/index/fieldParser.ts",
   "src/index/MetadataParser.ts",
   "src/index/RelationEvidence.ts",
   "src/index/RelationResolver.ts",
   "src/index/GraphState.ts",
+  "src/index/remapGraphEndpoint.ts",
   "src/index/IndexSnapshot.ts",
   "src/index/IndexedDbCache.ts",
+  "src/index/SourceFacts.ts",
+  "src/index/SourceLocalDependencies.ts",
+  "src/index/SourceRepository.ts",
+  "src/index/SourceReplay.ts",
+  "src/index/SourceContributorDiscovery.ts",
+  "src/index/SourceContributorSummary.ts",
+  "src/index/SourceContributorJournal.ts",
+  "src/index/SourceContributorLease.ts",
+  "src/index/CachedSourceSemantics.ts",
+  "src/index/CachedCenterGateProjection.ts",
+  "src/index/CachedRequestedPair.ts",
+  "src/index/CachedRequestedNeighborhood.ts",
+  "src/index/CachedRequestedCandidateDegrees.ts",
+  "src/index/CachedRequestedUrlTitle.ts",
+  "src/adapters/obsidian/sourceLocalContributorDiscovery.ts",
+  "src/adapters/obsidian/sourceAcquisition.ts",
   "src/index/GraphBuilder.ts",
+  "src/index/UrlAdjacencyMap.ts",
+  "src/index/SourceFingerprint.ts",
   "src/index/GraphIndex.ts",
   "src/index/SectionContent.ts",
   "src/index/PdfCropRenderer.ts",
+  "src/index/ForegroundWorkScheduler.ts",
+  "src/index/HostMetadataPreview.ts",
   "src/index/SectionExpansion.ts",
   "src/index/style.ts",
   "src/lens/GraphPredicate.ts",
@@ -255,12 +551,35 @@ for (const file of [
   "src/lens/GraphLens.ts",
   "src/lens/GraphLensSimple.ts",
   "src/lens/SimplePlexFilter.ts",
+  "src/ui/PurgeIndexCacheModal.ts",
+  "src/ui/internalHotkeySettings.ts",
+  "src/core/plex/actions.ts",
+  "src/core/plex/actionPreferences.ts",
+  "src/core/plex/typographyPreferences.ts",
+  "src/application/ActionManager.ts",
+  "src/application/IndexingActivity.ts",
+  "src/application/SessionEventRecorder.ts",
+  "src/application/supportClipboard.ts",
+  "src/application/ClipboardSession.ts",
+  "src/application/supportReport.ts",
+  "src/application/supportReportProjection.ts",
+  "src/application/supportCustomizationProjection.ts",
+  "src/adapters/obsidian/supportEnvironment.ts",
+  "src/application/frontmatterUnlink.ts",
+  "src/adapters/obsidian/SupportReportModal.ts",
+  "src/adapters/obsidian/actionCommands.ts",
+  "src/adapters/obsidian/actionNode.ts",
+  "src/adapters/obsidian/relatedFileOutcome.ts",
+  "src/adapters/obsidian/placeholderRelocation.ts",
+  "src/ui/actionPresentation.ts",
   "src/ui/layout.ts",
-  "src/ui/NewRelatedNoteModal.ts",
-  "src/ui/MaterializeGhostModal.ts",
-  "src/ui/CreateFolderNoteModal.ts",
-  "src/ui/DeleteNodeModal.ts",
+  "src/ui/components/collectionWindow.ts",
 ]) compile(file);
+
+compile("src/settings.ts", "src/settingsUnderTest.ts");
+compile("src/paper/translation/TranslationTypes.ts");
+compile("src/core/plex/viewPresentation.ts");
+compile("src/ui/viewProfile.ts", "src/ui/viewProfileUnderTest.ts");
 
 const obsidianModuleDir = join(temp, "node_modules/obsidian");
 mkdirSync(obsidianModuleDir, { recursive: true });
@@ -320,7 +639,8 @@ function moment(value, inputFormat, strict) {
     },
   };
 }
-const Platform = { isMobile: false };
+const Platform = { isMobile: false, isMacOS: true, isIosApp: false, isAndroidApp: false,
+  isWin: false, isLinux: false, isPhone: false, isTablet: false };
 class Plugin {
   constructor() { this.app = null; }
   async saveData() {}
@@ -334,11 +654,20 @@ class FileView { constructor() { this.containerEl = null; } }
 class MarkdownView extends FileView {}
 class Menu {}
 class Notice { constructor() {} }
+class Modal { constructor(app) { this.app = app; } open() { Modal.latest = this; } }
+class App {}
+class AbstractInputSuggest {}
+class SuggestModal extends Modal {}
+class ColorComponent {}
+const getLanguage = () => "en";
+class PluginSettingTab { constructor(app) { this.app = app; this.containerEl = { addClass() {}, isConnected: true }; } update() {} }
+function getIcon() { return null; }
+function getIconIds() { return []; }
 function normalizePath(path) { return path; }
 function setIcon() {}
 module.exports = {
-  TAbstractFile, TFile, TFolder, getAllTags, moment, Platform, Plugin, FileView, MarkdownView,
-  Menu, Notice, normalizePath, setIcon,
+  TAbstractFile, TFile, TFolder, getAllTags, moment, Platform, apiVersion: "1.14.2", Plugin, FileView, MarkdownView,
+  Menu, Notice, normalizePath, setIcon, Modal, App, AbstractInputSuggest, PluginSettingTab, getIcon, getIconIds, SuggestModal, ColorComponent, getLanguage,
 };
 `);
 
@@ -352,18 +681,19 @@ globalThis.window.moment = obsidianTestApi.moment;
 // performRebuild method. Its unrelated UI/settings dependencies are inert stubs in this fixture.
 function writeRuntimeStub(relativePath, source) {
   const path = join(temp, relativePath);
+  assert(!existsSync(path), `Runtime stub must not replace compiled behavior: ${relativePath}`);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, source);
 }
 writeRuntimeStub("src/settings.js", `
 exports.DEFAULT_SETTINGS = {};
-exports.ExcaliBrainSettingTab = class {};
+exports.KplexSettingTab = class {};
 exports.migrateAndMergeSettings = (_legacy, own) => own ?? {};
 `);
-writeRuntimeStub("src/ui/ExcaliBrainView.js", `
-exports.EXCALIBRAIN_VIEW_TYPE = "kplex";
+writeRuntimeStub("src/ui/KplexView.js", `
+exports.KPLEX_VIEW_TYPE = "kplex";
 exports.KPLEX_SIDEPANEL_VIEW_TYPE = "kplex-sidepanel";
-exports.ExcaliBrainView = class {};
+exports.KplexView = class {};
 exports.KplexSidepanelView = class {};
 `);
 for (const [path, name] of [
@@ -371,13 +701,16 @@ for (const [path, name] of [
   ["src/ui/NewRelatedNoteModal.js", "NewRelatedNoteModal"],
   ["src/ui/MaterializeGhostModal.js", "MaterializeGhostModal"],
   ["src/ui/CreateFolderNoteModal.js", "CreateFolderNoteModal"],
-  ["src/ui/DeleteNodeModal.js", "DeleteNodeConfirmationModal"],
+  ["src/ui/StructuralNodeDropActions.js", "StructuralNodeDropActions"],
   ["src/editor/OntologySuggester.js", "OntologySuggester"],
   ["src/ui/AddToOntologyModal.js", "AddToOntologyModal"],
   ["src/ui/NoteTypeModal.js", "NoteTypeModal"],
   ["src/ui/PaperDetailsModal.js", "PaperDetailsModal"],
   ["src/ui/PaperReadingIntroModal.js", "PaperReadingIntroModal"],
   ["src/paper/obsidian/PaperReadingController.js", "PaperReadingController"],
+  ["src/ui/ActionSettingsController.js", "ActionSettingsController"],
+  ["src/ui/ActionTargetPicker.js", "ActionTargetPicker"],
+  ["src/ui/PlexFoldSession.js", "PlexFoldSession"],
 ]) writeRuntimeStub(path, `exports.${name} = class {};`);
 writeRuntimeStub("src/ui/PaperView.js", `exports.KPLEX_PAPER_VIEW_TYPE = "kplex-paper"; exports.PaperView = class {};
 exports.paperTargetFromState = (s) => s && Array.isArray(s.ids) && s.ids.length ? { ids: s.ids, title: "", pagePath: null, origin: null } : null;`);
@@ -385,14 +718,571 @@ writeRuntimeStub("src/ui/PaperDetailsPanel.js", `exports.paperTargetKey = (t) =>
 writeRuntimeStub("src/ui/DeleteNodeModal.js", `exports.DeleteNodeConfirmationModal = class {}; exports.RemainingNodeReferencesModal = class {};`);
 writeRuntimeStub("src/ui/viewProfile.js", `
 exports.activeLayoutProfile = () => null;
-exports.currentDeviceClass = () => "desktop";
 exports.effectiveViewSettings = (_settings, view) => view ?? {};
 exports.layoutProfileKey = () => "desktop";
 `);
+writeRuntimeStub("src/adapters/obsidian/presentationEnvironment.js", `
+exports.readObsidianPresentationEnvironment = () => ({
+  device: "desktop",
+  keyConvention: "unknown",
+  inputModes: { keyboard: true, pointer: true, touch: false },
+  hostActions: { graphTab: true, sidepanel: true, popout: true },
+});
+`);
+writeRuntimeStub("src/adapters/obsidian/localization.js", `
+const { createTranslator } = require("../../lang");
+exports.createObsidianTranslator = () => createTranslator("en");
+`);
 
 const { GraphIndex } = require(join(temp, "src/index/GraphIndex.js"));
-const ExcaliBrainPlugin = require(join(temp, "src/main.js")).default;
-const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedRelations, computeIndexSettingsSignature } = require(join(temp, "src/index/IndexSnapshot.js"));
+const { ForegroundWorkScheduler } = require(join(temp, "src/index/ForegroundWorkScheduler.js"));
+const { GraphBuilder } = require(join(temp, "src/index/GraphBuilder.js"));
+const { KplexIndexedDbCache } = require(join(temp, "src/index/IndexedDbCache.js"));
+const { createIndexDiagnosticsReport } = require(join(temp, "src/adapters/obsidian/indexDiagnosticsReport.js"));
+const KplexPlugin = require(join(temp, "src/main.js")).default;
+
+// Cleanup must never delete a generation when a transient metadata read hides its pointer.
+{
+  const cache = new KplexIndexedDbCache("cleanup-guard-fixture");
+  const deleted = [];
+  cache.open = async () => ({
+    objectStoreNames: { contains: () => true },
+    transaction: () => {
+      const tx = {
+        objectStore: () => ({ index: () => ({ openKeyCursor: () => {
+          const request = { result: null, onsuccess: null, onerror: null };
+          queueMicrotask(() => {
+            request.result = { key: "still-referenced", continue: () => queueMicrotask(() => {
+              request.result = null;
+              request.onsuccess();
+              queueMicrotask(() => tx.oncomplete());
+            }) };
+            request.onsuccess();
+          });
+          return request;
+        } }) }),
+      };
+      return tx;
+    },
+  });
+  cache.deleteGeneration = async (generation) => { deleted.push(generation); };
+  cache.readSnapshotCatalog = async () => ({ available: false, active: null, checkpoint: null,
+    invalidActive: false, invalidCheckpoint: false });
+  await cache.cleanupOrphanGenerations("other-generation");
+  cache.readSnapshotCatalog = async () => ({ available: true, active: null, checkpoint: null,
+    invalidActive: false, invalidCheckpoint: true });
+  await cache.cleanupOrphanGenerations("other-generation");
+  assert.deepEqual(deleted, [], "Uncertain snapshot pointers must preserve all generations");
+}
+
+// Restored support history must drop unknown fields and invalid reasons before clipboard export.
+{
+  const cache = new KplexIndexedDbCache("diagnostic-sanitizer-fixture");
+  cache.open = async () => ({ transaction: () => {
+    const tx = { objectStore: () => ({ get: () => {
+      const request = { result: null, onsuccess: null, onerror: null };
+      queueMicrotask(() => {
+        request.result = { entries: [
+          { at: 123, stage: "persist", reason: "checkpoint-saved", completedMarkdownFiles: 700,
+            durationMs: 1300, path: "Private/Note.md" },
+          { at: 124, stage: "restore", reason: "Private/Note.md", path: "Private/Note.md" },
+        ] };
+        request.onsuccess();
+        queueMicrotask(() => tx.oncomplete());
+      });
+      return request;
+    } }) };
+    return tx;
+  } });
+  assert.deepEqual(await cache.readIndexDiagnostics(), [
+    { at: 123, stage: "persist", reason: "checkpoint-saved", completedMarkdownFiles: 700, durationMs: 1300 },
+  ]);
+  const unavailable = new KplexIndexedDbCache("checkpoint-write-fixture");
+  unavailable.open = async () => null;
+  let failureReason = null;
+  assert.equal(await unavailable.writeSnapshot({ createdAt: 1, vaultSignature: "v", settingsSignature: "s",
+    discoveredFields: [] }, [], [], () => true, "checkpoint", (reason) => { failureReason = reason; }), false);
+  assert.equal(failureReason, "storage-unavailable");
+}
+
+// Support output must be useful during a rebuild without exposing raw snapshot metadata or paths.
+{
+  const summaryContext = {};
+  GraphIndex.prototype.rememberSnapshotCatalog.call(summaryContext, {
+    available: true, invalidActive: false,
+    active: { createdAt: 100, schema: 3, pageChunkCount: 4, evidenceChunkCount: 7,
+      generation: "private-generation", vaultSignature: "private-vault", settingsSignature: "private-settings" },
+    checkpoint: { createdAt: 200, schema: 3, completedMarkdownPaths: ["Private/Note.md"] },
+  });
+  const saved = GraphIndex.prototype.getSavedSnapshotSummary.call(summaryContext);
+  const report = JSON.parse(createIndexDiagnosticsReport({
+    getSavedSnapshotSummary: () => saved,
+    size: 42,
+    indexedMarkdownFileCount: () => 8,
+    isFullSnapshotHydrated: () => false, hasPhysicalBaseline: () => false, hasSourceBackedStartup: () => false,
+    getSnapshotHydrationDiagnostics: () => ({ phase: "pages", pages: 12, evidence: 0 }),
+    getIndexDiagnostics: () => [{ at: 123, stage: "restore", reason: "complete-snapshot-stale", added: 1 }],
+  }, () => ({ upToDate: false, phase: "loading-cache", label: "not shared", indexedFiles: 8, totalFiles: 10 }), "0.0.5"));
+  assert.equal(report.plugin.version, "0.0.5");
+  assert.deepEqual(report.device, { obsidianApiVersion: "1.14.2", operatingSystem: "macos", formFactor: "desktop" });
+  assert.equal(report.status.totalFiles, 10);
+  assert.equal(report.graph.nodes, 42);
+  assert.equal(report.saved.active.schema, 3);
+  assert.equal(report.saved.checkpoint.completedMarkdownFiles, 1);
+  assert.equal(report.decisions[0].reason, "complete-snapshot-stale");
+  obsidianTestApi.Platform.isIosApp = true;
+  obsidianTestApi.Platform.isTablet = true;
+  const iosReport = JSON.parse(createIndexDiagnosticsReport({
+    getSavedSnapshotSummary: () => saved, size: 42, indexedMarkdownFileCount: () => 8,
+    isFullSnapshotHydrated: () => false, hasPhysicalBaseline: () => false, hasSourceBackedStartup: () => false, getSnapshotHydrationDiagnostics: () => ({}),
+    getIndexDiagnostics: () => [],
+  }, () => ({ upToDate: false, phase: "indexing", indexedFiles: 8, totalFiles: 10 }), "0.0.5"));
+  assert.equal(iosReport.platform, "ios");
+  assert.deepEqual(iosReport.device, { obsidianApiVersion: "1.14.2", operatingSystem: "ios", formFactor: "tablet" });
+  obsidianTestApi.Platform.isIosApp = false;
+  obsidianTestApi.Platform.isTablet = false;
+  assert(!JSON.stringify(report).includes("Private/Note.md"));
+  assert(!JSON.stringify(report).includes("private-generation"));
+  assert(!JSON.stringify(report).includes("private-vault"));
+  assert(!JSON.stringify(report).includes("private-settings"));
+  assert(!JSON.stringify(report).includes("not shared"));
+  const status = KplexPlugin.prototype.getIndexDiagnosticsStatus.call({
+    cachedMarkdownFileCount: null,
+    computeIndexStatusFacts: KplexPlugin.prototype.computeIndexStatusFacts,
+    initialIndexComplete: false, indexDirty: true, rebuildTask: null, rebuildTimer: null,
+    index: { isOnDemandMode: () => false, hasPendingSnapshotHydration: () => true, hasPendingSemanticPreparation: () => false, hasPendingSearchVocabulary: () => false, indexedMarkdownFileCount: () => 8 },
+    getIndexStatus: () => { throw new Error("Clipboard report must not enumerate the vault"); },
+  });
+  assert.deepEqual(status, { upToDate: false, phase: "loading-cache", indexedFiles: 8, totalFiles: null });
+  const readyStatus = KplexPlugin.prototype.getIndexDiagnosticsStatus.call({
+    cachedMarkdownFileCount: null,
+    computeIndexStatusFacts: KplexPlugin.prototype.computeIndexStatusFacts,
+    initialIndexComplete: true, indexDirty: false, rebuildTask: null, rebuildTimer: null,
+    index: { isOnDemandMode: () => false, hasPendingSnapshotHydration: () => false, hasPendingSemanticPreparation: () => false, hasPendingSearchVocabulary: () => false, indexedMarkdownFileCount: () => 8 },
+    getIndexStatus: () => { throw new Error("Clipboard report must not enumerate the vault"); },
+  });
+  assert.deepEqual(readyStatus, { upToDate: true, phase: "ready", indexedFiles: 8, totalFiles: null });
+  let readinessWrites = 0;
+  const passive = {
+    cachedMarkdownFileCount: null,
+    computeIndexStatusFacts: KplexPlugin.prototype.computeIndexStatusFacts,
+    initialIndexComplete: true, indexDirty: false, rebuildTask: null, rebuildTimer: null,
+    index: { isOnDemandMode: () => false, hasPendingSnapshotHydration: () => false,
+      hasPendingSemanticPreparation: () => false, hasPendingSearchVocabulary: () => false,
+      indexedMarkdownFileCount: () => 8, getSnapshotHydrationDiagnostics: () => null,
+      getSourceAcquisitionCounters: () => null, getSemanticPreparationDiagnostics: () => null },
+    startupDiagnostics: { finish() { readinessWrites++; }, snapshot: () => ({ phases: [] }), progress: () => null },
+    app: { vault: { getMarkdownFiles() { throw new Error("Passive diagnostics must not enumerate files"); } } },
+  };
+  KplexPlugin.prototype.getIndexDiagnosticsStatus.call(passive);
+  KplexPlugin.prototype.getStartupDiagnostics.call(passive);
+  assert.equal(readinessWrites, 0, "Both diagnostic readers preserve strict-readiness observations");
+  passive.computeIndexStatusFacts(8);
+  assert.equal(readinessWrites, 1, "Ordinary product readiness retains its existing completion boundary");
+}
+
+// Explicit report capture projects actual scalar facts once and tolerates independent optional failures.
+{
+  const facts = { mode: "on-demand", urls: "background", pacing: "responsive", current: [3, null, 1] };
+  const owned = Object.freeze({ status: "active" });
+  let healthReads = 0, captured;
+  const context = {
+    index: { getIndexingActivityFacts() { healthReads++; return facts; } },
+    startupDiagnostics: { captureActivity(...args) { captured = args; return owned; } },
+    app: new Proxy({}, { get() { throw new Error("Activity capture must not consult host state"); } }),
+  };
+  assert.equal(KplexPlugin.prototype.captureIndexingActivity.call(context), owned);
+  assert.equal(healthReads, 1);
+  assert.deepEqual(captured, ["on-demand", "background", "responsive", "source-archive", 3, null, 1]);
+  assert.deepEqual(facts.current, [3, null, 1], "Capture does not mutate the health owner's array");
+  context.index.getIndexingActivityFacts = () => { throw new Error("Optional health unavailable"); };
+  assert.equal(KplexPlugin.prototype.captureIndexingActivity.call(context), owned);
+  assert.deepEqual(captured, [undefined, undefined, undefined, "source-archive"], "Retained activity survives unavailable health");
+  context.startupDiagnostics.captureActivity = () => { throw new Error("Optional recorder unavailable"); };
+  assert.equal(KplexPlugin.prototype.captureIndexingActivity.call(context), null);
+  context.startupDiagnostics = undefined;
+  assert.equal(KplexPlugin.prototype.captureIndexingActivity.call(context), null);
+}
+
+// Copy Index Diagnostics selects and retains the invoking window before its first await.
+{
+  const descriptors = Object.fromEntries(["navigator", "activeWindow"].map(key => [key, Object.getOwnPropertyDescriptor(window, key)]));
+  let mainWrites = 0, popoutWrites = 0, captures = 0, release;
+  const context = {
+    manifest: { version: "0.1.3" }, translator: () => "Copied",
+    captureIndexingActivity() { captures++; return null; },
+    getIndexDiagnosticsStatus: () => ({ upToDate: true, phase: "ready", indexedFiles: 0, totalFiles: null }),
+    index: { size: 0, getSavedSnapshotSummary: () => null, indexedMarkdownFileCount: () => 0,
+      isFullSnapshotHydrated: () => false, getSnapshotHydrationDiagnostics: () => null,
+      getIndexDiagnostics: () => [] },
+  };
+  try {
+    Object.defineProperty(window, "navigator", { configurable: true, value: { clipboard: { writeText() { mainWrites++; return Promise.resolve(); } } } });
+    Object.defineProperty(window, "activeWindow", { configurable: true, writable: true, value: {
+      navigator: { clipboard: { writeText(text) { popoutWrites++; assert.equal(JSON.parse(text).formatVersion, 1); return new Promise(resolve => { release = resolve; }); } } },
+    } });
+    const pending = KplexPlugin.prototype.copyIndexDiagnostics.call(context);
+    assert.equal(popoutWrites, 1, "Invoking popout writes synchronously before any await");
+    assert.equal(mainWrites, 0, "Main clipboard remains untouched for a distinct popout capability");
+    window.activeWindow = window;
+    release(); await pending;
+    assert.equal(popoutWrites, 1, "A later active-window change cannot duplicate or redirect the accepted copy");
+    await KplexPlugin.prototype.copyIndexDiagnostics.call(context);
+    assert.equal(mainWrites, 1); assert.equal(captures, 2, "Each invocation captures exactly once");
+  } finally {
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (descriptor) Object.defineProperty(window, key, descriptor); else delete window[key];
+    }
+  }
+}
+
+// URL selection must not replace a companion with Obsidian's missing-plugin placeholder.
+{
+  const context = {
+    app: {},
+    // Explicit native opens retire passive completion through the actual production helper.
+    sidecarLeaves: new Map(),
+    passiveSidecarSyncRequests: new WeakMap(),
+    retirePassiveSidecarRequestsForLeaf: KplexPlugin.prototype.retirePassiveSidecarRequestsForLeaf,
+    settings: { sidecarLastUrl: "", sidecarLastFilePath: "Existing.md" },
+    documentSession(){return {preferences:this.settings};},
+    leafDisplaysPage:(_leaf,page)=>Boolean(page.url),
+    translator: () => "Web Viewer unavailable",
+  };
+  let assignments = 0;
+  const leaf = { async setViewState() { assignments += 1; } };
+  await KplexPlugin.prototype.openPageInSidecarLeaf.call(context, leaf, { url: "https://example.com" },()=>true);
+  assert.equal(assignments, 0, "Unavailable Web Viewer must not be assigned to a native leaf");
+  assert.equal(context.settings.sidecarLastFilePath, "Existing.md");
+  assert.equal(context.settings.sidecarLastUrl, "");
+  context.app.viewRegistry = { getViewCreatorByType: () => () => {} };
+  await KplexPlugin.prototype.openPageInSidecarLeaf.call(context, leaf, { url: "https://example.com" },()=>true);
+  assert.equal(assignments, 1, "An available Web Viewer must retain explicit Sidecar preview support");
+  assert.equal(context.settings.sidecarLastFilePath, "");
+  assert.equal(context.settings.sidecarLastUrl, "https://example.com");
+}
+const indexingStatusContext = {
+  indexPreparationAdmitted: true,
+  computeIndexStatusFacts: KplexPlugin.prototype.computeIndexStatusFacts,
+  initialIndexComplete: false,
+  indexDirty: true,
+  rebuildTask: Promise.resolve(),
+  rebuildTimer: null,
+  app: { vault: { getMarkdownFiles: () => {
+    indexingStatusContext.markdownFileCountReads += 1;
+    return Array.from({ length: 5 });
+  } } },
+  cachedMarkdownFileCount: null,
+  markdownFileCountReads: 0,
+  index: { isOnDemandMode: () => false,
+    hasLocalBaseline: () => false,
+    getUrlIndexProgress: () => ({ active: false, failed: false, processed: 0, total: 0 }),
+    size: 3,
+    hasPendingSnapshotHydration: () => false,
+    hasPendingSemanticPreparation: () => false, hasPendingSearchVocabulary: () => false,
+    isCheckpointSaving: () => false,
+    hasIncrementalRestorePatch: () => false,
+    indexedMarkdownFileCount: () => 3,
+  },
+  translator: (key, params) => {
+    if (key === "index.statusReady") return "Status: index ready";
+    if (key === "index.statusLoadingCache") return "Status: restoring saved graph";
+    if (key === "index.statusPreparing") return "Status: preparing index";
+    if (key === "index.statusCheckingCache") return "Status: checking cached index for changes";
+    if (key === "index.statusIndexingProgress") return `Status: indexing ${params.indexed} of ${params.total} files`;
+    if (key === "index.statusSavingCache") return "Status: saving index to cache";
+    return "Status: updating index";
+  },
+};
+// Local readiness must not certify every physical note as semantically indexed.
+{
+  const context = { ...indexingStatusContext, initialIndexComplete: true, indexDirty: false,
+    rebuildTask: null, cachedMarkdownFileCount: 5,
+    index: { ...indexingStatusContext.index, isOnDemandMode: () => true }, translator: key => key };
+  const status = KplexPlugin.prototype.getIndexStatus.call(context);
+  assert.equal(status.indexedFiles, 3);
+  assert.equal(status.label, "indexing.localReady");
+  context.index.hasUnavailableLocalCounts = () => true;
+  const unavailable = KplexPlugin.prototype.getIndexStatus.call(context);
+  assert.equal(unavailable.upToDate, false);
+  assert.equal(unavailable.phase, "incomplete");
+  assert.equal(unavailable.label, "indexing.localUnavailable");
+}
+// Local closure and independent URL progress must not inherit an idle global-startup label.
+{
+  const context = { ...indexingStatusContext, initialIndexComplete: false, indexDirty: false,
+    rebuildTask: null, cachedMarkdownFileCount: 5,
+    index: { ...indexingStatusContext.index, isOnDemandMode: () => true, hasLocalBaseline: () => true },
+    translator: (key, params) => params ? `${key}:${params.processed}/${params.total}` : key };
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "indexing.localReady");
+  context.index.getUrlIndexProgress = () => ({ active: true, failed: false, processed: 2, total: 5 });
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "indexing.urlsProgress:2/5");
+  context.index.getUrlIndexProgress = () => ({ active: false, failed: true, processed: 2, total: 5 });
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "indexing.urlsIncomplete");
+}
+// Startup labels describe the real pass; record loading has no invented percentage.
+{
+  const { StartupDiagnostics } = require(join(temp, "src/adapters/obsidian/startupDiagnostics.js"));
+  const diagnostics = new StartupDiagnostics();
+  diagnostics.phase("source", "source-reconciliation", 4);
+  diagnostics.processed("source");
+  const context = { ...indexingStatusContext, cachedMarkdownFileCount: 5, startupDiagnostics: diagnostics,
+    index: { isOnDemandMode: () => false, ...indexingStatusContext.index, hasPendingSnapshotHydration: () => true,
+      getSnapshotHydrationDiagnostics: () => ({ phase: "source-authority" }) },
+    translator: (key, params) => key === "index.startupChecking" ? "Verifying cached notes"
+      : key === "index.startupRechecking" ? "Processing pending changes"
+      : key === "index.startupHostComparison" ? "Validating note metadata"
+      : key === "index.startupNotesProgress" ? `${params.activity} — ${params.processed} / ${params.total} notes (${params.percent}%)`
+      : key === "index.startupEvidence" ? "Loading relationship evidence"
+      : key === "index.startupRecordsProgress" ? `${params.activity} — ${params.processed} records loaded` : key,
+  };
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Verifying cached notes — 1 / 4 notes (25%)");
+  diagnostics.processed("source");
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Verifying cached notes — 2 / 4 notes (50%)");
+  diagnostics.phase("source", "host-metadata-comparison", 4);
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Validating note metadata — 0 / 4 notes (0%)");
+  diagnostics.phase("source", "source-reconciliation", 5);
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Processing pending changes — 0 / 5 notes (0%)");
+  diagnostics.processed("source");
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Processing pending changes — 1 / 5 notes (20%)");
+  diagnostics.phase("hydration", "evidence");diagnostics.processed("hydration");
+  context.index.getSnapshotHydrationDiagnostics = () => ({ phase: "evidence" });
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Loading relationship evidence — 1 records loaded");
+  // Complete hydration must not hide the still-running source pass behind a generic label.
+  context.index.hasPendingSnapshotHydration = /** The cached graph has finished loading. */ () => false;
+  context.rebuildTask = null;
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).phase, "preparing");
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "Processing pending changes — 1 / 5 notes (20%)");
+  context.rebuildTask = Promise.resolve();
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "index.statusIndexingProgress",
+    "An active graph compilation owns the label rather than a paused source pass");
+  context.rebuildTask = null;
+  context.index.isCheckpointSaving = /** A real save takes presentation priority. */ () => true;
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "index.statusSavingCache");
+  context.index.isCheckpointSaving = /** The save has finished. */ () => false;
+  context.index.getUrlIndexProgress = /** Optional URL work keeps its existing label. */ () => ({ active: true, failed: false, processed: 2, total: 5 });
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "indexing.urlsProgress");
+  context.index.getUrlIndexProgress = indexingStatusContext.index.getUrlIndexProgress;
+  context.index.isOnDemandMode = /** Local readiness never adopts global source progress. */ () => true;
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "indexing.localPreparing");
+  context.index.isOnDemandMode = indexingStatusContext.index.isOnDemandMode;
+  diagnostics.phase("source", "complete");
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "index.statusPreparing",
+    "A completed source pass cannot claim ongoing validation");
+  context.initialIndexComplete = true;context.indexDirty = false;
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label, "index.statusReady");
+  context.computeIndexStatusFacts = KplexPlugin.prototype.computeIndexStatusFacts;
+  context.index.getSourceAcquisitionCounters = () => ({ vaultReads: 0, parses: 0 });
+  context.index.getSemanticPreparationDiagnostics = () => ({ fullBuilds: 0 });
+  const beforeEnumeration = indexingStatusContext.markdownFileCountReads;
+  const report = KplexPlugin.prototype.getStartupDiagnostics.call(context);
+  assert.equal(report.progress.hydration.phase, "evidence");
+  assert.equal(report.progress.hydration.processed, 1);
+  assert.equal(report.source.vaultReads, 0);
+  assert.equal(indexingStatusContext.markdownFileCountReads, beforeEnumeration, "Reading startup diagnostics must not enumerate notes");
+
+}
+assert.deepEqual(KplexPlugin.prototype.getIndexStatus.call(indexingStatusContext), {
+  upToDate: false,
+  phase: "indexing",
+  label: "Status: indexing 3 of 5 files",
+  indexedFiles: 3,
+  totalFiles: 5,
+}, "Progressive indexing status must report currently published Markdown-file progress");
+assert.equal(indexingStatusContext.markdownFileCountReads, 1, "First status read must capture the Markdown total once");
+KplexPlugin.prototype.getIndexStatus.call(indexingStatusContext);
+assert.equal(indexingStatusContext.markdownFileCountReads, 1, "Progress publications must reuse the cached Markdown total");
+
+// Durable editor-node preferences follow physical paths even before an index baseline exists. The
+// actual registered callbacks must neither read graph state nor turn local choices into index work.
+{
+  const coordinator = new KplexPlugin();
+  const handlers = new Map();
+  const registrations = [];
+  const writes = [];
+  coordinator.app = { workspace:{getLeavesOfType:()=>[]}, vault: { on: (name, callback) => { handlers.set(name, callback); return { name }; } } };
+  coordinator.registerEvent = handle => registrations.push(handle);
+  coordinator.index = new Proxy({}, { get() { throw new Error("Markdown zoom preferences must not access the index"); } });
+  coordinator.settings = {lastActivePath:"",sidecarLastFilePath:"",navigationHistory:[],pinnedNodes:[],centralNodeMarkdownZoomModes: { "Folder/A.md": "scale", "Folder/Sub/B.md": "scale", "Folderish/C.md": "scale" } };
+  coordinator.persistSettingsSnapshot = async () => { writes.push(structuredClone(coordinator.settings.centralNodeMarkdownZoomModes)); };
+  coordinator.initialIndexComplete = false;
+  coordinator.registerMarkdownZoomPreferenceListeners();
+  assert.deepEqual(registrations.map(item => item.name), ["rename", "delete"], "Both callbacks belong to the plugin cleanup lifetime");
+  handlers.get("rename")(new TFolder("Moved"), "Folder");
+  assert.deepEqual(coordinator.settings.centralNodeMarkdownZoomModes, { "Moved/A.md": "scale", "Moved/Sub/B.md": "scale", "Folderish/C.md": "scale" });
+  handlers.get("rename")(new TFile("Moved/Renamed.md", 1), "Moved/A.md");
+  assert.equal(coordinator.settings.centralNodeMarkdownZoomModes["Moved/Renamed.md"], "scale");
+  handlers.get("rename")(new TFile("Moved/Renamed.txt", 1), "Moved/Renamed.md");
+  assert.equal(Object.hasOwn(coordinator.settings.centralNodeMarkdownZoomModes, "Moved/Renamed.txt"), false);
+  handlers.get("delete")(new TFolder("Moved"));
+  assert.deepEqual(coordinator.settings.centralNodeMarkdownZoomModes, { "Folderish/C.md": "scale" });
+  handlers.get("delete")(new TFile("Folderish/C.md", 1));
+  assert.deepEqual(coordinator.settings.centralNodeMarkdownZoomModes, {});
+  handlers.get("delete")(new TFile("Unrelated.md", 1));
+  handlers.get("rename")(new TFolder("Unrelated"), "Nothing");
+  assert.equal(writes.length, 5, "Only affected moves/deletes persist; duplicate descendant/unrelated events are no-ops");
+  const originalError = console.error;
+  const failures = [];
+  console.error = (...args) => failures.push(args);
+  coordinator.persistSettingsSnapshot = async () => { throw new Error("Synthetic private path must not escape"); };
+  try {
+    coordinator.settings.centralNodeMarkdownZoomModes = { "Fail.md": "scale", "Delete.md": "scale" };
+    handlers.get("rename")(new TFile("MovedFail.md", 1), "Fail.md");
+    handlers.get("delete")(new TFile("Delete.md", 1));
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(coordinator.settings.centralNodeMarkdownZoomModes, { "MovedFail.md": "scale" }, "A failed persistence does not revert the known physical move/delete");
+    assert.deepEqual(failures, [["K-Plex could not save Markdown zoom preferences"], ["K-Plex could not save Markdown zoom preferences"]], "Event saves settle rejected writes with a path-free diagnostic");
+  } finally { console.error = originalError; }
+}
+
+// Once the denominator is known, ordinary Markdown membership events must maintain it exactly in
+// O(1), including the status notification itself. Only a genuinely unknown initial count may enumerate.
+{
+  const statusMembershipCoordinator = new KplexPlugin();
+  statusMembershipCoordinator.indexPreparationAdmitted = true;
+  const handlers = new Map();
+  let markdownEnumerations = 0;
+  let structuralInvalidations = 0;
+  statusMembershipCoordinator.app = {
+    vault: {
+      on: (name, callback) => { handlers.set(`vault:${name}`, callback); return {}; },
+      getMarkdownFiles: () => { markdownEnumerations += 1; return Array.from({ length: 999 }); },
+      getFileByPath: () => null,
+    },
+    metadataCache: { on: (name, callback) => { handlers.set(`metadata:${name}`, callback); return {}; } },
+  };
+  statusMembershipCoordinator.index = { isOnDemandMode: () => false,
+    hasLocalBaseline: () => false,
+    hasPhysicalBaseline: () => false,
+    getUrlIndexProgress: () => ({ active: false, failed: false, processed: 0, total: 0 }),
+    invalidateHostStructure: () => { structuralInvalidations += 1; },
+    size: 10,
+    hasPendingSnapshotHydration: () => false,
+    hasPendingSemanticPreparation: () => false, hasPendingSearchVocabulary: () => false,
+    isCheckpointSaving: () => false,
+    hasIncrementalRestorePatch: () => false,
+    indexedMarkdownFileCount: () => 10,
+    updateHostFileAvailability: () => {},
+    renameFile: () => true,
+    dematerializeFile: () => undefined,
+  };
+  statusMembershipCoordinator.translator = (key) => key;
+  statusMembershipCoordinator.settings = {
+    lastActivePath: "", sidecarLastFilePath: "", navigationHistory: [], pinnedNodes: [],
+  };
+  statusMembershipCoordinator.initialIndexComplete = true;
+  statusMembershipCoordinator.indexDirty = false;
+  statusMembershipCoordinator.rebuildTask = null;
+  statusMembershipCoordinator.rebuildTimer = null;
+  statusMembershipCoordinator.hasVisibleKplexSurface = () => false;
+  statusMembershipCoordinator.scheduleRebuild = () => {};
+  statusMembershipCoordinator.saveSettings = async () => {};
+  statusMembershipCoordinator.settlePatchOnlyBacklogIfIdle = () => {};
+  statusMembershipCoordinator.registerReactiveIndexListeners();
+  statusMembershipCoordinator.cachedMarkdownFileCount = 10;
+
+  const createHandler = handlers.get("vault:create"), deleteHandler = handlers.get("vault:delete"), renameHandler = handlers.get("vault:rename");
+  assert(createHandler && deleteHandler && renameHandler, "Markdown membership handlers must be registered");
+  const countedCreate = new TFile("Counted.md", 1);
+  createHandler(countedCreate);
+  assert.equal(statusMembershipCoordinator.cachedMarkdownFileCount, 11, "Markdown create increments the known denominator exactly once");
+  assert.equal(markdownEnumerations, 0, "Create status publication must not enumerate Markdown when the count is known");
+
+  deleteHandler(countedCreate);
+  assert.equal(statusMembershipCoordinator.cachedMarkdownFileCount, 10, "Markdown delete decrements the known denominator exactly once");
+  statusMembershipCoordinator.countDeletedMarkdownFile(countedCreate);
+  deleteHandler(countedCreate);
+  assert.equal(statusMembershipCoordinator.cachedMarkdownFileCount, 10, "Overlapping parent/child delete notifications count the same physical file once");
+  KplexPlugin.prototype.getIndexStatus.call(statusMembershipCoordinator);
+  assert.equal(markdownEnumerations, 0, "Delete status reads must reuse the decremented denominator");
+
+  const renamedToMarkdown = new TFile("Counted-Renamed.md", 2);
+  renameHandler(renamedToMarkdown, "Counted-Renamed.txt");
+  assert.equal(statusMembershipCoordinator.cachedMarkdownFileCount, 11, "Non-Markdown to Markdown rename increments the known denominator");
+  assert.equal(markdownEnumerations, 0, "Rename-to-Markdown status publication must not enumerate Markdown");
+
+  const renamedFromMarkdown = new TFile("Counted-Renamed.txt", 3);
+  renameHandler(renamedFromMarkdown, "Counted-Renamed.md");
+  assert.equal(statusMembershipCoordinator.cachedMarkdownFileCount, 10, "Markdown to non-Markdown rename decrements the known denominator");
+  assert.equal(markdownEnumerations, 0, "Rename-from-Markdown status publication must not enumerate Markdown");
+  assert.equal(structuralInvalidations, 5, "Every native membership notification retires folder count proof, including repeated delete notifications");
+}
+assert.deepEqual(KplexPlugin.prototype.getIndexStatus.call({
+  ...indexingStatusContext,
+  index: { isOnDemandMode: () => false, ...indexingStatusContext.index, isCheckpointSaving: () => true },
+}), {
+  upToDate: false,
+  phase: "saving-cache",
+  label: "Status: saving index to cache",
+  indexedFiles: 3,
+  totalFiles: 5,
+}, "A live checkpoint must explain why the indexing counter pauses without losing its progress count");
+assert.deepEqual(KplexPlugin.prototype.getIndexStatus.call({
+  ...indexingStatusContext,
+  rebuildTask: null,
+  index: { isOnDemandMode: () => false, ...indexingStatusContext.index, hasPendingSnapshotHydration: () => true, indexedMarkdownFileCount: () => 0 },
+}), {
+  upToDate: false,
+  phase: "loading-cache",
+  label: "Status: restoring saved graph",
+  indexedFiles: 0,
+  totalFiles: 5,
+}, "Snapshot hydration must identify cache loading instead of presenting a misleading 0-of-total indexing status");
+assert.deepEqual(KplexPlugin.prototype.getIndexStatus.call({
+  ...indexingStatusContext,
+  rebuildTask: null,
+  initialIndexComplete: true,
+  indexDirty: false,
+}), {
+  upToDate: true,
+  phase: "ready",
+  label: "Status: index ready",
+  indexedFiles: 5,
+  totalFiles: 5,
+}, "Ready status must report the complete Markdown-file total");
+let startupBubbleSaves = 0;
+const startupBubbleContext = {
+  startupIndexInfoBubbleClaimed: false,
+  initialIndexComplete: false,
+  settings: { startupIndexInfoBubbleSeen: false },
+  getIndexStatus: () => ({ upToDate: false }),
+  saveSettings: () => { startupBubbleSaves += 1; return Promise.resolve(); },
+};
+assert.equal(KplexPlugin.prototype.claimStartupIndexInfoBubble.call(startupBubbleContext), true, "First incomplete startup must claim the one-time guidance bubble");
+assert.equal(startupBubbleContext.settings.startupIndexInfoBubbleSeen, true, "Claiming startup guidance must persist its seen state in settings");
+assert.equal(startupBubbleSaves, 1, "Claiming startup guidance must save the one-time state exactly once");
+assert.equal(KplexPlugin.prototype.claimStartupIndexInfoBubble.call(startupBubbleContext), false, "The same session must not reclaim startup guidance");
+assert.equal(KplexPlugin.prototype.claimStartupIndexInfoBubble.call({
+  ...startupBubbleContext,
+  startupIndexInfoBubbleClaimed: false,
+}), false, "A persisted seen flag must prevent startup guidance from returning after restart");
+
+// Native split regression: persisted pixel bases may consume the entire split,
+// leaving a newly inserted pane at zero width/height despite correct ordering.
+for (const axis of ["width", "height"]) {
+  const split = {};
+  const anchor = { parentElement: split, getBoundingClientRect: () => ({ [axis]: 400 }) };
+  let paneExtent = 0;
+  const pane = { parentElement: split, getBoundingClientRect: () => ({ [axis]: paneExtent }) };
+  const writes = [];
+  const context = {
+    leafGroupElement: (leaf) => leaf,
+    splitAxis: () => axis,
+    setWorkspaceBasis: (element, extent) => writes.push([element, extent]),
+  };
+  KplexPlugin.prototype.ensureAdjacentFileLeafSize.call(context, anchor, pane);
+  assert.deepEqual(writes, [[anchor, 200], [pane, 200]], "Collapsed native pane must share its anchor's allocation");
+  writes.length = 0;
+  paneExtent = 200;
+  KplexPlugin.prototype.ensureAdjacentFileLeafSize.call(context, anchor, pane);
+  assert.deepEqual(writes, [], "Usable native allocations must remain unchanged");
+  paneExtent = 0;
+  pane.parentElement = {};
+  KplexPlugin.prototype.ensureAdjacentFileLeafSize.call(context, anchor, pane);
+  assert.deepEqual(writes, [], "Sizing must not cross unrelated workspace splits");
+}
+const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedPageRelations, hydratePersistedRelations, hydrateGraphState, computeIndexSettingsSignature, computeVaultSignature, persistedDeclarationFromEvidence } = require(join(temp, "src/index/IndexSnapshot.js"));
 const { createGraphState } = require(join(temp, "src/index/GraphState.js"));
 const { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSectionExpansion } = require(join(temp, "src/index/SectionExpansion.js"));
 const { parseBodyMetadata, parseBodyMetadataCore, parseBodyMetadataCooperative } = require(join(temp, "src/index/fieldParser.js"));
@@ -400,7 +1290,20 @@ const { MetadataParser, MetadataParseCancelledError } = require(join(temp, "src/
 const { RelationType, LinkDirection } = require(join(temp, "src/types.js"));
 const { resolveNodeStyle } = require(join(temp, "src/index/style.js"));
 const { RelationEvidenceStore } = require(join(temp, "src/index/RelationEvidence.js"));
-const { buildScene, buildSectionExpandedScene } = require(join(temp, "src/ui/layout.js"));
+
+let partialSnapshotWrites = 0;
+const partialSnapshotScheduler = new ForegroundWorkScheduler();
+await GraphIndex.prototype.persistIndexedDbSnapshot.call({
+  workScheduler: partialSnapshotScheduler,
+  snapshotPersistGeneration: 7,
+  fullSnapshotHydrated: false,
+  state: { pages: new Map([["partial.md", {}]]) },
+  indexedDb: { writeSnapshot: async () => { partialSnapshotWrites += 1; return true; } },
+}, 7);
+assert.equal(partialSnapshotWrites, 0, "A non-authoritative startup preview must never enter snapshot persistence");
+assert.deepEqual(partialSnapshotScheduler.diagnostics().active, [0, 0, 0, 0, 0], "Refused persistence must release its actual scheduler lease");
+const { buildScene, buildSectionExpandedScene, withAreaHeightOverrides } = require(join(temp, "src/ui/layout.js"));
+const { effectiveViewSettings } = require(join(temp, "src/ui/viewProfileUnderTest.js"));
 const {
   GraphPredicateEngine,
   compileGraphPredicate,
@@ -560,7 +1463,17 @@ for (const [sourcePath, content] of contents) {
   unresolvedLinks[sourcePath] = unresolved;
 }
 
+/** Event ownership matches the public host interface; no indexing behavior is substituted. */
+function fixtureEvents() {
+  const subscriptions = new Set();
+  return {
+    on(name, callback) { const ref = { name, callback }; subscriptions.add(ref); return ref; },
+    offref(ref) { subscriptions.delete(ref); },
+    trigger(name, ...args) { for (const ref of subscriptions) if (ref.name === name) ref.callback(...args); },
+  };
+}
 const metadataCache = {
+  ...fixtureEvents(),
   resolvedLinks,
   unresolvedLinks,
   getFileCache(file) { return caches.get(file.path) ?? null; },
@@ -572,12 +1485,14 @@ const metadataCache = {
 
 const app = {
   vault: {
+    ...fixtureEvents(),
     getName() { return "K-Plex test vault"; },
     getRoot() { return rootFolder; },
     getMarkdownFiles() { return [...files.values()]; },
     getFiles() { return [...files.values()]; },
     cachedRead(file) { return Promise.resolve(contents.get(file.path) ?? ""); },
     getFileByPath(path) { return files.get(path) ?? null; },
+    getFolderByPath(path) { return folders.get(path) ?? null; },
     getAbstractFileByPath(path) { return files.get(path) ?? folders.get(path) ?? null; },
     getResourcePath(file) { return `app://local/${encodeURIComponent(file.path)}`; },
   },
@@ -612,8 +1527,11 @@ const hierarchy = {
 };
 
 const settings = {
+  // This historical compatibility oracle exercises a completed full graph. On-demand startup
+  // and independently restored URL discovery have dedicated real-browser regression lanes.
+  indexingMode: "eager",
   hierarchy,
-  excalibrainFilepath: "Excalibrain.md",
+  pinnedNodes: [],
   noteTypeField: "Note type",
   primaryTagField: "Note type",
   tagStyleList: ["#project", "#person"],
@@ -670,8 +1588,292 @@ const settings = {
   newNodeDefaultType: "markdown",
 };
 
-const plugin = { app, settings, recordDiagnostic() {}, manifest: { dir: "" } };
+const plugin = { app, settings, getIndexSourceRevision: () => 0, recordDiagnostic() {}, manifest: { dir: "" } };
+
+// A browser clock has a different origin from wall time. Search must yield and honor cancellation
+// after a timed slice instead of comparing performance.now() with an epoch-millisecond timestamp.
+{
+  const searchIndex = new GraphIndex(plugin, app);
+  const performanceDescriptor = Object.getOwnPropertyDescriptor(globalThis, "performance");
+  const OriginalChannel = window.MessageChannel;
+  let ticks = 0, yields = 0, current = true;
+  Object.defineProperty(globalThis, "performance", { configurable: true, value: { now: () => ticks += 20 } });
+  // Cancel on the actual host event task, before its continuation resumes preparation.
+  window.MessageChannel = class extends OriginalChannel {
+    constructor() {
+      super();
+      this.port1.addEventListener("message", () => { yields++; current = false; }, { once: true });
+    }
+  };
+  try {
+    const pages = new Map(Array.from({ length: 1024 }, (_, i) => [String(i), { path: String(i) }]));
+    searchIndex.makeSearchEntry = page => ({ page, name: page.path, aliases: [], path: page.path });
+    assert.equal(await searchIndex.prepareSearchIndex({ pages }, () => current), null);
+    assert.equal(yields, 1, "Search yields at its first elapsed monotonic slice and cancels privately");
+    assert.equal(searchIndex.searchEntries.length, 0, "Cancelled search publishes no prefix");
+  } finally {
+    Object.defineProperty(globalThis, "performance", performanceDescriptor);
+    window.MessageChannel = OriginalChannel;
+    searchIndex.destroy();
+  }
+}
+
 const index = new GraphIndex(plugin, app);
+console.log(`Startup admission: ${await runStartupAdmission({KplexPlugin,GraphIndex,app,settings,TFile,TFolder,fixtureEvents})} production scenarios passed.`);
+console.log(`Startup source convergence: ${await runStartupSourceConvergence({KplexPlugin,GraphIndex,app,settings})} production scenarios passed.`);
+
+// Exercise the actual temporary native listeners, including the dormant interval before admission.
+// A physical snapshot can cover initial discovery notifications; it cannot cover observed same-stat
+// body/metadata edits merely because its later inventory has matching paths, mtimes and sizes.
+function preRestoreFenceFixture() {
+  const startup = new KplexPlugin();
+  const nativeFiles = new Map();
+  const nativeFolders = new Map();
+  const deferred = [];
+  let inventoryRevision = null;
+  startup.app = {
+    ...app,
+    vault: {
+      ...app.vault, ...fixtureEvents(),
+      getFileByPath: path => nativeFiles.get(path) ?? null,
+      getFolderByPath: path => nativeFolders.get(path) ?? null,
+    },
+    metadataCache: { ...metadataCache, ...fixtureEvents() },
+  };
+  startup.register = () => {};
+  startup.index = {
+    getRestoreInventorySourceRevision: () => inventoryRevision,
+    invalidateHostStructure: () => {},
+    observeDeferredHostChange: (...args) => { deferred.push(args); },
+    updateHostFileAvailability: () => {},
+    updateHostFolderAvailability: async () => {},
+    refreshVisiblePresentation: async () => {},
+    refreshVisibleHostMetadataPreviews: () => false,
+  };
+  startup.installPreRestoreChangeFence();
+  const put = item => (item instanceof TFile ? nativeFiles : nativeFolders).set(item.path, item);
+  const create = item => { put(item); startup.app.vault.trigger("create", item); return item; };
+  const capture = () => { inventoryRevision = startup.getIndexSourceRevision(); startup.indexPreparationAdmitted = true; };
+  const classify = (fresh = true) => startup.classifyPreRestoreChanges(fresh);
+  const close = () => {
+    const release = startup.preRestoreListenerCleanup;
+    release(); release();
+    const revision = startup.getIndexSourceRevision();
+    startup.app.vault.trigger("create", new TFile("After cleanup.md"));
+    assert.equal(startup.getIndexSourceRevision(), revision, "Retired pre-restore listeners must not retain event ownership");
+  };
+  return { startup, nativeFiles, nativeFolders, deferred, put, create, capture, classify, close };
+}
+{
+  const f = preRestoreFenceFixture();
+  try {
+    f.create(new TFolder("Initial"));
+    f.create(new TFile("Initial/Note.md", 17));
+    f.create(new TFile("Initial/Image.png", 18));
+    assert.equal(f.deferred.length, 0, "Pre-layout discovery remains physical inventory input without body invalidation");
+    f.capture(); f.classify();
+    assert.equal(f.startup.indexDirty, false, "Fresh captured inventory covers unchanged dormant initial file/folder/attachment discovery");
+    assert.deepEqual([...f.startup.indexBacklogReasons], [], "Covered initial creates must not force a post-restore full rebuild");
+    assert.deepEqual([...f.startup.dirtyMarkdownPaths], []);
+    assert.equal(f.startup.preRestoreUncoveredChanges, false);
+  } finally { f.close(); }
+}
+{
+  const f = preRestoreFenceFixture();
+  try {
+    f.startup.layoutReady = true;
+    f.create(new TFolder("Real"));
+    f.create(new TFile("Real/Note.md", 17));
+    f.create(new TFile("Real/Image.png", 18));
+    assert.equal(f.deferred.length, 3, "Post-layout creates before admission retain ordinary source invalidation");
+  } finally { f.close(); }
+}
+for (const repeat of ["same-native", "replacement-native", "after-capture"]) {
+  const f = preRestoreFenceFixture();
+  try {
+    const original = f.create(new TFile("Repeated.md", 18));
+    if (repeat === "after-capture") f.capture();
+    f.create(repeat === "replacement-native" ? new TFile(original.path, original.stat.mtime) : original);
+    if (repeat !== "after-capture") f.capture();
+    f.classify();
+    assert.equal(f.startup.indexDirty, repeat !== "same-native", `${repeat}: repeated callbacks retain the first native proof and latest event fence`);
+    assert.deepEqual([...f.startup.dirtyMarkdownPaths], repeat === "same-native" ? [] : [original.path]);
+    assert.deepEqual([...f.startup.indexBacklogReasons], repeat === "same-native" ? [] : ["vault:create-markdown"]);
+  } finally { f.close(); }
+}
+for (const event of ["modify", "changed"]) for (const admittedBeforeEvent of [false, true]) {
+  const f = preRestoreFenceFixture();
+  try {
+    f.create(new TFolder("Initial"));
+    const note = f.create(new TFile("Initial/Edited.md", 19));
+    f.create(new TFile("Initial/Unchanged.md", 19));
+    f.create(new TFile("Initial/Image.png", 20));
+    // Search/catalog preparation can yield after admission but before inventory capture.
+    if (admittedBeforeEvent) f.startup.indexPreparationAdmitted = true;
+    const stat = { ...note.stat };
+    (event === "modify" ? f.startup.app.vault : f.startup.app.metadataCache).trigger(event, note);
+    assert.deepEqual(note.stat, stat, "The observed startup edit deliberately keeps identical physical stats");
+    f.capture(); f.classify();
+    assert.equal(f.startup.indexDirty, true, `Equal-stat ${event} remains outstanding across admission=${admittedBeforeEvent}`);
+    assert.deepEqual([...f.startup.indexBacklogReasons], ["metadata:changed"], "Covered creates cannot turn an outstanding note edit into structural rebuild work");
+    assert.deepEqual([...f.startup.dirtyMarkdownPaths], [note.path], "Only the actually edited Markdown owner needs a patch");
+    assert.equal(f.startup.preRestoreUncoveredChanges, true);
+  } finally { f.close(); }
+}
+for (const kind of ["markdown", "attachment", "folder"]) {
+  const f = preRestoreFenceFixture();
+  try {
+    f.capture();
+    const item = f.create(kind === "folder" ? new TFolder("Late") : new TFile(kind === "markdown" ? "Late.md" : "Late.png", 21));
+    f.classify();
+    assert.equal(f.startup.indexDirty, true, `A genuine post-capture ${kind} create remains outstanding`);
+    assert.deepEqual([...f.startup.indexBacklogReasons], [kind === "markdown" ? "vault:create-markdown" : "vault:create"]);
+    assert.deepEqual([...f.startup.dirtyMarkdownPaths], kind === "markdown" ? [item.path] : []);
+  } finally { f.close(); }
+}
+for (const condition of ["unknown-inventory", "stale-snapshot", "file-replaced", "folder-replaced", "stat-changed", "ctime-changed", "path-changed"]) {
+  const f = preRestoreFenceFixture();
+  try {
+    const item = f.create(condition === "folder-replaced" ? new TFolder("Initial") : new TFile("Initial.md", 22));
+    if (condition !== "unknown-inventory") f.capture();
+    if (condition === "file-replaced") f.put(new TFile(item.path, item.stat.mtime));
+    if (condition === "folder-replaced") f.put(new TFolder(item.path));
+    if (condition === "stat-changed") item.stat.size += 1;
+    if (condition === "ctime-changed") item.stat.ctime += 1;
+    if (condition === "path-changed") {
+      f.nativeFiles.delete(item.path); item.path = "Moved.md"; f.put(item);
+    }
+    f.classify(condition !== "stale-snapshot");
+    assert.equal(f.startup.indexDirty, true, `${condition}: unproved create coverage must retain safe startup work`);
+    assert(f.startup.indexBacklogReasons.has(item instanceof TFile ? "vault:create-markdown" : "vault:create"),
+      `${condition}: a stale/unknown inventory or changed native token cannot erase the create reason`);
+  } finally { f.close(); }
+}
+for (const operation of ["delete-recreate", "rename"]) for (const admittedBeforeEvent of [false, true]) {
+  const f = preRestoreFenceFixture();
+  try {
+    const original = f.create(new TFile("Original.md", 23));
+    if (admittedBeforeEvent) f.startup.indexPreparationAdmitted = true;
+    if (operation === "delete-recreate") {
+      f.nativeFiles.delete(original.path); f.startup.app.vault.trigger("delete", original);
+      f.create(new TFile(original.path, original.stat.mtime));
+    } else {
+      const oldPath = original.path;
+      f.nativeFiles.delete(oldPath); original.path = "Renamed.md"; f.put(original);
+      f.startup.app.vault.trigger("rename", original, oldPath);
+    }
+    f.capture(); f.classify();
+    assert.equal(f.startup.indexDirty, true, `${operation} remains outstanding across admission=${admittedBeforeEvent}`);
+    assert(f.startup.indexBacklogReasons.has(operation === "rename" ? "vault:rename" : "vault:delete"),
+      "Observed destructive identity changes must not be mistaken for initial discovery");
+    if (operation === "rename" && !admittedBeforeEvent) assert(!f.startup.dirtyMarkdownPaths.has("Original.md"), "Dormant rename retires the old Markdown coordinate");
+  } finally { f.close(); }
+}
+
+// Restore has a temporary event fence before the normal reactive listeners are installed.
+// Events before inventory capture are already represented there; later events must remain queued
+// even if stale-snapshot reconciliation itself succeeds without a new event during its await.
+for (const { inventoryRevision, fresh, remainsDirty } of [
+  { inventoryRevision: 1, fresh: true, remainsDirty: false },
+  { inventoryRevision: 1, fresh: false, remainsDirty: false },
+  { inventoryRevision: 0, fresh: true, remainsDirty: true },
+  { inventoryRevision: 0, fresh: false, remainsDirty: true },
+]) {
+  const startup = new KplexPlugin();
+  startup.index = { isOnDemandMode: () => false,
+    getRestoreInventorySourceRevision: () => inventoryRevision,
+    hasPendingSnapshotHydration: () => false,
+    size: 1,
+    isFullSnapshotHydrated: () => true, hasPhysicalBaseline: () => true, hasSourceBackedStartup: () => false,
+    hasIncrementalRestorePatch: () => true,
+    reconcileRestoredSnapshot: async () => ({ reconciled: true, patched: 0 }),
+    bootstrapSemanticDependencies: async () => true,
+  };
+  startup.app = app;
+  startup.layoutReady = true; startup.indexPreparationAdmitted = true;
+  startup.metadataStabilized = true;
+  startup.notifyIndexStatus = () => {};
+  startup.hasVisibleKplexSurface = () => false;
+  startup.indexDirtyRevision = 1;
+  startup.preRestoreMarkdownPaths.set("Note A.md", 1);
+  startup.preRestoreReasons.set("metadata:changed", 1);
+  startup.classifyPreRestoreChanges(fresh);
+  if (!fresh) startup.indexBacklogReasons.add("startup:stale-snapshot");
+  await startup.ensureInitialIndex();
+  assert.equal(startup.indexDirty, remainsDirty, `Startup event coverage must match inventory revision ${inventoryRevision}`);
+  assert.equal(startup.dirtyMarkdownPaths.size > 0, remainsDirty, "Only uncovered paths may remain queued");
+}
+{
+  const startup = new KplexPlugin();
+  startup.index = { isOnDemandMode: () => false, getRestoreInventorySourceRevision: () => 1 };
+  startup.indexDirtyRevision = 1;
+  startup.preRestoreReasons.set("metadata:changed", 1);
+  startup.indexBacklogReasons.add("manual-rebuild");
+  startup.classifyPreRestoreChanges(true);
+  assert.equal(startup.indexDirty, true, "Covered fence events must not clear an independent rebuild request");
+  assert.deepEqual([...startup.indexBacklogReasons], ["manual-rebuild"]);
+}
+{
+  const startup = new KplexPlugin();
+  startup.index = { isOnDemandMode: () => false, getRestoreInventorySourceRevision: () => 1 };
+  startup.indexDirtyRevision = 2;
+  startup.preRestoreReasons.set("vault:rename-folder", 1);
+  startup.preRestoreReasons.set("metadata:changed", 2);
+  startup.preRestoreMarkdownPaths.set("Note A.md", 2);
+  startup.classifyPreRestoreChanges(true);
+  assert.deepEqual([...startup.indexBacklogReasons], ["metadata:changed"],
+    "A covered structural event must not turn a later note edit into a full rebuild");
+  assert.deepEqual([...startup.dirtyMarkdownPaths], ["Note A.md"]);
+}
+
+// Sidecar restore can await after a visible view has already completed local initialization.
+// Later restore classification must queue actual reconciliation without clearing newer events.
+for (const { visible, unloading, complete, dirty, expected } of [
+  { visible: true, unloading: false, complete: true, dirty: true, expected: 1 },
+  { visible: false, unloading: false, complete: true, dirty: true, expected: 0 },
+  { visible: true, unloading: true, complete: true, dirty: true, expected: 0 },
+  { visible: true, unloading: false, complete: false, dirty: true, expected: 0 },
+  { visible: true, unloading: false, complete: true, dirty: false, expected: 0 },
+]) {
+  const startup = new KplexPlugin();
+  startup.initialIndexTask = Promise.resolve();
+  startup.initialIndexComplete = complete;
+  startup.layoutReady = true; startup.indexPreparationAdmitted = true;
+  startup.indexDirty = dirty;
+  startup.unloading = unloading;
+  startup.hasVisibleKplexSurface = () => visible;
+  startup.indexBacklogReasons.add("startup:no-snapshot");
+  startup.indexBacklogReasons.add("metadata:changed");
+  startup.dirtyMarkdownPaths.add("Note A.md");
+  const scheduled = [];
+  startup.scheduleRebuild = reason => { scheduled.push(reason); };
+  await startup.finishStartupIndexPreparation();
+  assert.equal(scheduled.length, expected, "Only visible, complete, live startup queues its outstanding backlog");
+  if (expected) assert.deepEqual(scheduled, ["startup:post-initial-backlog"]);
+  assert.equal(startup.indexDirty, dirty, "Queueing is not proof that the backlog has been reconciled");
+  assert.deepEqual([...startup.indexBacklogReasons], ["startup:no-snapshot", "metadata:changed"]);
+  assert.deepEqual([...startup.dirtyMarkdownPaths], ["Note A.md"], "A newer source edit must remain queued");
+}
+
+// Source progress is a startup authority independently of optional full-graph hydration.
+for (const adopted of [true, false]) {
+  const startup = new KplexPlugin();
+  let fullBuilds = 0;
+  startup.index = { isOnDemandMode: () => false,
+    size: 1, hasPendingSnapshotHydration: () => false, hasPhysicalBaseline: () => true,
+    hasSourceBackedStartup: () => true, adoptStartupSources: async () => adopted,
+    isFullSnapshotHydrated: () => false,
+  };
+  startup.app = app; startup.layoutReady = true; startup.indexPreparationAdmitted = true; startup.indexDirty = true;
+  startup.indexBacklogReasons.add("startup:no-snapshot");
+  startup.notifyIndexStatus = () => {};
+  startup.hasVisibleKplexSurface = () => false;
+  startup.performRebuild = async () => { fullBuilds++; };
+  await startup.ensureInitialIndex();
+  assert.equal(fullBuilds, 0, "Source-backed startup does not route missing graph cache to a full build");
+  assert.equal(startup.initialIndexComplete, adopted, "Unavailable/incomplete source adoption remains explicit");
+  assert.equal(startup.indexDirty, !adopted, "Only completed source adoption retires the startup backlog");
+}
 
 function expectRole(sourcePath, role, targetPath, type) {
   const source = index.get(sourcePath);
@@ -755,11 +1957,749 @@ try {
   assert.equal(hugeDrawingParsed.inlineFields.friend, undefined);
 
   await index.rebuild();
+  assert.equal(index.indexedMarkdownFileCount(), app.vault.getMarkdownFiles().length, "Authoritative build must count every indexed Markdown source");
+  assert.equal(await index.startBackgroundUrlIndex(), true, "Full compatibility fixture also closes independent URL discovery");
+  assert.equal(index.getUrlIndexProgress().complete, true);
+
+  // Obsidian/cancelled continuations can retain an unloaded index. Its ownership must be empty
+  // while independently held published pages remain intact and usable by the current index.
+  const retiredIndex = new GraphIndex(plugin, app);
+  retiredIndex.state = index.state;
+  retiredIndex.searchEntries = [...index.searchEntries];
+  retiredIndex.fieldCache.set("retired", { mtime: 0, body: { inlineFields: {}, urls: [] } });
+  retiredIndex.nodeVisualCache.set("retired", { signature: "retired", visual: null });
+  const retainedPage = index.get("Note A.md");
+  retiredIndex.destroy();
+  assert.equal(retiredIndex.size, 0, "An unloaded index retains no full graph");
+  assert.equal(retiredIndex.searchEntries.length + retiredIndex.fieldCache.size + retiredIndex.nodeVisualCache.size, 0,
+    "Retiring host references retain no search/body/visual cache payload");
+  assert.equal(index.get("Note A.md"), retainedPage, "Teardown does not mutate independently owned pages");
 
   const A = index.get("Note A.md");
   assert(A);
   const neighborhoodA = index.getNeighborhood("Note A.md");
   assert(neighborhoodA);
+
+  // Capture published behavior before any of this suite's runtime edits. This fixture protects
+  // every graph page, original declaration, precedence decision and ordinary Plex scene when
+  // compilation and layout move into host-independent modules.
+  const baseline = {
+    graph: canonicalGraph(index),
+    neighborhoods: Object.fromEntries(["Note A.md", "folder:/", "tag:project"]
+      .map((path) => [path, canonicalNeighborhood(index, path)])),
+    scene: canonicalScene(buildScene(neighborhoodA, index, settings)),
+    searches: Object.fromEntries(["note a", "note b", "project", "folder", "https"]
+      .map((query) => [query, index.search(query, 12).map((page) => page.path)])),
+  };
+  const frozenBaseline = JSON.parse(readFileSync(join(root, "tests/fixtures/excalibrain-indexing/graph-baseline.json"), "utf8"));
+  // Explicit product change: URL link labels now remain aliases. Every other frozen field stays exact.
+  const urlLabels = {
+    "https://source.com/inferred": "Source URL inferred alias",
+    "https://source.com/ontology-full-line": "Source URL full-line ontology alias",
+    "https://source.com/ontology-inline": "Source URL inline ontology alias",
+  };
+  for (const page of frozenBaseline.graph.pages) if (urlLabels[page.path]) page.aliases = [urlLabels[page.path]];
+  // Explicit product delta: property URLs now receive the same origin-parent relation as body
+  // URLs. Extend only this one declared edge, its two incidence rows and its exact explanation;
+  // keep the archived baseline and every unrelated page/declaration/layout field unchanged.
+  const propertyOrigin = {
+    declaredByPath: "https://source.com", declaredRole: "child", declaredTargetPath: "https://source.com/frontmatter",
+    definition: "url-origin", direction: 1, relationType: 2, role: "child", sourceKind: "url-origin",
+    sourcePath: "https://source.com", targetPath: "https://source.com/frontmatter",
+  };
+  /** Match the fixture's exact deterministic array order without consulting graph semantics. */
+  const jsonOrder = (left, right) => JSON.stringify(left) < JSON.stringify(right) ? -1 : JSON.stringify(left) > JSON.stringify(right) ? 1 : 0;
+  frozenBaseline.graph.declarations.push(propertyOrigin); frozenBaseline.graph.declarations.sort(jsonOrder);
+  frozenBaseline.graph.pages.find(page => page.path === "https://source.com").relations.unshift({
+    actualTargetPath: "https://source.com/frontmatter", childType: 2, childTypeDefinition: "url-origin", direction: 1,
+    isChild: true, isHidden: false, isLeftFriend: false, isNextFriend: false, isParent: false, isPreviousFriend: false,
+    isRightFriend: false, targetPath: "https://source.com/frontmatter",
+  });
+  frozenBaseline.graph.pages.find(page => page.path === "https://source.com/frontmatter").relations.push({
+    actualTargetPath: "https://source.com", direction: 2, isChild: false, isHidden: false, isLeftFriend: false,
+    isNextFriend: false, isParent: true, isPreviousFriend: false, isRightFriend: false, parentType: 2,
+    parentTypeDefinition: "url-origin", targetPath: "https://source.com",
+  });
+  frozenBaseline.graph.explanations.push({ sourcePath: "https://source.com", targetPath: "https://source.com/frontmatter",
+    hidden: false, summary: "source:url-origin", resolvedRoles: [{ relationType: 2, role: "child" }],
+    decisions: [{ active: true, evidence: propertyOrigin }] });
+  frozenBaseline.graph.explanations.sort((left, right) => jsonOrder([left.sourcePath, left.targetPath], [right.sourcePath, right.targetPath]));
+  // URL closure is now independent of full-graph closure and explicitly reported on these four
+  // historical scene nodes. Exact visible counts and all other scene fields remain frozen.
+  for (const path of ["https://source.com/ontology-full-line", "https://source.com/ontology-inline",
+    "https://source.com/inferred", "https://youtu.be/excalibrain-fixture-video"]) {
+    const node = frozenBaseline.scene.nodes.find(node => node.path === path); assert(node);
+    for (const gate of Object.values(node.gateStats)) gate.complete = true;
+  }
+  // Default Date roles change four exact pairs. Two real Daily siblings remain through tags;
+  // the unresolved Date-only sibling disappears and the centered sibling strip shifts half a row.
+  applyDefaultDateRoleFixture(frozenBaseline.graph);
+  frozenBaseline.graph.declarations.sort(jsonOrder);
+  const removedDateSibling = "Daily/2026/09/20260920.md";
+  const siblingRows = frozenBaseline.neighborhoods["Note A.md"].siblings;
+  assert.equal(siblingRows.filter(item => item.path === removedDateSibling).length, 1);
+  frozenBaseline.neighborhoods["Note A.md"].siblings = siblingRows.filter(item => item.path !== removedDateSibling);
+  assert.equal(frozenBaseline.scene.nodes.filter(item => item.path === removedDateSibling).length, 1);
+  frozenBaseline.scene.nodes = frozenBaseline.scene.nodes.filter(item => item.path !== removedDateSibling);
+  for (const [path, beforeTop, afterTop, beforeBottom, afterBottom] of [
+    ["Note B.md", 4, 7, 5, 2], ["Note C.md", 5, 6, 1, 0],
+    ["Daily/2026/09/20260918.md", 4, 3, 0, 1], ["Daily/2026/09/20260919.md", 4, 3, 0, 1],
+  ]) {
+    const node = frozenBaseline.scene.nodes.find(item => item.path === path); assert(node);
+    assert.equal(node.gateStats.top.visibleCount, beforeTop); assert.equal(node.gateStats.bottom.visibleCount, beforeBottom);
+    node.gateStats.top = { ...node.gateStats.top, visibleCount: afterTop, hasAny: afterTop > 0 };
+    node.gateStats.bottom = { ...node.gateStats.bottom, visibleCount: afterBottom, hasAny: afterBottom > 0 };
+  }
+  for (const [path, beforeY, afterY] of [
+    ["Daily/2026/09/20260918.md", -170.95, -153.825], ["Daily/2026/09/20260919.md", -136.7, -119.575],
+    ["folder:Daily", -68.2, -85.325], ["Section Tree.md", -33.95, -51.075],
+  ]) {
+    const node = frozenBaseline.scene.nodes.find(item => item.path === path); assert(node);
+    assert.equal(node.y, beforeY); node.y = afterY;
+  }
+  const oldDateSiblingEdges = frozenBaseline.scene.edges.filter(edge => edge.id.startsWith("sibling-parent:Note B.md:Daily/"));
+  assert.equal(oldDateSiblingEdges.length, 3);
+  for (const edge of oldDateSiblingEdges) { assert.equal(edge.role, "child"); assert.equal(edge.relationType, 2); }
+  frozenBaseline.scene.edges = frozenBaseline.scene.edges.filter(edge => !oldDateSiblingEdges.includes(edge));
+  const dateCrossInsertion = frozenBaseline.scene.edges.findIndex(edge => edge.id === "cross:Note B.md:Note C.md:child");
+  assert(dateCrossInsertion >= 0);
+  frozenBaseline.scene.edges.splice(dateCrossInsertion + 1, 0, ...oldDateSiblingEdges.filter(edge => edge.targetPath !== removedDateSibling).map(edge => ({
+    ...edge, id: `cross:Note B.md:${edge.targetPath}:parent`, isCrossLink: true, role: "parent", relationType: 1,
+  })));
+  // Approved #98 presentation delta only: density two no longer reduces a 30-character budget
+  // to 23. At this fixture's font size 20, each character contributes 5.8 px: the three >=30-character
+  // URL labels grow 70 + 23 * 5.8 = 203.4 to 70 + 30 * 5.8 = 244; the 25-character inferred alias grows to 215.
+  // Fixed 33.75 px grid gaps then repack those rows. The wider parent envelope grows 20.3 px,
+  // moving lateral/sibling anchors by that amount. Explicit finite numbers below are a reviewed
+  // arithmetic oracle, never calculated from the production scene. The archived JSON stays intact;
+  // y, height, every style/evidence/count field, node order and all edges remain exactly frozen.
+  const typographyWidths = [
+    ["https://source.com/ontology-full-line", 203.4, 244],
+    ["https://source.com/ontology-inline", 203.4, 244],
+    ["https://youtu.be/excalibrain-fixture-video", 203.4, 244],
+    ["https://source.com/inferred", 203.4, 215],
+  ];
+  const typographyPositions = [
+    ["tag:project", -118.57499999999999, -138.875],
+    ["https://source.com/ontology-full-line", 72.87500000000001, 72.875],
+    ["https://source.com/ontology-inline", -104.07499999999997, -104.07499999999999],
+    ["tag:taxonomy/body/leaf", 118.57500000000002, 138.875],
+    ["https://youtu.be/excalibrain-fixture-video", -337.2, -343],
+    ["Note C.md", -145.74999999999997, -131.25],
+    ["Note F.md", 2.842170943040401e-14, 14.5],
+    ["Note Y.md", 145.75000000000003, 160.25],
+    ["https://source.com/inferred", 337.20000000000005, 357.5],
+    ["Note D.md", -392.775, -413.075],
+    ["Note G.md", -392.775, -413.075],
+    ["Note H.md", -392.775, -413.075],
+    ["Note X.md", -392.775, -413.075],
+    ["Note E.md", 392.775, 413.075],
+    ["Daily/2026/09/20260918.md", 665.775, 686.075],
+    ["Daily/2026/09/20260919.md", 665.775, 686.075],
+    ["folder:Daily", 665.775, 686.075],
+    ["Section Tree.md", 665.775, 686.075],
+  ];
+  /** Change exactly one approved scalar after checking its unique archived endpoint and old value. */
+  const applyTypographySceneDelta = (field, rows) => {
+    assert.equal(new Set(rows.map(([path]) => path)).size, rows.length, "Typography delta paths must be unique");
+    for (const [path, before, after] of rows) {
+      const matches = frozenBaseline.scene.nodes.filter(node => node.path === path);
+      assert.equal(matches.length, 1, `Typography delta requires one archived node: ${path}`);
+      assert.equal(matches[0][field], before, `Unreviewed archived ${field} value: ${path}`);
+      assert(Number.isFinite(before) && Number.isFinite(after), `Typography geometry must remain finite: ${path}`);
+      matches[0][field] = after;
+    }
+  };
+  applyTypographySceneDelta("width", typographyWidths);
+  applyTypographySceneDelta("x", typographyPositions);
+  // Merged #189 adds font-ink padding. Independent f3c2260 and 50d7424 controls
+  // produce exactly the same graph, evidence and scene; the archived pre-#189 golden
+  // differs only in these finite pill heights and dependent row positions. Keep every
+  // other field exact and check the archived scalar before applying this accepted delta.
+  applyTypographySceneDelta("height", [
+    ["Note A.md",48,53],
+    ["folder:/",26,30],
+    ["tag:body-tag",26,30],
+    ["Note B.md",26,30],
+    ["tag:fixture",26,30],
+    ["tag:project",26,30],
+    ["https://source.com/ontology-full-line",26,30],
+    ["https://source.com/ontology-inline",26,30],
+    ["tag:taxonomy/body/leaf",26,30],
+    ["https://youtu.be/excalibrain-fixture-video",26,30],
+    ["Note C.md",26,30],
+    ["Note F.md",26,30],
+    ["Note Y.md",26,30],
+    ["https://source.com/inferred",26,30],
+    ["Note D.md",26,30],
+    ["Note G.md",26,30],
+    ["Note H.md",26,30],
+    ["Note X.md",26,30],
+    ["Note E.md",26,30],
+    ["Daily/2026/09/20260918.md",22.099999999999998,27],
+    ["Daily/2026/09/20260919.md",22.099999999999998,27],
+    ["folder:Daily",22.099999999999998,27],
+    ["Section Tree.md",22.099999999999998,27]
+  ]);
+  applyTypographySceneDelta("y", [
+    ["folder:/",-81.55000000000001,-86.05000000000001],
+    ["tag:body-tag",-81.55000000000001,-86.05000000000001],
+    ["Note B.md",-131.85000000000002,-140.35000000000002],
+    ["tag:fixture",-131.85000000000002,-140.35000000000002],
+    ["tag:project",-182.15000000000003,-194.65000000000003],
+    ["https://source.com/ontology-full-line",-182.15000000000003,-194.65000000000003],
+    ["https://source.com/ontology-inline",-232.45000000000005,-248.95000000000005],
+    ["tag:taxonomy/body/leaf",-232.45000000000005,-248.95000000000005],
+    ["https://youtu.be/excalibrain-fixture-video",123.55000000000001,128.05],
+    ["Note C.md",123.55000000000001,128.05],
+    ["Note F.md",123.55000000000001,128.05],
+    ["Note Y.md",123.55000000000001,128.05],
+    ["https://source.com/inferred",123.55000000000001,128.05],
+    ["Note D.md",-57.225,-63.224999999999994],
+    ["Note G.md",-19.075000000000003,-21.074999999999996],
+    ["Note H.md",19.074999999999996,21.075000000000003],
+    ["Note X.md",57.225,63.22500000000001],
+    ["Daily/2026/09/20260918.md",-153.825,-158.67499999999998],
+    ["Daily/2026/09/20260919.md",-119.575,-119.52499999999998],
+    ["folder:Daily",-85.325,-80.37499999999999],
+    ["Section Tree.md",-51.075,-41.22499999999998]
+  ]);
+  // Explicit product change: only the two archived tag-backed Note Type connectors double width.
+  // All indexed facts, evidence, classification, search results and other scene fields stay exact.
+  for (const [source, target] of [["Note A.md", "tag:project"], ["tag:project", "Note C.md"]]) {
+    const edges = frozenBaseline.scene.edges.filter(edge => edge.sourcePath === source && edge.targetPath === target && edge.typeDefinition === "tag-tree");
+    assert.equal(edges.length, 1, "One exact archived Note Type tag edge");
+    assert.deepEqual(edges[0].style, {}, "Unreviewed archived Note Type tag styling");
+    edges[0].style = {strokeWidth: 2.4};
+  }
+  assert.deepEqual(baseline, frozenBaseline, "Exact compatibility except approved URL, Date-role, label geometry and two Note Type stroke-width deltas");
+
+  // A new Markdown file may arrive after the last complete snapshot and before the five-minute
+  // edit idle write. Warm startup must reuse that snapshot and ingest only the new source.
+  const warmRecord = {
+    meta: {
+      key: "active", schema: 3, generation: "warm-before-create", createdAt: Date.now(),
+      vaultSignature: computeVaultSignature(app), settingsSignature: computeIndexSettingsSignature(settings),
+      discoveredFields: [...index.state.discoveredFields.entries()], pageChunkCount: 1, evidenceChunkCount: 1,
+    },
+    pages: [...index.state.pages.values()].filter((page) => !page.transient)
+      .map((page) => persistedPageFromGraphPage(page, index.semanticFingerprints.get(page.path))),
+    evidence: [...index.state.evidence.declarations()].map(persistedDeclarationFromEvidence),
+  };
+  await runSettingsIndependence({
+    GraphIndex, GraphBuilder, KplexPlugin, settingsModule: require(join(temp, "src/settingsUnderTest.js")),
+    policy: require(join(temp, "src/core/graph/settingsPolicy.js")),
+    ontologyGrammar: require(join(temp, "src/core/contracts/ontologyConfiguration.js")),
+    sanitize: require(join(temp, "src/index/IndexedDbCache.js")).sanitizeIndexDiagnostics,
+    ReferenceCollector: require(join(temp, "src/adapters/obsidian/ontologySourceCollector.js")).ObsidianReferenceSourceCollector,
+    mergeFileMetadata: require(join(temp, "src/index/fieldParser.js")).mergeFileMetadata, parseBodyMetadata,
+    app, plugin, settings, index, warmRecord, caches, obsidianTestApi, canonicalGraph,
+    computeIndexSettingsSignature, computeVaultSignature, createIndexDiagnosticsReport,
+    buildCentralSectionExpansion, projectCentralSectionExpansion,
+  });
+  const newPath = "Startup Delta.md";
+  const newContent = "Parent:: [[Note A]]\n";
+  const newFile = new TFile(newPath, mtime++);
+  newFile.stat.size = newContent.length;
+  newFile.parent = rootFolder;
+  files.set(newPath, newFile);
+  rootFolder.children.push(newFile);
+  contents.set(newPath, newContent);
+  caches.set(newPath, { frontmatter: {}, tags: [], links: cacheLinks(newContent) });
+  resolvedLinks[newPath] = { "Note A.md": 1 };
+  unresolvedLinks[newPath] = {};
+  const makeWarmDelta = () => {
+    const warmDelta = new GraphIndex({ ...plugin, settings: { ...settings, pinnedNodes: [] } }, app);
+    warmDelta.indexedDb.getBodies = async (requests) => new Map(requests.flatMap(({ path, mtime }) => {
+      const cached = index.fieldCache.get(path);
+      return cached?.mtime === mtime ? [[path, cached.body]] : [];
+    }));
+    warmDelta.indexedDb.readSnapshotMeta = async (key = "active") => key === "active" ? warmRecord.meta : null;
+    warmDelta.indexedDb.readSnapshotCatalog = async () => ({ available: true, active: warmRecord.meta, checkpoint: null, invalidActive: false });
+    warmDelta.indexedDb.snapshotUsesChunks = () => true;
+    warmDelta.indexedDb.getPages = async (_generation, paths) => new Map(warmRecord.pages
+      .filter((page) => paths.includes(page.path)).map((page) => [page.path, page]));
+    warmDelta.indexedDb.iterateSnapshotPages = async (_meta, onPage, current) => {
+      for (const page of warmRecord.pages) { if (!current()) return false; onPage(page); }
+      return current();
+    };
+    warmDelta.indexedDb.iterateSnapshotEvidence = async (_meta, onEvidence, current) => {
+      for (const item of warmRecord.evidence) { if (!current()) return false; onEvidence(item); }
+      return current();
+    };
+    warmDelta.scheduleOrphanCleanup = () => {};
+    warmDelta.scheduleSnapshotPersist = () => {};
+    return warmDelta;
+  };
+  const warmDelta = makeWarmDelta();
+  try {
+    await warmDelta.restoreIndexedDbSnapshot(["Note A.md"]);
+    const restored = await warmDelta.waitForSnapshotHydration();
+    assert.equal(restored.restored, true, "One added note must not discard the complete snapshot");
+    assert.equal(restored.fresh, false);
+    assert.equal(warmDelta.hasIncrementalRestorePatch(), true);
+    assert.deepEqual(warmDelta.restoredAddedMarkdownPaths, [newPath]);
+    const reconciled = await warmDelta.reconcileRestoredSnapshot();
+    assert.equal(reconciled.reconciled, true);
+    assert.equal(reconciled.patched, 1);
+    assert(warmDelta.getIndexDiagnostics().some((entry) => entry.reason === "complete-markdown-delta" && entry.added === 1));
+    assert(warmDelta.getIndexDiagnostics().some((entry) => entry.reason === "per-file-reconcile-complete" && entry.added === 1));
+    const freshBuild = new GraphIndex(plugin, app);
+    try {
+      assert.equal(await freshBuild.rebuild(), true);
+      assert.deepEqual(canonicalGraph(warmDelta), canonicalGraph(freshBuild), "Warm creation recovery must match a full build");
+    } finally { freshBuild.destroy(); }
+  } finally {
+    warmDelta.destroy();
+    files.delete(newPath);
+    rootFolder.children = rootFolder.children.filter((child) => child !== newFile);
+    contents.delete(newPath);
+    caches.delete(newPath);
+    delete resolvedLinks[newPath];
+    delete unresolvedLinks[newPath];
+  }
+
+  const deletedPath = "Section Tree.md";
+  const deletedFile = files.get(deletedPath);
+  assert(deletedFile);
+  files.delete(deletedPath);
+  deletedFile.parent.children = deletedFile.parent.children.filter((child) => child !== deletedFile);
+  const warmDeletion = makeWarmDelta();
+  try {
+    await warmDeletion.restoreIndexedDbSnapshot(["Note A.md"]);
+    assert.equal((await warmDeletion.waitForSnapshotHydration()).restored, true);
+    assert.deepEqual(warmDeletion.restoredRemovedMarkdownPaths, [deletedPath]);
+    const result = await warmDeletion.reconcileRestoredSnapshot();
+    assert.equal(result.reconciled, true);
+    assert.equal(result.patched, 0);
+    assert.equal(warmDeletion.get(deletedPath)?.file, null, "A removed note remains a nonmaterialized graph endpoint");
+  } finally {
+    warmDeletion.destroy();
+    files.set(deletedPath, deletedFile);
+    deletedFile.parent.children.push(deletedFile);
+  }
+
+  const attachment = new TFile("Startup Attachment.png", mtime++);
+  attachment.parent = rootFolder;
+  rootFolder.children.push(attachment);
+  files.set(attachment.path, attachment);
+  const unsupportedWarmDelta = makeWarmDelta();
+  try {
+    await unsupportedWarmDelta.restoreIndexedDbSnapshot(["Note A.md"]);
+    assert.equal((await unsupportedWarmDelta.waitForSnapshotHydration()).restored, false,
+      "Attachment additions still need a structural rebuild");
+    assert(unsupportedWarmDelta.getIndexDiagnostics().some((entry) =>
+      entry.reason === "non-markdown-file-added" && entry.added === 1));
+  } finally {
+    unsupportedWarmDelta.destroy();
+    files.delete(attachment.path);
+    rootFolder.children = rootFolder.children.filter((child) => child !== attachment);
+  }
+
+  // Real Obsidian reports the vault root path as "/"; fixture roots may report "". Both map to
+  // the persisted folder:/ graph node and must accept an otherwise fresh complete snapshot.
+  const fixtureRootPath = rootFolder.path;
+  const fixtureSignature = warmRecord.meta.vaultSignature;
+  rootFolder.path = "/";
+  warmRecord.meta.vaultSignature = computeVaultSignature(app);
+  const slashRootRestore = makeWarmDelta();
+  try {
+    await slashRootRestore.restoreIndexedDbSnapshot(["Note A.md"]);
+    const restored = await slashRootRestore.waitForSnapshotHydration();
+    assert.equal(restored.restored, true);
+    assert.equal(restored.fresh, true);
+    assert.equal(slashRootRestore.hasIncrementalRestorePatch(), true);
+    assert(!slashRootRestore.getIndexDiagnostics().some((entry) => entry.reason === "folder-structure-changed"));
+  } finally {
+    slashRootRestore.destroy();
+    rootFolder.path = fixtureRootPath;
+    warmRecord.meta.vaultSignature = fixtureSignature;
+  }
+
+  // Cold startup publishes a useful center neighborhood before completing the vault, while still
+  // converging exactly on the authoritative full-build graph/search/discovered-field behavior.
+  const progressiveIndex = new GraphIndex(plugin, app);
+  let firstProgressivePublication = null;
+  const unsubscribeProgressive = progressiveIndex.subscribe(() => {
+    if (firstProgressivePublication) return;
+    const center = progressiveIndex.get("Note A.md");
+    firstProgressivePublication = {
+      full: progressiveIndex.isFullSnapshotHydrated(),
+      searchEntryCount: progressiveIndex.searchEntries.length,
+      noteCSearch: progressiveIndex.search("note c", 12).map((page) => page.path),
+      children: center ? progressiveIndex.neighbours(center, "child").map((item) => item.page.path) : [],
+    };
+  });
+  try {
+    assert.equal(await progressiveIndex.rebuildProgressively(["Note A.md"]), true, "Progressive cold build must complete on the fixture");
+    assert(firstProgressivePublication, "Progressive cold build must publish before authoritative completion");
+    assert.equal(firstProgressivePublication.full, false, "First progressive publication must remain explicitly non-authoritative");
+    assert(firstProgressivePublication.children.includes("Note C.md"), "Center body semantics and linked child notes must be available in the first publication");
+    assert(firstProgressivePublication.noteCSearch.includes("Note C.md"), "Search must work against the first published center neighborhood");
+    assert(firstProgressivePublication.searchEntryCount > 0, "Partial startup must install a working search index");
+    assert(firstProgressivePublication.searchEntryCount < progressiveIndex.searchEntries.length, "Search coverage must grow as progressive ingestion completes");
+    assert.equal(progressiveIndex.isFullSnapshotHydrated(), true, "Progressive completion must become authoritative");
+    assert.deepEqual(canonicalGraph(progressiveIndex), baseline.graph, "Progressive cold startup must converge on full-build graph semantics");
+    for (const [query, expected] of Object.entries(baseline.searches)) {
+      assert.deepEqual(progressiveIndex.search(query, 12).map((page) => page.path), expected, `Progressive search parity for ${query}`);
+    }
+    assert.deepEqual(progressiveIndex.discoveredFields(), index.discoveredFields(), "Progressive cold startup must preserve exact discovered-field counts");
+  } finally {
+    unsubscribeProgressive();
+    progressiveIndex.destroy();
+  }
+
+  // A synced Markdown create after the cold builder captured its file list must not cancel and
+  // restart thousands of committed sources. The coordinator keeps that path for one final patch.
+  let syncRevision = 0;
+  const syncPlugin = { ...plugin, getIndexSourceRevision: () => syncRevision };
+  const syncIndex = new GraphIndex(syncPlugin, app);
+  const syncPath = "Synced During Cold Build.md";
+  const originalSyncCommit = syncIndex.commitPreparedFile.bind(syncIndex);
+  let committedBeforeSync = 0;
+  let syncedFile = null;
+  syncIndex.commitPreparedFile = (commit, publish) => {
+    originalSyncCommit(commit, publish);
+    committedBeforeSync++;
+    if (syncedFile) return;
+    syncedFile = new TFile(syncPath, mtime++);
+    syncedFile.parent = rootFolder;
+    rootFolder.children.push(syncedFile);
+    files.set(syncPath, syncedFile);
+    contents.set(syncPath, "A synchronized note added while indexing.\n");
+    caches.set(syncPath, { frontmatter: {}, tags: [], links: [] });
+    resolvedLinks[syncPath] = {};
+    unresolvedLinks[syncPath] = {};
+    syncRevision++;
+  };
+  try {
+    assert.equal(await syncIndex.rebuildProgressively(["Note A.md"]), true);
+    assert(committedBeforeSync > 1, "The source revision event must not stop the remaining cold pass");
+    assert.equal(syncIndex.get(syncPath), undefined, "A post-capture note belongs to the retained per-file backlog");
+    syncIndex.insertCreatedFile(syncedFile);
+    assert.deepEqual(await syncIndex.patchMarkdownPaths([syncPath]), { outcome: "patched", count: 1 });
+    const cleanAfterSync = new GraphIndex(syncPlugin, app);
+    try {
+      assert.equal(await cleanAfterSync.rebuild(), true);
+      assert.deepEqual(canonicalGraph(syncIndex), canonicalGraph(cleanAfterSync));
+    } finally { cleanAfterSync.destroy(); }
+  } finally {
+    syncIndex.destroy();
+    files.delete(syncPath);
+    rootFolder.children = rootFolder.children.filter((child) => child !== syncedFile);
+    contents.delete(syncPath);
+    caches.delete(syncPath);
+    delete resolvedLinks[syncPath];
+    delete unresolvedLinks[syncPath];
+  }
+
+  // A failed checkpoint must retain its accumulated commits and retry after a short backoff.
+  // The scheduler is exercised with synthetic committed sources so this fixture does not need
+  // to serialize hundreds of real files or wait two wall-clock minutes.
+  const checkpointRetryIndex = new GraphIndex(plugin, app);
+  const originalRetryNow = Date.now;
+  const originalRetryMarkdownFiles = app.vault.getMarkdownFiles;
+  const originalRetryPatch = GraphBuilder.prototype.patchMarkdownFiles;
+  let retryClock = originalRetryNow();
+  let simulatedCommits = 0;
+  const checkpointAttempts = [];
+  let retryWriter;
+  const syntheticSources = Array.from({ length: 2000 }, (_, n) => new TFile(`Retry Synthetic ${n}.md`, n + 1));
+  Date.now = () => retryClock;
+  app.vault.getMarkdownFiles = () => [...originalRetryMarkdownFiles(), ...syntheticSources];
+  checkpointRetryIndex.persistIndexedDbSnapshot = async () => {
+    checkpointAttempts.push(simulatedCommits);
+    return checkpointAttempts.length > 1;
+  };
+  GraphBuilder.prototype.patchMarkdownFiles = async function (state, batchFiles, options) {
+    if (!options.publishFileCommit) return originalRetryPatch.call(this, state, batchFiles, options);
+    for (let n = 0; n < 620; n++) {
+      simulatedCommits++;
+      retryClock += 300;
+      options.publishFileCommit({ sourcePath: syntheticSources[n].path,
+        touchedPagePaths: new Set(), semanticChanged: false }, () => {});
+      retryWriter?.committed(syntheticSources[n].path);
+      await retryWriter?.afterFileCommit();
+    }
+    return { ok: true, cancelled: false, rebuildRequired: false,
+      touchedPagePaths: new Set(), semanticChanges: 0, semanticNoops: 0 };
+  };
+  try {
+    checkpointRetryIndex.scheduleSnapshotPersist = () => {};
+    assert.equal(await checkpointRetryIndex.rebuildProgressively(["Note A.md"]), true);
+    assert.deepEqual(checkpointAttempts, [],
+      "Production cold builds persist source heads, never full-graph progress checkpoints");
+    simulatedCommits = 0;
+    retryWriter = legacyGraphCheckpointWriter(checkpointRetryIndex, app.vault.getMarkdownFiles(), new Set(), computeVaultSignature);
+    assert.equal(await checkpointRetryIndex.rebuildProgressively(["Note A.md"]), true);
+    assert.deepEqual(checkpointAttempts, [500, 550],
+      "A failed two-minute checkpoint must retry after 15 seconds, not advance to the four-minute interval");
+  } finally {
+    GraphBuilder.prototype.patchMarkdownFiles = originalRetryPatch;
+    app.vault.getMarkdownFiles = originalRetryMarkdownFiles;
+    Date.now = originalRetryNow;
+    checkpointRetryIndex.destroy();
+  }
+
+  // Reopening an old checkpoint must not restart its two-minute clock. After the first durable
+  // save, a large amount of new progress must also be saved before the four-minute timer ends.
+  const resumedCheckpointIndex = new GraphIndex(plugin, app);
+  const resumeSources = Array.from({ length: 4200 }, (_, n) => new TFile(`Resume Synthetic ${n}.md`, n + 1));
+  let resumeClock = originalRetryNow();
+  let resumeCommits = 0;
+  const savedProgress = [];
+  const saveTransitions = [];
+  resumedCheckpointIndex.subscribe(() => {
+    const saving = resumedCheckpointIndex.isCheckpointSaving();
+    if (saving !== saveTransitions.at(-1)) saveTransitions.push(saving);
+  });
+  resumedCheckpointIndex.resumableCheckpointPaths = new Set(resumeSources.slice(0, 500).map((file) => file.path));
+  resumedCheckpointIndex.restoredVaultSignature = "fixture-vault-signature";
+  resumedCheckpointIndex.savedSnapshotSummary.checkpoint = {
+    createdAt: resumeClock - 60 * 60 * 1000, schema: 3, completedMarkdownFiles: 500,
+  };
+  resumedCheckpointIndex.scheduleSnapshotPersist = () => {};
+  resumedCheckpointIndex.persistIndexedDbSnapshot = async (_generation, completed) => {
+    assert.equal(resumedCheckpointIndex.isCheckpointSaving(), true,
+      "The status must be visible throughout checkpoint persistence");
+    savedProgress.push({ commits: resumeCommits, completed: completed.size });
+    return true;
+  };
+  const resumeWriter = legacyGraphCheckpointWriter(resumedCheckpointIndex, [...originalRetryMarkdownFiles(), ...resumeSources],
+    new Set(resumedCheckpointIndex.resumableCheckpointPaths), computeVaultSignature, true);
+  Date.now = () => resumeClock;
+  app.vault.getMarkdownFiles = () => [...originalRetryMarkdownFiles(), ...resumeSources];
+  GraphBuilder.prototype.patchMarkdownFiles = async function (state, batchFiles, options) {
+    if (!options.publishFileCommit) return originalRetryPatch.call(this, state, batchFiles, options);
+    for (const file of batchFiles.slice(0, 3000)) {
+      resumeCommits++;
+      resumeClock += 50;
+      options.publishFileCommit({ sourcePath: file.path,
+        touchedPagePaths: new Set(), semanticChanged: false }, () => {});
+      resumeWriter.committed(file.path);
+      await resumeWriter.afterFileCommit();
+    }
+    return { ok: true, cancelled: false, rebuildRequired: false,
+      touchedPagePaths: new Set(), semanticChanges: 0, semanticNoops: 0 };
+  };
+  try {
+    assert.equal(await resumedCheckpointIndex.rebuildProgressively([]), true);
+    assert.deepEqual(savedProgress, [
+      { commits: 500, completed: 1000 },
+      { commits: 2500, completed: 3000 },
+    ], "Restored checkpoint age and progress must both trigger durable saves");
+    assert.deepEqual(saveTransitions, [false, true, false, true, false],
+      "The indicator must enter and leave saving state around each checkpoint");
+  } finally {
+    GraphBuilder.prototype.patchMarkdownFiles = originalRetryPatch;
+    app.vault.getMarkdownFiles = originalRetryMarkdownFiles;
+    Date.now = originalRetryNow;
+    resumedCheckpointIndex.destroy();
+  }
+
+  // A cold-build checkpoint must restore as non-authoritative, skip sources already committed,
+  // and converge on the same graph as an uninterrupted build after restart.
+  const interrupted = new GraphIndex(plugin, app);
+  const originalCommit = interrupted.commitPreparedFile.bind(interrupted);
+  let coldCommits = 0;
+  interrupted.commitPreparedFile = (commit, publish) => {
+    originalCommit(commit, publish);
+    if (++coldCommits === 2) interrupted.cancelRebuild();
+  };
+  assert.equal(await interrupted.rebuildProgressively(["Note A.md"]), false);
+  const completedBeforeRestart = new Set(interrupted.semanticFingerprints.keys());
+  assert(completedBeforeRestart.size > 0 && completedBeforeRestart.size < app.vault.getMarkdownFiles().length);
+  let checkpointRecord = null;
+  interrupted.indexedDb.writeSnapshot = async (meta, pages, evidence, current, key) => {
+    assert.equal(key, "checkpoint");
+    assert.equal(current(), true);
+    checkpointRecord = {
+      meta: { ...meta, key, schema: 3, generation: "partial-generation", pageChunkCount: 1, evidenceChunkCount: 1 },
+      pages: [...pages], evidence: [...evidence],
+    };
+    return true;
+  };
+  await interrupted.persistIndexedDbSnapshot(interrupted.snapshotPersistGeneration, completedBeforeRestart);
+  assert(checkpointRecord);
+  assert.deepEqual(new Set(checkpointRecord.meta.completedMarkdownPaths), completedBeforeRestart);
+  interrupted.destroy();
+
+  // A readable checkpoint must survive a damaged complete generation. The first page chunk
+  // failure is the user's observed zero-page restore, and must not force a cold vault build.
+  const fallback = new GraphIndex({ ...plugin, settings: { ...settings, pinnedNodes: [], maxItemCount: 100 } }, app);
+  const damagedActive = { ...checkpointRecord.meta, key: "active", generation: "damaged-complete-generation", vaultSignature: "stale" };
+  const staleCheckpointMeta = { ...checkpointRecord.meta, vaultSignature: "stale" };
+  fallback.indexedDb.getBodies = async (requests) => new Map(requests.flatMap(({ path, mtime }) => {
+    const cached = index.fieldCache.get(path);
+    return cached?.mtime === mtime ? [[path, cached.body]] : [];
+  }));
+  fallback.indexedDb.readSnapshotCatalog = async () => ({ available: true, active: damagedActive,
+    checkpoint: staleCheckpointMeta, invalidActive: false, invalidCheckpoint: false });
+  fallback.indexedDb.snapshotUsesChunks = () => true;
+  fallback.indexedDb.getPages = async (generation, paths) => new Map(generation === checkpointRecord.meta.generation
+    ? checkpointRecord.pages.filter((page) => paths.includes(page.path)).map((page) => [page.path, page]) : []);
+  fallback.indexedDb.iterateSnapshotPages = async (meta, onPage, current, onFailure) => {
+    if (meta.key === "active") { onFailure?.("missing-chunk"); return false; }
+    for (const page of checkpointRecord.pages) { if (!current()) return false; onPage(page); }
+    return current();
+  };
+  fallback.indexedDb.iterateSnapshotEvidence = async (_meta, onEvidence, current) => {
+    for (const item of checkpointRecord.evidence) { if (!current()) return false; onEvidence(item); }
+    return current();
+  };
+  fallback.scheduleOrphanCleanup = () => {};
+  fallback.scheduleSnapshotPersist = () => {};
+  try {
+    await fallback.restoreIndexedDbSnapshot(["Note A.md"]);
+    assert.equal((await fallback.waitForSnapshotHydration()).restored, true);
+    assert.deepEqual(fallback.resumableCheckpointPaths, completedBeforeRestart);
+    assert.equal(fallback.isFullSnapshotHydrated(), false);
+    assert.equal(fallback.getSnapshotHydrationDiagnostics().outcome, "complete");
+    assert.deepEqual(fallback.getIndexDiagnostics().filter(({ stage }) => stage === "restore").map(({ reason }) => reason),
+      ["complete-snapshot-stale", "active-pages-missing-chunk", "checkpoint-selected", "checkpoint-restored"]);
+    // Startup can observe the already-settled checkpoint task. That state must still select
+    // the resumable lane instead of declaring the partial graph a failed preview.
+    await Promise.resolve();
+    const coordinator = new KplexPlugin();
+    coordinator.index = fallback; coordinator.app = app; coordinator.layoutReady = true; coordinator.indexPreparationAdmitted = true;
+    coordinator.metadataStabilized = true; coordinator.indexDirty = true;
+    coordinator.indexBacklogReasons.add("startup:stale-snapshot");
+    let resumedBuilds = 0;
+    coordinator.performRebuild = async () => {
+      resumedBuilds++;
+      assert.equal(coordinator.indexBacklogReasons.has("startup:partial-restore-incomplete"), false);
+      assert.equal(fallback.hasRestoredCheckpoint(), true);
+      assert.equal(await fallback.rebuildProgressively(["Note A.md"]), true);
+      coordinator.indexDirty = false; coordinator.indexBacklogReasons.clear();
+    };
+    await coordinator.ensureInitialIndex();
+    assert.equal(resumedBuilds, 1);
+    assert.equal(fallback.isFullSnapshotHydrated(), true);
+    assert.deepEqual(canonicalGraph(fallback), baseline.graph);
+  } finally {
+    fallback.destroy();
+  }
+
+  const resumed = new GraphIndex({ ...plugin, settings: { ...settings, pinnedNodes: [], maxItemCount: 100 } }, app);
+  resumed.indexedDb.getBodies = async (requests) => new Map(requests.flatMap(({ path, mtime }) => {
+    const cached = index.fieldCache.get(path);
+    return cached?.mtime === mtime ? [[path, cached.body]] : [];
+  }));
+  resumed.indexedDb.readSnapshotMeta = async (key = "active") => key === "checkpoint" ? checkpointRecord.meta : null;
+  resumed.indexedDb.readSnapshotCatalog = async () => ({ available: true, active: null, checkpoint: checkpointRecord.meta, invalidActive: false });
+  resumed.indexedDb.snapshotUsesChunks = () => true;
+  resumed.indexedDb.getPages = async (_generation, paths) => new Map(checkpointRecord.pages
+    .filter((page) => paths.includes(page.path)).map((page) => [page.path, page]));
+  resumed.indexedDb.iterateSnapshotPages = async (_meta, onPage, current) => {
+    for (const page of checkpointRecord.pages) { if (!current()) return false; onPage(page); }
+    return current();
+  };
+  resumed.indexedDb.iterateSnapshotEvidence = async (_meta, onEvidence, current) => {
+    for (const item of checkpointRecord.evidence) { if (!current()) return false; onEvidence(item); }
+    return current();
+  };
+  resumed.scheduleOrphanCleanup = () => {};
+  resumed.scheduleSnapshotPersist = () => {};
+  try {
+    await resumed.restoreIndexedDbSnapshot(["Note A.md"]);
+    const restoredCheckpoint = await resumed.waitForSnapshotHydration();
+    assert.equal(restoredCheckpoint.restored, true);
+    assert.equal(restoredCheckpoint.fresh, false);
+    assert.equal(resumed.isFullSnapshotHydrated(), false);
+    assert.deepEqual(resumed.resumableCheckpointPaths, completedBeforeRestart);
+    const resumedCommits = [];
+    const originalResumedCommit = resumed.commitPreparedFile.bind(resumed);
+    resumed.commitPreparedFile = (commit, publish) => {
+      resumedCommits.push(commit.sourcePath);
+      originalResumedCommit(commit, publish);
+    };
+    const newCenter = app.vault.getMarkdownFiles().find((file) => !completedBeforeRestart.has(file.path))?.path;
+    assert(newCenter, "Fixture needs an unfinished source to test a changed restart center");
+    assert.equal(await resumed.rebuildProgressively([newCenter]), true);
+    assert(resumedCommits.length > 0);
+    assert(resumedCommits.includes(newCenter), "An unfinished restart center must publish through the live per-file boundary");
+    assert(resumedCommits.every((path) => !completedBeforeRestart.has(path)), "Resume must not revisit committed sources");
+    assert.deepEqual(canonicalGraph(resumed), baseline.graph, "Checkpoint resume must preserve full graph semantics");
+    assert.deepEqual(resumed.discoveredFields(), index.discoveredFields());
+  } finally {
+    resumed.destroy();
+  }
+
+  // A stale checkpoint still retains completed sources. Reprocess only the completed note
+  // whose revision changed and ingest a newly added note after restart.
+  const changedCompletedPath = "Note A.md";
+  assert(completedBeforeRestart.has(changedCompletedPath));
+  const changedCompletedFile = files.get(changedCompletedPath);
+  const previousContent = contents.get(changedCompletedPath);
+  const previousMtime = changedCompletedFile.stat.mtime;
+  const previousSize = changedCompletedFile.stat.size;
+  const checkpointNewPath = "Checkpoint Delta.md";
+  const checkpointNewFile = new TFile(checkpointNewPath, mtime++);
+  checkpointNewFile.parent = rootFolder;
+  rootFolder.children.push(checkpointNewFile);
+  files.set(checkpointNewPath, checkpointNewFile);
+  contents.set(checkpointNewPath, "A new note after the saved checkpoint.\n");
+  caches.set(checkpointNewPath, { frontmatter: {}, tags: [], links: [] });
+  resolvedLinks[checkpointNewPath] = {};
+  unresolvedLinks[checkpointNewPath] = {};
+  contents.set(changedCompletedPath, `${previousContent}\nAdditional prose after checkpoint.\n`);
+  changedCompletedFile.stat.mtime = mtime++;
+  changedCompletedFile.stat.size = contents.get(changedCompletedPath).length;
+  const staleCheckpoint = new GraphIndex({ ...plugin, settings: { ...settings, pinnedNodes: [], maxItemCount: 100 } }, app);
+  staleCheckpoint.indexedDb.getBodies = async (requests) => new Map(requests.flatMap(({ path, mtime }) => {
+    const cached = index.fieldCache.get(path);
+    return cached?.mtime === mtime ? [[path, cached.body]] : [];
+  }));
+  staleCheckpoint.indexedDb.readSnapshotCatalog = async () => ({ available: true, active: null, checkpoint: checkpointRecord.meta, invalidActive: false });
+  staleCheckpoint.indexedDb.readIndexDiagnostics = async () => [];
+  staleCheckpoint.indexedDb.snapshotUsesChunks = () => true;
+  staleCheckpoint.indexedDb.getPages = async (_generation, paths) => new Map(checkpointRecord.pages
+    .filter((page) => paths.includes(page.path)).map((page) => [page.path, page]));
+  staleCheckpoint.indexedDb.iterateSnapshotPages = async (_meta, onPage, current) => {
+    for (const page of checkpointRecord.pages) { if (!current()) return false; onPage(page); }
+    return current();
+  };
+  staleCheckpoint.indexedDb.iterateSnapshotEvidence = async (_meta, onEvidence, current) => {
+    for (const item of checkpointRecord.evidence) { if (!current()) return false; onEvidence(item); }
+    return current();
+  };
+  staleCheckpoint.scheduleOrphanCleanup = () => {};
+  staleCheckpoint.scheduleSnapshotPersist = () => {};
+  try {
+    await staleCheckpoint.restoreIndexedDbSnapshot([changedCompletedPath]);
+    assert.equal((await staleCheckpoint.waitForSnapshotHydration()).restored, true);
+    assert.equal(staleCheckpoint.isFullSnapshotHydrated(), false);
+    assert.equal(staleCheckpoint.resumableCheckpointPaths.has(changedCompletedPath), false);
+    assert.equal(staleCheckpoint.resumableCheckpointPaths.size, completedBeforeRestart.size - 1);
+    assert.deepEqual(staleCheckpoint.restoredAddedMarkdownPaths, [checkpointNewPath]);
+    const restoredCommits = [];
+    const originalStaleCommit = staleCheckpoint.commitPreparedFile.bind(staleCheckpoint);
+    staleCheckpoint.commitPreparedFile = (commit, publish) => {
+      restoredCommits.push(commit.sourcePath);
+      originalStaleCommit(commit, publish);
+    };
+    assert.equal(await staleCheckpoint.rebuildProgressively([changedCompletedPath]), true);
+    assert(restoredCommits.includes(changedCompletedPath));
+    assert(restoredCommits.includes(checkpointNewPath));
+    assert([...completedBeforeRestart].filter((path) => path !== changedCompletedPath)
+      .every((path) => !restoredCommits.includes(path)));
+    const freshAfterChange = new GraphIndex(plugin, app);
+    try {
+      assert.equal(await freshAfterChange.rebuild(), true);
+      assert.deepEqual(canonicalGraph(staleCheckpoint), canonicalGraph(freshAfterChange));
+    } finally { freshAfterChange.destroy(); }
+  } finally {
+    staleCheckpoint.destroy();
+    contents.set(changedCompletedPath, previousContent);
+    changedCompletedFile.stat.mtime = previousMtime;
+    changedCompletedFile.stat.size = previousSize;
+    files.delete(checkpointNewPath);
+    rootFolder.children = rootFolder.children.filter((child) => child !== checkpointNewFile);
+    contents.delete(checkpointNewPath);
+    caches.delete(checkpointNewPath);
+    delete resolvedLinks[checkpointNewPath];
+    delete unresolvedLinks[checkpointNewPath];
+  }
 
   // A custom style selected by the Style property is an explicit user choice. It must remain
   // visible on the central note instead of being masked by the generic central-node appearance.
@@ -785,6 +2725,22 @@ try {
   // only these secondary links.
   assert.equal(EMPTY_PLEX_FILTER.showCrossLinks, true, "Cross-links must be visible by default");
   const sceneA = buildScene(neighborhoodA, index, settings);
+  // Real warm-start presentation facades inherit styles; a spread loses them and crashes on
+  // typed notes such as "project". Live resizing must preserve those inherited dictionaries.
+  const preparedFacade = effectiveViewSettings(index.withPreparedPresentationSettings({ ...settings,
+    layoutProfiles: { "desktop:leaf": { compactingFactor: 2, parentColumns: 2, childColumns: 5 } },
+  }), "leaf", {
+    device: "desktop", keyConvention: "macos", inputModes: { keyboard: true, pointer: true, touch: false },
+    hostActions: { graphTab: true, sidepanel: true, popout: true },
+  });
+  assert.equal(Object.hasOwn(preparedFacade, "noteTypeStyles"), false);
+  const liveAreaSettings = withAreaHeightOverrides(preparedFacade, { parentMaxHeight: 440 });
+  assert.equal(liveAreaSettings.noteTypeStyles, preparedFacade.noteTypeStyles);
+  assert.equal(liveAreaSettings.hierarchyLinkStyles, preparedFacade.hierarchyLinkStyles);
+  assert.equal(liveAreaSettings.parentMaxHeight, 440);
+  assert.equal(preparedFacade.parentMaxHeight, settings.parentMaxHeight, "Resize must not mutate prepared settings");
+  const liveAreaScene = buildScene(neighborhoodA, index, liveAreaSettings);
+  assert.deepEqual(liveAreaScene.nodes.find((node) => node.role === "center")?.style, buildScene(neighborhoodA, index, preparedFacade).nodes.find((node) => node.role === "center")?.style, "Warm-start typed center retains its style through height overrides");
   const crossBC = sceneA.edges.find((edge) => edge.isCrossLink && edge.sourcePath === "Note B.md" && edge.targetPath === "Note C.md");
   assert(crossBC, "Visible parent/child notes must retain their cross-link");
   assert.equal(crossBC.role, "child", "Cross-links must use the resolved ontology role, not the sibling presentation role");
@@ -827,6 +2783,37 @@ try {
       return [];
     },
   };
+  // Area-height controls exist even without content; overflow and semantic edges stay independent.
+  const emptyAreas = { center: fakeCenter, parents: [], children: [], leftFriends: [], rightFriends: [], siblings: [] };
+  const areaBefore = buildScene(emptyAreas, fakeCrossIndex, settings);
+  assert.deepEqual(Object.keys(areaBefore.zoneAreas).sort(), ["child", "left", "parent", "right", "sibling"]);
+  assert.deepEqual(areaBefore.zoneViewports, {}, "Empty editable regions must not become scroll panels");
+  const areaSettings = { ...settings, parentMaxHeight: 380, childMaxHeight: 410, friendMaxHeight: 310, siblingMaxHeight: 270 };
+  const areaAfter = buildScene(emptyAreas, fakeCrossIndex, areaSettings);
+  for (const [zone, key] of [["parent", "parentMaxHeight"], ["child", "childMaxHeight"], ["left", "friendMaxHeight"], ["right", "friendMaxHeight"], ["sibling", "siblingMaxHeight"]]) {
+    const before = areaBefore.zoneAreas[zone];
+    const after = areaAfter.zoneAreas[zone];
+    assert.equal(after.height, areaSettings[key], `${zone} must use its existing persisted height setting`);
+    assert.equal(after.resizeEdge, zone === "child" ? "bottom" : "top");
+    const fixedBefore = before.resizeEdge === "bottom" ? before.top : before.top + before.height;
+    const fixedAfter = after.resizeEdge === "bottom" ? after.top : after.top + after.height;
+    assert(Math.abs(fixedAfter - fixedBefore) < 1e-9, `${zone} fixed edge moved during resizing`);
+    assert(after.width > 0, "Empty regions need a usable horizontal target");
+  }
+  assert.deepEqual(areaAfter.nodes, areaBefore.nodes, "Empty-area resizing must not change the graph");
+  assert.deepEqual(areaAfter.edges, areaBefore.edges);
+  const crowdedAreas = { ...emptyAreas, parents: Array.from({length: 24}, (_, i) => fakeNeighbour(fakePage(`Area parent ${i}.md`), "parent")), children: Array.from({length: 24}, (_, i) => fakeNeighbour(fakePage(`Area child ${i}.md`), "child")) };
+  const crowdedBefore = buildScene(crowdedAreas, fakeCrossIndex, { ...settings, parentMaxHeight: 140, childMaxHeight: 160 });
+  const crowdedAfter = buildScene(crowdedAreas, fakeCrossIndex, { ...settings, parentMaxHeight: 800, childMaxHeight: 900 });
+  assert(crowdedBefore.zoneViewports.parent && crowdedBefore.zoneViewports.child, "Small regions must overflow");
+  for (const zone of ["parent", "child"]) {
+    const before = crowdedBefore.zoneAreas[zone];
+    const after = crowdedAfter.zoneAreas[zone];
+    const fixedBefore = zone === "child" ? before.top : before.top + before.height;
+    const fixedAfter = zone === "child" ? after.top : after.top + after.height;
+    assert(Math.abs(fixedAfter - fixedBefore) < 1e-9, "Overflow transitions must retain the fixed edge");
+  }
+
   const multiParentScene = buildScene({
     center: fakeCenter,
     parents: [fakeNeighbour(fakeParentOne, "parent"), fakeNeighbour(fakeParentTwo, "parent")],
@@ -937,8 +2924,8 @@ try {
   assert.equal(currentTargetExpression, "evidence.declaredTargetPath == this.path");
   assert.equal(tryParseGraphLensSimpleExpression(currentTargetExpression).conditions[0].value, "$this");
 
-  assert.match(validateGraphLensExpression('"working-on"') ?? "", /must reference/i, "A bare string selector must not silently hide the Plex");
-  assert.match(validateGraphLensExpression('edge.role == "working-on"') ?? "", /relationship property/i, "Invalid edge.role values should point users toward edge.definition");
+  assert.deepEqual(validateGraphLensExpression('"working-on"'), { code: "selector-reference-required" }, "A bare string selector must not silently hide the Plex");
+  assert.deepEqual(validateGraphLensExpression('edge.role == "working-on"'), { code: "unknown-edge-role", value: "working-on" }, "Invalid edge.role values should point users toward edge.definition");
 
   assert.equal(sanitizeGraphLensDefinitions([{ id: "legacy", name: "Working-on", enabled: true, scope: "edge", mode: "include", expression: '"working-on"' }])[0].expression, 'edge.definition.equals("working-on")');
   assert.equal(sanitizeGraphLensDefinitions([{ id: "legacy-role", name: "Working-on", enabled: true, scope: "edge", mode: "include", expression: 'edge.role == "working-on"' }])[0].expression, 'edge.definition.equals("working-on")');
@@ -1027,18 +3014,36 @@ try {
   expectNoRole("Note X.md", "child", "Note Y.md");
   const explainXY = index.explainRelationship("Note X.md", "Note Y.md");
   assert(explainXY);
-  assert.match(explainXY.summary, /Frontmatter ontology takes precedence/i);
+  assert.equal(explainXY.summary, "ontology-precedence");
   assert(explainXY.decisions.some((d) => d.active && d.evidence.sourceKind === "frontmatter-ontology" && d.evidence.declaredRole === "parent"));
   assert(explainXY.decisions.some((d) => !d.active && d.evidence.sourceKind === "inline-ontology" && d.evidence.declaredRole === "child"));
   assert(explainXY.decisions.some((d) => d.active && d.evidence.sourceKind === "obsidian-link"));
   assert.equal(explainXY.decisions.filter((d) => d.evidence.sourceKind === "obsidian-link").length, 1);
+
+  // Exact duplicate configured labels and assignments across roles retain legacy multiplicity.
+  const savedParents = [...plugin.settings.hierarchy.parents];
+  const savedChildren = [...plugin.settings.hierarchy.children];
+  const ontologyForXY = () => index.state.evidence.declarationsForPair("Note X.md", "Note Y.md")
+    .filter(item => item.sourceKind === "frontmatter-ontology" && item.definition === "parent" && !item.mirrored);
+  const countXY = ontologyForXY().length;
+  try {
+    plugin.settings.hierarchy.parents.push("Parent");
+    plugin.settings.hierarchy.children.push("Parent");
+    await index.rebuild();
+    assert.equal(ontologyForXY().length, countXY + 2, "Repeated configured field and competing role must both survive compilation");
+    assert(ontologyForXY().some(item => item.declaredRole === "child"));
+  } finally {
+    plugin.settings.hierarchy.parents = savedParents;
+    plugin.settings.hierarchy.children = savedChildren;
+    await index.rebuild();
+  }
 
   // The same precedence decision must survive the inverse perspective.
   expectRole("Note Y.md", "child", "Note X.md", RelationType.DEFINED);
   expectNoRole("Note Y.md", "parent", "Note X.md");
   const explainYX = index.explainRelationship("Note Y.md", "Note X.md");
   assert(explainYX);
-  assert.match(explainYX.summary, /Frontmatter ontology takes precedence/i);
+  assert.equal(explainYX.summary, "ontology-precedence");
   assert(explainYX.decisions.some((d) => d.active && d.evidence.sourceKind === "frontmatter-ontology" && d.evidence.declaredRole === "parent"));
   assert(explainYX.decisions.some((d) => !d.active && d.evidence.sourceKind === "inline-ontology" && d.evidence.declaredRole === "child"));
 
@@ -1046,7 +3051,7 @@ try {
   expectRole("Note A.md", "left", "Note G.md", RelationType.DEFINED);
   const explainAG = index.explainRelationship("Note A.md", "Note G.md");
   assert(explainAG);
-  assert.match(explainAG.summary, /Multiple active defined ontology roles conflict/i);
+  assert.equal(explainAG.summary, "conflicting-defined-roles");
   assert.equal(explainAG.decisions.filter((d) => !d.active).length, 0);
 
   // Reciprocal ordinary links become inferred friends.
@@ -1072,6 +3077,48 @@ try {
 
   // Legacy Markdown link inside string-valued YAML ontology remains supported.
   expectRole("Note C.md", "left", "Note D.md", RelationType.DEFINED);
+
+  // Shared nested tags must reuse one hierarchy declaration rather than duplicating prefix edges.
+  const sharedNestedCache = caches.get("Note C.md");
+  const sharedNestedOriginalTags = [...(sharedNestedCache?.tags ?? [])];
+  assert(sharedNestedCache);
+  sharedNestedCache.tags = [...sharedNestedOriginalTags, { tag: "#taxonomy/body/leaf" }];
+  await index.rebuild();
+  expectRole("tag:taxonomy/body/leaf", "child", "Note A.md", RelationType.DEFINED);
+  expectRole("tag:taxonomy/body/leaf", "child", "Note C.md", RelationType.DEFINED);
+  assert.equal(
+    index.state.evidence.declarationsForPair("tag:taxonomy", "tag:taxonomy/body")
+      .filter((item) => item.sourceKind === "tag-tree").length,
+    1,
+    "Shared nested tags must not duplicate the parent hierarchy declaration",
+  );
+  assert.equal(
+    index.state.evidence.declarationsForPair("tag:taxonomy/body", "tag:taxonomy/body/leaf")
+      .filter((item) => item.sourceKind === "tag-tree").length,
+    1,
+    "Shared nested tags must not duplicate the leaf hierarchy declaration",
+  );
+  sharedNestedCache.tags = sharedNestedOriginalTags;
+  await index.rebuild();
+
+  // Real getAllTags can retain repeated body/frontmatter memberships; the default double dedups.
+  // Preserve membership multiplicity while keeping hierarchy deduplication in ensureTagPath.
+  const originalGetAllTags = obsidianTestApi.getAllTags;
+  const originalFixtureMemberships = index.state.evidence.declarationsForPair("tag:fixture", "Note C.md")
+    .filter((item) => item.sourceKind === "tag-tree").length;
+  try {
+    obsidianTestApi.getAllTags = (cache) => {
+      const tags = originalGetAllTags(cache);
+      return cache === sharedNestedCache ? [...tags, "#fixture"] : tags;
+    };
+    await index.rebuild();
+    assert.equal(index.state.evidence.declarationsForPair("tag:fixture", "Note C.md")
+      .filter((item) => item.sourceKind === "tag-tree").length, originalFixtureMemberships + 1,
+    "Repeated host tag memberships must retain original declaration multiplicity");
+  } finally {
+    obsidianTestApi.getAllTags = originalGetAllTags;
+    await index.rebuild();
+  }
 
   // Tags and hierarchical tag tree.
   expectRole("tag:body-tag", "child", "Note A.md", RelationType.DEFINED);
@@ -1099,14 +3146,14 @@ try {
     "Daily/2026/09/20260918.md",
     "Daily/2026/09/20260919.md",
     "Daily/2026/09/20260920.md",
-  ]) expectRole("Note B.md", "child", target, RelationType.INFERRED);
-  expectRole("Note C.md", "child", "Daily/2026/10/20261001.md", RelationType.INFERRED);
+  ]) expectRole("Note B.md", "parent", target, RelationType.DEFINED);
+  expectRole("Note C.md", "parent", "Daily/2026/10/20261001.md", RelationType.DEFINED);
   assert(index.get("Daily/2026/09/20260920.md") && !index.get("Daily/2026/09/20260920.md").file);
   assert(index.get("Daily/2026/10/20261001.md") && !index.get("Daily/2026/10/20261001.md").file);
   assert.equal(index.get("2026-09-20"), undefined, "Raw ISO Date property values are not graph filenames");
   const explainDate = index.explainRelationship("Note B.md", "Daily/2026/09/20260920.md");
   assert(explainDate?.decisions.some((d) => d.evidence.sourceKind === "date-property" && d.evidence.fieldName === "follow-up-date"));
-  assert.match(explainDate?.summary ?? "", /Date property/i);
+  assert.equal(explainDate?.summary, "date-property");
 
   // URL frontmatter ontology and reverse/secondary cases.
   expectRole("Note B.md", "parent", "https://source.com/frontmatter", RelationType.DEFINED);
@@ -1189,6 +3236,187 @@ try {
   expandedHas(urls.neighborhood, "child", "https://source.com/inferred", RelationType.INFERRED);
   expandedHas(urls.neighborhood, "child", "https://youtu.be/excalibrain-fixture-video", RelationType.INFERRED);
 
+  // A native target may already resolve in MetadataCache before its page is published. Keep its
+  // physical placement so a later graph publication can fill the stationary expanded section.
+  const unpublishedY = index.get("Note Y.md");
+  let expansionBeforeTarget;
+  try {
+    index.state.pages.delete("Note Y.md");
+    expansionBeforeTarget = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+  } finally {
+    index.state.pages.set("Note Y.md", unpublishedY);
+  }
+  assert(expansionBeforeTarget);
+
+  let sectionProjectionReads = 0;
+  const originalReadForSectionProjection = app.vault.cachedRead;
+  app.vault.cachedRead = async (file) => {
+    sectionProjectionReads += 1;
+    return originalReadForSectionProjection(file);
+  };
+
+  try {
+    const delayedTargetProjection = projectCentralSectionExpansion(plugin, index, expansionBeforeTarget);
+    const delayedFriends = delayedTargetProjection.sections.find((section) => section.page.name === "Friend and challenger cases");
+    assert(delayedFriends);
+    expandedHas(delayedFriends.neighborhood, "child", "Note Y.md", RelationType.INFERRED);
+
+    const projectedA = projectCentralSectionExpansion(plugin, index, expandedA);
+    const projFriends = projectedA.sections.find((section) => section.page.name === "Friend and challenger cases");
+    const projConflict = projectedA.sections.find((section) => section.page.name === "Inference and conflict cases");
+    assert(projFriends && projConflict);
+    expandedHas(projFriends.neighborhood, "child", "Note Y.md", RelationType.INFERRED);
+    expandedHas(projConflict.neighborhood, "child", "Note F.md", RelationType.INFERRED);
+
+    // Regression 1: Unchanged-center add and remove sequence.
+    // Edit another note (Note Y) by adding Parent: "[[Note A]]", patch Y incrementally while Note A's
+    // mtime stays unchanged: live graph and projection gain a defined child, without reading Markdown.
+    const originalYBody = contents.get("Note Y.md");
+    const originalYCache = caches.get("Note Y.md");
+    try {
+      contents.set("Note Y.md", `---\nParent: "[[Note A]]"\n---\n${originalYBody}`);
+      caches.set("Note Y.md", { ...originalYCache, frontmatter: { Parent: "[[Note A]]" } });
+      const patchAddRes = await index.patchMarkdownPaths(["Note Y.md"]);
+      assert.equal(patchAddRes.outcome, "patched");
+      expectRole("Note A.md", "child", "Note Y.md", RelationType.DEFINED);
+
+      const projectedAfterAdd = projectCentralSectionExpansion(plugin, index, expandedA);
+      expandedHas(projectedAfterAdd.centerNeighborhood, "child", "Note Y.md", RelationType.DEFINED);
+      // Also retain an expansion captured while the inbound declaration exists. Both starting
+      // states must agree after removal; cached semantic decisions may never survive the edit.
+      app.vault.cachedRead = originalReadForSectionProjection;
+      const expansionWhileLinked = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+      app.vault.cachedRead = async (file) => {
+        sectionProjectionReads += 1;
+        return originalReadForSectionProjection(file);
+      };
+      assert(expansionWhileLinked);
+
+      // Now remove the property and patch Y again: center loses the defined relationship.
+      contents.set("Note Y.md", originalYBody);
+      caches.set("Note Y.md", originalYCache);
+      const patchRemoveRes = await index.patchMarkdownPaths(["Note Y.md"]);
+      assert.equal(patchRemoveRes.outcome, "patched");
+      expandedLacks(projectCentralSectionExpansion(plugin, index, expandedA).centerNeighborhood, "Note Y.md");
+      expandedLacks(projectCentralSectionExpansion(plugin, index, expansionWhileLinked).centerNeighborhood, "Note Y.md");
+
+      // Ordinary link under section heading is still preserved after edit/revert sequence.
+      const friendsAfterRevert = projectCentralSectionExpansion(plugin, index, expandedA).sections.find((s) => s.page.name === "Friend and challenger cases");
+      assert(friendsAfterRevert);
+      expandedHas(friendsAfterRevert.neighborhood, "child", "Note Y.md", RelationType.INFERRED);
+    } finally {
+      contents.set("Note Y.md", originalYBody);
+      caches.set("Note Y.md", originalYCache);
+      await index.patchMarkdownPaths(["Note Y.md"]);
+    }
+
+    // Regression 2: Inference toggle sequence.
+    // Enabling inverse inference republishes canonical semantics making Note F a parent instead of a child.
+    settings.inverseInfer = true;
+    await index.rebuild();
+    try {
+      expectRole("Note A.md", "parent", "Note F.md", RelationType.INFERRED);
+      const projectedInverse = projectCentralSectionExpansion(plugin, index, expandedA);
+      const conflictInverse = projectedInverse.sections.find((s) => s.page.name === "Inference and conflict cases");
+      assert(conflictInverse);
+      expandedHas(conflictInverse.neighborhood, "parent", "Note F.md", RelationType.INFERRED);
+    } finally {
+      settings.inverseInfer = false;
+      await index.rebuild();
+    }
+    const projectedRestoredInfer = projectCentralSectionExpansion(plugin, index, expandedA);
+    const conflictRestored = projectedRestoredInfer.sections.find((s) => s.page.name === "Inference and conflict cases");
+    assert(conflictRestored);
+    expandedHas(conflictRestored.neighborhood, "child", "Note F.md", RelationType.INFERRED);
+
+    settings.inferAllLinksAsFriends = true;
+    try {
+      // Unpublished UI settings cannot reinterpret evidence owned by the current semantic policy.
+      const beforePolicy = projectCentralSectionExpansion(plugin, index, expandedA);
+      expandedHas(beforePolicy.sections.find((section) => section.page.name === "Inference and conflict cases").neighborhood,
+        "child", "Note F.md", RelationType.INFERRED);
+      await index.rebuild();
+      const asFriends = projectCentralSectionExpansion(plugin, index, expandedA);
+      // The canonical resolver presents infer-all-as-friends using its defined friend tier.
+      expectRole("Note A.md", "left", "Note F.md", RelationType.DEFINED);
+      expandedHas(asFriends.sections.find((section) => section.page.name === "Inference and conflict cases").neighborhood,
+        "left", "Note F.md", RelationType.DEFINED);
+    } finally {
+      settings.inferAllLinksAsFriends = false;
+      await index.rebuild();
+    }
+
+    // Regression 3: Target rename.
+    // Renaming a target updates the section projection to the renamed target without rereading Markdown.
+    const pageY = index.get("Note Y.md");
+    assert(pageY?.file);
+    const fileY = pageY.file;
+    fileY.path = "Note Y Renamed.md"; fileY.name = "Note Y Renamed.md"; fileY.basename = "Note Y Renamed";
+    files.set("Note Y Renamed.md", fileY);
+    files.delete("Note Y.md");
+    try {
+      assert.equal(index.renameFile("Note Y.md", fileY), true);
+      const projectedRename = projectCentralSectionExpansion(plugin, index, expandedA);
+      const friendsRename = projectedRename.sections.find((s) => s.page.name === "Friend and challenger cases");
+      assert(friendsRename);
+      expandedHas(friendsRename.neighborhood, "child", "Note Y Renamed.md", RelationType.INFERRED);
+      expandedLacks(friendsRename.neighborhood, "Note Y.md");
+    } finally {
+      fileY.path = "Note Y.md"; fileY.name = "Note Y.md"; fileY.basename = "Note Y";
+      files.set("Note Y.md", fileY);
+      files.delete("Note Y Renamed.md");
+      assert.equal(index.renameFile("Note Y Renamed.md", fileY), true);
+    }
+
+    // Regression 4: Target removal / retirement.
+    // Deleting/retiring a target page drops it dynamically from the section projection.
+    const pageF = index.get("Note F.md");
+    assert(pageF);
+    try {
+      index.state.pages.delete("Note F.md");
+      const projectedRemoval = projectCentralSectionExpansion(plugin, index, expandedA);
+      const conflictRemoval = projectedRemoval.sections.find((s) => s.page.name === "Inference and conflict cases");
+      assert(conflictRemoval);
+      expandedLacks(conflictRemoval.neighborhood, "Note F.md");
+    } finally {
+      index.state.pages.set("Note F.md", pageF);
+    }
+
+    // Zero Markdown reads asserted across all projection operations.
+    assert.equal(sectionProjectionReads, 0, "Section projection must perform zero Markdown reads");
+  } finally {
+    app.vault.cachedRead = originalReadForSectionProjection;
+  }
+
+  await runSectionProjectionCases({ GraphIndex, TFile, app, plugin, files, contents, caches,
+    resolvedLinks, unresolvedLinks, rootFolder, cacheLinks, buildCentralSectionExpansion, projectCentralSectionExpansion });
+
+  // Git may check this fixture out with CRLF on Windows. Both newline conventions must retain
+  // the same section relationships and physical heading ranges without weakening accepted goldens.
+  const originalSectionBody = contents.get("Note A.md");
+  try {
+    for (const newline of ["\n", "\r\n"]) {
+      const body = originalSectionBody.replace(/\r?\n/g, newline);
+      contents.set("Note A.md", body);
+      const expansion = await buildCentralSectionExpansion(plugin, index, index.get("Note A.md"));
+      assert(expansion, "Expected section expansion for both newline conventions");
+      const section = expansion.sections.find(item => item.page.name === "Inference and conflict cases");
+      expandedHas(section.neighborhood, "left", "Note G.md", RelationType.DEFINED);
+      const projected = projectCentralSectionExpansion(plugin, index, expansion);
+      expandedHas(projected.sections.find(item => item.page.name === "Inference and conflict cases").neighborhood,
+        "child", "Note F.md", RelationType.INFERRED);
+      expandedHas(projected.sections.find(item => item.page.name === "Friend and challenger cases").neighborhood,
+        "child", "Note Y.md", RelationType.INFERRED);
+      expandedLacks(projected.centerNeighborhood, "Note F.md");
+      for (const item of expansion.sections) {
+        const range = item.page.transient;
+        assert(body.slice(range.start, range.end).startsWith(`## ${item.page.name}`), "Section offsets must address the original physical body");
+      }
+    }
+  } finally {
+    contents.set("Note A.md", originalSectionBody);
+  }
+
   // Section-target explanations use transient pair identity but retain original body provenance.
   const dTarget = friends.neighborhood.leftFriends.find((item) => item.page.transient?.actualPath === "Note D.md");
   assert(dTarget);
@@ -1249,7 +3477,7 @@ try {
       : section),
   };
   const contentOptions = { showHighlights: true, showFigures: true, collapsed: new Set() };
-  const contentScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions);
+  const contentScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, contentOptions);
   const panel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id && item.kind === "highlights");
   const figuresPanel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id && item.kind === "figures");
   assert(panel, "A section with highlights gets a content panel");
@@ -1265,10 +3493,10 @@ try {
   assert(figuresPanel.left > panel.left, "Figures are indented under their highlights panel");
   assert(childANode.y - childANode.height / 2 >= figuresPanel.top + figuresPanel.height, "Next section starts below both panels");
   // Hiding figures leaves the highlights panel attached to the card.
-  const highlightsOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showFigures: false });
+  const highlightsOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, showFigures: false });
   assert.equal(highlightsOnly.sectionPanels.length, 1);
   assert.equal(highlightsOnly.sectionPanels[0].kind, "highlights");
-  const figuresOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showHighlights: false });
+  const figuresOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, showHighlights: false });
   assert.equal(figuresOnly.sectionPanels.length, 1);
   assert.equal(figuresOnly.sectionPanels[0].kind, "figures");
   assert.equal(figuresOnly.sectionPanels[0].left, panel.left, "Without highlights, figures hang off the card itself");
@@ -1287,7 +3515,7 @@ try {
 
   // A dragged panel keeps its offset, stays connected, and still pushes the next section down.
   const movedSizes = new Map([[rootOne.id, { panelDx: 40, panelDy: 24, figuresDx: -10, figuresDy: 60 }]]);
-  const movedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions, movedSizes);
+  const movedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, contentOptions, movedSizes);
   const movedPanel = movedScene.sectionPanels.find((item) => item.kind === "highlights");
   const movedFigures = movedScene.sectionPanels.find((item) => item.kind === "figures");
   assert.equal(movedPanel.left, panel.left + 40);
@@ -1300,20 +3528,20 @@ try {
   const movedChildA = movedScene.nodes.find((node) => node.page.path === childA.page.path);
   assert(movedChildA.y - movedChildA.height / 2 >= movedFigures.top + movedFigures.height, "Next section clears dragged panels");
 
-  const collapsedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, collapsed: new Set([rootOne.id]) });
+  const collapsedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, collapsed: new Set([rootOne.id]) });
   assert(collapsedScene.sectionPanels[0].height < panel.height, "A folded panel reserves only its header");
   // Each panel folds on its own.
-  const foldedFigures = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, collapsed: new Set([`${rootOne.id}#figures`]) });
+  const foldedFigures = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, collapsed: new Set([`${rootOne.id}#figures`]) });
   assert.equal(foldedFigures.sectionPanels.find((item) => item.kind === "highlights").height, panel.height);
   assert(foldedFigures.sectionPanels.find((item) => item.kind === "figures").height < figuresPanel.height);
-  const hiddenHighlights = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, { ...contentOptions, showFigures: false, showHighlights: false });
+  const hiddenHighlights = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, showFigures: false, showHighlights: false });
   assert.equal(hiddenHighlights.sectionPanels.length, 0, "Hiding highlights and figures removes the panel");
   assert.equal(fullTreeScene.sectionPanels.length, 0, "No content options means no panels");
 
   // User-resized cards and panels: sizes are honoured, the card keeps its top edge, and the
   // following section moves down to clear the larger panel.
   const sizes = new Map([[rootOne.id, { cardWidth: 400, cardHeight: 80, panelWidth: 520, panelHeight: 600, figuresWidth: 460, figuresHeight: 300 }]]);
-  const resizedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, contentOptions, sizes);
+  const resizedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, contentOptions, sizes);
   const resizedNode = resizedScene.nodes.find((node) => node.page.path === rootOne.page.path);
   const resizedPanel = resizedScene.sectionPanels.find((item) => item.kind === "highlights");
   const resizedFigures = resizedScene.sectionPanels.find((item) => item.kind === "figures");
@@ -1336,6 +3564,293 @@ try {
   for (const saved of savedPages) addPersistedPageToState(warmState, saved, app);
   assert.equal(hydratePersistedRelations(warmState, savedPages), true);
   assert.equal(warmState.pages.get("Note A.md")?.neighbours.get("Note B.md")?.isParent, true);
+  // C08P exercises the production restore and startup coordinator with deterministic stalled I/O.
+  // Only the external cache and watchdog clock are controlled; graph semantics remain real.
+  const snapshotEvidence = [...index.state.evidence.declarations()].map(persistedDeclarationFromEvidence);
+  const snapshotMeta = {
+    key: "active", schema: 3, generation: "test-generation", createdAt: 123,
+    settingsSignature: computeIndexSettingsSignature(settings), vaultSignature: computeVaultSignature(app),
+    discoveredFields: [...index.state.discoveredFields],
+  };
+  const realNow = Date.now, realSetTimeout = window.setTimeout, realClearTimeout = window.clearTimeout;
+  let clock = realNow(), timerId = -1;
+  const watchdogTimers = new Map();
+  const sourceClocks = new Map();
+  // Source storage is unavailable here and its independent retry backoff also reaches five seconds.
+  // Keep that owner on its real runtime clock; the map below controls hydration watchdogs only.
+  const useRealSourceClock = restored => {
+    const runtime = restored.indexedDb.sources.runtime;
+    sourceClocks.set(runtime, { now: runtime.now, schedule: runtime.schedule, cancel: runtime.cancel });
+    Object.assign(runtime, { now: realNow, schedule: (callback, delay) => realSetTimeout(callback, delay), cancel: id => realClearTimeout(id) });
+  };
+  useRealSourceClock(index);
+  Date.now = () => clock;
+  window.setTimeout = (callback, ms, ...args) => {
+    if (ms !== 5000) return realSetTimeout(callback, ms, ...args);
+    const id = timerId--;
+    watchdogTimers.set(id, callback);
+    return id;
+  };
+  window.clearTimeout = (id) => {
+    if (id < 0) watchdogTimers.delete(id);
+    else realClearTimeout(id);
+  };
+  const settle = async () => { for (let n = 0; n < 24; n++) await Promise.resolve(); };
+  const advanceWatchdog = async (ms) => {
+    clock += ms;
+    const callbacks = [...watchdogTimers.values()]; watchdogTimers.clear();
+    callbacks.forEach((callback) => callback());
+    await settle();
+  };
+  const controlledIndexes = [];
+  const makeRestoreIndex = () => {
+    const restored = new GraphIndex({ ...plugin, settings: { ...settings, pinnedNodes: [], maxItemCount: 100 } }, app);
+    useRealSourceClock(restored);
+    restored.indexedDb.getBodies = async (requests) => new Map(requests.flatMap(({ path, mtime }) => {
+      const cached = index.fieldCache.get(path);
+      return cached?.mtime === mtime ? [[path, cached.body]] : [];
+    }));
+    restored.indexedDb.readSnapshotMeta = async () => snapshotMeta;
+    restored.indexedDb.readSnapshotCatalog = async () => ({ available: true, active: await restored.indexedDb.readSnapshotMeta(), checkpoint: null, invalidActive: false });
+    restored.indexedDb.snapshotUsesChunks = () => true;
+    restored.indexedDb.getPages = async (_generation, paths) => new Map(savedPages.filter((page) => paths.includes(page.path)).map((page) => [page.path, page]));
+    restored.indexedDb.iterateSnapshotPages = async (_meta, onPage, current) => {
+      for (const page of savedPages) { if (!current()) return false; onPage(page); }
+      return current();
+    };
+    restored.indexedDb.iterateSnapshotEvidence = async (_meta, onEvidence, current) => {
+      for (const item of snapshotEvidence) { if (!current()) return false; onEvidence(item); }
+      return current();
+    };
+    restored.scheduleOrphanCleanup = () => {};
+    restored.scheduleSnapshotPersist = () => {};
+    controlledIndexes.push(restored);
+    return restored;
+  };
+  try {
+    // An old/mixed direction generation retains physical vocabulary but cannot certify its rows
+    // as a complete current-policy scope. Full hydration reuses evidence, not Markdown reads.
+    const legacyDirectionPages = savedPages.map(saved => structuredClone(saved));
+    const legacyDirectionCenter = legacyDirectionPages.find(saved => saved.path === "Note A.md");
+    delete legacyDirectionCenter.resolvedDirectionPolicyVersion;
+    for (const relation of legacyDirectionCenter.relations) relation.direction = LinkDirection.BOTH;
+    const legacyDirectionState = createGraphState();
+    for (const saved of legacyDirectionPages) addPersistedPageToState(legacyDirectionState, saved, app);
+    legacyDirectionState.pages.get("Note A.md").neighbours.set("stale", {});
+    assert.equal(hydratePersistedPageRelations(legacyDirectionState, legacyDirectionCenter), false);
+    assert.equal(legacyDirectionState.pages.get("Note A.md").neighbours.size, 0, "Unmarked rows clear any retained stale neighbors");
+    for (const unsupported of [0, 2, "1", null]) {
+      assert.equal(hydratePersistedPageRelations(legacyDirectionState,
+        { ...legacyDirectionCenter, resolvedDirectionPolicyVersion: unsupported }), false);
+    }
+    assert.equal(hydratePersistedRelations(legacyDirectionState, legacyDirectionPages), false, "Mixed generations must enter canonical resolution");
+    const legacyDirectionRestored = hydrateGraphState({ version: 1, createdAt: 1, vaultSignature: "fixture", settingsSignature: "fixture",
+      pages: legacyDirectionPages, evidence: snapshotEvidence, discoveredFields: [] }, app);
+    for (const [path, page] of index.state.pages) if (!page.transient) {
+      assert.deepEqual([...legacyDirectionRestored.pages.get(path).neighbours].map(([target, relation]) => [target, relation.direction]),
+        [...page.neighbours].map(([target, relation]) => [target, relation.direction]));
+    }
+    const oldDirections = makeRestoreIndex();
+    oldDirections.indexedDb.getPages = async (_generation, paths) => new Map(legacyDirectionPages.filter(saved => paths.includes(saved.path)).map(saved => [saved.path, saved]));
+    oldDirections.indexedDb.iterateSnapshotPages = async (_meta, onPage, current) => {
+      for (const saved of legacyDirectionPages) { if (!current()) return false; onPage(saved); }
+      return current();
+    };
+    assert.equal(await oldDirections.publishSnapshotPreview(snapshotMeta, ["Note A.md"], () => true, () => true), true);
+    assert.equal(oldDirections.state.pages.get("Note A.md").neighbours.size, 0, "Old arrow rows cannot enter a targeted preview");
+    assert.equal(oldDirections.cachedSnapshotPages.has(oldDirections.state.pages.get("Note A.md")), false, "Empty legacy preview cannot masquerade as a complete cached scope");
+    assert.equal((await oldDirections.restoreIndexedDbSnapshot(["Note A.md"])).restored, true);
+    assert.equal((await oldDirections.waitForSnapshotHydration()).restored, true);
+    assert.equal(oldDirections.state.pages.get("Note A.md").neighbours.get("Note B.md").direction,
+      index.state.pages.get("Note A.md").neighbours.get("Note B.md").direction);
+
+    const normal = makeRestoreIndex();
+    let firstWarmPublication = null;
+    const unsubscribeWarmPreview = normal.subscribe(() => {
+      if (firstWarmPublication) return;
+      const center = normal.get("Note A.md");
+      firstWarmPublication = {
+        full: normal.isFullSnapshotHydrated(),
+        noteCSearch: normal.search("note c", 12).map((page) => page.path),
+        children: center ? normal.neighbours(center, "child").map((item) => item.page.path) : [],
+      };
+    });
+    const normalResult = await normal.restoreIndexedDbSnapshot(["Note A.md"]);
+    assert.equal(normalResult.partial, true);
+    assert(firstWarmPublication, "Warm restore must publish its center neighborhood before full hydration");
+    assert.equal(firstWarmPublication.full, false);
+    assert(firstWarmPublication.children.includes("Note C.md"), "Warm preview must include linked child relationships");
+    assert(firstWarmPublication.noteCSearch.includes("Note C.md"), "Warm preview search must work before full hydration");
+    unsubscribeWarmPreview();
+    assert.equal((await normal.waitForSnapshotHydration()).restored, true);
+    assert.equal(normal.size, index.size);
+    assert.deepEqual(normal.search("Note A").map((page) => page.path), index.search("Note A").map((page) => page.path));
+    const evidenceShape = (items) => JSON.parse(JSON.stringify(items.map(({ id, ...item }) => item)));
+    assert.deepEqual(evidenceShape(normal.evidenceBetween("Note A.md", "Note B.md")), evidenceShape(index.evidenceBetween("Note A.md", "Note B.md")));
+    assert.equal(normal.getSnapshotHydrationDiagnostics().outcome, "complete");
+    assert.equal(normal.getSnapshotHydrationDiagnostics().pages, savedPages.length);
+    assert.equal(watchdogTimers.size, 0);
+    const copied = normal.getSnapshotHydrationDiagnostics(); copied.outcome = "failed";
+    assert.equal(normal.getSnapshotHydrationDiagnostics().outcome, "complete");
+
+    const failed = makeRestoreIndex();
+    failed.indexedDb.readSnapshotMeta = async () => null;
+    assert.equal((await failed.restoreIndexedDbSnapshot()).restored, false);
+    assert.equal(failed.getSnapshotHydrationDiagnostics().outcome, "failed");
+    assert.equal(failed.hasPendingSnapshotHydration(), false);
+    assert.equal(watchdogTimers.size, 0);
+
+    const legacy = makeRestoreIndex();
+    legacy.indexedDb.readSnapshotMeta = async () => ({ ...snapshotMeta, schema: 1 });
+    assert.equal((await legacy.restoreIndexedDbSnapshot()).restored, true);
+    assert.equal(legacy.size, index.size);
+    assert.equal(legacy.getSnapshotHydrationDiagnostics().outcome, "complete");
+    assert.deepEqual(evidenceShape(legacy.evidenceBetween("Note A.md", "Note B.md")), evidenceShape(index.evidenceBetween("Note A.md", "Note B.md")));
+
+    // Supersession retires the actual restore and nested preview/facet leases before an
+    // unabortable cache read settles. A new P4 hydration must not wait behind abandoned P1.
+    for (const method of ["readSnapshotMeta", "getPages", "getBodies"]) {
+      const replaced = makeRestoreIndex();
+      const originalRead = replaced.indexedDb[method];
+      let releaseReplaced, entered;
+      const blocked = new Promise(resolve => { releaseReplaced = resolve; });
+      const reading = new Promise(resolve => { entered = resolve; });
+      replaced.indexedDb[method] = async (...args) => {
+        entered(); await blocked; return originalRead.apply(replaced.indexedDb, args);
+      };
+      const oldRestore = replaced.restoreIndexedDbSnapshot(["Note A.md"]);
+      await reading;
+      assert(replaced.getWorkPriorityDiagnostics().active[1] > 0, `${method} holds its real P1 restore lifetime`);
+      replaced.indexedDb[method] = originalRead;
+      const newRestore = await replaced.restoreIndexedDbSnapshot(["Note A.md"]);
+      assert.equal((await oldRestore).restored, false);
+      assert.equal(newRestore.restored, true);
+      assert.equal((await replaced.waitForSnapshotHydration()).restored, true,
+        `${method}: replacement background hydration completes while the old read remains held`);
+      assert.deepEqual(replaced.getWorkPriorityDiagnostics().active, [0, 0, 0, 0, 0],
+        `${method}: abandoned nested leases drain before the cache continuation returns`);
+      const replacementState = replaced.state, replacementDiagnostics = replaced.getSnapshotHydrationDiagnostics();
+      releaseReplaced(); await settle();
+      assert.equal(replaced.state, replacementState);
+      assert.deepEqual(replaced.getSnapshotHydrationDiagnostics(), replacementDiagnostics);
+      assert.deepEqual(replaced.getWorkPriorityDiagnostics().active, [0, 0, 0, 0, 0]);
+      assert.equal(watchdogTimers.size, 0);
+    }
+
+    for (const phase of ["metadata", "preview", "pages", "evidence", "preview-search", "source-authority", "requested-semantics"]) {
+      const stalled = makeRestoreIndex();
+      let release;
+      const blocked = new Promise((resolve) => { release = resolve; });
+      if (phase === "source-authority" || phase === "requested-semantics") {
+        // These watchdog phases belong to the verified stale path. A fresh compatible schema-3
+        // generation intentionally publishes navigation before starting source authority now.
+        stalled.indexedDb.readSnapshotMeta = async () => ({ ...snapshotMeta, vaultSignature: "stale-watchdog-fixture" });
+        stalled.startPersistedSourceInventory = async () => true;
+        stalled.sourceAcquisition.flush = async () => true;
+        stalled.sourceAcquisition.hasSemanticDependencies = () => true;
+        stalled.refreshSemanticSettings = async () => {};
+      }
+      const method = { metadata: "readSnapshotMeta", preview: "getPages", pages: "iterateSnapshotPages", evidence: "iterateSnapshotEvidence",
+        "preview-search": "prepareSearchIndex", "source-authority": "flush", "requested-semantics": "refreshSemanticSettings" }[phase];
+      const owner = phase === "source-authority" ? stalled.sourceAcquisition
+        : phase === "preview-search" || phase === "requested-semantics" ? stalled : stalled.indexedDb;
+      const original = owner[method];
+      let entered;
+      const admitted = new Promise(resolve => { entered = resolve; });
+      owner[method] = async (...args) => { entered(); await blocked; return original.apply(owner, args); };
+      const start = stalled.restoreIndexedDbSnapshot(["Note A.md"]);
+      // Observe the actual held I/O phase rather than assuming it starts within 24 microtasks.
+      // The real deadline is independent of the controlled inactivity clock below.
+      let admissionDeadline;
+      try {
+        await Promise.race([admitted, new Promise((_, reject) => {
+          admissionDeadline = realSetTimeout(() => reject(Error(`Restore did not admit ${phase}`)), 10000);
+        })]);
+      } finally { realClearTimeout(admissionDeadline); }
+      assert.equal(stalled.getSnapshotHydrationDiagnostics().phase, phase);
+      if (phase === "source-authority") {
+        await advanceWatchdog(60000);
+        stalled.sourceAcquisition.inventoryProgress();
+        assert.equal(stalled.getSnapshotHydrationDiagnostics().lastProgressAt, Date.now(), "Completed source work advances the watchdog");
+        await advanceWatchdog(60000);
+        stalled.indexedDb.sources.completedWork();
+        assert.equal(stalled.getSnapshotHydrationDiagnostics().lastProgressAt, Date.now(), "Completed dense-source chunks advance the watchdog before the file finishes");
+      }
+      await advanceWatchdog(89999);
+      assert.equal(stalled.hasPendingSnapshotHydration(), true, "Watchdog must honor the inactivity window");
+      await advanceWatchdog(1);
+      await start;
+      assert.equal((await stalled.waitForSnapshotHydration()).restored, false);
+      assert.equal(stalled.hasPendingSnapshotHydration(), false);
+      assert.equal(stalled.isFullSnapshotHydrated(), false);
+      assert.equal(stalled.getSnapshotHydrationDiagnostics().outcome, "timed-out");
+      assert.equal(stalled.getSnapshotHydrationDiagnostics().lastActivePhase, phase);
+      assert.equal(watchdogTimers.size, 0);
+      owner[method] = original;
+      const coordinator = new KplexPlugin();
+      coordinator.index = stalled; coordinator.app = app; coordinator.layoutReady = true; coordinator.indexPreparationAdmitted = true;
+      coordinator.metadataStabilized = true; coordinator.initialIndexComplete = false;
+      coordinator.refreshBookmarkedEntryPoints = async () => {};
+      let rebuilds = 0;
+      coordinator.performRebuild = async () => {
+        rebuilds++;
+        assert(coordinator.indexBacklogReasons.has("startup:partial-restore-incomplete") || stalled.size === 0);
+        await stalled.rebuild();
+        coordinator.indexDirty = false; coordinator.indexBacklogReasons.clear();
+      };
+      await coordinator.ensureInitialIndex();
+      if (phase === "evidence") {
+        assert.equal(rebuilds, 0, "A navigable trusted warm graph retains source-backed recovery after evidence timeout");
+        assert.equal(stalled.hasSourceBackedStartup(), true);
+        assert.equal(coordinator.getIndexStatus().upToDate, false, "Unfinished recovery must not claim authority");
+      } else {
+        assert.equal(rebuilds, 1, "Timeout before trusted navigation must route startup to an authoritative build");
+        assert.equal(coordinator.getIndexStatus().upToDate, true);
+      }
+      assert.equal(stalled.size, index.size);
+      const rebuiltState = stalled.state;
+      const terminal = stalled.getSnapshotHydrationDiagnostics();
+      release(); await settle();
+      stalled.indexedDb.sources.completedWork();
+      assert.equal(stalled.state, rebuiltState, "Released old work must not publish over the rebuilt graph");
+      assert.deepEqual(stalled.getSnapshotHydrationDiagnostics(), terminal, "Late work must not rewrite terminal diagnostics");
+    }
+
+    const rejected = makeRestoreIndex();
+    let rejectRead;
+    rejected.indexedDb.readSnapshotMeta = () => new Promise((_resolve, reject) => { rejectRead = reject; });
+    const rejectRestore = rejected.restoreIndexedDbSnapshot();
+    await advanceWatchdog(90000); await rejectRestore;
+    rejectRead(new Error("Late cache failure")); await settle();
+    assert.equal(rejected.getSnapshotHydrationDiagnostics().outcome, "timed-out");
+
+    const cancelled = makeRestoreIndex();
+    let releaseCancelled;
+    cancelled.indexedDb.iterateSnapshotPages = () => new Promise((resolve) => { releaseCancelled = resolve; });
+    await cancelled.restoreIndexedDbSnapshot(["Note A.md"]);
+    const waiting = cancelled.waitForSnapshotHydration();
+    const unloaded = new KplexPlugin();
+    unloaded.index = cancelled; unloaded.app = app; unloaded.layoutReady = true; unloaded.indexPreparationAdmitted = true;
+    unloaded.metadataStabilized = true;
+    let unloadRebuilds = 0;
+    unloaded.performRebuild = async () => { unloadRebuilds++; };
+    const initialization = unloaded.ensureInitialIndex();
+    unloaded.onunload();
+    assert.equal((await waiting).restored, false);
+    await initialization;
+    assert.equal(unloadRebuilds, 0, "Unload cancellation must not start a replacement build");
+    assert.equal(cancelled.getSnapshotHydrationDiagnostics().outcome, "cancelled");
+    assert.equal(watchdogTimers.size, 0, "Unload must release the watchdog immediately");
+    releaseCancelled(true); await settle();
+    assert.equal(cancelled.getSnapshotHydrationDiagnostics().outcome, "cancelled");
+    console.log("C08P restore watchdog: warm equality, seven stalled phases, real-work progress, late completion/rejection and unload PASS");
+  } finally {
+    controlledIndexes.forEach((item) => item.destroy());
+    controlledIndexes.length = 0;
+    Date.now = realNow; window.setTimeout = realSetTimeout; window.clearTimeout = realClearTimeout;
+    for (const [runtime, original] of sourceClocks) Object.assign(runtime, original);
+    sourceClocks.clear();
+  }
   const runtimePatch = await index.patchMarkdownPaths(["Note A.md"]);
   assert.deepEqual(runtimePatch, { outcome: "patched", count: 1 });
   expectRole("Note A.md", "parent", "Note B.md", RelationType.DEFINED);
@@ -1391,7 +3906,7 @@ try {
   assert.equal(index.get("Note A.md"), noteAIdentity, "Incremental publication must preserve canonical GraphPage identity");
   for (const source of index.state.pages.values()) {
     for (const relation of source.neighbours.values()) {
-      assert.equal(relation.target, index.get(relation.target.path), `Relation target must be canonical: ${source.path} -> ${relation.target.path}`);
+      assert.equal(relation.target === index.get(relation.target.path), true, `Relation target must be canonical: ${source.path} -> ${relation.target.path}`);
     }
   }
 
@@ -1429,6 +3944,19 @@ try {
   caches.set(immediateFile.path, { frontmatter: {}, tags: [], links: [] });
   const immediatePage = index.insertCreatedFile(immediateFile);
   assert.equal(index.get(immediateFile.path), immediatePage);
+  {
+    const preparedOnlyFile = new TFile("Prepared-only creation.md", noteA.stat.mtime + 1001);
+    const preparedOnlyPage = { ...immediatePage, path: preparedOnlyFile.path, file: preparedOnlyFile, neighbours: new Map() };
+    const originalGet = index.get;
+    index.get = function(path) { return path === preparedOnlyFile.path ? preparedOnlyPage : originalGet.call(this, path); };
+    try {
+      const canonical = index.insertCreatedFile(preparedOnlyFile);
+      assert.equal(index.state.pages.get(preparedOnlyFile.path), canonical, "A prepared-only physical endpoint must also materialize in the canonical patch baseline");
+      assert.notEqual(canonical, preparedOnlyPage, "Creation cannot mutate only the prepared view");
+      assert.equal(index.insertCreatedFile(preparedOnlyFile), canonical, "Repeated physical materialization is idempotent");
+    } finally { index.get = originalGet; }
+    index.dematerializeFile(preparedOnlyFile.path);
+  }
   assert(index.applyRelationshipEdit("Note A.md", immediateFile.path, "child", "Children"));
   expectRole("Note A.md", "child", immediateFile.path, RelationType.DEFINED);
 
@@ -1489,6 +4017,9 @@ try {
   noteA.stat.mtime += 1000;
   noteACache.frontmatter.thumbnail = "https://example.com/thumb.png";
   let visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
+  assert.equal(visuals.has("Note A.md"), false, "Remote imagery requires explicit consent, including old settings without the key");
+  settings.allowRemoteNodeImages = true;
+  visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
   assert.equal(visuals.get("Note A.md")?.mode, "thumbnail");
   assert.equal(visuals.get("Note A.md")?.src, "https://example.com/thumb.png");
   assert.equal("visual" in index.get("Note A.md"), false, "Node visuals must not expand the semantic GraphPage index");
@@ -1498,10 +4029,20 @@ try {
   visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
   assert.equal(visuals.get("Note A.md")?.mode, "replace");
   assert.equal(visuals.get("Note A.md")?.src, "https://example.com/replacement.png");
+  settings.allowRemoteNodeImages = false;
+  visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
+  assert.equal(visuals.has("Note A.md"), false, "Revocation rejects cached remote visuals without changing file mtime");
 
   const imageFile = new TFile("Visuals/Picture.jpg", noteA.stat.mtime + 1000);
   files.set(imageFile.path, imageFile);
   const imagePage = index.insertCreatedFile(imageFile);
+  const originalAttachments = settings.showAttachments;
+  settings.showAttachments = false;
+  assert(!index.search("Picture.jpg", 40).some((page) => page.path === imageFile.path), "Graph search respects attachment visibility");
+  assert(index.search("Picture.jpg", 40, "vault-files").some((page) => page.path === imageFile.path), "Vault search includes hidden attachments outside the current Plex");
+  assert(index.search("runtimealiaszzz", 40, "vault-files").some((page) => page.path === noteA.path), "Vault search retains Markdown aliases");
+  assert(index.search("", 1000, "vault-files").every((page) => page.url || page.file && files.get(page.path) === page.file), "Vault search contains current real files and URLs, excluding folders, tags and ghosts");
+  settings.showAttachments = originalAttachments;
   settings.attachmentImageDisplay = "thumbnail-label";
   visuals = await index.resolveNodeVisuals([imagePage]);
   assert.equal(visuals.get(imagePage.path)?.mode, "thumbnail");
@@ -1517,6 +4058,13 @@ try {
   resolvedLinks["Note A.md"][imageFile.path] = 1;
   await index.patchMarkdownPaths(["Note A.md"]);
   expectNoRole("Note A.md", "child", imageFile.path);
+
+  // SI0: a second ordinary/prose occurrence must retain generic inferred evidence even when the
+  // first occurrence is image metadata. Selector changes therefore require semantic invalidation.
+  noteA.stat.mtime += 1000;
+  resolvedLinks["Note A.md"][imageFile.path] = 2;
+  await index.patchMarkdownPaths(["Note A.md"]);
+  expectRole("Note A.md", "child", imageFile.path, RelationType.INFERRED);
 
   noteA.stat.mtime += 1000;
   const existingChildren = noteACache.frontmatter.Child;
@@ -1666,6 +4214,9 @@ try {
   for (const sample of grammarSamples) {
     assert.deepEqual(await workerParser.parse(sample), parseBodyMetadataCore(sample), `Worker parser differs for ${JSON.stringify(sample)}`);
   }
+  const workerCancelPromise = workerParser.parse("Parent:: [[cancel-worker]]");
+  workerParser.cancelPending();
+  await assert.rejects(workerCancelPromise, MetadataParseCancelledError, "Worker cancellation must reject pending parses with the production cancellation error");
   workerParser.destroy();
   if (originalWorker === undefined) delete globalThis.Worker; else globalThis.Worker = originalWorker;
 
@@ -1692,6 +4243,10 @@ try {
   contents.set("Note B.md", `${contents.get("Note B.md")}\n${repeatUrl}\n`);
   noteB.stat.mtime += 1000;
   assert.deepEqual(await index.patchMarkdownPaths(["Note B.md"]), { outcome: "patched", count: 1 });
+  expectRole(repeatUrl, "parent", "Note A.md", RelationType.INFERRED);
+  expectRole(repeatUrl, "parent", "Note B.md", RelationType.INFERRED);
+  const sharedUrlParents = new Set(index.getNeighborhood(repeatUrl).parents.map((item) => item.page.path));
+  assert(sharedUrlParents.has("Note A.md") && sharedUrlParents.has("Note B.md"), "A centered shared URL must expose both referrers in its neighborhood");
   contents.set("Note A.md", contents.get("Note A.md").replace(`\n${repeatUrl}\n`, "\n"));
   noteA.stat.mtime += 1000;
   assert.deepEqual(await index.patchMarkdownPaths(["Note A.md"]), { outcome: "patched", count: 1 });
@@ -1835,21 +4390,9 @@ try {
   const cleanIndex = new GraphIndex(plugin, app);
   try {
     assert.equal(await cleanIndex.rebuild(), true);
-    const relationShape = (candidate, sourcePath, targetPath) => {
-      const relation = candidate.get(sourcePath)?.neighbours.get(targetPath);
-      return relation ? {
-        isParent: relation.isParent, isChild: relation.isChild,
-        isLeftFriend: relation.isLeftFriend, isRightFriend: relation.isRightFriend,
-        isNextFriend: relation.isNextFriend, isPreviousFriend: relation.isPreviousFriend,
-        direction: relation.direction,
-      } : null;
-    };
     for (const [sourcePath, targetPath] of [["tag:runtime", "tag:runtime/perf"], ["tag:runtime/perf", "Note A.md"]]) {
-      assert.deepEqual(relationShape(index, sourcePath, targetPath), relationShape(cleanIndex, sourcePath, targetPath));
-      assert.equal(
-        index.evidenceBetween(sourcePath, targetPath).filter((item) => item.sourceKind === "tag-tree").length,
-        cleanIndex.evidenceBetween(sourcePath, targetPath).filter((item) => item.sourceKind === "tag-tree").length,
-      );
+      assert.deepEqual(canonicalPair(index, sourcePath, targetPath), canonicalPair(cleanIndex, sourcePath, targetPath),
+        `Incremental relation and provenance must match a full rebuild for ${sourcePath} -> ${targetPath}`);
     }
   } finally {
     cleanIndex.destroy();
@@ -1874,8 +4417,20 @@ try {
     if (file.path === "Note B.md") { sawB(); await bGate; }
     return contents.get(file.path) ?? "";
   };
+  const observedBatchCommits = [];
+  const stopBatchObserver = index.subscribe(() => {
+    const page = index.get("Note A.md");
+    if (!page?.aliases.includes(cancelAliasA)) return;
+    observedBatchCommits.push({
+      path: page.path,
+      searchPath: index.search(cancelAliasA.toLowerCase(), 5)[0]?.path ?? null,
+      canonical: [...page.neighbours.values()].every((relation) => relation.target === index.get(relation.target.path)),
+    });
+  });
   const cancelledBatchPromise = index.patchMarkdownPaths(["Note A.md", "Note B.md"]);
   await bStarted;
+  assert.deepEqual(observedBatchCommits, [{ path: "Note A.md", searchPath: "Note A.md", canonical: true }],
+    "A committed file must notify observers with graph/search/canonical targets coherent before the next awaited source");
   index.cancelRebuild();
   releaseB();
   const cancelledBatch = await cancelledBatchPromise;
@@ -1884,6 +4439,7 @@ try {
   assert.deepEqual(cancelledBatch.pendingPaths, ["Note B.md"], "Cancellation must retain only uncommitted files");
   assert.equal(index.search(cancelAliasA.toLowerCase(), 5)[0]?.path, "Note A.md", "Committed file A search entry must survive cancellation");
   assert.equal(index.snapshotPersistTimer ?? null, null, "Cancelled patch must not schedule a snapshot");
+  stopBatchObserver();
   app.vault.cachedRead = originalCachedReadForCancel;
   assert.deepEqual(await index.patchMarkdownPaths(["Note A.md", "Note B.md"]), { outcome: "patched", count: 2 });
   assert.equal(index.search(cancelAliasA.toLowerCase(), 5)[0]?.path, "Note A.md");
@@ -1891,6 +4447,14 @@ try {
 
   // P11: K-Plex-created files get complete folder ancestry immediately, even while folders are
   // hidden. Revealing folders is presentation-only and matches a clean authoritative build.
+  const emptyCreatedFolder = ensureFolder("Created Empty");
+  assert.equal(index.get("folder:Created Empty"), undefined, "A host-created empty folder is absent before its incremental event is applied");
+  const emptyCreatedPage = index.insertCreatedFolder(emptyCreatedFolder);
+  assert.equal(emptyCreatedPage.path, "folder:Created Empty");
+  assert(index.evidenceBetween("folder:/", emptyCreatedPage.path).some((item) => item.sourceKind === "file-tree"),
+    "Incremental empty-folder materialization must preserve its parent relation");
+  assert(index.search("created empty").some((page) => page === emptyCreatedPage),
+    "Incrementally materialized empty folders must enter search without a full rebuild");
   const createdFolder = ensureFolder("Created/Sub");
   const managedFile = new TFile("Created/Sub/Managed.md", noteA.stat.mtime + 5000);
   managedFile.parent = createdFolder;
@@ -1921,6 +4485,381 @@ try {
     settings.showFolderNodes = oldFolderVisibilityForCreate;
   }
 
+  // The synchronous publisher must not retain a callback that can publish after rejection or an
+  // exception. A private no-op patch makes the test independent of relationship fixture changes.
+  for (const throws of [false, true]) {
+    const builder = new GraphBuilder(plugin, app, new Map(index.fieldCache), index.metadataParser,
+      index.indexedDb, () => true, new Map(index.semanticFingerprints));
+    const privateState = builder.createPatchState(index.state, false);
+    const beforePages = privateState.pages;
+    const beforeEvidence = privateState.evidence;
+    let retainedPublish;
+    await assert.rejects(builder.patchMarkdownFiles(privateState, [managedFile], {
+      publishFileCommit(_commit, publish) {
+        retainedPublish = publish;
+        if (throws) throw new Error("Injected publisher failure");
+      },
+    }), throws ? /Injected publisher failure/ : /did not publish synchronously/);
+    assert.equal(typeof retainedPublish, "function");
+    assert.throws(() => retainedPublish(), /callback expired/);
+    assert.equal(privateState.pages, beforePages);
+    assert.equal(privateState.evidence, beforeEvidence);
+  }
+  {
+    const builder = new GraphBuilder(plugin, app, new Map(index.fieldCache), index.metadataParser,
+      index.indexedDb, () => true, new Map(index.semanticFingerprints));
+    const privateState = builder.createPatchState(index.state, false);
+    let retainedPublish;
+    const result = await builder.patchMarkdownFiles(privateState, [managedFile], {
+      publishFileCommit(_commit, publish) {
+        publish();
+        assert.throws(() => publish(), /more than once/);
+        retainedPublish = publish;
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.throws(() => retainedPublish(), /callback expired/);
+  }
+
+  // C14b revision fences: a TFile renamed or deleted while an awaited body read is in flight must
+  // not publish stale source metadata. The renamed current path remains retryable without rebuild.
+  const raceFile = new TFile("Publication Race.md", managedFile.stat.mtime + 2000);
+  files.set(raceFile.path, raceFile);
+  contents.set(raceFile.path, "# Publication Race\n");
+  caches.set(raceFile.path, { frontmatter: {}, tags: [], links: [] });
+  resolvedLinks[raceFile.path] = {};
+  unresolvedLinks[raceFile.path] = {};
+  index.insertCreatedFile(raceFile);
+  assert.deepEqual(await index.patchMarkdownPaths([raceFile.path]), { outcome: "patched", count: 1 });
+
+  const oldRacePath = raceFile.path;
+  const renamedRacePath = "Publication Race Renamed.md";
+  const renameRaceAlias = "RenameRaceLatestAlias";
+  caches.get(oldRacePath).frontmatter.aliases = renameRaceAlias;
+  raceFile.stat.mtime += 1000;
+  const originalCachedReadForRevisionRace = app.vault.cachedRead;
+  let releaseRenameRace;
+  let sawRenameRace;
+  const renameRaceStarted = new Promise((resolve) => { sawRenameRace = resolve; });
+  const renameRaceGate = new Promise((resolve) => { releaseRenameRace = resolve; });
+  app.vault.cachedRead = async (file) => {
+    if (file === raceFile) {
+      const captured = contents.get(oldRacePath) ?? "";
+      sawRenameRace();
+      await renameRaceGate;
+      return captured;
+    }
+    return originalCachedReadForRevisionRace(file);
+  };
+  const staleRenamePatch = index.patchMarkdownPaths([oldRacePath]);
+  await renameRaceStarted;
+  const raceContent = contents.get(oldRacePath);
+  const raceCache = caches.get(oldRacePath);
+  files.delete(oldRacePath);
+  contents.delete(oldRacePath);
+  caches.delete(oldRacePath);
+  delete resolvedLinks[oldRacePath];
+  delete unresolvedLinks[oldRacePath];
+  raceFile.path = renamedRacePath;
+  raceFile.name = renamedRacePath;
+  raceFile.basename = "Publication Race Renamed";
+  files.set(renamedRacePath, raceFile);
+  contents.set(renamedRacePath, raceContent);
+  caches.set(renamedRacePath, raceCache);
+  resolvedLinks[renamedRacePath] = {};
+  unresolvedLinks[renamedRacePath] = {};
+  assert.equal(index.renameFile(oldRacePath, raceFile), true);
+  releaseRenameRace();
+  const renamedRaceResult = await staleRenamePatch;
+  assert.equal(renamedRaceResult.outcome, "cancelled");
+  assert.equal(renamedRaceResult.count, 0);
+  assert.deepEqual(renamedRaceResult.pendingPaths, [renamedRacePath]);
+  assert.equal(index.search(renameRaceAlias.toLowerCase(), 5).length, 0, "A pre-rename source revision must not publish after the path changes");
+  app.vault.cachedRead = originalCachedReadForRevisionRace;
+  assert.deepEqual(await index.patchMarkdownPaths([renamedRacePath]), { outcome: "patched", count: 1 });
+  assert.equal(index.search(renameRaceAlias.toLowerCase(), 5)[0]?.path, renamedRacePath, "The current renamed path must resume incrementally");
+
+  const deletedRaceAlias = "DeletedRaceStaleAlias";
+  caches.get(renamedRacePath).frontmatter.aliases = deletedRaceAlias;
+  raceFile.stat.mtime += 1000;
+  let releaseDeleteRace;
+  let sawDeleteRace;
+  const deleteRaceStarted = new Promise((resolve) => { sawDeleteRace = resolve; });
+  const deleteRaceGate = new Promise((resolve) => { releaseDeleteRace = resolve; });
+  app.vault.cachedRead = async (file) => {
+    if (file === raceFile) {
+      const captured = contents.get(renamedRacePath) ?? "";
+      sawDeleteRace();
+      await deleteRaceGate;
+      return captured;
+    }
+    return originalCachedReadForRevisionRace(file);
+  };
+  const staleDeletePatch = index.patchMarkdownPaths([renamedRacePath]);
+  await deleteRaceStarted;
+  files.delete(renamedRacePath);
+  contents.delete(renamedRacePath);
+  caches.delete(renamedRacePath);
+  delete resolvedLinks[renamedRacePath];
+  delete unresolvedLinks[renamedRacePath];
+  assert.equal(index.dematerializeFile(renamedRacePath)?.path, renamedRacePath);
+  releaseDeleteRace();
+  const deletedRaceResult = await staleDeletePatch;
+  assert.equal(deletedRaceResult.outcome, "cancelled");
+  assert.equal(deletedRaceResult.count, 0);
+  assert.deepEqual(deletedRaceResult.pendingPaths, [renamedRacePath]);
+  assert.equal(index.search(deletedRaceAlias.toLowerCase(), 5).length, 0, "A deleted source must not be resurrected by stale awaited work");
+  assert.equal(index.removeVirtualPageIfUnreferenced(renamedRacePath), true);
+  app.vault.cachedRead = originalCachedReadForRevisionRace;
+  index.cancelPendingPersistence();
+
+  // Native Obsidian folder + Markdown creation must stay on the local folder/file lanes. The old
+  // `vault:create` backlog reason made the two Markdown patches fall through to `full-rebuild`.
+  const nativeCreationCoordinator = new KplexPlugin();
+  const nativeCreationHandlers = new Map();
+  const nativeFiles = new Map();
+  const nativeFolder = new TFolder("Fixture");
+  const nativeA = new TFile("Fixture/A.md", 10_001);
+  const nativeB = new TFile("Fixture/B.md", 10_002);
+  const nativeImage = new TFile("Fixture/Image.png", 10_003);
+  nativeFiles.set(nativeA.path, nativeA);
+  nativeFiles.set(nativeB.path, nativeB);
+  nativeFiles.set(nativeImage.path, nativeImage);
+  const nativeDecisions = [];
+  const nativeFolders = [];
+  const nativeMaterializedFiles = [];
+  const nativePatchCalls = [];
+  const nativeDematerializedFiles = [];
+  const nativePresentationRepairs = [];
+  let nativeFullBuilds = 0;
+  nativeCreationCoordinator.app = {
+    vault: {
+      on: (name, callback) => { nativeCreationHandlers.set(`vault:${name}`, callback); return {}; },
+      getFileByPath: (path) => nativeFiles.get(path) ?? null,
+    },
+    metadataCache: {
+      on: (name, callback) => { nativeCreationHandlers.set(`metadata:${name}`, callback); return {}; },
+    },
+  };
+  nativeCreationCoordinator.index = { isOnDemandMode: () => false,
+    refreshVisiblePresentation: (path) => { nativePresentationRepairs.push(path); return Promise.resolve(); },
+    invalidateHostStructure: () => {},
+    refreshVisibleHostMetadataPreviews: () => false,
+    acknowledgeHostPresentation: () => {},
+    hasPendingStructuralMaintenance: () => false,
+    hasPendingSnapshotHydration: () => false,
+    cancelRebuild: () => {},
+    size: 4,
+    isFullSnapshotHydrated: () => true, hasPhysicalBaseline: () => true, hasSourceBackedStartup: () => false,
+    get: (path) => nativeMaterializedFiles.includes(path) ? { file: nativeFiles.get(path) } : undefined,
+    insertCreatedFolder: (folder) => { nativeFolders.push(folder.path); return { path: `folder:${folder.path}` }; },
+    insertCreatedFile: (file) => { nativeMaterializedFiles.push(file.path); return { path: file.path, file }; },
+    dematerializeFile: (path) => { nativeDematerializedFiles.push(path); return { path, file: null }; },
+    noteBuildDecision: (kind, reason, modified) => { nativeDecisions.push({ kind, reason, modified }); },
+    patchMarkdownPaths: async (paths) => { nativePatchCalls.push([...paths]); return { outcome: "patched", count: paths.length }; },
+    rebuild: async () => { nativeFullBuilds += 1; return true; },
+  };
+  nativeCreationCoordinator.hasVisibleKplexSurface = () => true;
+  nativeCreationCoordinator.refreshBookmarkedEntryPoints = async () => {};
+  nativeCreationCoordinator.notifyIndexStatus = () => {};
+  nativeCreationCoordinator.initialIndexComplete = true;
+  nativeCreationCoordinator.scheduleRebuild = (reason) => {
+    nativeCreationCoordinator.indexDirty = true;
+    nativeCreationCoordinator.indexDirtyRevision += 1;
+    nativeCreationCoordinator.indexBacklogReasons.add(reason);
+  };
+  nativeCreationCoordinator.registerReactiveIndexListeners();
+  const nativeCreateHandler = nativeCreationHandlers.get("vault:create");
+  const nativeMetadataHandler = nativeCreationHandlers.get("metadata:changed");
+  assert(nativeCreateHandler && nativeMetadataHandler, "Native create and metadata handlers must be registered");
+  nativeCreateHandler(nativeFolder);
+  nativeCreateHandler(nativeA);
+  nativeMetadataHandler(nativeA);
+  nativeCreateHandler(nativeB);
+  nativeMetadataHandler(nativeB);
+  nativeCreateHandler(nativeImage);
+  assert.deepEqual(nativePresentationRepairs, [nativeA.path, nativeB.path], "Native metadata events request targeted optional presentation repair");
+  assert.deepEqual(nativeFolders, ["Fixture"], "Empty folder is materialized directly once");
+  assert.deepEqual(nativeMaterializedFiles, [nativeA.path, nativeB.path, nativeImage.path], "Markdown and attachment endpoints materialize directly under the new folder");
+  assert(!nativeCreationCoordinator.indexBacklogReasons.has("vault:create"), "Folder creation must not leave a structural full-rebuild reason");
+  await nativeCreationCoordinator.performRebuild(false, false, "coalesced-backlog", false);
+  assert.deepEqual(nativePatchCalls, [[nativeA.path, nativeB.path]], "Folder-following Markdown files patch as one local batch");
+  assert.equal(nativeFullBuilds, 0, "Folder + Markdown creation must not invoke the full builder");
+  assert(nativeDecisions.every((decision) => decision.kind !== "full-rebuild"), "Folder + Markdown creation must record no full-rebuild decision");
+  nativeFiles.delete(nativeImage.path);
+  nativeCreationHandlers.get("vault:delete")(nativeImage);
+  assert.deepEqual(nativeDematerializedFiles, [nativeImage.path], "Attachment deletion keeps its ghost endpoint locally");
+  assert.equal(nativeCreationCoordinator.indexDirty, false, "Attachment deletion must not queue a structural rebuild");
+  nativeFiles.set(nativeImage.path, nativeImage);
+  nativeCreateHandler(nativeImage);
+  assert.equal(nativeCreationCoordinator.indexDirty, false, "Attachment recreation must remain local");
+
+  // The real reactive listener must preserve physical Find/navigation after the early restore
+  // listeners hand over, even when startup, hidden demand or an unrelated coordinator blocks patches.
+  for (const phase of ["startup-handover", "hidden", "active-coordinator"]) {
+    const availabilityCoordinator = new KplexPlugin();
+    const availabilityApp = { ...app, vault: { ...app.vault, ...fixtureEvents() },
+      metadataCache: { ...metadataCache, ...fixtureEvents() },
+      workspace: { getActiveFile: () => null, getMostRecentLeaf: () => null, iterateAllLeaves: () => {} } };
+    availabilityCoordinator.app = availabilityApp;
+    availabilityCoordinator.settings = { ...settings, indexingMode: phase === "active-coordinator" ? "on-demand" : "eager", lastActivePath: "",
+      sidecarLastFilePath: "", navigationHistory: [], pinnedNodes: [] };
+    availabilityCoordinator.notifyIndexStatus = () => {};
+    availabilityCoordinator.refreshBookmarkedEntryPoints = async () => {};
+    availabilityCoordinator.hasVisibleKplexSurface = () => phase !== "hidden";
+    availabilityCoordinator.initialIndexComplete = phase !== "startup-handover";
+    const availabilityIndex = new GraphIndex(availabilityCoordinator, availabilityApp);
+    availabilityCoordinator.index = availabilityIndex;
+    let availabilityCalls = 0;
+    const publishAvailability = availabilityIndex.updateHostFileAvailability.bind(availabilityIndex);
+    availabilityIndex.updateHostFileAvailability = (...args) => { availabilityCalls += 1; publishAvailability(...args); };
+    const beforeHandover = new TFile(`Before handover ${phase}.md`, 10_099);
+    const externalFile = new TFile(`External ${phase}.md`, 10_100);
+    const managedFile = new TFile(`Managed ${phase}.md`, 10_101);
+    let releaseGraph;
+    let activeCoordinator;
+    const graphGate = new Promise(resolve => { releaseGraph = resolve; });
+    try {
+      if (phase === "startup-handover") {
+        availabilityCoordinator.register = () => {};
+        availabilityCoordinator.indexPreparationAdmitted = true;
+        availabilityCoordinator.installPreRestoreChangeFence();
+        files.set(beforeHandover.path, beforeHandover);
+        const beforeCreate = availabilityCoordinator.getIndexSourceRevision();
+        availabilityApp.vault.trigger("create", beforeHandover);
+        assert.equal(availabilityCoordinator.getIndexSourceRevision(), beforeCreate + 1, "The actual pre-restore fence owns one source epoch");
+        assert.equal(availabilityCalls, 1, "The pre-restore create publishes availability exactly once");
+        assert.equal(availabilityIndex.getVaultSearchPage(beforeHandover.path)?.file, beforeHandover,
+          "Physical selection is available before the listener handover");
+        const releasePreRestore = availabilityCoordinator.preRestoreListenerCleanup;
+        assert.equal(typeof releasePreRestore, "function", "The actual pre-restore fence exposes its lifecycle cleanup");
+        availabilityCoordinator.registerReactiveIndexListeners();
+        releasePreRestore();
+        releasePreRestore();
+        assert.equal(availabilityCoordinator.preRestoreListenerCleanup, null, "The pre-restore fence is retired idempotently after handover");
+      } else availabilityCoordinator.registerReactiveIndexListeners();
+      if (phase === "active-coordinator") {
+        let admitted;
+        const started = new Promise(resolve => { admitted = resolve; });
+        // Hold the existing On-demand coordinator entry, leaving physical APIs unmodified.
+        availabilityIndex.refreshOnDemandGraph = async () => { admitted(); await graphGate; return true; };
+        availabilityCoordinator.indexDirty = true;
+        availabilityCoordinator.indexBacklogReasons.add("manual-rebuild");
+        activeCoordinator = availabilityCoordinator.performRebuild(false, false, "manual-rebuild", false);
+        await started;
+        assert(availabilityCoordinator.rebuildTask, "The actual coordinator must remain pending during external creation");
+      }
+      const revision = availabilityCoordinator.getIndexSourceRevision();
+      const sourceCounters = availabilityIndex.getSourceAcquisitionCounters();
+      const beforeAvailability = availabilityCalls;
+      files.set(externalFile.path, externalFile);
+      availabilityApp.vault.trigger("create", externalFile);
+      assert.equal(availabilityCoordinator.getIndexSourceRevision(), revision + 1, `${phase}: normal source epoch advances once`);
+      assert.equal(availabilityCalls, beforeAvailability + 1, `${phase}: the reactive listener publishes availability exactly once`);
+      assert(availabilityCoordinator.dirtyMarkdownPaths.has(externalFile.path), `${phase}: normal per-file backlog remains queued`);
+      assert(availabilityCoordinator.indexBacklogReasons.has("vault:create-markdown"), `${phase}: creation remains a patch-only reason`);
+      assert.equal(availabilityIndex.search(externalFile.basename.toLowerCase(), 5, "vault-files")[0]?.file, externalFile,
+        `${phase}: Find exposes the exact native file before the unrelated owner completes`);
+      assert.equal(availabilityIndex.getVaultSearchPage(externalFile.path)?.file, externalFile,
+        `${phase}: explicit lookup can resolve the provisional native endpoint`);
+      assert.equal(availabilityIndex.state.pages.has(externalFile.path), false, `${phase}: physical discovery does not publish canonical relationships`);
+      assert.deepEqual(availabilityIndex.getSourceAcquisitionCounters(), sourceCounters, `${phase}: availability performs no source reads or parsing`);
+
+      const oldPath = externalFile.path;
+      files.delete(oldPath);
+      externalFile.path = `Renamed ${phase}.md`;
+      externalFile.name = externalFile.path;
+      externalFile.basename = externalFile.path.slice(0, -3);
+      files.set(externalFile.path, externalFile);
+      availabilityApp.vault.trigger("rename", externalFile, oldPath);
+      assert.equal(availabilityIndex.get(oldPath), undefined, `${phase}: old provisional path is retired on rename`);
+      assert.equal(availabilityIndex.search(externalFile.basename.toLowerCase(), 5, "vault-files")[0]?.file, externalFile,
+        `${phase}: provisional rename preserves the native identity in Find`);
+      files.delete(externalFile.path);
+      availabilityApp.vault.trigger("delete", externalFile);
+      assert.equal(availabilityIndex.get(externalFile.path), undefined, `${phase}: deleting the native file retires provisional lookup`);
+      assert.equal(availabilityIndex.search(externalFile.basename.toLowerCase(), 5, "vault-files").length, 0, `${phase}: deleting the native file retires Find membership`);
+
+      // Managed ghost creation retains its explicit materialization owner, including captured intent.
+      files.set(managedFile.path, managedFile);
+      availabilityCoordinator.managedCreatedPaths.set(managedFile.path, Date.now() + 60_000);
+      const beforeManaged = availabilityCoordinator.getIndexSourceRevision();
+      availabilityApp.vault.trigger("create", managedFile);
+      assert.equal(availabilityIndex.get(managedFile.path), undefined, `${phase}: managed creation is not provisionally promoted by this listener`);
+      assert.equal(availabilityCoordinator.getIndexSourceRevision(), beforeManaged, `${phase}: managed creation keeps its existing epoch ownership`);
+      assert.equal(availabilityCoordinator.dirtyMarkdownPaths.has(managedFile.path), false, `${phase}: managed creation keeps its existing patch ownership`);
+
+      files.delete(managedFile.path);
+      availabilityCoordinator.managedCreatedPaths.delete(managedFile.path);
+      // An already replaced native object must not become the readable endpoint.
+      const replacement = new TFile(managedFile.path, managedFile.stat.mtime);
+      files.set(replacement.path, replacement);
+      availabilityApp.vault.trigger("create", managedFile);
+      assert.equal(availabilityIndex.get(managedFile.path), undefined, `${phase}: a stale create cannot expose the replaced TFile`);
+      assert.equal(availabilityIndex.search(managedFile.basename.toLowerCase(), 5, "vault-files").length, 0, `${phase}: Find rejects stale native identity`);
+    } finally {
+      releaseGraph();
+      await activeCoordinator;
+      if (availabilityCoordinator.rebuildTimer !== null) window.clearTimeout(availabilityCoordinator.rebuildTimer);
+      availabilityIndex.destroy();
+      files.delete(beforeHandover.path); files.delete(externalFile.path); files.delete(managedFile.path);
+    }
+  }
+
+  // A folder move owns its known subtree, including a second move during cooperative capture.
+  const localFolder = ensureFolder("SI4Folder");
+  const localSubfolder = ensureFolder("SI4Folder/Sub");
+  const localNote = new TFile("SI4Folder/Sub/Local.md", 10_100);
+  const localImage = new TFile("SI4Folder/Image.png", 10_101);
+  localNote.parent = localSubfolder; localSubfolder.children.push(localNote);
+  localImage.parent = localFolder; localFolder.children.push(localImage);
+  for (const file of [localNote, localImage]) { files.set(file.path, file); index.insertCreatedFile(file); }
+  const folderIdentity = index.state.pages.get("folder:SI4Folder");
+  const noteIdentity = index.state.pages.get(localNote.path);
+  const imageIdentity = index.state.pages.get(localImage.path);
+  const moveLocalFixture = (from, to) => {
+    for (const item of [localFolder, localSubfolder, localNote, localImage]) {
+      const map = item instanceof TFolder ? folders : files;
+      map.delete(item.path); item.path = to + item.path.slice(from.length);
+      item.name = item.path.split("/").pop();
+      if (item instanceof TFile) item.basename = item.name.replace(/\.[^.]+$/, "");
+      map.set(item.path, item);
+    }
+  };
+  moveLocalFixture("SI4Folder", "SI4First");
+  const movingFolder = index.renameFolder("SI4Folder", localFolder);
+  assert.equal(index.isSemanticWriteReady("Note A.md", "Note B.md"), false, "Folder preparation fences writes");
+  moveLocalFixture("SI4First", "SI4Final");
+  assert.equal(index.renameFolder("SI4First", localFolder), movingFolder, "Concurrent folder moves share one affected tree job");
+  await movingFolder;
+  assert.equal(index.state.pages.get("folder:SI4Final"), folderIdentity, "Folder identity survives coalesced moves");
+  assert.equal(index.state.pages.get(localNote.path), noteIdentity, "Markdown identity survives folder moves");
+  assert.equal(index.state.pages.get(localImage.path), imageIdentity, "Attachment identity survives folder moves");
+  assert.equal(index.get("folder:SI4Folder"), undefined);
+  assert.equal(index.get("folder:SI4First"), undefined);
+  assert(index.searchEntryByPath.has(localNote.path));
+  assert(index.searchEntryByPath.has("folder:SI4Final/Sub"));
+  assert.equal(index.state.evidence.declarationsTouching(localNote.path).filter(item =>
+    item.sourceKind === "file-tree" && item.declaredTargetPath === localNote.path).length, 1, "Move has one canonical membership declaration");
+  for (const file of [localNote, localImage]) files.delete(file.path);
+  folders.delete(localSubfolder.path); folders.delete(localFolder.path);
+  rootFolder.children = rootFolder.children.filter(item => item !== localFolder);
+  assert.equal(await index.removeDeletedFolder(localFolder), 1, "Parent-only deletion counts its one still-materialized Markdown child");
+  assert.equal(index.get("folder:SI4Final"), undefined);
+  assert.equal(index.get("folder:SI4Final/Sub"), undefined);
+  assert.equal(index.state.pages.get(localNote.path).file, null);
+  assert.equal(index.state.pages.get(localImage.path).file, null);
+  for (const file of [localNote, localImage]) index.removeVirtualPageIfUnreferenced(file.path);
+  assert.equal(index.pendingStructuralTasks, 0, "Folder operations release their lifetime");
+
+  const navigationFolder = new KplexPlugin();
+  navigationFolder.app={workspace:{getLeavesOfType:()=>[]}};
+  navigationFolder.settings = { lastActivePath:"Old/Sub/A.md",sidecarLastFilePath:"Old/Sub/A.md",
+    navigationHistory:["folder:Old","Old/Sub/A.md","Other.md"],pinnedNodes:["folder:Old/Sub","Oldish/A.md"] };
+  assert.equal(navigationFolder.remapNavigationPaths("Old","New",true),true);
+  assert.deepEqual(navigationFolder.settings,{lastActivePath:"New/Sub/A.md",sidecarLastFilePath:"New/Sub/A.md",
+    navigationHistory:["folder:New","New/Sub/A.md","Other.md"],pinnedNodes:["folder:New/Sub","Oldish/A.md"]});
+
   // P15: post-parse graph work for a URL-heavy note is staged and cooperatively sliced. Prime the
   // parsed-body hot cache so this measures signature/evidence/URL/resolution/commit work rather
   // than the parser itself. Cancelling after parsing must publish nothing; retry remains searchable.
@@ -1933,10 +4872,13 @@ try {
   managedFile.stat.size = urlHeavyBody.length;
   contents.set(managedFile.path, urlHeavyBody);
   index.fieldCache.set(managedFile.path, { mtime: managedFile.stat.mtime, body: urlHeavyParsed });
+  assert.equal(index.isOnDemandMode(), false, "Dense-patch responsiveness uses the existing Eager session");
+  assert.equal(index.onDemandGateRevisions.size, 0, "Eager editing must not allocate On-demand-only count revision tokens");
   const graphPatchGap = await maxTimerGapDuring(async () => {
     assert.deepEqual(await index.patchMarkdownPaths([managedFile.path]), { outcome: "patched", count: 1 });
   });
   assert(graphPatchGap < 50, `URL-heavy post-parse graph patch blocked timers for ${graphPatchGap.toFixed(1)} ms`);
+  assert.equal(index.onDemandGateRevisions.size, 0, "A dense Eager patch retains no On-demand-only per-URL count state");
   assert(index.get("https://perf-9999.example/path/9999"), "URL-heavy staged patch must publish all URL nodes");
   assert.equal(index.get(managedFile.path), managedPageIdentity, "Bulk publication must preserve existing GraphPage identity");
   for (const source of index.state.pages.values()) {
@@ -2001,7 +4943,7 @@ try {
   // P12: exercise the production rebuild coordinator. If the last visible K-Plex surface closes
   // while an incremental patch is awaiting work, cancellation must not fall through to a hidden
   // full rebuild. Reopening resumes the retained backlog exactly once.
-  const coordinator = new ExcaliBrainPlugin();
+  const coordinator = new KplexPlugin();
   let coordinatorVisible = true;
   let coordinatorFullBuilds = 0;
   const coordinatorPatchCalls = [];
@@ -2009,8 +4951,13 @@ try {
   let signalCoordinatorPatch;
   const coordinatorPatchStarted = new Promise((resolve) => { signalCoordinatorPatch = resolve; });
   const coordinatorPatchGate = new Promise((resolve) => { releaseCoordinatorPatch = resolve; });
-  coordinator.index = {
+  coordinator.index = { isOnDemandMode: () => false,
+    acknowledgeHostPresentation: () => {},
+    hasPendingStructuralMaintenance: () => false,
+    hasPendingSnapshotHydration: () => false,
     size: 1,
+    noteBuildDecision: () => {},
+    isFullSnapshotHydrated: () => false, hasPhysicalBaseline: () => false, hasSourceBackedStartup: () => false,
     patchMarkdownPaths: async (paths) => {
       coordinatorPatchCalls.push([...paths]);
       if (coordinatorPatchCalls.length === 1) {
@@ -2045,6 +4992,41 @@ try {
   assert.equal(coordinator.indexDirty, false);
   assert.equal(coordinator.dirtyMarkdownPaths.size, 0);
 
+  // Creating a Markdown note during another patch must materialize and patch only that source.
+  // A missing page used to make this path fall through to an expensive whole-vault rebuild.
+  const createdDuringPatch = new TFile("Created During Patch.md", 9000);
+  const creationCoordinator = new KplexPlugin();
+  let materialized = false;
+  let creationFullBuilds = 0;
+  const creationPatchCalls = [];
+  creationCoordinator.app = { vault: { getFileByPath: (path) => path === createdDuringPatch.path ? createdDuringPatch : null } };
+  creationCoordinator.index = { isOnDemandMode: () => false,
+    acknowledgeHostPresentation: () => {},
+    withForegroundPriority: work => work(),
+    hasPendingStructuralMaintenance: () => false,
+    hasPendingSnapshotHydration: () => false,
+    size: 1,
+    noteBuildDecision: () => {},
+    isFullSnapshotHydrated: () => true, hasPhysicalBaseline: () => true, hasSourceBackedStartup: () => false,
+    get: () => materialized ? { file: createdDuringPatch } : undefined,
+    insertCreatedFile: () => { materialized = true; },
+    patchMarkdownPaths: async (paths) => { creationPatchCalls.push([...paths]); return { outcome: "patched", count: paths.length }; },
+    rebuild: async () => { creationFullBuilds += 1; return true; },
+  };
+  creationCoordinator.hasVisibleKplexSurface = () => true;
+  creationCoordinator.refreshBookmarkedEntryPoints = async () => {};
+  creationCoordinator.notifyIndexStatus = () => {};
+  creationCoordinator.initialIndexComplete = true;
+  creationCoordinator.indexDirty = true;
+  creationCoordinator.indexDirtyRevision = 1;
+  creationCoordinator.indexBacklogReasons.add("vault:create-markdown");
+  creationCoordinator.dirtyMarkdownPaths.add(createdDuringPatch.path);
+  await creationCoordinator.performRebuild(false, false, "vault:create-markdown", false);
+  assert.equal(materialized, true);
+  assert.deepEqual(creationPatchCalls, [[createdDuringPatch.path]]);
+  assert.equal(creationFullBuilds, 0);
+  assert.equal(creationCoordinator.indexDirty, false);
+
   // Rename performance regression: a TFile rename must remap the already-published semantic graph
   // in place. No Markdown is reparsed and all evidence/search/relationship paths follow the same
   // TFile object to its new basename.
@@ -2065,22 +5047,27 @@ try {
 
   // The reactive coordinator must not turn the rename event (or Obsidian's unchanged follow-up
   // metadata event) into indexing work. Persisted navigation paths are still remapped immediately.
-  const renameCoordinator = new ExcaliBrainPlugin();
+  const renameCoordinator = new KplexPlugin();
   const renameHandlers = new Map();
   const rebuildReasons = [];
   const fastRenameCalls = [];
+  const renamedPresentationRepairs = [];
   renameCoordinator.app = {
+    workspace:{getLeavesOfType:()=>[]},
     vault: {
-      on: (name, callback) => { renameHandlers.set(`vault:${name}`, callback); return {}; },
+      on: (name, callback) => {const previous=renameHandlers.get(`vault:${name}`);renameHandlers.set(`vault:${name}`, (...args)=>{previous?.(...args);callback(...args);});return {};},
       getFileByPath: (path) => path === renamedCentral?.path ? renamedCentral : null,
     },
     metadataCache: {
       on: (name, callback) => { renameHandlers.set(`metadata:${name}`, callback); return {}; },
     },
   };
-  renameCoordinator.index = { renameFile: (oldPath, file) => { fastRenameCalls.push([oldPath, file.path]); return true; } };
+  renameCoordinator.index = { isOnDemandMode: () => false, invalidateHostStructure: () => {},
+    refreshVisiblePresentation: (path) => { renamedPresentationRepairs.push(path); return Promise.resolve(); },
+    refreshVisibleHostMetadataPreviews: () => false, renameFile: (oldPath, file) => { fastRenameCalls.push([oldPath, file.path]); return true; } };
   renameCoordinator.settings = {
     ...settings,
+    centralNodeMarkdownZoomModes:{},
     primaryTagField: "Note type",
     lastActivePath: "Folder/Old.md",
     navigationHistory: ["Start.md", "Folder/Old.md", "Folder/Old.md"],
@@ -2088,7 +5075,9 @@ try {
     sectionSizes: { "Folder/Old.md": { "\u0000Intro": { cardWidth: 320 } } },
   };
   renameCoordinator.saveSettings = async () => {};
+  renameCoordinator.persistSettingsSnapshot = async () => {};
   renameCoordinator.scheduleRebuild = (reason) => { rebuildReasons.push(reason); };
+  renameCoordinator.registerMarkdownZoomPreferenceListeners();
   renameCoordinator.registerReactiveIndexListeners();
   const renamedCentral = new TFile("Moved/New.md", 123);
   const renameHandler = renameHandlers.get("vault:rename");
@@ -2105,6 +5094,7 @@ try {
 
   metadataChangedHandler(renamedCentral);
   assert.equal(renameCoordinator.dirtyMarkdownPaths.size, 0, "Rename-generated metadata event with identical revision must be ignored");
+  assert.deepEqual(renamedPresentationRepairs, [renamedCentral.path], "Same-revision native availability still repairs optional presentation");
   assert.deepEqual(rebuildReasons, []);
 
   renamedCentral.stat.mtime += 1;
@@ -2132,7 +5122,7 @@ try {
   const target = { ids: [{ kind: "doi", value: "10.1/x" }], title: "D-FINE", pagePath: null, origin: null };
   let splitAnchor = null;
   const splits = [];
-  const paper = Object.create(ExcaliBrainPlugin.prototype);
+  const paper = Object.create(KplexPlugin.prototype);
   paper.app = {
     workspace: {
       iterateAllLeaves: (visit) => { for (const leaf of paperLeaves) visit(leaf); },
@@ -2166,6 +5156,108 @@ try {
 
   console.log("Paper pane allocation: assertions PA1–PA4 PASS");
 }
+  // Issue #2: creating an empty note and then pasting 8,246 words must finish as one file patch
+  // while the graph remains usable. The content shape matches the reported 44,369 characters.
+  const pastedText = Array.from({ length: 8246 }, (_, i) => i < 3140 ? "words" : "word").join(" ");
+  assert.equal(pastedText.length, 44369);
+  const pastedFile = new TFile("Large Paste.md", noteA.stat.mtime + 10_000);
+  files.set(pastedFile.path, pastedFile);
+  caches.set(pastedFile.path, { frontmatter: {}, tags: [], links: [] });
+  contents.set(pastedFile.path, "");
+  const pastedPage = index.insertCreatedFile(pastedFile);
+  contents.set(pastedFile.path, pastedText);
+  pastedFile.stat.mtime += 1;
+  pastedFile.stat.size = pastedText.length;
+  const pasteStartedAt = performance.now();
+  assert.deepEqual(await index.patchMarkdownPaths([pastedFile.path]), { outcome: "patched", count: 1 });
+  assert(performance.now() - pasteStartedAt < 2000, "A plain 44 KB paste must not monopolize indexing");
+  assert.equal(index.get(pastedFile.path), pastedPage);
+  assert.equal(contents.get(pastedFile.path), pastedText);
+  assert(index.search("large paste").some((page) => page.path === pastedFile.path));
+
+  // Issue 114: exercise actual source collection, patch publication, neighborhood projection and
+  // the production Edge JSX from both centers. Geometry doubles do not classify direction.
+  {
+    const arrowPaths = ["Arrow A-Star.md", "Arrow Uniform Cost Search.md"];
+    const arrowRoot = new TFolder("");
+    for (const path of arrowPaths) {
+      const file = new TFile(path, mtime++);
+      file.parent = arrowRoot; arrowRoot.children.push(file); files.set(path, file);
+      const target = path === arrowPaths[0] ? "Arrow Uniform Cost Search" : "Arrow A-Star";
+      contents.set(path, `# Related\n[[${target}#Related]]\n`);
+      file.stat.size = contents.get(path).length;
+      caches.set(path, { frontmatter: path === arrowPaths[0] ? { Implements: `[[${target}]]` } : {}, tags: [], links: [] });
+      resolvedLinks[path] = { [path === arrowPaths[0] ? arrowPaths[1] : arrowPaths[0]]: path === arrowPaths[0] ? 2 : 1 };
+      unresolvedLinks[path] = {};
+    }
+    const arrowSettings = { ...settings, hierarchy: { ...settings.hierarchy, leftFriends: ["Implements"] },
+      baseLinkStyle: { ...settings.baseLinkStyle, startArrowHead: "none", endArrowHead: "arrow" }, hierarchyLinkStyles: {} };
+    const arrowApp = { ...app, vault: { ...app.vault,
+      getRoot: () => arrowRoot, getMarkdownFiles: () => arrowPaths.map(path => files.get(path)),
+      getFiles: () => arrowPaths.map(path => files.get(path)),
+      getFolderByPath: path => path === "" ? arrowRoot : null,
+    }, metadataCache: { ...metadataCache,
+      resolvedLinks: Object.fromEntries(arrowPaths.map(path => [path, resolvedLinks[path]])),
+      unresolvedLinks: Object.fromEntries(arrowPaths.map(path => [path, {}])),
+    } };
+    const arrowPlugin = { ...plugin, app: arrowApp, settings: arrowSettings };
+    const arrowIndex = new GraphIndex(arrowPlugin, arrowApp);
+    const edgeStart = plexGraphSource.indexOf("function Edge({");
+    const edgeEnd = plexGraphSource.indexOf("/** Compose the deterministic Plex scene", edgeStart);
+    const markerStart = plexGraphSource.indexOf("function markerFor(");
+    const markerEnd = plexGraphSource.indexOf("/** Translate the displayed zone heading", markerStart);
+    assert(edgeStart >= 0 && edgeEnd > edgeStart && markerStart >= 0 && markerEnd > markerStart);
+    const edgeJs = ts.transpileModule(plexGraphSource.slice(markerStart, markerEnd) + plexGraphSource.slice(edgeStart, edgeEnd), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.React },
+    }).outputText;
+    const Edge = new Function("React", "LinkDirection", "gatesForEdge", "gatePoint", "edgeGeometry", "alphaHexToCss", "relationLabel", "NATIVE_LINK_STROKE", "NATIVE_LINK_TEXT", "DEFAULT_RENDERED_LINK_WIDTH", `${edgeJs}; return Edge;`)(
+      { createElement: (type, props, ...children) => ({ type, props, children }) }, LinkDirection,
+      () => ({ source: "left", target: "right" }), () => ({ x: 0, y: 0 }),
+      () => ({ d: "M0 0L1 1", midpoint: { x: 0, y: 0 } }), value => value, value => value,
+      require(join(temp, "src/index/style.js")).NATIVE_LINK_STROKE, require(join(temp, "src/index/style.js")).NATIVE_LINK_TEXT,
+      require(join(temp, "src/index/style.js")).DEFAULT_RENDERED_LINK_WIDTH,
+    );
+    try {
+      assert.equal(await arrowIndex.rebuild(), true);
+      for (const showInferredNodes of [false, true]) for (const inverseArrowDirection of [false, true]) {
+        arrowSettings.showInferredNodes = showInferredNodes; arrowSettings.inverseArrowDirection = inverseArrowDirection;
+        for (let center = 0; center < arrowPaths.length; center++) {
+          const sourcePath = arrowPaths[center], targetPath = arrowPaths[1 - center];
+          const neighbors = arrowIndex.getNeighborhood(sourcePath);
+          const neighbor = neighbors.leftFriends.find(item => item.page.path === targetPath);
+          assert(neighbor, "Defined friend remains visible when inferred nodes are hidden");
+          assert.equal(neighbor.relationType, RelationType.DEFINED);
+          const scene = buildScene(neighbors, arrowIndex, arrowSettings);
+          const edge = scene.edges.find(item => item.sourcePath === sourcePath && item.targetPath === targetPath);
+          assert(edge, "Defined edge is projected from the selected center");
+          assert.equal(edge.direction, center === 0 ? LinkDirection.FROM : LinkDirection.TO);
+          const rendered = Edge({ edge, nodes: new Map(scene.nodes.map(node => [node.page.path, node])), inverseArrowDirection,
+            connectorStyle: "straight", crossLinkOpacity: 1, highlighted: false, dimmed: false });
+          const visiblePath = rendered.children.find(child => child?.props?.className === "kplex-edge-visible");
+          const expectedStart = center === 0 ? !inverseArrowDirection : inverseArrowDirection;
+          assert.equal(visiblePath.props.markerStart, expectedStart ? "url(#kplex-arrow)" : undefined);
+          assert.equal(visiblePath.props.markerEnd, expectedStart ? undefined : "url(#kplex-arrow)");
+          assert(arrowIndex.evidenceBetween(sourcePath, targetPath).some(item => item.sourceKind === "obsidian-link"));
+        }
+      }
+      caches.get(arrowPaths[1]).frontmatter.Implements = "[[Arrow A-Star]]";
+      files.get(arrowPaths[1]).stat.mtime += 1; resolvedLinks[arrowPaths[1]][arrowPaths[0]] = 2;
+      assert.equal((await arrowIndex.patchMarkdownPaths([arrowPaths[1]])).outcome, "patched");
+      assert.equal(arrowIndex.state.pages.get(arrowPaths[0]).neighbours.get(arrowPaths[1]).direction, LinkDirection.BOTH);
+      delete caches.get(arrowPaths[1]).frontmatter.Implements;
+      files.get(arrowPaths[1]).stat.mtime += 1; resolvedLinks[arrowPaths[1]][arrowPaths[0]] = 1;
+      assert.equal((await arrowIndex.patchMarkdownPaths([arrowPaths[1]])).outcome, "patched");
+      assert.equal(arrowIndex.state.pages.get(arrowPaths[0]).neighbours.get(arrowPaths[1]).direction, LinkDirection.FROM);
+      const rebuilt = new GraphIndex(arrowPlugin, arrowApp);
+      try {
+        assert.equal(await rebuilt.rebuild(), true);
+        for (const source of arrowPaths) {
+          const target = arrowPaths.find(path => path !== source);
+          assert.deepEqual(canonicalPair(arrowIndex, source, target), canonicalPair(rebuilt, source, target));
+        }
+      } finally { rebuilt.destroy(); }
+    } finally { arrowIndex.destroy(); }
+  }
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P17 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");
   console.log("Warm cache + predicate/lens foundation + incremental runtime patch: assertions 51–59 PASS");

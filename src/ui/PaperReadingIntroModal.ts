@@ -1,10 +1,12 @@
 import { Modal, Setting, type App } from "obsidian";
+import { createObsidianTranslator } from "../adapters/obsidian/localization";
 
 /**
  * One-time explanation shown when paper reading mode is first enabled. It lists the external
  * services involved and the property K-Plex will use, and resolves with the user's decision.
  */
 export class PaperReadingIntroModal extends Modal {
+  private readonly translate = createObsidianTranslator();
   private decided = false;
 
   constructor(app: App, private readonly referenceField: string, private readonly onDecision: (accepted: boolean) => void) {
@@ -12,20 +14,20 @@ export class PaperReadingIntroModal extends Modal {
   }
 
   onOpen(): void {
-    this.setTitle("Enable paper reading");
+    this.setTitle(this.translate("paper.intro.title"));
     const { contentEl } = this;
     contentEl.addClass("kplex-paper-intro");
-    contentEl.createEl("p", { text: "Paper reading adds Paper details to notes with a DOI or arXiv id. When you use it, K-Plex contacts:" });
+    contentEl.createEl("p", { text: this.translate("paper.intro.intro") });
     const list = contentEl.createEl("ul");
-    list.createEl("li", { text: "Semantic Scholar, OpenAlex and arXiv — to load paper details, references and citing papers." });
-    list.createEl("li", { text: "Google Translate or Bing Translator — only when you translate an abstract or title. The text is sent to that service." });
-    contentEl.createEl("p", { text: "Nothing is sent until you open Paper details." });
+    list.createEl("li", { text: this.translate("paper.intro.servicesData") });
+    list.createEl("li", { text: this.translate("paper.intro.servicesTranslation") });
+    contentEl.createEl("p", { text: this.translate("paper.intro.privacy") });
     contentEl.createEl("p", {
-      text: `Papers you add or link are stored in the “${this.referenceField}” property. It becomes a parent field, so cited papers appear above a paper and papers citing it appear below.`,
+      text: this.translate("paper.intro.property", { field: this.referenceField }),
     });
     new Setting(contentEl)
-      .addButton((button) => button.setButtonText("Cancel").onClick(() => this.finish(false)))
-      .addButton((button) => button.setButtonText("Enable").setCta().onClick(() => this.finish(true)));
+      .addButton((button) => button.setButtonText(this.translate("paper.intro.cancel")).onClick(() => this.finish(false)))
+      .addButton((button) => button.setButtonText(this.translate("paper.intro.enable")).setCta().onClick(() => this.finish(true)));
   }
 
   private finish(accepted: boolean): void {

@@ -1,5 +1,12 @@
+/**
+ * Serializes K-Plex semantic snapshots and captures physical vault inventory for startup
+ * reconciliation. Cached direction rows carry the canonical resolver policy marker; legacy rows
+ * reuse their retained evidence through cooperative resolution. Callers own storage, hydration and publication lifetimes.
+ */
 import { TFile, TFolder, type App } from "obsidian";
-import type { ExcaliBrainSettings } from "../settings";
+import { encodeIndexSettingsSignature } from "../core/graph/settingsPolicy";
+import { RESOLVED_DIRECTION_POLICY_VERSION } from "../core/graph/relations";
+import type { KplexSettings } from "../settings";
 import { LinkDirection, RelationType, type GraphPage, type Relation } from "../types";
 import { createGraphState, type GraphState } from "./GraphState";
 import { resolveEvidenceStore, resolveEvidenceStoreCooperative } from "./RelationResolver";
@@ -49,6 +56,8 @@ export type PersistedPage = {
   semanticSignature?: string;
   /** Cached resolved neighbours. Optional so v1/early IndexedDB snapshots still migrate cleanly. */
   relations?: PersistedRelation[];
+  /** Resolver direction policy that produced the cached relations; absent in legacy snapshots. */
+  resolvedDirectionPolicyVersion?: number;
 };
 
 export type PersistedEvidenceDeclaration = EvidenceProvenance & {
@@ -91,17 +100,27 @@ function hashText(hash: number, text: string): number {
   return next;
 }
 
-/**
- * Cheap deterministic marker for the physical vault tree. It intentionally includes attachments
- * and empty folders because both participate in the K-Plex file tree. Computing it is O(number of
- * vault entries), but it performs no file reads and is dramatically cheaper than rebuilding.
- */
-export function computeVaultSignature(app: App): string {
+/** Physical vault identity and file lookup captured together for startup reconciliation. */
+export type VaultInventory = {
+  signature: string;
+  filesByPath: Map<string, TFile>;
+  folderPaths: Set<string>;
+};
+
+/** Cheap deterministic marker that includes attachments and empty folders. The tree walk is
+ * O(vault entries), performs no file reads, and is shared with the restore inventory pass. */
+function scanVault(app: App, retainInventory: boolean): VaultInventory {
   let hash = 2166136261 >>> 0;
   let count = 0;
-  const stack: TFolder[] = [app.vault.getRoot()];
+  const filesByPath = new Map<string, TFile>();
+  const folderPaths = new Set<string>();
+  const root = app.vault.getRoot();
+  const stack: TFolder[] = [root];
   while (stack.length) {
     const folder = stack.pop()!;
+    // Obsidian's real root reports "/" while some test/adapter roots report "". Folder graph
+    // identity uses "folder:/" for both; retain that canonical inventory identity only here.
+    if (retainInventory) folderPaths.add(folder === root ? "" : folder.path);
     hash = hashText(hash, `D\0${folder.path}\0`);
     count += 1;
     const children = [...folder.children].sort((a, b) => a.path.localeCompare(b.path));
@@ -111,27 +130,26 @@ export function computeVaultSignature(app: App): string {
         continue;
       }
       if (!(child instanceof TFile)) continue;
+      if (retainInventory) filesByPath.set(child.path, child);
       hash = hashText(hash, `F\0${child.path}\0${child.stat.mtime}\0${child.stat.size}\0`);
       count += 1;
     }
   }
-  return `${count}:${hash.toString(16).padStart(8, "0")}`;
+  return { signature: `${count}:${hash.toString(16).padStart(8, "0")}`, filesByPath, folderPaths };
 }
 
-/** Settings that alter the semantic graph, rather than only presentation. */
-export function computeIndexSettingsSignature(settings: ExcaliBrainSettings): string {
-  return JSON.stringify({
-    schema: INDEX_SNAPSHOT_VERSION,
-    hierarchy: settings.hierarchy,
-    inferAllLinksAsFriends: settings.inferAllLinksAsFriends,
-    inverseInfer: settings.inverseInfer,
-    excalibrainFilepath: settings.excalibrainFilepath,
-    showFullTagName: settings.showFullTagName,
-    noteTypeField: settings.noteTypeField,
-    primaryTagField: settings.primaryTagField,
-    tagStyleList: settings.tagStyleList,
-    maxLabelLength: settings.baseNodeStyle.maxLabelLength ?? 30,
-  });
+/** Capture the startup file inventory and signature in one vault-tree pass. */
+export function captureVaultInventory(app: App): VaultInventory {
+  return scanVault(app, true);
+}
+
+export function computeVaultSignature(app: App): string {
+  return scanVault(app, false).signature;
+}
+
+/** Format 2 separates semantic validity from the disposable schema-3 presentation fields. */
+export function computeIndexSettingsSignature(settings: KplexSettings): string {
+  return encodeIndexSettingsSignature(settings);
 }
 
 export function persistedDeclarationFromEvidence(item: RelationEvidence): PersistedEvidenceDeclaration {
@@ -178,6 +196,7 @@ const persistedRelationFromRelation = (targetPath: string, relation: Relation): 
   previousFriendTypeDefinition: relation.previousFriendTypeDefinition,
 });
 
+/** Serialize current-policy relations with their direction marker; physical metadata and neutral evidence retain their existing formats. */
 export function persistedPageFromGraphPage(page: GraphPage, semanticSignature?: string): PersistedPage {
   return {
     path: page.path,
@@ -194,6 +213,7 @@ export function persistedPageFromGraphPage(page: GraphPage, semanticSignature?: 
     styleTags: [...page.styleTags],
     maxLabelLength: page.maxLabelLength,
     ...(semanticSignature ? { semanticSignature } : {}),
+    resolvedDirectionPolicyVersion: RESOLVED_DIRECTION_POLICY_VERSION,
     relations: [...page.neighbours.entries()].map(([targetPath, relation]) => persistedRelationFromRelation(targetPath, relation)),
   };
 }
@@ -201,7 +221,7 @@ export function persistedPageFromGraphPage(page: GraphPage, semanticSignature?: 
 export function serializeGraphState(
   state: GraphState,
   app: App,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
 ): PersistedIndexSnapshot {
   const pages: PersistedPage[] = [];
   for (const page of state.pages.values()) {
@@ -258,13 +278,12 @@ export function addPersistedPageToState(state: GraphState, saved: PersistedPage,
   state.lowercasePathMap.set(page.path.toLowerCase(), page.path);
 }
 
-/** Restore one already-resolved neighbour map without replaying the relationship truth table.
- * Evidence is restored separately for explainability/editing. */
+/** Restore current-policy neighbours; legacy/unsupported rows stay empty until retained evidence is resolved. */
 export function hydratePersistedPageRelations(state: GraphState, saved: PersistedPage): boolean {
-  if (!Array.isArray(saved.relations)) return false;
   const source = state.pages.get(saved.path);
+  source?.neighbours.clear();
+  if (!Array.isArray(saved.relations) || saved.resolvedDirectionPolicyVersion !== RESOLVED_DIRECTION_POLICY_VERSION) return false;
   if (!source) return true;
-  source.neighbours.clear();
   for (const persisted of saved.relations) {
     const target = state.pages.get(persisted.targetPath);
     if (!target) continue;
@@ -321,8 +340,9 @@ export async function finalizeHydratedGraphStateCooperative(
   state: GraphState,
   isCurrent: () => boolean = () => true,
   batchSize = 240,
+  onProgress?: () => void,
 ): Promise<boolean> {
-  return resolveEvidenceStoreCooperative(state.pages, state.evidence, isCurrent, batchSize);
+  return resolveEvidenceStoreCooperative(state.pages, state.evidence, isCurrent, batchSize, onProgress);
 }
 
 export function hydrateGraphState(snapshot: PersistedIndexSnapshot, app: App): GraphState {

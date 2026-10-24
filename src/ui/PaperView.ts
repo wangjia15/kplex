@@ -1,5 +1,5 @@
 import { ItemView, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
-import type ExcaliBrainPlugin from "../main";
+import type KplexPlugin from "../main";
 import { parsePaperId } from "../paper/PaperIdentifier";
 import type { PaperId, PaperListKind } from "../paper/PaperTypes";
 import { PaperDetailsPanel, paperTargetKey, type PaperTarget } from "./PaperDetailsPanel";
@@ -44,10 +44,11 @@ export function paperTargetFromState(state: unknown): PaperTarget | null {
 export class PaperView extends ItemView {
   private panel: PaperDetailsPanel | null = null;
   private target: PaperTarget | null = null;
-  private title = "Paper details";
+  private title = "";
 
-  constructor(leaf: WorkspaceLeaf, private readonly plugin: ExcaliBrainPlugin) {
+  constructor(leaf: WorkspaceLeaf, private readonly plugin: KplexPlugin) {
     super(leaf);
+    this.title = this.plugin.translator("paper.tab.title");
   }
 
   getViewType(): string {
@@ -70,7 +71,7 @@ export class PaperView extends ItemView {
   async setState(state: unknown, result: ViewStateResult): Promise<void> {
     const target = paperTargetFromState(state);
     if (target) {
-      this.title = target.title || "Paper details";
+      this.title = target.title || this.plugin.translator("paper.tab.title");
       const current = this.panel?.getTarget();
       this.target = target;
       // Our own navigation round-trips through setViewState so Obsidian refreshes the tab title
@@ -93,14 +94,14 @@ export class PaperView extends ItemView {
   private mount(): void {
     if (!this.target) {
       this.contentEl.empty();
-      this.contentEl.createDiv({ cls: "kplex-paper-muted", text: "Open Paper details from a paper node in K-Plex." });
+      this.contentEl.createDiv({ cls: "kplex-paper-muted", text: this.plugin.translator("paper.view.openHint") });
       return;
     }
     if (!this.plugin.settings.paperReadingEnabled) {
       this.panel?.destroy();
       this.panel = null;
       this.contentEl.empty();
-      this.contentEl.createDiv({ cls: "kplex-paper-muted", text: "Paper reading is turned off in K-Plex settings." });
+      this.contentEl.createDiv({ cls: "kplex-paper-muted", text: this.plugin.translator("paper.view.disabled") });
       return;
     }
     if (this.panel) {
@@ -110,7 +111,7 @@ export class PaperView extends ItemView {
     this.contentEl.empty();
     this.panel = new PaperDetailsPanel(this.plugin, this.contentEl, {
       setTitle: (title) => {
-        this.title = title || "Paper details";
+        this.title = title || this.plugin.translator("paper.tab.title");
       },
       showInPlex: (page) => this.plugin.showInPlex(page.path),
       targetChanged: (target) => {
@@ -120,7 +121,7 @@ export class PaperView extends ItemView {
           this.app.workspace.requestSaveLayout();
           return;
         }
-        this.title = target.title || "Paper details";
+        this.title = target.title || this.plugin.translator("paper.tab.title");
         void this.leaf.setViewState({ type: KPLEX_PAPER_VIEW_TYPE, state: { ...target }, active: false });
       },
     }, this.target);

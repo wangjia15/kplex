@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { WorkspaceLeaf } from "obsidian";
-import type ExcaliBrainPlugin from "../main";
+import type KplexPlugin from "../main";
 import type { AbstractPreview } from "../paper/obsidian/PaperReadingController";
 import type { GraphPage } from "../types";
 import { ObsidianIcon } from "./ObsidianIcon";
@@ -21,7 +21,7 @@ export const ABSTRACT_CARD_WIDTH = 360;
  * panning or zooming the Plex does not move a pinned card.
  */
 export function AbstractCard({ plugin, card, hostLeaf, onPin, onClose, onMove, onPointerEnter, onPointerLeave, onShowDetails }: {
-  plugin: ExcaliBrainPlugin;
+  plugin: KplexPlugin;
   card: AbstractCardState;
   /** K-Plex leaf showing this card, so read-aloud can target its sidecar companion. */
   hostLeaf?: WorkspaceLeaf;
@@ -97,13 +97,13 @@ export function AbstractCard({ plugin, card, hostLeaf, onPin, onClose, onMove, o
     >
       <div className="kplex-abstract-card-title">{title}</div>
       <div className="kplex-abstract-card-actions">
-        {isPaper && <button type="button" className="clickable-icon" aria-label="Paper details" onClick={() => onShowDetails(page)}>
+        {isPaper && <button type="button" className="clickable-icon" aria-label={plugin.translator("paper.tab.title")} onClick={() => onShowDetails(page)}>
           <ObsidianIcon name="book-open" size={14} />
         </button>}
         {preview?.text && <button
           type="button"
           className="clickable-icon"
-          aria-label="Read abstract aloud"
+          aria-label={plugin.translator("paper.card.readAloud")}
           onClick={(event) => {
             event.stopPropagation();
             plugin.readAloud(preview.text, title, page.file?.path, hostLeaf);
@@ -114,25 +114,25 @@ export function AbstractCard({ plugin, card, hostLeaf, onPin, onClose, onMove, o
         <button
           type="button"
           className={`clickable-icon${card.pinned ? " is-active" : ""}`}
-          aria-label={card.pinned ? "Unpin" : "Pin"}
+          aria-label={card.pinned ? plugin.translator("paper.card.unpin") : plugin.translator("paper.card.pin")}
           aria-pressed={card.pinned}
           onClick={() => onPin(card.id)}
         ><ObsidianIcon name={card.pinned ? "pin-off" : "pin"} size={14} /></button>
-        {card.pinned && <button type="button" className="clickable-icon" aria-label="Close" onClick={() => onClose(card.id)}>
+        {card.pinned && <button type="button" className="clickable-icon" aria-label={plugin.translator("paper.card.close")} onClick={() => onClose(card.id)}>
           <ObsidianIcon name="x" size={14} />
         </button>}
       </div>
     </div>
     <div ref={bodyRef} className="kplex-abstract-card-body">
       {preview === undefined
-        ? <div className="kplex-abstract-card-muted">Loading…</div>
+        ? <div className="kplex-abstract-card-muted">{plugin.translator("paper.card.loading")}</div>
         : preview?.text.split(/\n\s*\n/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
       {images.length > 0 && <div className="kplex-abstract-card-images">
         {images.map((image) => <img key={image.path} src={image.src} alt="" loading="lazy" decoding="async" draggable={false} />)}
       </div>}
     </div>
     {preview && <div className="kplex-abstract-card-source">
-      {preview.source === "note" ? "From the note" : `From ${preview.source}`}
+      {preview.source === "note" ? plugin.translator("paper.card.fromNote") : plugin.translator("paper.card.fromSource", { source: preview.source })}
     </div>}
   </div>;
 }

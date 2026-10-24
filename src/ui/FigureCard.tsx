@@ -3,6 +3,9 @@ import type { SectionFigure } from "../index/SectionExpansion";
 import type { PdfCropResolver } from "../index/PdfCropRenderer";
 import { FigureImage } from "./FigureImage";
 import { ObsidianIcon } from "./ObsidianIcon";
+import { createObsidianTranslator } from "../adapters/obsidian/localization";
+
+const translate = createObsidianTranslator();
 
 export type FigureCardState = {
   id: string;
@@ -42,7 +45,7 @@ export function FigureCard({ card, crops, onPin, onClose, onMove, onOpenLine, on
   }, []);
 
   const { figure } = card;
-  const title = figure.caption || figure.alt || figure.path?.split("/").pop() || "Figure";
+  const title = figure.caption || figure.alt || figure.path?.split("/").pop() || translate("paper.figure.alt");
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!card.pinned || (event.target as Element).closest("button")) return;
@@ -78,17 +81,17 @@ export function FigureCard({ card, crops, onPin, onClose, onMove, onOpenLine, on
     >
       <div className="kplex-abstract-card-title kplex-figure-card-title">{title}</div>
       <div className="kplex-abstract-card-actions">
-        <button type="button" className="clickable-icon" aria-label="Go to figure in note" onClick={() => onOpenLine(figure.line)}>
+        <button type="button" className="clickable-icon" aria-label={translate("paper.figure.goTo")} onClick={() => onOpenLine(figure.line)}>
           <ObsidianIcon name="file-search" size={14} />
         </button>
         <button
           type="button"
           className={`clickable-icon${card.pinned ? " is-active" : ""}`}
-          aria-label={card.pinned ? "Unpin" : "Pin"}
+          aria-label={card.pinned ? translate("paper.figure.unpin") : translate("paper.figure.pin")}
           aria-pressed={card.pinned}
           onClick={() => onPin(card.id)}
         ><ObsidianIcon name={card.pinned ? "pin-off" : "pin"} size={14} /></button>
-        {card.pinned && <button type="button" className="clickable-icon" aria-label="Close" onClick={() => onClose(card.id)}>
+        {card.pinned && <button type="button" className="clickable-icon" aria-label={translate("paper.figure.close")} onClick={() => onClose(card.id)}>
           <ObsidianIcon name="x" size={14} />
         </button>}
       </div>

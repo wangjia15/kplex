@@ -1,5 +1,5 @@
 import { Notice, setIcon, type TFile } from "obsidian";
-import type ExcaliBrainPlugin from "../main";
+import type KplexPlugin from "../main";
 import type { GraphPage } from "../types";
 import type { PaperAbstractView } from "../settings";
 import { paperIdUrl, paperKey, titlePaperId } from "../paper/PaperIdentifier";
@@ -112,7 +112,7 @@ export class PaperDetailsPanel {
   private readonly listEl: HTMLElement;
 
   constructor(
-    private readonly plugin: ExcaliBrainPlugin,
+    private readonly plugin: KplexPlugin,
     private readonly containerEl: HTMLElement,
     private readonly host: PaperPanelHost,
     initial: PaperTarget,
@@ -174,7 +174,7 @@ export class PaperDetailsPanel {
   }
 
   private load(): void {
-    this.host.setTitle(this.target.title || "Paper details");
+    this.host.setTitle(this.target.title || this.plugin.translator("paper.tab.title"));
     this.renderAll();
     void this.loadRecord();
     void this.loadList(this.activeTab);
@@ -326,7 +326,7 @@ export class PaperDetailsPanel {
     if (origin && this.target.origin) {
       this.navEl.createSpan({
         cls: "kplex-paper-muted",
-        text: `${this.target.origin.kind === "references" ? "Cited by" : "Cites"} ${this.plugin.index.titleFor(origin)}`,
+        text: `${this.target.origin.kind === "references" ? this.plugin.translator("paper.panel.citedBy") : this.plugin.translator("paper.panel.cites")} ${this.plugin.index.titleFor(origin)}`,
       });
     }
   }
@@ -336,7 +336,7 @@ export class PaperDetailsPanel {
     const record = this.record;
     if (!record) {
       if (this.recordError) this.headerEl.createDiv({ cls: "kplex-paper-error", text: this.recordError });
-      else this.headerEl.createDiv({ cls: "kplex-paper-status", text: "Loading paper details…" });
+      else this.headerEl.createDiv({ cls: "kplex-paper-status", text: this.plugin.translator("paper.panel.loading") });
       return;
     }
 
@@ -346,14 +346,14 @@ export class PaperDetailsPanel {
     const meta = [authorLine(record.authors), record.venue, record.year ? String(record.year) : ""].filter(Boolean).join(" · ");
     if (meta) this.headerEl.createDiv({ cls: "kplex-paper-meta", text: meta });
     const stats = this.headerEl.createDiv({ cls: "kplex-paper-stats" });
-    if (record.citationCount !== null) stats.createSpan({ text: `${record.citationCount.toLocaleString()} citations` });
-    if (record.referenceCount !== null) stats.createSpan({ text: `${record.referenceCount.toLocaleString()} references` });
+    if (record.citationCount !== null) stats.createSpan({ text: this.plugin.translator("paper.panel.citationCount", { count: record.citationCount.toLocaleString() }) });
+    if (record.referenceCount !== null) stats.createSpan({ text: this.plugin.translator("paper.panel.referenceCount", { count: record.referenceCount.toLocaleString() }) });
     const links = this.headerEl.createDiv({ cls: "kplex-paper-links" });
     for (const id of record.ids.filter((candidate) => candidate.kind === "doi" || candidate.kind === "arxiv")) {
-      links.createEl("a", { text: id.kind === "arxiv" ? `arXiv:${id.value}` : `DOI:${id.value}`, href: paperIdUrl(id), cls: "external-link" });
+      links.createEl("a", { text: id.kind === "arxiv" ? this.plugin.translator("paper.panel.arxiv", { id: id.value }) : this.plugin.translator("paper.panel.doi", { id: id.value }), href: paperIdUrl(id), cls: "external-link" });
     }
-    if (record.pdfUrl) links.createEl("a", { text: "PDF", href: record.pdfUrl, cls: "external-link" });
-    if (record.url && record.source === "semantic-scholar") links.createEl("a", { text: "Semantic Scholar", href: record.url, cls: "external-link" });
+    if (record.pdfUrl) links.createEl("a", { text: this.plugin.translator("paper.panel.pdf"), href: record.pdfUrl, cls: "external-link" });
+    if (record.url && record.source === "semantic-scholar") links.createEl("a", { text: this.plugin.translator("paper.panel.semanticScholar"), href: record.url, cls: "external-link" });
 
     const actions = this.headerEl.createDiv({ cls: "kplex-paper-header-actions" });
     this.renderArticleAction(actions, record);
@@ -383,7 +383,7 @@ export class PaperDetailsPanel {
       const clip = iconButton(actions, "scissors", "Clip with Web Clipper");
       clip.addEventListener("click", () => {
         window.open(url, "_blank", "noopener,noreferrer");
-        new Notice("The article is open in your browser. Clip it with Obsidian Web Clipper; its template decides the note location.", 6000);
+        new Notice(this.plugin.translator("paper.notice.clipperOpened"), 6000);
       });
       return;
     }
@@ -415,10 +415,10 @@ export class PaperDetailsPanel {
           this.target = { ...this.target, pagePath: page.path };
           this.host.targetChanged?.(this.target);
         }
-        new Notice(`Full text imported: ${page.path}`, 3500);
+        new Notice(this.plugin.translator("paper.notice.fullTextImported", { title: page.path }), 3500);
       }
     } catch (error) {
-      if (!isAbortError(error)) new Notice(`Could not import the full text. ${errorText(error)}`, 5000);
+      if (!isAbortError(error)) new Notice(this.plugin.translator("paper.notice.fullTextFailed", { error: errorText(error) }), 5000);
     } finally {
       this.headerBusy = false;
       this.articleStatus = "";
@@ -440,9 +440,9 @@ export class PaperDetailsPanel {
         result.properties ? `${result.properties} propert${result.properties === 1 ? "y" : "ies"} added` : "",
         result.abstract ? "abstract saved" : "",
       ].filter(Boolean);
-      new Notice(parts.length ? `Paper note updated: ${parts.join(", ")}.` : "The note already has this paper information.", 3000);
+      new Notice(parts.length ? this.plugin.translator("paper.notice.noteUpdated", { title: parts.join(", ") }) : this.plugin.translator("paper.notice.noteUpToDate"), 3000);
     } catch (error) {
-      new Notice(`Could not update the note. ${errorText(error)}`, 4000);
+      new Notice(this.plugin.translator("paper.notice.noteUpdateFailed", { error: errorText(error) }), 4000);
     } finally {
       this.headerBusy = false;
       this.renderHeader();
@@ -461,10 +461,10 @@ export class PaperDetailsPanel {
       if (page) {
         this.target = { ...this.target, pagePath: page.path };
         this.host.targetChanged?.(this.target);
-        new Notice(`Added to vault: ${this.plugin.index.titleFor(page)}`, 2500);
+        new Notice(this.plugin.translator("paper.notice.added", { title: this.plugin.index.titleFor(page) }), 2500);
       }
     } catch (error) {
-      if (!isAbortError(error)) new Notice(`Could not add the paper. ${errorText(error)}`, 4000);
+      if (!isAbortError(error)) new Notice(this.plugin.translator("paper.notice.addFailed", { error: errorText(error) }), 4000);
     } finally {
       this.headerBusy = false;
       this.renderHeader();
@@ -483,7 +483,7 @@ export class PaperDetailsPanel {
     container.empty();
     const block = container.createDiv({ cls: "kplex-paper-abstract" });
     const bar = block.createDiv({ cls: "kplex-paper-abstract-bar" });
-    bar.createSpan({ cls: "kplex-paper-abstract-label", text: "Abstract" });
+    bar.createSpan({ cls: "kplex-paper-abstract-label", text: this.plugin.translator("paper.panel.abstract") });
     const body = block.createDiv({ cls: "kplex-paper-abstract-body" });
     // Appended last so the language toggle keeps its full width; reading falls back to the TL;DR.
     const addSpeakButton = (): void => {
@@ -496,12 +496,12 @@ export class PaperDetailsPanel {
     };
 
     if (!record.abstract) {
-      body.createDiv({ cls: "kplex-paper-muted", text: record.tldr ? `TL;DR: ${record.tldr}` : "No abstract is available for this paper." });
+      body.createDiv({ cls: "kplex-paper-muted", text: record.tldr ? this.plugin.translator("paper.panel.tldr", { text: record.tldr }) : this.plugin.translator("paper.panel.noAbstract") });
       addSpeakButton();
       return;
     }
 
-    const toggle = bar.createDiv({ cls: "kplex-paper-view-toggle", attr: { role: "group", "aria-label": "Abstract language" } });
+    const toggle = bar.createDiv({ cls: "kplex-paper-view-toggle", attr: { role: "group", "aria-label": this.plugin.translator("paper.panel.abstractLanguage") } });
     const views: Array<[PaperAbstractView, string]> = [
       ["original", "Original"],
       ["bilingual", "Bilingual"],
@@ -530,7 +530,7 @@ export class PaperDetailsPanel {
         this.renderTranslation(body, cached, view);
         return;
       }
-      body.createDiv({ cls: "kplex-paper-muted", text: "Translating…" });
+      body.createDiv({ cls: "kplex-paper-muted", text: this.plugin.translator("paper.panel.translating") });
       const controller = this.controller;
       this.paper.translation.translate(record.abstract, controller.signal).then((result) => {
         if (this.view !== "original" && body.isConnected) this.renderTranslation(body, result, this.view);
@@ -586,7 +586,7 @@ export class PaperDetailsPanel {
     }
     body.createDiv({
       cls: "kplex-paper-provider",
-      text: `Translated by ${result.provider === "google" ? "Google Translate" : "Bing Translator"}${result.aligned ? "" : " · some sentences are shown by paragraph"}`,
+      text: `${this.plugin.translator("paper.panel.translatedBy", { service: result.provider === "google" ? this.plugin.translator("paper.service.google") : this.plugin.translator("paper.service.bing") })}${result.aligned ? "" : this.plugin.translator("paper.panel.byParagraph")}`,
     });
   }
 
@@ -641,7 +641,7 @@ export class PaperDetailsPanel {
     this.toolbarEl.empty();
     const search = this.toolbarEl.createEl("input", {
       cls: "kplex-paper-filter",
-      attr: { type: "search", placeholder: "Filter by title, author or year", "aria-label": "Filter papers" },
+      attr: { type: "search", placeholder: this.plugin.translator("paper.panel.filterPlaceholder"), "aria-label": this.plugin.translator("paper.panel.filterAria") },
     });
     search.value = this.filter;
     search.addEventListener("input", () => {
@@ -658,7 +658,7 @@ export class PaperDetailsPanel {
     }
     const center = this.listCenter(this.activeTab);
     if (!center) {
-      actions.createSpan({ cls: "kplex-paper-muted", text: "Add this paper to the vault to add its references." });
+      actions.createSpan({ cls: "kplex-paper-muted", text: this.plugin.translator("paper.panel.addToSeeRefs") });
       return;
     }
     const addSelected = iconButton(actions, "download", this.selected.size ? `Add selected (${this.selected.size})` : "Add selected");
@@ -691,11 +691,11 @@ export class PaperDetailsPanel {
         this.listEl.createDiv({ cls: "kplex-paper-provider", text: SOURCE_LABEL[state.source] });
       }
       if (!items.length && state.loaded && !state.loading) {
-        this.listEl.createDiv({ cls: "kplex-paper-muted", text: this.filter ? "No papers match the filter." : `No ${TAB_LABEL[this.activeTab].toLowerCase()} found.` });
+        this.listEl.createDiv({ cls: "kplex-paper-muted", text: this.filter ? this.plugin.translator("paper.panel.noMatches") : this.plugin.translator("paper.panel.noneFound", { kind: TAB_LABEL[this.activeTab].toLowerCase() }) });
       }
       for (const record of items) this.renderRow(record, center);
       const footer = this.listEl.createDiv({ cls: "kplex-paper-list-footer" });
-      if (state.loading) footer.createSpan({ cls: "kplex-paper-muted", text: "Loading…" });
+      if (state.loading) footer.createSpan({ cls: "kplex-paper-muted", text: this.plugin.translator("paper.panel.loadingPapers") });
       else if (state.error) footer.createSpan({ cls: "kplex-paper-error", text: state.error });
       if (!state.loading && state.next !== null && state.loaded) {
         const more = iconButton(footer, "chevrons-down", "Load more");
@@ -710,7 +710,7 @@ export class PaperDetailsPanel {
     const row = this.listEl.createDiv({ cls: "kplex-paper-row" });
     row.toggleClass("is-linked", linked);
 
-    const check = row.createEl("input", { cls: "kplex-paper-check", attr: { type: "checkbox", "aria-label": `Select ${record.title}` } });
+    const check = row.createEl("input", { cls: "kplex-paper-check", attr: { type: "checkbox", "aria-label": this.plugin.translator("paper.panel.selectPaper", { kind: record.title }) } });
     check.checked = this.selected.has(record.key);
     check.disabled = linked || !center || Boolean(this.bulkController);
     check.addEventListener("change", () => {
@@ -733,8 +733,8 @@ export class PaperDetailsPanel {
     const meta = main.createDiv({ cls: "kplex-paper-row-meta" });
     const firstAuthor = record.authors.length ? `${record.authors[0]}${record.authors.length > 1 ? " et al." : ""}` : "";
     meta.createSpan({ text: [record.year ? String(record.year) : "", firstAuthor, record.venue].filter(Boolean).join(" · ") });
-    if (record.citationCount !== null) meta.createSpan({ cls: "kplex-paper-count", text: `${record.citationCount.toLocaleString()} cited` });
-    if (vaultPage) meta.createSpan({ cls: "kplex-paper-badge", text: linked ? "Linked" : "In vault" });
+    if (record.citationCount !== null) meta.createSpan({ cls: "kplex-paper-count", text: this.plugin.translator("paper.panel.citedSuffix", { count: record.citationCount.toLocaleString() }) });
+    if (vaultPage) meta.createSpan({ cls: "kplex-paper-badge", text: linked ? this.plugin.translator("paper.panel.linked") : this.plugin.translator("paper.panel.inVault") });
 
     const actions = row.createDiv({ cls: "kplex-paper-row-actions" });
     if (vaultPage) {
@@ -767,7 +767,7 @@ export class PaperDetailsPanel {
       if (full) {
         this.renderAbstract(detail, full);
       } else {
-        detail.createDiv({ cls: "kplex-paper-muted", text: "Loading abstract…" });
+        detail.createDiv({ cls: "kplex-paper-muted", text: this.plugin.translator("paper.panel.loadingAbstract") });
         this.paper.metadata.lookup(lookupIds, this.controller.signal).then((loaded) => {
           if (detail.isConnected) this.renderAbstract(detail, loaded);
         }).catch((error: unknown) => {
@@ -790,9 +790,9 @@ export class PaperDetailsPanel {
     const controller = this.controller;
     try {
       const page = await this.paper.addPaper(record, center, this.activeTab, this.vaultLookup(), controller.signal);
-      if (page) new Notice(`${this.activeTab === "references" ? "Reference" : "Citing paper"} linked: ${this.plugin.index.titleFor(page)}`, 2500);
+      if (page) new Notice(this.plugin.translator("paper.notice.bulkLinked", { kind: this.activeTab === "references" ? "Reference" : "Citing paper", names: this.plugin.index.titleFor(page) }), 2500);
     } catch (error) {
-      if (!isAbortError(error)) new Notice(`Could not add the paper. ${errorText(error)}`, 4000);
+      if (!isAbortError(error)) new Notice(this.plugin.translator("paper.notice.bulkAddFailed", { error: errorText(error) }), 4000);
     } finally {
       this.busy.delete(record.key);
       this.selected.delete(record.key);
@@ -841,7 +841,7 @@ export class PaperDetailsPanel {
       this.bulkStatus = "";
     }
     if (panelSignal.aborted) return;
-    new Notice(`${done} paper${done === 1 ? "" : "s"} ${mode === "add" ? "added" : "linked"}${failed ? `, ${failed} failed` : ""}.`, 3000);
+    new Notice(this.plugin.translator("paper.notice.bulkResult", { count: done, plural: done === 1 ? "" : "s", status: mode === "add" ? "added" : "linked", failed: String(failed) }), 3000);
     this.renderToolbar();
     this.renderList();
   }

@@ -1,12 +1,23 @@
-import type { App, CachedMetadata } from "obsidian";
-import type ExcaliBrainPlugin from "../main";
+/**
+ * Host-side heading and transient section projection over indexed relationship evidence. Heading
+ * slices retain physical LF/CRLF offsets to match native metadata positions. Transient explanation
+ * codes reuse the UI language boundary without persisting section nodes. Projected/folded pairs
+ * share the core defined-direction tier instead of independently merging arrow directions.
+ * Cached physical link placements survive late target publication; each projection rebinds live
+ * evidence/policy, with at most one native lookup per distinct lexical link and no body reads.
+ */
+import {ontologyConfiguration} from "../core/contracts/ontologyConfiguration";
+import type { App, CachedMetadata, TFile } from "obsidian";
+import type KplexPlugin from "../main";
 import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neighborhood, type Relation, type Role } from "../types";
-import { extractLinksFromValue, normalizeFieldName, parseBodyMetadataCooperative, type ParsedBodyMetadata } from "./fieldParser";
+import { normalizeFieldName, type ParsedBodyMetadata } from "../core/parser/metadata";
+import { extractLinksFromValue, parseBodyMetadataCooperative } from "./fieldParser";
 import type { GraphIndex } from "./GraphIndex";
 import { collectFootnotes, extractSectionContent, type SectionFigureRef, type SectionHighlight } from "./SectionContent";
 import type { PdfCropRequest } from "./PdfCropRenderer";
-import { applyEvidenceToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
+import { applyEvidenceDecisionsToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
+import { canonicalWebUrl } from "../adapters/obsidian/urlIdentity";
 
 export type SectionFigure = {
   /** Browser-loadable source: a vault resource URL or the external image URL. Empty for a PDF crop. */
@@ -44,6 +55,15 @@ export type ExpandedSection = {
 
 type EvidenceTargetMap = Map<string, { target: GraphPage; evidence: RelationEvidence[] }>;
 
+/** Physical body occurrence, retained even before its target has a published graph page. */
+type LinkPlacement = {
+  sectionId: string | null;
+  line: number;
+  rawLink: string;
+  initialPath: string;
+  file?: TFile | null;
+};
+
 type SectionProjectionSource = {
   centerPage: GraphPage;
   centerEvidence: EvidenceTargetMap;
@@ -56,7 +76,9 @@ type SectionProjectionSource = {
     childIds: string[];
     content: SectionContent;
     key: string;
+    line: number;
   }>;
+  linkPlacements: LinkPlacement[];
 };
 
 export type CentralSectionExpansion = {
@@ -87,8 +109,10 @@ const clonePage = (page: GraphPage, path = page.path): GraphPage => ({
   styleTags: [...page.styleTags],
 });
 
+/** Find heading ranges in the original body, preserving newline widths for slicing/cache offsets. */
 function scanHeadings(content: string): HeadingRange[] {
-  const lines = content.split(/\r?\n/);
+  // Keep CR in each physical line: dropping it shifts every subsequent slice in Windows notes.
+  const lines = content.split("\n");
   const output: HeadingRange[] = [];
   let offset = 0;
   let fence: "`" | "~" | null = null;
@@ -132,10 +156,10 @@ function scanHeadings(content: string): HeadingRange[] {
   return output;
 }
 
-function ontologyRole(plugin: ExcaliBrainPlugin, name: string): EvidenceRole | null {
+function ontologyRole(plugin: KplexPlugin, name: string): EvidenceRole | null {
   const normalized = normalizeFieldName(name);
-  const h = plugin.settings.hierarchy;
-  const includes = (values: string[]) => values.some((value) => normalizeFieldName(value) === normalized);
+  const h = ontologyConfiguration(plugin.settings).hierarchy;
+  const includes = (values: readonly string[]) => values.some((value) => normalizeFieldName(value) === normalized);
   if (includes(h.hidden)) return "hidden";
   if (includes(h.parents)) return "parent";
   if (includes(h.children)) return "child";
@@ -146,7 +170,7 @@ function ontologyRole(plugin: ExcaliBrainPlugin, name: string): EvidenceRole | n
   return null;
 }
 
-function inferredRole(plugin: ExcaliBrainPlugin): Exclude<EvidenceRole, "hidden"> {
+function inferredRole(plugin: KplexPlugin): Exclude<EvidenceRole, "hidden"> {
   if (plugin.settings.inferAllLinksAsFriends) return "left";
   return plugin.settings.inverseInfer ? "parent" : "child";
 }
@@ -176,13 +200,14 @@ function evidence(
   };
 }
 
-function resolveTarget(app: App, index: GraphIndex, raw: string, hostPath: string): GraphPage | null {
+/** Resolve native file identity without requiring that progressive graph publication reached it. */
+function linkDestination(app: App, raw: string, hostPath: string): { path: string; file: TFile | null } {
   let candidate = raw.trim();
   try { candidate = decodeURIComponent(candidate); } catch { /* raw is still useful */ }
   const hash = candidate.indexOf("#");
   if (hash >= 0) candidate = candidate.slice(0, hash);
   const file = app.metadataCache.getFirstLinkpathDest(candidate, hostPath);
-  return (file ? index.get(file.path) : index.get(candidate)) ?? null;
+  return { path: file?.path ?? candidate, file };
 }
 
 function roleDefinition(relation: Relation, role: Exclude<Role, "sibling">): string | undefined {
@@ -197,20 +222,21 @@ function roleDefinition(relation: Relation, role: Exclude<Role, "sibling">): str
 }
 
 function resolveNeighbourhood(
-  plugin: ExcaliBrainPlugin,
+  plugin: KplexPlugin,
   index: GraphIndex,
   center: GraphPage,
   evidenceByTarget: Map<string, { target: GraphPage; evidence: RelationEvidence[] }>,
+  inferAllLinksAsFriends = plugin.settings.inferAllLinksAsFriends,
 ): Neighborhood {
   const buckets: Record<Exclude<Role, "sibling">, Neighbour[]> = { parent: [], child: [], left: [], right: [], previous: [], next: [] };
   const max = plugin.settings.maxItemCount;
   for (const { target, evidence: items } of evidenceByTarget.values()) {
     const relation: Relation = { ...emptyRelation(), target };
-    for (const decision of applyOntologyPrecedence(items)) applyEvidenceToRelation(relation, decision);
+    applyEvidenceDecisionsToRelation(relation, applyOntologyPrecedence(items));
     if (relation.isHidden || !index.isVisiblePage(target)) continue;
     center.neighbours.set(target.path, relation);
     for (const role of ["parent", "child", "left", "right", "previous", "next"] as const) {
-      const relationType = classifyRelation(relation, role, plugin.settings.inferAllLinksAsFriends);
+      const relationType = classifyRelation(relation, role, inferAllLinksAsFriends);
       if (!relationType || (relationType === RelationType.INFERRED && !plugin.settings.showInferredNodes)) continue;
       buckets[role].push({ page: target, relationType, typeDefinition: roleDefinition(relation, role), linkDirection: relation.direction, role });
     }
@@ -232,8 +258,12 @@ function addEvidence(map: Map<string, { target: GraphPage; evidence: RelationEvi
   map.set(target.path, current);
 }
 
-function sectionTarget(page: GraphPage, sectionId: string): GraphPage {
-  const clone = clonePage(page, `kplex-section-target:${sectionId}:${page.path}`);
+/** Reuse one transient target per section bucket even when many occurrences share that target. */
+function sectionTarget(page: GraphPage, sectionId: string, bucket?: EvidenceTargetMap): GraphPage {
+  const path = `kplex-section-target:${sectionId}:${page.path}`;
+  const retained = bucket?.get(path)?.target;
+  if (retained) return retained;
+  const clone = clonePage(page, path);
   clone.transient = { kind: "section-target", sourcePath: page.path, actualPath: page.path, sectionId };
   return clone;
 }
@@ -293,7 +323,7 @@ function sourceLinks(cache: CachedMetadata | null): CacheLink[] {
  * persistent GraphIndex; the file body is parsed on demand and discarded when the view collapses.
  */
 export async function buildCentralSectionExpansion(
-  plugin: ExcaliBrainPlugin,
+  plugin: KplexPlugin,
   index: GraphIndex,
   centerPage: GraphPage,
   shouldContinue: () => boolean = () => true,
@@ -321,13 +351,29 @@ export async function buildCentralSectionExpansion(
     }
     return low > 0 ? headings[low - 1] : null;
   };
+  const linkPlacements: LinkPlacement[] = [];
+  // Capture and initial section construction share native resolution, including repeated links.
+  const linkDestinations = new Map<string, ReturnType<typeof linkDestination>>();
+
   // Assign cached links to heading ranges once. The previous per-heading full link scan made an
   // expanded document with H headings and L links do O(H x L) projection work.
   for (const link of links) {
     const line = (link.position?.start.line ?? Number.MAX_SAFE_INTEGER) + 1;
+    let destination = linkDestinations.get(link.link);
+    if (!destination) {
+      destination = linkDestination(plugin.app, link.link, file.path);
+      linkDestinations.set(link.link, destination);
+    }
+
     if (line < firstHeadingLine) {
-      const target = resolveTarget(plugin.app, index, link.link, file.path);
-      if (target) preambleTargets.add(target.path);
+      preambleTargets.add(destination.path);
+      linkPlacements.push({
+        sectionId: null,
+        line,
+        rawLink: link.link,
+        initialPath: destination.path,
+        file: destination.file,
+      });
       continue;
     }
     const heading = headingForLine(line);
@@ -337,17 +383,35 @@ export async function buildCentralSectionExpansion(
     const bucket = linksBySection.get(heading.id) ?? [];
     bucket.push(link);
     linksBySection.set(heading.id, bucket);
+    linkPlacements.push({
+      sectionId: heading.id,
+      line,
+      rawLink: link.link,
+      initialPath: destination.path,
+      file: destination.file,
+    });
   }
 
   // Preserve inbound/structural/frontmatter evidence on the real center, but move outgoing body
   // evidence under headings to the appropriate transient section.
   const centerEvidence = new Map<string, { target: GraphPage; evidence: RelationEvidence[] }>();
+  const propertyUrlsBySection = new Map<string, Array<{ target: GraphPage; evidence: RelationEvidence }>>();
   for (const entry of index.evidenceFrom(centerPage.path)) {
     const target = index.get(entry.targetPath);
     if (!target) continue;
+    // Reuse compiled physical inline URL provenance; frontmatter URLs stay on the real center.
+    // Bucket once so dense expanded notes do not scan every property for each heading.
+    for (const item of entry.evidence) {
+      if (item.sourceKind !== "property-url" || item.declaredByPath !== centerPage.path || typeof item.line !== "number") continue;
+      const heading = headingForLine(item.line);
+      if (!heading) continue;
+      const bucket = propertyUrlsBySection.get(heading.id) ?? [];
+      bucket.push({ target, evidence: item }); propertyUrlsBySection.set(heading.id, bucket);
+    }
     const kept = entry.evidence.filter((item) => {
       if (item.declaredByPath !== centerPage.path) return true;
       if (item.sourceKind === "frontmatter-ontology" || item.sourceKind === "date-property" || item.sourceKind === "file-tree" || item.sourceKind === "tag-tree") return true;
+      if (item.sourceKind === "property-url") return typeof item.line !== "number" || item.line < firstHeadingLine;
       if (item.sourceKind === "inline-ontology" || item.sourceKind === "body-url") return (item.line ?? Number.MAX_SAFE_INTEGER) < firstHeadingLine;
       if (item.sourceKind === "obsidian-link" || item.sourceKind === "unresolved-link") return preambleTargets.has(item.declaredTargetPath);
       return true;
@@ -390,14 +454,20 @@ export async function buildCentralSectionExpansion(
     }
     const byTarget = new Map<string, { target: GraphPage; evidence: RelationEvidence[] }>();
     let counter = 0;
+    for (const item of propertyUrlsBySection.get(heading.id) ?? []) {
+      const target = sectionTarget(item.target, heading.id, byTarget);
+      addEvidence(byTarget, target, { ...item.evidence, sourcePath: sectionPath, targetPath: target.path });
+    }
 
     // Ordinary body wikilinks/Markdown links are still inferred evidence, even when the same text
     // also participates in a Dataview ontology field.
     for (const link of linksBySection.get(heading.id) ?? []) {
       const line = (link.position?.start.line ?? -1) + 1;
-      const actual = resolveTarget(plugin.app, index, link.link, file.path);
+      const destination = linkDestinations.get(link.link);
+      if (!destination) continue;
+      const actual = index.get(destination.path);
       if (!actual) continue;
-      const target = sectionTarget(actual, heading.id);
+      const target = sectionTarget(actual, heading.id, byTarget);
       const role = inferredRole(plugin);
       addEvidence(byTarget, target, evidence(`section-${heading.id}-link-${counter++}`, sectionPath, target.path, role, RelationType.INFERRED, "obsidian-link", centerPage.path, {
         declaredTargetPath: actual.path, declaredRole: role, line,
@@ -410,7 +480,7 @@ export async function buildCentralSectionExpansion(
       for (const actualPath of extractLinksFromValue(plugin.app, occurrence.value, file)) {
         const actual = index.get(actualPath);
         if (!actual) continue;
-        const target = sectionTarget(actual, heading.id);
+        const target = sectionTarget(actual, heading.id, byTarget);
         addEvidence(byTarget, target, evidence(`section-${heading.id}-ontology-${counter++}`, sectionPath, target.path, role, RelationType.DEFINED, "inline-ontology", centerPage.path, {
           declaredTargetPath: actual.path,
           declaredRole: role,
@@ -421,9 +491,9 @@ export async function buildCentralSectionExpansion(
     }
 
     for (const reference of parsed.urls) {
-      const actual = index.get(reference.url);
+      const actual = index.get(canonicalWebUrl(reference.url));
       if (!actual) continue;
-      const target = sectionTarget(actual, heading.id);
+      const target = sectionTarget(actual, heading.id, byTarget);
       const role = inferredRole(plugin);
       addEvidence(byTarget, target, evidence(`section-${heading.id}-url-${counter++}`, sectionPath, target.path, role, RelationType.INFERRED, "body-url", centerPage.path, {
         declaredTargetPath: actual.path, declaredRole: role, line: heading.line + (reference.line ?? 1) - 1,
@@ -441,7 +511,7 @@ export async function buildCentralSectionExpansion(
     sections.push({ id: heading.id, key, page: sectionPage, neighborhood, level: heading.level, parentId: heading.parentId, childIds: [], content: sectionContent });
     projectionSections.push({
       id: heading.id, key, page: sectionPage, evidenceByTarget: byTarget, level: heading.level,
-      parentId: heading.parentId, childIds: [], content: sectionContent,
+      parentId: heading.parentId, childIds: [], content: sectionContent, line: heading.line,
     });
   }
 
@@ -464,7 +534,7 @@ export async function buildCentralSectionExpansion(
       targetPath: section.page.path,
       resolvedRoles: [{ role: "child", relationType: RelationType.DEFINED }],
       hidden: false,
-      summary: "This is a transient heading section of the expanded central Markdown note. It is parsed on demand and is not stored in the persistent K-Plex index.",
+      summary: "transient-section",
       decisions: [],
     });
   }
@@ -473,36 +543,194 @@ export async function buildCentralSectionExpansion(
     centerPath: centerPage.path, centerNeighborhood, sections, explanations,
     projectionSource: {
       centerPage, centerEvidence, sections: projectionSections,
+      linkPlacements,
     },
   };
 }
 
+/**
+ * Resolves the nearest preceding section heading for a 1-based physical line number using binary search.
+ * Returns null when the line falls in the preamble before the first heading.
+ *
+ * @param ordered Headings sorted ascending by physical start line.
+ * @param line 1-based line number in the declaring file.
+ */
+function sectionForLine(
+  ordered: SectionProjectionSource["sections"],
+  line: number,
+): SectionProjectionSource["sections"][number] | null {
+  let low = 0;
+  let high = ordered.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (ordered[mid].line <= line) low = mid + 1;
+    else high = mid;
+  }
+  return low > 0 ? ordered[low - 1] : null;
+}
+
+/**
+ * Rebinds persistent index evidence and active relationship roles to cached heading and preamble
+ * placements without rereading Markdown from disk.
+ *
+ * Ordinary body links and unresolved links lack physical line numbers in index declarations, so
+ * their heading assignment is established from cached link locations while their live evidence, roles,
+ * precedence, multiplicity and target rebinding are derived from the current GraphIndex.
+ *
+ * @param plugin Native link resolution for rebinding previously unresolved lexical targets.
+ * @param index The authoritative persistent GraphIndex.
+ * @param source Cached section projection source captured when the center was expanded.
+ * @returns Re-projected center and section evidence maps ready for neighborhood evaluation.
+ */
+function currentSectionEvidence(
+  plugin: KplexPlugin,
+  index: GraphIndex,
+  source: SectionProjectionSource,
+): Readonly<{
+  center: EvidenceTargetMap; sections: ReadonlyMap<string, EvidenceTargetMap>;
+}> {
+  const center: EvidenceTargetMap = new Map();
+  const sections = new Map<string, EvidenceTargetMap>(source.sections.map(/** Allocate one current evidence bucket per cached physical heading. */
+    (section) => [section.id, new Map()]));
+  // buildCentralSectionExpansion retains physical heading order; do not sort it on every update.
+  const orderedSections = source.sections;
+  const sectionById = new Map(source.sections.map(/** Resolve cached occurrences without scanning headings. */
+    (section) => [section.id, section] as const));
+
+  const placementsByFile = new Map<TFile, LinkPlacement[]>();
+  const placementsByPath = new Map<string, LinkPlacement[]>();
+  const currentPaths = new Map<string, string>();
+
+  for (const placement of source.linkPlacements) {
+    if (placement.file) {
+      const bucket = placementsByFile.get(placement.file) ?? [];
+      bucket.push(placement);
+      placementsByFile.set(placement.file, bucket);
+    }
+    let currentPath = currentPaths.get(placement.rawLink);
+    if (currentPath === undefined) {
+      currentPath = linkDestination(plugin.app, placement.rawLink, source.centerPage.file?.path ?? source.centerPage.path).path;
+      currentPaths.set(placement.rawLink, currentPath);
+    }
+    // A resolved link can become an unresolved link whose path equals its raw spelling. Aliases
+    // are lookup keys, not additional occurrences; append each placement once per distinct key.
+    for (const path of new Set([placement.initialPath, currentPath])) {
+      const bucket = placementsByPath.get(path) ?? [];
+      bucket.push(placement);
+      placementsByPath.set(path, bucket);
+    }
+  }
+
+  for (const entry of index.evidenceFrom(source.centerPage.path)) {
+    const actual = index.get(entry.targetPath);
+    if (!actual) continue;
+
+    for (const item of entry.evidence) {
+      // 1. Inbound evidence: declared by another note targeting center.
+      // Retain on center so note edits in another note update center neighborhood immediately.
+      if (item.declaredByPath !== source.centerPage.path) {
+        addEvidence(center, actual, item);
+        continue;
+      }
+
+      // 2. Frontmatter and structural hierarchy belong to center.
+      if (
+        item.sourceKind === "frontmatter-ontology" ||
+        item.sourceKind === "date-property" ||
+        item.sourceKind === "file-tree" ||
+        item.sourceKind === "tag-tree"
+      ) {
+        addEvidence(center, actual, item);
+        continue;
+      }
+
+      // 3. Body items with explicit line numbers (inline-ontology, body-url, property-url).
+      if (typeof item.line === "number") {
+        const section = sectionForLine(orderedSections, item.line);
+        if (!section) {
+          addEvidence(center, actual, item);
+        } else {
+          const target = sectionTarget(actual, section.id, sections.get(section.id));
+          const projected: RelationEvidence = {
+            ...item,
+            sourcePath: section.page.path,
+            targetPath: target.path,
+          };
+          addEvidence(sections.get(section.id)!, target, projected);
+        }
+        continue;
+      }
+
+      // 4. Ordinary links and unresolved links without line numbers.
+      // Rebind to cached heading placement or preamble, retaining active evidence and roles from index.
+      if (item.sourceKind === "obsidian-link" || item.sourceKind === "unresolved-link") {
+        const placements = (actual.file ? placementsByFile.get(actual.file) : undefined)
+          ?? placementsByPath.get(actual.path)
+          ?? placementsByPath.get(entry.targetPath)
+          ?? placementsByPath.get(item.declaredTargetPath);
+
+        if (placements && placements.length > 0) {
+          for (const placement of placements) {
+            if (!placement.sectionId) {
+              addEvidence(center, actual, { ...item, line: placement.line });
+            } else {
+              const section = sectionById.get(placement.sectionId);
+              const sectionMap = sections.get(placement.sectionId);
+              if (section && sectionMap) {
+                const target = sectionTarget(actual, placement.sectionId, sectionMap);
+                const projected: RelationEvidence = {
+                  ...item,
+                  sourcePath: section.page.path,
+                  targetPath: target.path,
+                  line: placement.line,
+                };
+                addEvidence(sectionMap, target, projected);
+              }
+            }
+          }
+        } else {
+          addEvidence(center, actual, item);
+        }
+        continue;
+      }
+
+      addEvidence(center, actual, item);
+    }
+  }
+
+  return { center, sections };
+}
+
 /** Recompute only the visible section projection from cached evidence. No Markdown is read or parsed. */
 export function projectCentralSectionExpansion(
-  plugin: ExcaliBrainPlugin,
+  plugin: KplexPlugin,
   index: GraphIndex,
   expansion: CentralSectionExpansion,
 ): CentralSectionExpansion {
   const source = expansion.projectionSource;
-  const center = clonePage(source.centerPage);
-  const centerNeighborhood = resolveNeighbourhood(plugin, index, center, source.centerEvidence);
+  const currentEvidence = currentSectionEvidence(plugin, index, source);
+  const currentCenter = index.get(source.centerPage.path) ?? source.centerPage;
+  const inferAllLinksAsFriends = index.publishedInferAllLinksAsFriends(source.centerPage.path);
+  const center = clonePage(currentCenter);
+  const centerNeighborhood = resolveNeighbourhood(plugin, index, center, currentEvidence.center, inferAllLinksAsFriends);
   // Siblings are structurally derived from the center's *currently visible* parents. Recompute
   // them from the persistent graph on every presentation projection so showing/hiding folder/tag
   // parents (or toggling sibling rendering) can both add and remove eligible siblings without
   // rereading Markdown or rebuilding section evidence.
   centerNeighborhood.siblings = index.getNeighborhood(source.centerPage.path)?.siblings ?? [];
   const explanations = new Map<string, RelationshipExplanation>();
-  for (const { target, evidence: items } of source.centerEvidence.values()) {
+  for (const { target, evidence: items } of currentEvidence.center.values()) {
     if (!center.neighbours.has(target.path)) continue;
-    explanations.set(`${center.path}\u0000${target.path}`, explainResolvedRelationship(center, target, items, plugin.settings.inferAllLinksAsFriends));
+    explanations.set(`${center.path}\u0000${target.path}`, explainResolvedRelationship(center, target, items, inferAllLinksAsFriends));
   }
 
   const sections: ExpandedSection[] = source.sections.map((raw) => {
     const page = clonePage(raw.page, raw.page.path);
-    const neighborhood = resolveNeighbourhood(plugin, index, page, raw.evidenceByTarget);
-    for (const { target, evidence: items } of raw.evidenceByTarget.values()) {
+    const evidenceByTarget = currentEvidence.sections.get(raw.id) ?? new Map<string, { target: GraphPage; evidence: RelationEvidence[] }>();
+    const neighborhood = resolveNeighbourhood(plugin, index, page, evidenceByTarget, inferAllLinksAsFriends);
+    for (const { target, evidence: items } of evidenceByTarget.values()) {
       if (!page.neighbours.has(target.path)) continue;
-      explanations.set(`${page.path}\u0000${target.path}`, explainResolvedRelationship(page, target, items, plugin.settings.inferAllLinksAsFriends));
+      explanations.set(`${page.path}\u0000${target.path}`, explainResolvedRelationship(page, target, items, inferAllLinksAsFriends));
     }
     return {
       id: raw.id, key: raw.key, page, neighborhood, level: raw.level, parentId: raw.parentId, childIds: [...raw.childIds], content: raw.content,
@@ -517,7 +745,7 @@ export function projectCentralSectionExpansion(
     explanations.set(`${center.path}\u0000${section.page.path}`, {
       sourcePath: center.path, targetPath: section.page.path,
       resolvedRoles: [{ role: "child", relationType: RelationType.DEFINED }], hidden: false,
-      summary: "This is a transient heading section of the expanded central Markdown note. It is parsed on demand and is not stored in the persistent K-Plex index.",
+      summary: "transient-section",
       decisions: [],
     });
   }

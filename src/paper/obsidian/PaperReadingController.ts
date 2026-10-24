@@ -1,5 +1,5 @@
 import { Notice, TFile, normalizePath } from "obsidian";
-import type ExcaliBrainPlugin from "../../main";
+import type KplexPlugin from "../../main";
 import type { GraphPage } from "../../types";
 import { normalizeFieldName } from "../../index/fieldParser";
 import { isOtherPaperLink, paperIdsFromValue, paperKey, parseFieldList, parsePaperId, titlePaperId, uniquePaperIds } from "../PaperIdentifier";
@@ -37,7 +37,7 @@ export class PaperReadingController {
   private readonly controllers = new Set<AbortController>();
   private readonly abstractCache = new LruCache<string, AbstractPreview | null>(300);
 
-  constructor(private readonly plugin: ExcaliBrainPlugin) {
+  constructor(private readonly plugin: KplexPlugin) {
     const now = () => Date.now();
     this.metadata = new PaperMetadataService(obsidianHttp, {
       semanticScholarApiKey: () => {
@@ -255,7 +255,7 @@ export class PaperReadingController {
     if (own.some((item) => normalizeFieldName(item) === normalized)) return true;
     const others = [h.parents, h.children, h.leftFriends, h.rightFriends, h.previous, h.next, h.hidden, h.exclusions].filter((list) => list !== own);
     if (others.some((list) => list.some((item) => normalizeFieldName(item) === normalized))) {
-      new Notice(`“${field}” is already assigned to another relationship role. K-Plex will keep your ontology as it is.`, 5000);
+      new Notice(this.plugin.translator("paper.notice.fieldConflict", { field }), 5000);
       return false;
     }
     await this.plugin.assignFieldToOntology(field, role);
@@ -266,7 +266,7 @@ export class PaperReadingController {
   async linkCitation(citing: GraphPage, cited: GraphPage): Promise<boolean> {
     if (citing.path === cited.path) return false;
     if (citing.file?.extension !== "md") {
-      new Notice("Only Markdown notes can store references.", 2600);
+      new Notice(this.plugin.translator("paper.notice.markdownOnly"), 2600);
       return false;
     }
     if (this.isCitationLinked(citing, cited)) return true;
@@ -418,7 +418,7 @@ export class PaperReadingController {
     const stem = uniqueStem(stemBase, (candidate) =>
       Boolean(vault.getFileByPath(normalizePath(folder ? `${folder}/${candidate}.md` : `${candidate}.md`))));
     const frontmatter: Record<string, unknown> = paperNote
-      ? { title: `${record.title} (full text)`, clipped_from: article.url }
+      ? { title: this.plugin.translator("paper.controller.fullTextTitle", { title: record.title }), clipped_from: article.url }
       : { ...paperFrontmatter(record, settings.noteTypeField, settings.paperNoteType), clipped_from: article.url };
     progress("Saving the article…");
     const file = await this.plugin.createPaperNoteFile(folder, stem, markdown, frontmatter);

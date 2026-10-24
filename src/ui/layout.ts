@@ -1,11 +1,65 @@
-import type { ExcaliBrainSettings } from "../settings";
+/**
+ * Host-bound Plex geometry: arrange semantic neighborhoods into presentation zones.
+ * Area resize bounds exist for empty groups independently of overflow viewports;
+ * Horizontal density owns area/column spacing, vertical density owns row spacing. Label truncation
+ * remains the explicit style character budget at every density; compact view
+ * and minimum-link targets share the same geometry policy across normal/expanded/section scenes.
+ * Parent width owns lateral x anchors; density three touches area edges and four permits bounded
+ * margin overlap, while child-column/row controls cannot push those anchors. Optional deferred counts
+ * keep offscreen geometry independent of incidence queries; rendered rows acquire current counts.
+ * One-sided arrangement shares one friend/challenger strip without changing roles or edges;
+ * independent lateral/Sibling scroll areas never share compacted margins.
+ * Relation groups own no semantic counts/descendants; sibling witnesses bind their real members.
+ * Callers own interaction, settings persistence and camera transforms.
+ */
+import type { KplexSettings } from "../settings";
 import type { GraphPage, Neighborhood, Neighbour, NodeStyle, PositionedEdge, PositionedNode, Role, ScrollZone, SectionSizeOverride } from "../types";
 import { RelationType } from "../types";
 import { resolveLinkStyle, resolveNodeStyle } from "../index/style";
 import type { GraphIndex } from "../index/GraphIndex";
+import { appearanceWithoutColors } from "../core/contracts/appearance";
 
+/** Bound a geometry input to its supported presentation interval. */
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-export function siblingScale(settings: ExcaliBrainSettings): number {
+
+/** Use the selected horizontal axis, retaining old unmerged settings' shared density fallback. */
+export function horizontalDensity(settings: Pick<KplexSettings, "compactingFactor" | "horizontalCompactingFactor">): number {
+  return settings.horizontalCompactingFactor ?? settings.compactingFactor;
+}
+
+/** Route semantic roles to their physical scroll/filter owner without changing connector semantics. */
+export function scrollZoneForRole(role: Role | "center", arrangement: KplexSettings["lateralArrangement"]): ScrollZone | null {
+  if (role === "center") return null;
+  if (role === "previous") return "left";
+  if (role === "next" || role === "right") return arrangement === "left" ? "left" : "right";
+  return role;
+}
+
+/** Shared bounded spacing inputs; compact view changes whitespace rather than thought padding. */
+export function spacingPolicy(settings: KplexSettings): { horizontal: number; vertical: number; spacing: number } {
+  const compact = settings.compactView ? 0.82 : 1;
+  return {
+    horizontal: clamp(1.35 / horizontalDensity(settings), 0.38, 1.35) * compact,
+    vertical: clamp(1.35 / settings.compactingFactor, 0.38, 1.35) * compact,
+    spacing: clamp(settings.minLinkLength / 18, 0.72, 1.7),
+  };
+}
+
+/** Resolve configured column limits identically for main, section and expanded child grids. */
+export function layoutColumns(settings: Pick<KplexSettings, "parentColumns" | "childColumns">, role: "parent" | "child"): number {
+  return Math.max(1, Math.min(role === "parent" ? 3 : 7, Math.round(role === "parent" ? settings.parentColumns : settings.childColumns)));
+}
+
+/** Overlay live area heights while retaining inherited layout-profile settings and style dictionaries.
+ * The source facade remains unchanged; spreading its own fields would discard inherited settings.
+ */
+export function withAreaHeightOverrides(settings: KplexSettings, overrides: Partial<Pick<KplexSettings, "parentMaxHeight" | "childMaxHeight" | "friendMaxHeight" | "siblingMaxHeight">>): KplexSettings {
+  const next = Object.create(settings) as KplexSettings;
+  return Object.assign(next, overrides);
+}
+
+/** Apply the persisted sibling multiplier to thoughts and their expanded child strips. */
+export function siblingScale(settings: KplexSettings): number {
   return clamp(settings.siblingRelativeSize / 100, 0.3, 0.85);
 }
 
@@ -18,6 +72,16 @@ export type ZoneViewport = {
   contentTop: number;
   contentHeight: number;
   initialScrollTop: number;
+};
+
+/** Configured world-space area and its movable edge, independent of content overflow. */
+export type ZoneAreaBounds = {
+  key: ScrollZone;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  resizeEdge: "top" | "bottom";
 };
 
 export type SectionTreeEdge = {
@@ -52,11 +116,14 @@ export type SectionPanel = {
   height: number;
   collapsed: boolean;
 };
+/** Explicit dimensions for a center thought whose content owns more space than a label pill. */
+export type CenterNodeSize = { width: number; height: number };
 
 export type PlexScene = {
   nodes: PositionedNode[];
   edges: PositionedEdge[];
   zoneViewports: Partial<Record<ScrollZone, ZoneViewport>>;
+  zoneAreas: Partial<Record<ScrollZone, ZoneAreaBounds>>;
   sectionTreeEdges?: SectionTreeEdge[];
   sectionPanelEdges?: SectionPanelEdge[];
   sectionPanels?: SectionPanel[];
@@ -183,36 +250,110 @@ function mathExtraHeight(text: string): number {
   return (text.match(/\$\$/g)?.length ?? 0) / 2 * SECTION_PANEL.mathLineHeight;
 }
 
+/** Ordinary geometry policy only. The existing appearance projection removes paint fields;
+ * inactive themes, workflow settings and lens behavior never enter this finite layout key. */
+export function sceneLayoutPolicyKey(settings: KplexSettings): string {
+  return JSON.stringify([
+    settings.baseFontSize, settings.childColumns, settings.childMaxHeight, settings.compactingFactor,
+    settings.compactView, settings.friendMaxHeight, settings.graphDepth, settings.horizontalCompactingFactor,
+    settings.lateralArrangement, settings.maxItemCount, settings.minLinkLength, settings.parentColumns,
+    settings.parentMaxHeight, settings.siblingMaxHeight, settings.siblingRelativeSize, settings.wrapNodeLabels,
+    ...(["baseNodeStyle", "centralNodeStyle", "baseLinkStyle", "inferredLinkStyle", "folderLinkStyle", "tagLinkStyle", "hierarchyLinkStyles"] as const)
+      .map(/** Compare the active prepared style policy, preserving every supported non-color field. */ key => appearanceWithoutColors(key, settings[key])),
+  ]);
+}
+
+/** Snapshot bounded ordinary-geometry inputs. Source clocks/provenance do not position nodes;
+ * ordered membership, labels, winning styles and relations do. Settings, semantic crosslinks
+ * and section projections retain their separate caller-owned invalidation. */
+export function neighborhoodSceneKey(neighborhood: Neighborhood | null, index: Pick<GraphIndex, "titleFor">, settings: KplexSettings): string {
+  if (!neighborhood) return "";
+  const node = (page: GraphPage, relation: Neighbour | null, role: Role | "center"): unknown => [
+    page.path, page.isFolder, page.isTag, Boolean(page.file), page.url, page.noteType,
+    page.transient?.kind === "group" ? page.name : index.titleFor(page),
+    page.transient?.groupMembers?.map(member => member.page.path),
+    appearanceWithoutColors("baseNodeStyle", resolveNodeStyle(page, relation, role, settings)),
+    relation?.relationType, relation?.typeDefinition, relation?.linkDirection,
+  ];
+  return JSON.stringify([node(neighborhood.center, null, "center"),
+    ...(["parents", "children", "leftFriends", "rightFriends", "siblings"] as const).map(
+      /** Preserve exact rendered order, including sorting and filtered candidate admission. */ key => neighborhood[key].map(row => node(row.page, row, row.role)),
+    )]);
+}
+
+/** Rebind reused ordinary geometry to current read pages. Coordinate reuse must never retain
+ * an old mtime/property/filter context or replaced native file as the displayed endpoint. */
+export function bindSceneNeighborhood(scene: PlexScene, neighborhood: Neighborhood | null): PlexScene {
+  if (!neighborhood) return scene;
+  const pages = new Map([neighborhood.center, ...neighborhood.parents.map(row => row.page),
+    ...neighborhood.children.map(row => row.page), ...neighborhood.leftFriends.map(row => row.page),
+    ...neighborhood.rightFriends.map(row => row.page), ...neighborhood.siblings.map(row => row.page)]
+    .map(page => [page.path, page]));
+  let changed = false;
+  const nodes = scene.nodes.map(node => {
+    const page = pages.get(node.page.path);
+    if (!page || page === node.page) return node;
+    changed = true; return {...node, page};
+  });
+  return changed ? {...scene, nodes} : scene;
+}
+
+/** Keep the gate visually subordinate while preserving the legacy style radius. */
 export function gateDiameter(style: NodeStyle): number {
   // Keep a generous hit target in CSS, but visually the gate should remain subordinate to
   // the thought itself. gateRadius is retained as the legacy-compatible source setting.
   return Math.max(5, (style.gateRadius ?? 5) * 1.05);
 }
 
-export function effectiveLabelLimit(settings: ExcaliBrainSettings, configured = 30, center = false): number {
-  // Compactness changes only how much text is shown and how tightly thoughts are spaced.
-  // Node interior padding remains constant in every view.
-  const density = clamp(settings.compactingFactor / 1.5, 0.5, 2);
-  const base = Math.max(8, configured);
-  const scaled = Math.round(base / density);
-  return clamp(scaled + (center ? 8 : 0), center ? 18 : 8, center ? 72 : 52);
+/** Apply the configured character budget independently of horizontal/vertical density. Explicit imported styles retain larger limits. */
+export function effectiveLabelLimit(configured = 30, center = false): number {
+  const base = Math.round(Math.max(8, configured));
+  return Math.max(center ? 18 : 8, base + (center ? 8 : 0));
 }
 
-function nodeSize(label: string, fontSize: number, settings: ExcaliBrainSettings, center = false, configuredMax = 30): { width: number; height: number } {
-  const visibleLength = Math.min(label.length, effectiveLabelLimit(settings, configuredMax, center));
+/** Preserve historical role/style proportions while applying the user's base label size in pixels. */
+export function nodeLabelFontSize(fontSize: number, center: boolean, baseFontSize = 12.4): number {
+  const historical = center ? clamp(fontSize * 0.72, 13, 24) : clamp(fontSize * 0.62, 10, 16);
+  return historical * clamp(Number.isFinite(baseFontSize) ? baseFontSize : 12.4, 8, 28) / 12.4;
+}
+
+/** Measure a fixed-padding pill from the bounded label; center estimates use its larger rendered font, independently of density. */
+function nodeSize(
+  label: string,
+  fontSize: number,
+  settings: KplexSettings,
+  center = false,
+  configuredMax = 30,
+  configuredMaxWidth?: number,
+  strokeWidth = 1,
+): { width: number; height: number } {
+  const fontScale = (settings.baseFontSize ?? 12.4) / 12.4;
+  const visibleLength = Math.min(label.length, effectiveLabelLimit(configuredMax, center));
   const minWidth = center ? 180 : 112;
-  const maxWidth = center ? 370 : 286;
-  const width = clamp(70 + visibleLength * Math.max(4.8, fontSize * 0.29), minWidth, maxWidth);
+  const defaultMaxWidth = center ? 370 : 286;
+  const maxWidth = Math.max(minWidth, configuredMaxWidth ?? defaultMaxWidth);
+  // Regular pills keep their established geometry. The center uses a larger, heavier rendered
+  // font, so the regular raw-style coefficient underestimates even short labels and CSS clips
+  // text before either configured limit is reached. Estimate its advance from that actual font.
+  const characterWidth = center ? nodeLabelFontSize(fontSize, true, settings.baseFontSize) * 0.55 : fontSize * fontScale * 0.29;
+  const width = clamp(70 + visibleLength * Math.max(4.8, characterWidth), minWidth, maxWidth);
 
-  // These are the tight/compact paddings, now used everywhere.
-  return { width, height: center ? 48 : 26 };
+  // Both modes reserve the font's ink padding as well as the node's own padding and border.
+  const verticalInsets = (center ? 16 : 8) + 2 * Math.max(0, strokeWidth);
+  const renderedFont = nodeLabelFontSize(fontSize, center, settings.baseFontSize);
+  // Match the text span's 1.2em lines plus 0.2em ink padding at each edge, including wrapped text.
+  const singleLineHeight = Math.max(center ? 48 : 26, Math.ceil(renderedFont * 1.6 + verticalInsets));
+  const twoLineHeight = Math.ceil(Math.max(fontSize * fontScale, renderedFont) * 2.4 + renderedFont * 0.4 + verticalInsets);
+  return { width, height: settings.wrapNodeLabels ? Math.max(singleLineHeight, twoLineHeight) : singleLineHeight };
 }
 
+/** Resolve current visual styles and dimensions without mutating the semantic page or neighbor. */
 function makeNode(
   n: Neighbour,
   role: Role,
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
+  deferCounts = false,
 ): PositionedNode {
   const resolved = resolveNodeStyle(n.page, n, role, settings);
   const scale = role === "sibling" ? siblingScale(settings) : 1;
@@ -221,9 +362,12 @@ function makeNode(
     fontSize: (resolved.fontSize ?? 18) * scale,
     gateRadius: (resolved.gateRadius ?? settings.baseNodeStyle.gateRadius ?? 5) * scale,
   };
-  const label = index.titleFor(n.page);
-  const baseSize = nodeSize(`${resolved.prefix ?? ""}${label}`, resolved.fontSize ?? 18, settings, false, resolved.maxLabelLength ?? 30);
-  const size = scale === 1 ? baseSize : { width: baseSize.width * scale, height: baseSize.height * scale };
+  const label = n.page.transient?.kind === "group" ? n.page.name : index.titleFor(n.page);
+  const baseSize = nodeSize(`${resolved.prefix ?? ""}${label}`, resolved.fontSize ?? 18, settings, false, resolved.maxLabelLength ?? 30, resolved.maxWidth ?? settings.baseNodeStyle.maxWidth, resolved.strokeWidth);
+  const size = scale === 1 ? baseSize : { width: baseSize.width * scale,
+    // Sibling scaling keeps its width/proportions but cannot shrink the actual font's clip box.
+    height: Math.max(baseSize.height * scale, Math.ceil(nodeLabelFontSize(style.fontSize ?? 18, false, settings.baseFontSize)
+      * (settings.wrapNodeLabels ? 2.8 : 1.6) + 8 + 2 * Math.max(0, style.strokeWidth ?? 1))) };
   return {
     page: n.page,
     role,
@@ -235,26 +379,137 @@ function makeNode(
     ...size,
     style,
     label,
-    neighbourCount: index.neighbourCount(n.page),
-    gateStats: index.gateStats(n.page),
+    ...countsForLayout(n.page, index, deferCounts),
   };
 }
 
-const EXPANDED_CLUSTER_TOP_GAP = 14;
-const EXPANDED_MINI_ROW_HEIGHT = 28;
-const EXPANDED_MINI_COLUMNS = 3;
-const EXPANDED_MINI_VISIBLE_ROWS = 2;
+/** Keep geometry count-free when requested; provisional zero values never certify absent edges. */
+function countsForLayout(page: GraphPage, index: GraphIndex, deferred: boolean): Pick<PositionedNode, "neighbourCount" | "gateStats"> {
+  if (page.transient?.kind === "group") return { neighbourCount: 0, gateStats: {
+    top: { visibleCount: 0, hasAny: false }, bottom: { visibleCount: 0, hasAny: false },
+    left: { visibleCount: 0, hasAny: false }, right: { visibleCount: 0, hasAny: false },
+  } };
+  if (!deferred) return { neighbourCount: index.neighbourCount(page), gateStats: index.gateStats(page) };
+  return { neighbourCount: 0, gateStats: {
+    top: { visibleCount: 0, hasAny: false, complete: false, countUnavailable: true },
+    bottom: { visibleCount: 0, hasAny: false, complete: false, countUnavailable: true },
+    left: { visibleCount: 0, hasAny: false, complete: false, countUnavailable: true },
+    right: { visibleCount: 0, hasAny: false, complete: false, countUnavailable: true },
+  } };
+}
 
-export function expandedChildReserve(page: GraphPage, index: GraphIndex, settings: ExcaliBrainSettings, centerPath: string): number {
+/** Resolve visible section targets to their live canonical page; synthetic heading gates remain section-owned. */
+export function presentationPage(page: GraphPage, index: Pick<GraphIndex, "get">): GraphPage | null {
+  if (!page.transient) return page;
+  if (page.transient.kind === "section") return null;
+  return page.transient.actualPath ? index.get(page.transient.actualPath) ?? null : null;
+}
+
+/** Read current gate counts without changing geometry, synthetic heading gates or the unused legacy total. */
+export function projectNodeCounts(node: PositionedNode, index: GraphIndex): PositionedNode {
+  const page = presentationPage(node.page, index);
+  return page ? { ...node, gateStats: index.gateStats(page) } : node;
+}
+
+/** Include partially clipped rows while excluding offscreen rows from optional count projection. */
+export function rowIntersectsViewport(y: number, height: number, scrollTop: number, viewportHeight: number): boolean {
+  return y + height / 2 > scrollTop && y - height / 2 < scrollTop + viewportHeight;
+}
+
+export type ExpandedMiniLayout = Readonly<{
+  columns: number; rows: number; width: number; columnGap: number;
+  rowHeight: number; topGap: number; contentHeight: number; viewportHeight: number;
+}>;
+
+/**
+ * Shared expanded-child box metrics for geometry reserves and renderer cells. Child columns now
+ * honor narrower child-column settings within the established three-column maximum. Minimum
+ * cell widths preserve non-overlapping pills; scale applies to the whole sibling-descendant box.
+ */
+export function expandedMiniLayout(settings: KplexSettings, parentWidth: number, childCount: number, scale = 1): ExpandedMiniLayout {
+  const { horizontal, vertical, spacing } = spacingPolicy(settings);
+  const columns = Math.min(3, layoutColumns(settings, "child"), Math.max(1, childCount));
+  const rows = Math.ceil(childCount / columns);
+  const columnGap = 8 * horizontal / 0.675 * spacing;
+  const width = Math.max(Math.max(220, Math.min(330, parentWidth * 1.7)) * horizontal / 0.675 * spacing,
+    columns * (64 + columnGap));
+  const rowHeight = 16 * (settings.baseFontSize ?? 12.4) / 12.4 + 12 * vertical / 0.675 * spacing;
+  const topGap = 14 * vertical / 0.675 * spacing;
+  return {
+    columns, rows, width: width * scale, columnGap: columnGap * scale,
+    rowHeight: rowHeight * scale, topGap: topGap * scale,
+    contentHeight: rows * rowHeight * scale,
+    viewportHeight: Math.min(2, rows) * rowHeight * scale,
+  };
+}
+
+/** Reserve exactly the visible expanded box height, optionally scaling the full sibling-descendant strip. */
+export function expandedChildReserve(page: GraphPage, index: GraphIndex, settings: KplexSettings, centerPath: string, scale = 1): number {
+  if (page.transient?.kind === "group") return 0;
   if (settings.graphDepth !== 2) return 0;
   const childCount = index.neighbours(page, "child")
     .filter((child) => child.page.path !== centerPath)
     .slice(0, settings.maxItemCount).length;
   if (!childCount) return 0;
-  const visibleRows = Math.min(EXPANDED_MINI_VISIBLE_ROWS, Math.ceil(childCount / EXPANDED_MINI_COLUMNS));
-  return EXPANDED_CLUSTER_TOP_GAP + visibleRows * EXPANDED_MINI_ROW_HEIGHT;
+  const metrics = expandedMiniLayout(settings, 0, childCount, scale);
+  return metrics.topGap + metrics.viewportHeight;
 }
 
+/** Bound the expanded-child footprint independently from whether a renderer currently filters it. */
+function miniLayoutForNode(node: Pick<PositionedNode, "page" | "width" | "role">, index: GraphIndex, settings: KplexSettings, centerPath: string): ExpandedMiniLayout | null {
+  if (node.page.transient?.kind === "group") return null;
+  if (settings.graphDepth !== 2 || node.role === "center") return null;
+  const count = index.neighbours(node.page, "child").filter(child => child.page.path !== centerPath).slice(0, settings.maxItemCount).length;
+  return count ? expandedMiniLayout(settings, node.width, count, node.role === "sibling" ? siblingScale(settings) : 1) : null;
+}
+
+/** Read a thought's full horizontal footprint for main and filtered grids using the same child-box geometry. */
+export function expandedNodeWidth(node: Pick<PositionedNode, "page" | "width" | "role">, index: GraphIndex, settings: KplexSettings, centerPath: string): number {
+  // Parent packing must remain independent from child-column controls. Reserve the established
+  // maximum mini width even when its current renderer uses a narrower one/two-column strip.
+  const envelope = node.role === "parent" ? withMiniColumnEnvelope(settings) : settings;
+  return Math.max(node.width, miniLayoutForNode(node, index, envelope, centerPath)?.width ?? 0);
+}
+
+/** Reserve a stable maximum-width descendant envelope without changing any live settings. */
+function withMiniColumnEnvelope(settings: KplexSettings): KplexSettings {
+  return Object.assign(Object.create(settings) as KplexSettings, { childColumns: 3 });
+}
+
+/**
+ * Requested signed separation between parent and adjacent lateral area edges. Density three
+ * touches edges; four permits five percent of the parent width. Sparse densities retain a positive
+ * whitespace target influenced by compact/minimum-link settings. Body clearance can cap overlap.
+ */
+export function lateralAreaGap(settings: KplexSettings, parentAreaWidth: number): number {
+  const density = clamp(horizontalDensity(settings), 0.75, 4);
+  if (density >= 3) return -parentAreaWidth * 0.05 * (density - 3);
+  return 48 * (3 - density) * clamp(settings.minLinkLength / 18, 0.72, 1.7) * (settings.compactView ? 0.82 : 1);
+}
+
+/** Measure an allocated horizontal area including its padded maximum descendant footprint. */
+function occupiedHalfWidth(nodes: PositionedNode[], minimum: number, around = 0): number {
+  return Math.max(minimum, ...nodes.map(node => Math.abs(node.x - around) + node.width / 2 + 24));
+}
+
+/** Measure only card/mini bodies; conservative horizontal clearance never depends on child rows. */
+function bodyHalfWidth(nodes: PositionedNode[], minimum: number, around = 0): number {
+  return Math.max(minimum, ...nodes.map(node => Math.abs(node.x - around) + node.width / 2));
+}
+
+/** Include descendant boxes when clearing lateral strips, without emitting extra graph nodes. */
+function occupiedNodes(nodes: PositionedNode[], index: GraphIndex, settings: KplexSettings, centerPath: string): PositionedNode[] {
+  const occupied: PositionedNode[] = [...nodes];
+  for (const node of nodes) {
+    const box = miniLayoutForNode(node, index, settings, centerPath);
+    if (!box) continue;
+    occupied.push({ ...node, width: box.width, height: box.viewportHeight,
+      y: node.y + node.height / 2 + box.topGap + box.viewportHeight / 2 });
+  }
+  return occupied;
+}
+
+/** Pack actual thought/expanded-box widths and reserve visible child height in configured rows. */
 function distributeGrid(
   items: Neighbour[],
   baseY: number,
@@ -263,11 +518,12 @@ function distributeGrid(
   columnGap: number,
   rowGap: number,
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
   role: Role,
   centerPath: string,
+  deferCounts = false,
 ): PositionedNode[] {
-  const nodes = items.map((n) => makeNode(n, role, index, settings));
+  const nodes = items.map((n) => makeNode(n, role, index, settings, deferCounts));
   if (!nodes.length) return nodes;
 
   const rows: Array<{ nodes: PositionedNode[]; height: number; reserve: number }> = [];
@@ -291,20 +547,23 @@ function distributeGrid(
     if (rowIndex === 0) {
       // Parent mini-children grow back toward the center, so move only that first parent row
       // upward when it actually has expanded descendants. Child rows grow away from center.
-      y = rowDirection === -1 ? baseY - row.reserve : baseY;
+      const heightCorrection = Math.max(0, row.height - 26) / 2;
+      y = rowDirection === -1 ? baseY - row.reserve - heightCorrection : baseY + heightCorrection;
     } else if (rowDirection === 1) {
       y = previousY + previousHeight / 2 + previousReserve + rowGap + row.height / 2;
     } else {
       y = previousY - previousHeight / 2 - rowGap - row.reserve - row.height / 2;
     }
 
-    const rowWidth = row.nodes.reduce((sum, n) => sum + n.width, 0) + columnGap * Math.max(0, row.nodes.length - 1);
+    const widths = row.nodes.map(node => expandedNodeWidth(node, index, settings, centerPath));
+    const rowWidth = widths.reduce((sum, width) => sum + width, 0) + columnGap * Math.max(0, row.nodes.length - 1);
     let x = -rowWidth / 2;
-    for (const node of row.nodes) {
-      node.x = x + node.width / 2;
+    row.nodes.forEach((node, position) => {
+      const occupiedWidth = widths[position];
+      node.x = x + occupiedWidth / 2;
       node.y = y;
-      x += node.width + columnGap;
-    }
+      x += occupiedWidth + columnGap;
+    });
 
     previousY = y;
     previousHeight = row.height;
@@ -314,20 +573,27 @@ function distributeGrid(
   return nodes;
 }
 
+/** Stack lateral thoughts with exact scaled expanded-child reserves, then center their footprint. */
 function distributeVertical(
   items: Neighbour[],
   x: number,
   gap: number,
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
   role: Role,
   centerPath: string,
+  deferCounts = false,
 ): PositionedNode[] {
-  const nodes = items.map((n) => makeNode(n, role, index, settings));
-  if (!nodes.length) return nodes;
+  const nodes = items.map((n) => makeNode(n, role, index, settings, deferCounts));
+  stackVerticalNodes(nodes, x, gap, index, settings, centerPath);
+  return nodes;
+}
 
-  const reserveScale = role === "sibling" ? siblingScale(settings) : 1;
-  const reserves = nodes.map((node) => expandedChildReserve(node.page, index, settings, centerPath) * reserveScale);
+/** Share one measured pitch and midline for existing nodes, retaining each node's semantic role. */
+function stackVerticalNodes(nodes: PositionedNode[], x: number, gap: number, index: GraphIndex, settings: KplexSettings, centerPath: string): void {
+  if (!nodes.length) return;
+
+  const reserves = nodes.map((node) => expandedChildReserve(node.page, index, settings, centerPath) * (node.role === "sibling" ? siblingScale(settings) : 1));
   nodes[0].x = x;
   nodes[0].y = 0;
   for (let i = 1; i < nodes.length; i += 1) {
@@ -343,22 +609,22 @@ function distributeVertical(
   const bottom = nodes[lastIndex].y + nodes[lastIndex].height / 2 + reserves[lastIndex];
   const shift = -(top + bottom) / 2;
   for (const node of nodes) node.y += shift;
-  return nodes;
 }
 
+/** Fit occupied thought/expanded-box height within a zone while preserving its chosen alignment. */
 function fitVerticalStrip(
   nodes: PositionedNode[],
   topLimit: number,
   bottomLimit: number,
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
   centerPath: string,
   alignment: "top" | "center" | "bottom" | "midline" = "center",
 ): void {
   if (!nodes.length) return;
   const occupiedTop = Math.min(...nodes.map((node) => node.y - node.height / 2));
   const occupiedBottom = Math.max(...nodes.map((node) =>
-    node.y + node.height / 2 + expandedChildReserve(node.page, index, settings, centerPath)
+    node.y + node.height / 2 + expandedChildReserve(node.page, index, settings, centerPath) * (node.role === "sibling" ? siblingScale(settings) : 1)
   ));
   const occupiedHeight = occupiedBottom - occupiedTop;
   const availableHeight = Math.max(1, bottomLimit - topLimit);
@@ -376,6 +642,46 @@ function fitVerticalStrip(
           : topLimit + (availableHeight - occupiedHeight) / 2;
   const shift = targetTop - occupiedTop;
   for (const node of nodes) node.y += shift;
+}
+
+/** Calculate an editable area with a conservative width and the established fixed vertical anchor. */
+function areaBoundsFor(
+  key: ScrollZone,
+  nodes: PositionedNode[],
+  configuredHeight: number,
+  resizeEdge: "top" | "bottom",
+  fallback: { centerX: number; width: number; fixedEdgeY: number },
+  bottomLimit?: number,
+  topLimit?: number,
+): ZoneAreaBounds {
+  const padX = 24;
+  const padY = 16;
+  let left = fallback.centerX - fallback.width / 2;
+  let right = fallback.centerX + fallback.width / 2;
+  let minY = fallback.fixedEdgeY;
+  let maxY = fallback.fixedEdgeY;
+  if (nodes.length) {
+    left = Math.min(left, ...nodes.map((node) => node.x - node.width / 2 - padX));
+    right = Math.max(right, ...nodes.map((node) => node.x + node.width / 2 + padX));
+    minY = Math.min(...nodes.map((node) => node.y - node.height / 2));
+    maxY = Math.max(...nodes.map((node) => node.y + node.height / 2));
+  }
+  const height = topLimit !== undefined && bottomLimit !== undefined
+    ? Math.max(72, bottomLimit - topLimit)
+    : Math.max(72, configuredHeight);
+  const top = topLimit !== undefined && bottomLimit !== undefined
+    ? topLimit
+    : resizeEdge === "top"
+      ? (nodes.length ? maxY + padY : fallback.fixedEdgeY) - height
+      : nodes.length ? minY - padY : fallback.fixedEdgeY;
+  return {
+    key,
+    left,
+    top,
+    width: right - left,
+    height,
+    resizeEdge,
+  };
 }
 
 function viewportFor(
@@ -430,10 +736,21 @@ function viewportFor(
   };
 }
 
-export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settings: ExcaliBrainSettings, showCrossLinks = true): PlexScene {
+/** Arrange existing semantic roles into split or shared-left areas; deferred geometry leaves displayed counts to callers. */
+export function buildScene(
+  neighborhood: Neighborhood,
+  index: GraphIndex,
+  settings: KplexSettings,
+  showCrossLinks = true,
+  centerSizeOverride?: CenterNodeSize,
+  deferCounts = false,
+): PlexScene {
   const centerStyle = resolveNodeStyle(neighborhood.center, null, "center", settings);
   const centerLabel = index.titleFor(neighborhood.center);
-  const centerSize = nodeSize(`${centerStyle.prefix ?? ""}${centerLabel}`, centerStyle.fontSize ?? 30, settings, true, centerStyle.maxLabelLength ?? 30);
+  const normalCenterSize = nodeSize(`${centerStyle.prefix ?? ""}${centerLabel}`, centerStyle.fontSize ?? 30, settings, true, centerStyle.maxLabelLength ?? 30, centerStyle.maxWidth ?? settings.centralNodeStyle.maxWidth ?? settings.baseNodeStyle.maxWidth, centerStyle.strokeWidth);
+  const centerSize = centerSizeOverride
+    ? { width: Math.max(180, centerSizeOverride.width), height: Math.max(48, centerSizeOverride.height) }
+    : normalCenterSize;
   const center: PositionedNode = {
     page: neighborhood.center,
     role: "center",
@@ -442,76 +759,152 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
     ...centerSize,
     style: centerStyle,
     label: centerLabel,
-    neighbourCount: index.neighbourCount(neighborhood.center),
-    gateStats: index.gateStats(neighborhood.center),
+    ...countsForLayout(neighborhood.center, index, deferCounts),
   };
 
   // Compactness controls inter-node spacing and label length. Expanded view adds vertical
   // space per thought/row only when that thought actually has visible child thoughts.
-  const compactFactor = clamp(1.35 / settings.compactingFactor, 0.38, 1.35);
-  const legacySpacing = clamp(settings.minLinkLength / 18, 0.72, 1.7);
-  const columnGap = 50 * compactFactor * legacySpacing;
-  const rowGap = 36 * compactFactor * legacySpacing;
-  const centerGap = 66 * compactFactor * legacySpacing;
-  const sideGap = 18 * compactFactor * legacySpacing;
+  const { horizontal, vertical, spacing: legacySpacing } = spacingPolicy(settings);
+  const columnGap = 50 * horizontal * legacySpacing;
+  const rowGap = 36 * vertical * legacySpacing;
+  const centerGap = 66 * vertical * legacySpacing;
+  const sideGap = 18 * vertical * legacySpacing;
 
   const typicalHeight = 26;
   const parentBaseY = -(center.height / 2 + typicalHeight / 2 + centerGap);
-  const childExtraGap = Math.max(42, 52 * compactFactor * legacySpacing);
+  const childExtraGap = Math.max(42, 52 * vertical * legacySpacing);
   const childBaseY = center.height / 2 + typicalHeight / 2 + centerGap + childExtraGap;
 
-  const parents = distributeGrid(neighborhood.parents, parentBaseY, -1, Math.max(1, Math.min(2, Math.round(settings.parentColumns))), columnGap, rowGap, index, settings, "parent", neighborhood.center.path);
-  const children = distributeGrid(neighborhood.children, childBaseY, 1, Math.max(1, Math.min(7, Math.round(settings.childColumns))), columnGap, rowGap, index, settings, "child", neighborhood.center.path);
+  const parents = distributeGrid(neighborhood.parents, parentBaseY, -1, layoutColumns(settings, "parent"), columnGap, rowGap, index, settings, "parent", neighborhood.center.path, deferCounts);
+  const children = distributeGrid(neighborhood.children, childBaseY, 1, layoutColumns(settings, "child"), columnGap, rowGap, index, settings, "child", neighborhood.center.path, deferCounts);
 
   const maxCenterHalfWidth = center.width / 2;
-  const sideX = maxCenterHalfWidth + (205 * compactFactor * legacySpacing);
-  const left = distributeVertical(neighborhood.leftFriends, -sideX, sideGap, index, settings, "left", neighborhood.center.path);
-  const right = distributeVertical(neighborhood.rightFriends, sideX, sideGap, index, settings, "right", neighborhood.center.path);
+  let sideX = maxCenterHalfWidth + (205 * horizontal * legacySpacing);
+  const left = distributeVertical(neighborhood.leftFriends, -sideX, sideGap, index, settings, "left", neighborhood.center.path, deferCounts);
+  const onLeft = settings.lateralArrangement === "left";
+  const right = distributeVertical(neighborhood.rightFriends, onLeft ? -sideX : sideX, sideGap, index, settings, "right", neighborhood.center.path, deferCounts);
+  const sharedLateral = onLeft ? [...left, ...right] : left;
+  if (onLeft) stackVerticalNodes(sharedLateral, -sideX, sideGap, index, settings, neighborhood.center.path);
+  const hasRightStrip = !onLeft && right.length > 0;
 
-  const rightExtent = right.length ? Math.max(...right.map((n) => n.x + n.width / 2)) : maxCenterHalfWidth;
+  const rightExtent = hasRightStrip ? Math.max(...right.map((n) => n.x + n.width / 2)) : maxCenterHalfWidth;
   // When there is no challenger/next strip, siblings should not reserve an empty lateral column.
   // Compact view tightens the remaining gap a little further without changing sibling scale.
-  const siblingBase = right.length ? 285 : 205;
-  const siblingAfterRight = right.length ? 190 : 120;
-  const compactSiblingMultiplier = settings.compactView ? 0.82 : 1;
-  const siblingCenterX = Math.max(
-    sideX + siblingBase * compactFactor * legacySpacing * compactSiblingMultiplier,
-    rightExtent + siblingAfterRight * compactFactor * legacySpacing * compactSiblingMultiplier,
+  const siblingBase = hasRightStrip ? 285 : 205;
+  const siblingAfterRight = hasRightStrip ? 190 : 120;
+  let siblingCenterX = Math.max(
+    sideX + siblingBase * horizontal * legacySpacing,
+    rightExtent + siblingAfterRight * horizontal * legacySpacing,
   );
-  const siblings = distributeVertical(neighborhood.siblings, siblingCenterX, sideGap, index, settings, "sibling", neighborhood.center.path);
+  const siblings = distributeVertical(neighborhood.siblings, siblingCenterX, sideGap, index, settings, "sibling", neighborhood.center.path, deferCounts);
 
-  // Lateral zones are independent of the parent zone. Friends and challengers form a
-  // symmetrical pair around the Plex and may extend upward into the same vertical range as
+  // Lateral height bands are independent of the parent height. In split mode friends and
+  // challengers form a symmetrical pair and may extend upward into the same vertical range as
   // parents. Their lower edge stays slightly above the children. Siblings occupy a separate,
   // slightly higher band farther to the right.
   const childSectionTop = children.length
     ? Math.min(...children.map((node) => node.y - node.height / 2))
     : center.height / 2 + centerGap + childExtraGap + 12;
-  const sideToChildrenGap = Math.max(30, 36 * compactFactor * legacySpacing);
-  const sideBottom = childSectionTop - sideToChildrenGap;
-  const sideTop = sideBottom - Math.max(120, settings.friendMaxHeight);
+  const sideToChildrenGap = Math.max(30, 36 * vertical * legacySpacing);
+  // Both semantic groups share one physical list, height, filter and scroll position in one-sided mode.
+  const friendBandHeight = Math.max(120, settings.friendMaxHeight);
+  const siblingBandHeight = Math.max(120, settings.siblingMaxHeight);
+  // A large embedded editor changes the visual center of gravity. Keep lateral relationship
+  // strips centered beside the editor rather than deriving their band from the much lower child
+  // zone; otherwise friends/challengers end up clustered around the editor's lower corners.
+  const sideBottom = centerSizeOverride
+    ? onLeft ? Math.min(friendBandHeight / 2, childSectionTop - sideToChildrenGap) : friendBandHeight / 2
+    : childSectionTop - sideToChildrenGap;
+  const sideTop = sideBottom - friendBandHeight;
   // Sparse lateral relationship lists are centered on the active node's horizontal midline:
   // one node sits level with the center, two straddle it evenly, and larger lists grow
   // outward in both directions. Only shift the strip when it reaches the zone bounds.
-  fitVerticalStrip(left, sideTop, sideBottom, index, settings, neighborhood.center.path, "midline");
-  fitVerticalStrip(right, sideTop, sideBottom, index, settings, neighborhood.center.path, "midline");
+  const leftTop = sideTop;
+  const leftBottom = sideBottom;
+  const rightTop = sideTop;
+  const rightBottom = sideBottom;
+  fitVerticalStrip(sharedLateral, leftTop, leftBottom, index, settings, neighborhood.center.path, "midline");
+  if (!onLeft) fitVerticalStrip(right, rightTop, rightBottom, index, settings, neighborhood.center.path, "midline");
 
-  const siblingLift = Math.max(58, 72 * compactFactor * legacySpacing);
-  const siblingBottom = sideBottom - siblingLift;
-  const siblingTop = siblingBottom - Math.max(120, settings.siblingMaxHeight);
-  fitVerticalStrip(siblings, siblingTop, siblingBottom, index, settings, neighborhood.center.path);
+  const siblingLift = Math.max(58, 72 * vertical * legacySpacing);
+  const siblingBottom = centerSizeOverride ? siblingBandHeight / 2 : sideBottom - siblingLift;
+  const siblingTop = centerSizeOverride ? -siblingBandHeight / 2 : siblingBottom - siblingBandHeight;
+  fitVerticalStrip(siblings, siblingTop, siblingBottom, index, settings, neighborhood.center.path, centerSizeOverride ? "midline" : "center");
 
+  // Lateral x ownership belongs to the parent band and horizontal density. Child columns,
+  // descendant rows and vertical fitting may change the lower band, never this horizontal anchor.
+  const envelopeSettings = withMiniColumnEnvelope(settings);
+  const parentEnvelope = occupiedNodes(parents, index, envelopeSettings, neighborhood.center.path);
+  const siblingEnvelope = occupiedNodes(siblings, index, envelopeSettings, neighborhood.center.path);
+  const parentAreaHalfWidth = parents.length
+    ? occupiedHalfWidth(parentEnvelope, center.width / 2 + 24)
+    : 170;
+  const parentBodyHalfWidth = bodyHalfWidth(parentEnvelope, center.width / 2);
+  // Both lateral strips use the same width. Measure each around its own physical anchor before
+  // combining; simplified mode shares the left anchor while split mode preserves symmetry.
+  const lateralAreaHalfWidth = Math.max(
+    occupiedHalfWidth(occupiedNodes(left, index, envelopeSettings, neighborhood.center.path), 115, -sideX),
+    occupiedHalfWidth(occupiedNodes(right, index, envelopeSettings, neighborhood.center.path), 115, onLeft ? -sideX : sideX),
+  );
+  const lateralBodyHalfWidth = Math.max(
+    bodyHalfWidth(occupiedNodes(left, index, envelopeSettings, neighborhood.center.path), 0, -sideX),
+    bodyHalfWidth(occupiedNodes(right, index, envelopeSettings, neighborhood.center.path), 0, onLeft ? -sideX : sideX),
+  );
+  const siblingAreaHalfWidth = occupiedHalfWidth(siblingEnvelope, 110, siblingCenterX);
+  const siblingBodyHalfWidth = bodyHalfWidth(siblingEnvelope, 0, siblingCenterX);
+  const margin = onLeft ? Math.max(0, lateralAreaGap(settings, parentAreaHalfWidth * 2))
+    : lateralAreaGap(settings, parentAreaHalfWidth * 2);
+  if (parents.length) sideX = parentAreaHalfWidth + lateralAreaHalfWidth + margin;
+  sideX = Math.max(sideX, parentBodyHalfWidth + lateralBodyHalfWidth + 4);
+  for (const node of left) node.x = -sideX;
+  for (const node of right) node.x = onLeft ? -sideX : sideX;
+
+  if (parents.length || hasRightStrip) {
+    siblingCenterX = hasRightStrip
+      // Parent compaction may overlap padded margins. Independent scroll areas must not.
+      ? sideX + lateralAreaHalfWidth + siblingAreaHalfWidth + Math.max(0, margin)
+      : parentAreaHalfWidth + siblingAreaHalfWidth + margin;
+  }
+  siblingCenterX = Math.max(siblingCenterX, parentBodyHalfWidth + siblingBodyHalfWidth + 4,
+    hasRightStrip ? sideX + lateralBodyHalfWidth + siblingBodyHalfWidth + 4 : 0);
+  for (const node of siblings) node.x = siblingCenterX;
+
+  // Expanded boxes belong to their thought's existing scroll area. Include their measured
+  // extents so the same finite column footprint fits when a zone filter later repacks that row.
+  const occupiedParents = occupiedNodes(parents, index, settings, neighborhood.center.path);
+  const occupiedChildren = occupiedNodes(children, index, settings, neighborhood.center.path);
+  const occupiedLeft = occupiedNodes(sharedLateral, index, settings, neighborhood.center.path);
+  const occupiedRight = occupiedNodes(onLeft ? [] : right, index, settings, neighborhood.center.path);
+  const occupiedSiblings = occupiedNodes(siblings, index, settings, neighborhood.center.path);
   const zoneViewports: Partial<Record<ScrollZone, ZoneViewport>> = {};
-  const parentViewport = viewportFor("parent", parents, settings.parentMaxHeight, "bottom");
-  const childViewport = viewportFor("child", children, settings.childMaxHeight, "top");
-  const leftViewport = viewportFor("left", left, settings.friendMaxHeight, "top", sideBottom, sideTop);
-  const rightViewport = viewportFor("right", right, settings.friendMaxHeight, "top", sideBottom, sideTop);
-  const siblingViewport = viewportFor("sibling", siblings, settings.siblingMaxHeight, "top", siblingBottom, siblingTop);
-  if (parentViewport) zoneViewports.parent = parentViewport;
+  const parentViewport = viewportFor("parent", occupiedParents, settings.parentMaxHeight, "bottom");
+  const childViewport = viewportFor("child", occupiedChildren, settings.childMaxHeight, "top");
+  const leftViewport = viewportFor("left", occupiedLeft, settings.friendMaxHeight, "top", leftBottom, leftTop);
+  const rightViewport = viewportFor("right", occupiedRight, settings.friendMaxHeight, "top", rightBottom, rightTop);
+  const siblingViewport = viewportFor("sibling", occupiedSiblings, settings.siblingMaxHeight, "top", siblingBottom, siblingTop);
+  if (parentViewport) {
+    // Filtered parent rows reuse the canonical mini-width envelope. A narrower currently rendered
+    // child strip must not shrink its scroll box below that row pitch or move the area's x bounds.
+    parentViewport.left = -parentAreaHalfWidth;
+    parentViewport.width = parentAreaHalfWidth * 2;
+    zoneViewports.parent = parentViewport;
+  }
   if (childViewport) zoneViewports.child = childViewport;
   if (leftViewport) zoneViewports.left = leftViewport;
   if (rightViewport) zoneViewports.right = rightViewport;
   if (siblingViewport) zoneViewports.sibling = siblingViewport;
+
+  // The configured relationship areas exist independently of whether their contents currently
+  // overflow. Keeping these bounds separate from zoneViewports lets the Plex expose the existing
+  // max-height settings as direct-manipulation affordances even for sparse relationship lists.
+  const zoneAreas: Partial<Record<ScrollZone, ZoneAreaBounds>> = {};
+  const parentAreaBottom = parentBaseY + typicalHeight / 2 + 16;
+  const childAreaTop = childBaseY - typicalHeight / 2 - 16;
+  zoneAreas.parent = areaBoundsFor("parent", occupiedParents, settings.parentMaxHeight, "top", { centerX: 0, width: parentAreaHalfWidth * 2, fixedEdgeY: parentAreaBottom });
+  zoneAreas.child = areaBoundsFor("child", occupiedChildren, settings.childMaxHeight, "bottom", { centerX: 0, width: 440, fixedEdgeY: childAreaTop });
+  zoneAreas.left = areaBoundsFor("left", occupiedLeft, settings.friendMaxHeight, "top", { centerX: -sideX, width: lateralAreaHalfWidth * 2, fixedEdgeY: leftBottom }, leftBottom, leftTop);
+  if (!onLeft) zoneAreas.right = areaBoundsFor("right", occupiedRight, settings.friendMaxHeight, "top", { centerX: sideX, width: lateralAreaHalfWidth * 2, fixedEdgeY: rightBottom }, rightBottom, rightTop);
+  zoneAreas.sibling = areaBoundsFor("sibling", occupiedSiblings, settings.siblingMaxHeight, "top", { centerX: siblingCenterX, width: siblingAreaHalfWidth * 2, fixedEdgeY: siblingBottom }, siblingBottom, siblingTop);
 
   const nodes = [center, ...parents, ...children, ...left, ...right, ...siblings];
   const edges: PositionedEdge[] = [];
@@ -524,7 +917,7 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
       relationType: n.relationType,
       typeDefinition: n.typeDefinition,
       direction: n.linkDirection,
-      style: resolveLinkStyle(n, settings),
+      style: resolveLinkStyle(n, settings, neighborhood.center),
     }));
   };
   from(neighborhood.parents, "parent");
@@ -538,44 +931,61 @@ export function buildScene(neighborhood: Neighborhood, index: GraphIndex, settin
   appendSiblingParentLinks(nodes, edges, index, settings, neighborhood.center.path);
   if (showCrossLinks) appendVisibleCrossLinks(nodes, edges, index, settings, neighborhood.center.path);
 
-  return { nodes, edges, zoneViewports };
+  return { nodes, edges, zoneViewports, zoneAreas };
 }
 
 function appendSiblingParentLinks(
   nodes: PositionedNode[],
   edges: PositionedEdge[],
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
   centerPath: string,
 ): void {
-  const siblingPaths = new Set(nodes.filter((node) => node.role === "sibling").map((node) => node.page.path));
+  const siblings = new Map<string, string>();
+  for (const node of nodes) {
+    if (node.role !== "sibling") continue;
+    for (const page of node.page.transient?.groupMembers?.map(member => member.page) ?? [node.page]) siblings.set(page.path, node.page.path);
+  }
+  const siblingPaths = new Set(siblings.keys());
   if (!siblingPaths.size) return;
+  const seen = new Set<string>();
   for (const parent of nodes) {
-    if (parent.role !== "parent" || parent.page.path === centerPath || parent.page.transient) continue;
-    for (const relation of index.visibleRelationshipsWithin(parent.page, siblingPaths)) {
+    if (parent.role !== "parent" || parent.page.path === centerPath || parent.page.transient && parent.page.transient.kind !== "group") continue;
+    const sources = parent.page.transient?.groupMembers?.map(member => member.page) ?? [parent.page];
+    for (const source of sources) for (const relation of index.visibleRelationshipsWithin(source, siblingPaths)) {
       if (relation.role !== "child") continue;
+      const targetPath = siblings.get(relation.page.path)!;
+      const id = JSON.stringify([parent.page.path, targetPath]);
+      if (seen.has(id)) continue;
+      seen.add(id);
       edges.push({
-        id: `sibling-parent:${parent.page.path}:${relation.page.path}`,
+        id: `sibling-parent:${parent.page.transient?.kind === "group" || targetPath !== relation.page.path ? id : `${parent.page.path}:${relation.page.path}`}`,
         sourcePath: parent.page.path,
-        targetPath: relation.page.path,
+        targetPath,
+        ...(parent.page.transient?.kind === "group" || targetPath !== relation.page.path
+          ? { explanationSourcePath: source.path, explanationTargetPath: relation.page.path } : {}),
         role: "child",
         relationType: relation.relationType,
         typeDefinition: relation.typeDefinition,
         direction: relation.linkDirection,
-        style: resolveLinkStyle(relation, settings),
+        style: resolveLinkStyle(relation, settings, source),
       });
     }
   }
 }
 
-/** Add each semantic relationship between already-visible, non-central persistent nodes exactly
- * once. Iterating each visible page's actual adjacency list avoids an O(visible²) pair scan. */
-function appendVisibleCrossLinks(
+/** Append semantic links between supplied visible persistent nodes, preserving existing structural
+ * pairs. Mutates only the caller-owned edge array; the caller chooses full-scene or clipped membership.
+ * Iterating adjacency avoids an O(visible²) pair scan and never queries section/transient sources.
+ * A focus reads only that endpoint's adjacency plus earlier incident endpoints to retain the
+ * ordinary projection's canonical orientation. It never acquires absent source information. */
+export function appendVisibleCrossLinks(
   nodes: PositionedNode[],
   edges: PositionedEdge[],
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
   centerPath: string,
+  focus?: Readonly<{ path: string; accepts: (edge: PositionedEdge) => boolean }>,
 ): void {
   const visibleByPath = new Map<string, GraphPage>();
   for (const node of nodes) {
@@ -596,39 +1006,65 @@ function appendVisibleCrossLinks(
       : `${edge.targetPath}\u0000${edge.sourcePath}`;
     seenPairs.add(pairKey);
   }
-  for (const source of visibleByPath.values()) {
-    for (const relation of index.visibleRelationshipsWithin(source, visiblePaths)) {
-      if (source.path === relation.page.path) continue;
-      const pairKey = source.path < relation.page.path
-        ? `${source.path}\u0000${relation.page.path}`
-        : `${relation.page.path}\u0000${source.path}`;
-      if (seenPairs.has(pairKey)) continue;
-      seenPairs.add(pairKey);
-      edges.push({
-        id: `cross:${source.path}:${relation.page.path}:${relation.role}`,
-        sourcePath: source.path,
-        targetPath: relation.page.path,
-        role: relation.role,
-        relationType: relation.relationType,
-        typeDefinition: relation.typeDefinition,
-        direction: relation.linkDirection,
-        style: resolveLinkStyle(relation, settings),
-        isCrossLink: true,
-      });
-    }
+  /** Both ordinary and focused projection share identity, styling and structural deduplication. */
+  const append = (source: GraphPage, relation: Neighbour): void => {
+    if (source.path === relation.page.path) return;
+    const pairKey = source.path < relation.page.path
+      ? `${source.path}\u0000${relation.page.path}`
+      : `${relation.page.path}\u0000${source.path}`;
+    if (seenPairs.has(pairKey)) return;
+    seenPairs.add(pairKey);
+    const edge: PositionedEdge = {
+      id: `cross:${source.path}:${relation.page.path}:${relation.role}`,
+      sourcePath: source.path,
+      targetPath: relation.page.path,
+      role: relation.role,
+      relationType: relation.relationType,
+      typeDefinition: relation.typeDefinition,
+      direction: relation.linkDirection,
+      style: resolveLinkStyle(relation, settings, source),
+      isCrossLink: true,
+    };
+    if (!focus || focus.accepts(edge)) edges.push(edge);
+  };
+  if (!focus) {
+    for (const source of visibleByPath.values()) for (const relation of index.visibleRelationshipsWithin(source, visiblePaths)) append(source, relation);
+    return;
   }
+  const target = visibleByPath.get(focus.path);
+  if (!target) return;
+  const order = new Map([...visibleByPath.keys()].map((path, position) => [path, position]));
+  const candidates: { source: GraphPage; relation: Neighbour }[] = [];
+  for (const relation of index.visibleRelationshipsWithin(target, visiblePaths)) {
+    if (relation.page.path === target.path) continue;
+    const other = visibleByPath.get(relation.page.path);
+    if (!other) continue;
+    // The normal projection emits the first displayed endpoint's directed view. A reciprocal
+    // lookup preserves that exact role/style/orientation when the hovered node is the target.
+    if (order.get(other.path)! < order.get(target.path)!) {
+      const reciprocal = index.visibleRelationshipsWithin(other, new Set([target.path])).find(row => row.page.path === target.path);
+      if (reciprocal) { candidates.push({ source: other, relation: reciprocal }); continue; }
+    }
+    candidates.push({ source: target, relation });
+  }
+  candidates.sort((a, b) => order.get(a.source.path)! - order.get(b.source.path)!);
+  for (const candidate of candidates) append(candidate.source, candidate.relation);
 }
 
 /** Runtime layout for central-note heading expansion. Section headings form an outline tree
  * below the normal Plex. Each visible section still owns a local four-gate relationship cluster.
  * Hidden descendants of a folded section project their relationships upward into the nearest
- * visible folded ancestor. Nothing here is persisted in GraphIndex. */
+ * visible folded ancestor. Nothing here is persisted in GraphIndex. The central scene's
+ * editable area controls remain available independently of expanded sections. Optional deferred
+ * counts preserve section-owned overrides while ordinary rendered rows project fresh gates. */
 export function buildSectionExpandedScene(
   expansion: import("../index/SectionExpansion").CentralSectionExpansion,
   index: GraphIndex,
-  settings: ExcaliBrainSettings,
+  settings: KplexSettings,
   expandedSectionIds: ReadonlySet<string> = new Set(expansion.sections.filter((section) => section.childIds.length).map((section) => section.id)),
   showCrossLinks = true,
+  centerSizeOverride?: CenterNodeSize,
+  deferCounts = false,
   contentOptions: SectionContentOptions | null = null,
   sectionSizes: ReadonlyMap<string, SectionSizeOverride> = new Map(),
 ): PlexScene {
@@ -639,7 +1075,7 @@ export function buildSectionExpandedScene(
   };
   // Add cross-links after section/runtime relationship nodes are appended, so the visibility rule
   // is truly based on the final scene rather than only on the unexpanded center neighbourhood.
-  const scene = buildScene(baseNeighborhood, index, settings, false);
+  const scene = buildScene(baseNeighborhood, index, settings, false, centerSizeOverride, deferCounts);
   const byId = new Map(expansion.sections.map((section) => [section.id, section] as const));
   const roots = expansion.sections.filter((section) => !section.parentId);
   const visible: Array<{ section: import("../index/SectionExpansion").ExpandedSection; depth: number }> = [];
@@ -702,34 +1138,31 @@ export function buildSectionExpandedScene(
   // Section expansion has its own much steeper density curve. Density 1 deliberately matches the
   // previous density-4 appearance; density 4 becomes a genuinely compact outline with short tree
   // branches instead of merely shaving a few pixels from a spacious layout.
-  const sectionDensity = clamp(settings.compactingFactor, 1, 4);
-  const densityT = (sectionDensity - 1) / 3;
-  const mix = (lo: number, hi: number): number => lo + (hi - lo) * densityT;
-
-  // Keep the outline itself very compact at high density, but do not squeeze the semantic
-  // neighbours attached to a section nearly as aggressively. User testing showed that the old
-  // density 2.25 relationship spacing is the right visual target for density 4: compact, but with
-  // a visible sliver of air between sibling thoughts. This remap therefore drives only the
-  // section-attached semantic nodes through a gentler density curve while leaving the L-shaped
-  // structural tree on the steeper section curve above.
-  const relationDensityT = densityT * (5 / 12); // density 4 -> previous density 2.25 spacing
-  const relationMix = (lo: number, hi: number): number => lo + (hi - lo) * relationDensityT;
+  const verticalDensityT = (clamp(settings.compactingFactor, 1, 4) - 1) / 3;
+  const horizontalDensityT = (clamp(horizontalDensity(settings), 1, 4) - 1) / 3;
+  const { spacing } = spacingPolicy(settings);
+  const compact = settings.compactView ? 0.82 : 1;
+  /** Preserve each established section curve while applying the selected axis and spacing target. */
+  const mix = (lo: number, hi: number, axis: "horizontal" | "vertical" = "vertical"): number => {
+    const progress = axis === "horizontal" ? horizontalDensityT : verticalDensityT;
+    return (lo + (hi - lo) * progress) * spacing * compact;
+  };
 
   const sectionStartGap = mix(78, 26);
-  const depthIndent = mix(92, 28);
+  const depthIndent = mix(92, 28, "horizontal");
   const verticalGap = mix(48, 20);
-  const relationHorizontalGap = relationMix(60, 24);
-  const relationLateralStep = relationMix(36, 22);
-  const relationVerticalGap = relationMix(66, 38);
-  const relationRowStep = relationMix(38, 22);
-  // These reserves determine section-to-section outline spacing, so keep them on the compact
-  // section curve. The semantic nodes themselves are spaced with relationMix above.
-  const clusterBaseGap = mix(56, 30);
-  const relationMinGap = relationMix(8, 4);
+  // Keep the previous maximum-density endpoints, but give related pills meaningful whitespace
+  // below that density. The inter-section gutter above remains independently unchanged.
+  const relationHorizontalGap = mix(90, 60 + (24 - 60) * 5 / 12, "horizontal");
+  const relationLateralStep = mix(60, 36 + (22 - 36) * 5 / 12);
+  const relationVerticalGap = mix(90, 66 + (38 - 66) * 5 / 12);
+  const relationRowStep = mix(60, 38 + (22 - 38) * 5 / 12);
+  const relationMinHorizontalGap = mix(36, 8 + (4 - 8) * 5 / 12, "horizontal");
+  const relationMinVerticalGap = mix(22, 8 + (4 - 8) * 5 / 12);
   const startY = normalBottom + sectionStartGap;
   const centerNode = scene.nodes.find((node) => node.role === "center");
   const centerStructuralX = centerNode ? centerNode.x - centerNode.width / 2 + 20 : -80;
-  const rootLeft = centerStructuralX + mix(92, 24);
+  const rootLeft = centerStructuralX + mix(92, 24, "horizontal");
   const sectionTreeEdges: SectionTreeEdge[] = [];
   const sectionNodeById = new Map<string, PositionedNode>();
   let cursorY = startY;
@@ -737,7 +1170,7 @@ export function buildSectionExpandedScene(
   let naturalHeight = 0;
   const makeSectionNode = (section: import("../index/SectionExpansion").ExpandedSection, depth: number, relations: ReturnType<typeof collectForVisibleSection>): PositionedNode => {
     const pseudo: Neighbour = { page: section.page, role: "child", relationType: RelationType.DEFINED, typeDefinition: "section", linkDirection: null };
-    const node = makeNode(pseudo, "child", index, settings);
+    const node = makeNode(pseudo, "child", index, settings, deferCounts);
     // A heading card fits its whole title (up to a readable cap) rather than the node label limit.
     node.width = sectionCardWidth(node.label, node.style.fontSize ?? 18);
     node.height = Math.max(32, node.height + mix(3, -1));
@@ -768,7 +1201,7 @@ export function buildSectionExpandedScene(
   // neighbours clear of a panel wider than its card.
   // Nodes linked from a section show their whole title: a fixed width and as many lines as needed.
   const makeRelationNode = (item: SourcedNeighbour, role: Exclude<Role, "sibling">): PositionedNode => {
-    const node = makeNode(item.relation, role, index, settings);
+    const node = makeNode(item.relation, role, index, settings, deferCounts);
     const label = `${node.style.prefix ?? ""}${node.label}`;
     const font = clamp((node.style.fontSize ?? 18) * 0.62, 10, 16);
     const chrome = 34 + (node.style.icon ? 18 : 0);
@@ -788,24 +1221,25 @@ export function buildSectionExpandedScene(
     let span = 0;
     for (let start = 0; start < nodes.length; start += 3) {
       const rowHeight = Math.max(0, ...nodes.slice(start, start + 3).map((node) => node.height));
-      span += Math.max(relationRowStep, rowHeight + relationMinGap);
+      span += Math.max(relationRowStep, rowHeight + relationMinVerticalGap);
     }
     return span;
   };
   const lateralSpan = (nodes: PositionedNode[]): number => nodes.length > 1
-    ? (nodes.length - 1) * Math.max(relationLateralStep, Math.max(...nodes.map((node) => node.height)) + relationMinGap)
+    ? (nodes.length - 1) * Math.max(relationLateralStep, Math.max(...nodes.map((node) => node.height)) + relationMinHorizontalGap)
     : 0;
 
-  const addRelationGroup = (sectionNode: PositionedNode, sectionId: string, nodes: PositionedNode[], items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2) => {
+  const addRelationGroup = (sectionNode: PositionedNode, sectionId: string, nodes: PositionedNode[], items: SourcedNeighbour[], role: Exclude<Role, "sibling">, extraBelow = 0, rightEdge = sectionNode.x + sectionNode.width / 2, clearanceHeight = sectionNode.height) => {
     const horizontal = role === "left" || role === "previous" || role === "right" || role === "next";
-    const direction = role === "left" || role === "previous" ? -1 : role === "right" || role === "next" ? 1 : 0;
+    const direction = role === "left" || role === "previous" || (settings.lateralArrangement === "left" && role === "right")
+      ? -1 : role === "right" || role === "next" ? 1 : 0;
 
     if (horizontal) {
       // Side neighbours form a vertical stack. At maximum density, never allow the thought pills
       // themselves to touch/overlap: preserve a small positive gap even when their rendered height
       // is larger than the nominal density step.
       const maxHeight = Math.max(0, ...nodes.map((node) => node.height));
-      const lateralStep = Math.max(relationLateralStep, maxHeight + relationMinGap);
+      const lateralStep = Math.max(relationLateralStep, maxHeight + relationMinVerticalGap);
       nodes.forEach((node, itemIndex) => {
         node.x = direction > 0
           ? rightEdge + node.width / 2 + relationHorizontalGap
@@ -813,23 +1247,23 @@ export function buildSectionExpandedScene(
         node.y = sectionNode.y + (itemIndex - (nodes.length - 1) / 2) * lateralStep;
       });
     } else {
-      // Parents/children are arranged in rows of up to three. Position each row from the actual
-      // rendered node widths instead of a fixed centre-to-centre step, so long labels can never
+      // Parents/children use their main-zone column limits. Position each row from actual rendered
+      // node widths instead of a fixed centre-to-centre step, so long labels can never
       // make adjacent pills overlap. Row spacing receives the same minimum-air guarantee.
-      const columns = Math.min(3, Math.max(1, nodes.length));
+      const columns = Math.min(layoutColumns(settings, role === "parent" ? "parent" : "child"), Math.max(1, nodes.length));
       const rows = Math.ceil(nodes.length / columns);
       let rowOffset = 0;
       for (let row = 0; row < rows; row++) {
         const start = row * columns;
         const rowNodes = nodes.slice(start, start + columns);
-        const totalWidth = rowNodes.reduce((sum, node) => sum + node.width, 0) + relationMinGap * Math.max(0, rowNodes.length - 1);
+        const totalWidth = rowNodes.reduce((sum, node) => sum + node.width, 0) + relationMinHorizontalGap * Math.max(0, rowNodes.length - 1);
         let x = sectionNode.x - totalWidth / 2;
         const rowHeight = Math.max(0, ...rowNodes.map((node) => node.height));
-        const rowStep = Math.max(relationRowStep, rowHeight + relationMinGap);
+        const rowStep = Math.max(relationRowStep, rowHeight + relationMinVerticalGap);
         for (const node of rowNodes) {
           node.x = x + node.width / 2;
-          node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (relationVerticalGap + rowOffset + (role === "parent" ? 0 : extraBelow));
-          x += node.width + relationMinGap;
+          node.y = sectionNode.y + (role === "parent" ? -1 : 1) * (Math.max(relationVerticalGap, (clearanceHeight + rowHeight) / 2 + relationMinVerticalGap) + rowOffset + (role === "parent" ? 0 : extraBelow));
+          x += node.width + relationMinHorizontalGap;
         }
         rowOffset += rowStep;
       }
@@ -856,7 +1290,7 @@ export function buildSectionExpandedScene(
         relationType: sourced.relation.relationType,
         typeDefinition: sourced.relation.typeDefinition,
         direction: sourced.relation.linkDirection,
-        style: resolveLinkStyle(sourced.relation, settings),
+        style: resolveLinkStyle(sourced.relation, settings, sectionNode.page),
       });
     });
   };
@@ -869,8 +1303,6 @@ export function buildSectionExpandedScene(
       left: relations.left.map((item) => makeRelationNode(item, "left")),
       right: relations.right.map((item) => makeRelationNode(item, "right")),
     };
-    const lateralReserve = Math.max(lateralSpan(built.left), lateralSpan(built.right)) / 2;
-    const clusterAbove = Math.max(rowsSpan(built.parent) + (built.parent.length ? clusterBaseGap : 0), lateralReserve);
     const sectionSize = sectionSizes.get(section.id);
     const figuresPanelId = `${section.id}#figures`;
     const panelSize = contentOptions ? sectionPanelSize(section.content, contentOptions, section.id, sectionSize) : null;
@@ -878,16 +1310,64 @@ export function buildSectionExpandedScene(
     // Reserved before the card is placed; the exact value is corrected once the panels are laid out.
     const panelBlock = (panelSize ? SECTION_PANEL.gap + panelSize.height + Math.max(0, sectionSize?.panelDy ?? 0) : 0)
       + (figuresSize ? SECTION_PANEL.gap + figuresSize.height + Math.max(0, sectionSize?.figuresDy ?? 0) : 0);
-    const clusterBelow = Math.max(panelBlock + rowsSpan(built.child) + (built.child.length ? clusterBaseGap : 0), lateralReserve);
     const node = makeSectionNode(section, depth, relations);
-    cursorY += clusterAbove;
-    // Keep the card's top edge where a default-height card would start, so a resized card grows
-    // downwards from the handle the user dragged.
-    node.y = node.customSize ? cursorY - naturalHeight / 2 + node.height / 2 : cursorY;
-    cursorY = node.y + node.height / 2 + clusterBelow + verticalGap;
+    // Lay out the finite cluster privately, then translate its actual occupied extents. Nominal
+    // row counts cannot reserve wrapped rows or configured 1–7-column clusters safely.
+    node.y = 0;
+    const clusterStart = scene.nodes.length;
+    addRelationGroup(node, section.id, built.parent, relations.parent, "parent", 0, node.x + node.width / 2, node.customSize ? naturalHeight : node.height);
+    addRelationGroup(node, section.id, built.child, relations.child, "child", panelBlock);
+    const gridNodes = scene.nodes.slice(clusterStart);
+    // Right-side neighbours clear a content panel wider than its card.
+    const cardLeft = node.x - node.width / 2;
+    let panelRight = node.x + node.width / 2;
+    if (panelSize) panelRight = Math.max(panelRight, cardLeft + SECTION_PANEL.indent + panelSize.width);
+    if (figuresSize) panelRight = Math.max(panelRight, cardLeft + SECTION_PANEL.indent + (panelSize ? SECTION_PANEL.indent : 0) + figuresSize.width);
+    addRelationGroup(node, section.id, built.left, relations.left, "left");
+    addRelationGroup(node, section.id, built.right, relations.right, "right", 0, panelRight);
+    const cluster = [node, ...scene.nodes.slice(clusterStart)];
+    if (settings.lateralArrangement === "left") {
+      const friends = cluster.filter(/** Preserve distinct roles while sharing one physical side. */ item => item.role === "left");
+      const challengers = cluster.filter(/** Only section-owned challengers move; ordinary scene zones are already placed. */ item => item.role === "right");
+      const lateral = [...friends, ...challengers];
+      let bottom = 0;
+      for (const item of lateral) {
+        item.y = bottom + item.height / 2;
+        bottom += item.height + relationMinVerticalGap;
+      }
+      const midline = (bottom - relationMinVerticalGap) / 2;
+      for (const item of lateral) item.y -= midline;
+    }
+    for (const lateral of cluster) {
+      if (lateral.role !== "left" && lateral.role !== "right") continue;
+      const direction = lateral.role === "left" || settings.lateralArrangement === "left" ? -1 : 1;
+      let distance = Math.abs(lateral.x - node.x);
+      for (const obstacle of gridNodes) {
+        if (obstacle.role !== "parent") continue;
+        distance = Math.max(distance, direction * (obstacle.x - node.x) + (obstacle.width + lateral.width) / 2 + relationHorizontalGap);
+      }
+      lateral.x = node.x + direction * distance;
+    }
+    // Child columns govern their own row width. Keep them below the actual lateral strip rather
+    // than widening the lateral anchor to clear children; parent columns alone own that x fence.
+    const localChildren = gridNodes.filter(item => item.role === "child");
+    const lateralNodes = cluster.filter(item => item.role === "left" || item.role === "right");
+    if (localChildren.length && lateralNodes.length) {
+      const lateralBottom = Math.max(...lateralNodes.map(item => item.y + item.height / 2));
+      const childTop = Math.min(...localChildren.map(item => item.y - item.height / 2));
+      const childShift = Math.max(0, lateralBottom + verticalGap - childTop);
+      for (const child of localChildren) child.y += childShift;
+    }
+    const clusterTop = Math.min(...cluster.map(item => item.y - (item === node && node.customSize ? naturalHeight : item.height) / 2));
+    const clusterBottom = Math.max(...cluster.map(item => item.y + item.height / 2));
+    const shift = cursorY - clusterTop;
+    for (const item of cluster) item.y += shift;
+    // A resized card keeps its top edge where the default-height card started, growing downward
+    // from the handle the user dragged.
+    if (node.customSize) node.y += (node.height - naturalHeight) / 2;
+    cursorY += clusterBottom - clusterTop + verticalGap;
     sectionNodeById.set(section.id, node);
     scene.nodes.push(node);
-    const cardLeft = node.x - node.width / 2;
     const cardBottom = node.y + node.height / 2;
     const panelLeft = cardLeft + SECTION_PANEL.indent;
     let panelCursor = cardBottom;
@@ -942,21 +1422,13 @@ export function buildSectionExpandedScene(
         toY: figuresPanel.top + SECTION_PANEL.header / 2,
       });
     }
-    // Neighbours and the next section clear wherever the panels actually ended up.
+    // The next section clears wherever the panels actually ended up, including dragged offsets.
     const panelsBottom = Math.max(
       cardBottom,
       highlightsPanel ? highlightsPanel.top + highlightsPanel.height : -Infinity,
       figuresPanel ? figuresPanel.top + figuresPanel.height : -Infinity,
     );
-    const rightEdge = Math.max(
-      node.x + node.width / 2,
-      highlightsPanel ? highlightsPanel.left + highlightsPanel.width : -Infinity,
-      figuresPanel ? figuresPanel.left + figuresPanel.width : -Infinity,
-    );
-    addRelationGroup(node, section.id, built.parent, relations.parent, "parent");
-    addRelationGroup(node, section.id, built.child, relations.child, "child", Math.max(0, panelsBottom - cardBottom));
-    addRelationGroup(node, section.id, built.left, relations.left, "left");
-    addRelationGroup(node, section.id, built.right, relations.right, "right", 0, rightEdge);
+    cursorY = Math.max(cursorY, panelsBottom + verticalGap);
   }
 
   for (const { section } of visible) {

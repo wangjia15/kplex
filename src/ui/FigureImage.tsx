@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import type { SectionFigure } from "../index/SectionExpansion";
 import type { PdfCropResolver } from "../index/PdfCropRenderer";
+import { createObsidianTranslator } from "../adapters/obsidian/localization";
+
+const translate = createObsidianTranslator();
 
 /**
  * Source for a section figure. Image attachments and web images are ready immediately; a PDF++
@@ -43,7 +46,7 @@ export function FigureImage({ figure, crops, className }: {
   return <img
     className={className}
     src={src}
-    alt={figure.caption ? "" : (figure.alt || "Figure")}
+    alt={figure.caption ? "" : (figure.alt || translate("paper.figure.alt"))}
     loading="lazy"
     decoding="async"
     draggable={false}

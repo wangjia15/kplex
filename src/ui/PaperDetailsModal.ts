@@ -1,5 +1,5 @@
 import { Modal } from "obsidian";
-import type ExcaliBrainPlugin from "../main";
+import type KplexPlugin from "../main";
 import type { GraphPage } from "../types";
 import { PaperDetailsPanel, type PaperTarget } from "./PaperDetailsPanel";
 
@@ -8,7 +8,7 @@ export class PaperDetailsModal extends Modal {
   private panel: PaperDetailsPanel | null = null;
 
   constructor(
-    private readonly plugin: ExcaliBrainPlugin,
+    private readonly plugin: KplexPlugin,
     private readonly target: PaperTarget,
     private readonly onShowInPlex?: (page: GraphPage) => void,
   ) {

@@ -1,27 +1,77 @@
-import { getAllTags, Platform, TFile, TFolder, type App } from "obsidian";
-import type ExcaliBrainPlugin from "../main";
+/**
+ * Obsidian-bound graph construction and per-file semantic patch staging. Full builds collect host
+ * structure, cached link maps and Markdown semantics into a private snapshot. Complete parser output
+ * is shared with source/URL consumers using exact observation tokens on existing
+ * hot and batched body records. Parser reuse never grants neutral-source durability or clears dirty state.
+ * Cold startup can publish a structure/link baseline and then reuse the same atomic per-file patch boundary to add
+ * Markdown semantics progressively without exposing half-committed source state. Node-only recovery
+ * streams current durable source facts through the same compiler without retaining relationships.
+ * On-demand owners reuse this patch boundary and durable body records; independent background URL
+ * discovery uses canonical source patches in an independent graph without unrelated document relationships.
+ * Compiler and collector CPU slices dispatch host event tasks, then retain the existing caller-owned
+ * cancellation and optional foreground-priority checkpoints before continuing private preparation.
+ * URL-only commits may adopt bounded evidence deltas only after their caller confirms exclusive
+ * private ownership at the synchronous commit; ordinary/published/large evidence keeps fork/swap.
+ * Only independent URL-owner staging activates canonical target/kind facts; ordinary Markdown
+ * reconciliation keeps its existing iteration and never creates a whole-graph derived index.
+ * URL-only pruning uses canonical lazy existence; ordinary Markdown retains its ordered iterator.
+ * Sources with matching fingerprints publish field/cache/mtime changes without cloning adjacency
+ * or adding evidence layers. Map-depth maintenance stays independent of maintenance for new forks.
+ * URL-only staging borrows replace-only facets; owned adjacency forks preserve ordering and bounded
+ * private delta replay. Display isolation and exact live ownership are separately certified by GraphIndex.
+ * Genuine ordinary Markdown edits may flatten bounded positive evidence overrides above one immutable
+ * root. Private patch forks preserve the full compactor's eight-patch maintenance/order cadence;
+ * tombstones, activated metadata and larger retained payload use the unchanged standalone fallback.
+ */
+import { yieldToHostTask } from "../adapters/obsidian/yieldToHostTask";
+import { Platform, TFile, type App } from "obsidian";
+import type KplexPlugin from "../main";
 import { LinkDirection, RelationType, type GraphPage, type Relation } from "../types";
-import {
-  extractLinksFromValue,
-  getInlineFieldOccurrences,
-  getNormalizedFieldValues,
-  getNormalizedFrontmatterValues,
-  getNormalizedInlineFieldValues,
-  mergeFileMetadata,
-  normalizeFieldName,
-  type ParsedBodyMetadata,
-  type ParsedFileMetadata,
-} from "./fieldParser";
+import { normalizeFieldName } from "../core/contracts/fieldName";
+import type { ParsedBodyMetadata, ParsedFileMetadata } from "../core/parser/metadata";
+import { mergeFileMetadata } from "./fieldParser";
+import { sourceFingerprint, sourceFingerprintCooperative, type SourceFingerprintInputs } from "./SourceFingerprint";
 import { MetadataParseCancelledError, type MetadataParser } from "./MetadataParser";
-import type { KplexIndexedDbCache } from "./IndexedDbCache";
-import type { EvidenceProvenance, EvidenceRole, EvidenceSourceKind } from "./RelationEvidence";
-import { resolveEvidencePair, resolveEvidenceStoreCooperative } from "./RelationResolver";
+import type { ObsidianSourceAcquisition } from "../adapters/obsidian/sourceAcquisition";
+import type { BodyCacheRequest, BodyCacheWrite, KplexIndexedDbCache } from "./IndexedDbCache";
+import type { EvidenceProvenance, EvidenceSourceKind, RelationEvidenceStore } from "./RelationEvidence";
+import { resolveEvidencePair } from "./RelationResolver";
 import { createGraphState, getGraphPage, type GraphState } from "./GraphState";
+import { isUrlAdjacencyMap, UrlAdjacencyMap } from "./UrlAdjacencyMap";
 import { perfNow } from "../util/perf";
+import { NormalizedGraphCompiler, type CompiledGraphNode, type CompiledRelationEvidence, type GraphCompilerSourceRead, type PortableGraphCompilation, type PortableNodeCompilation } from "../core/graph/compiler";
+import { graphCompilerSettingsFromLegacy } from "../adapters/obsidian/graphContracts";
+import { NormalizedSourcePatchPreparer, type PreparedSourcePatch, type SourcePatchReadPort } from "../core/graph/patch";
+import { nodeId, type NodeId } from "../core/graph/model";
+import { entityFactForFile, ObsidianStructuralPatchSourceCollector, ObsidianStructuralSourceCollector } from "../adapters/obsidian/structuralSourceCollector";
+import { ObsidianHostLinkSourceCollector, readHostLinkSignatureEntries } from "../adapters/obsidian/hostLinkSourceCollector";
+import { ObsidianReferenceSourceCollector } from "../adapters/obsidian/ontologySourceCollector";
+import {
+  createObsidianMetadataSourceHost,
+  normalizedBodyUrl,
+  ObsidianMetadataSourceCollector,
+  type ObsidianMetadataSourceHost,
+  type ObsidianMetadataSourceSettings,
+} from "../adapters/obsidian/metadataSourceCollector";
+import {
+  acceptSourceBatch,
+  beginSourceRead,
+  sourceReadCanPublish,
+  sourceRevision,
+  sourceGeneration,
+  sourceSnapshotRevision,
+  type NormalizedSourceBatch,
+  type SourceEntityFact,
+  type SourceEntityRef,
+  type SourceFieldNameFact,
+  type SourceReadBoundary,
+} from "../core/graph/source";
 
 export type FieldCacheEntry = {
   mtime: number;
   body: ParsedBodyMetadata;
+  /** Exact completed parser input, independent of neutral-source durability. */
+  inputToken?: string;
   /** Runtime-only semantic fingerprint used to suppress graph work for drawing-only/format-only edits. */
   semanticSignature?: string;
 };
@@ -29,21 +79,35 @@ export type FieldCacheEntry = {
 export type PatchMarkdownResult = {
   ok: boolean;
   cancelled: boolean;
+  rebuildRequired: boolean;
   touchedPagePaths: Set<string>;
   semanticChanges: number;
   semanticNoops: number;
 };
 
-export type PatchFileCommit = {
+export type PatchFileCommit = Readonly<{
   sourcePath: string;
-  touchedPagePaths: Set<string>;
+  touchedPagePaths: ReadonlySet<string>;
   semanticChanged: boolean;
-};
+}>;
+
+export type PatchFilePublisher = (commit: PatchFileCommit, publishPreparedState: () => void) => void;
+
+/** A live URL owner alone can certify exclusive adjacency at synchronous commit. */
+export type UrlAdjacencyPrivacy = (path: string, neighbours: Map<string, Relation>) => boolean;
 
 type FileRevision = {
+  path: string;
   mtime: number;
   size: number;
+  ctime: number;
+  sourceRevision?: number;
 };
+
+/** These original declaration kinds alone sustain the existing URL-origin lifetime policy. */
+const URL_ORIGIN_REFERENCE_KINDS: ReadonlySet<EvidenceSourceKind> = new Set([
+  "body-url", "property-url", "frontmatter-ontology", "inline-ontology",
+]);
 
 const FILE_OWNED_EVIDENCE = new Set<EvidenceSourceKind>([
   "obsidian-link",
@@ -51,76 +115,15 @@ const FILE_OWNED_EVIDENCE = new Set<EvidenceSourceKind>([
   "frontmatter-ontology",
   "inline-ontology",
   "body-url",
+  "property-url",
   "date-property",
 ]);
-
-function flatten(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value.flatMap(flatten);
-  if (value === null || value === undefined) return [];
-  return [value];
-}
-
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
-}
-
-type ObsidianMomentInstance = {
-  isValid(): boolean;
-  format(format: string): string;
-};
-
-type ObsidianMomentFactory = (value: string, inputFormat: string, strict: boolean) => ObsidianMomentInstance;
-
-/**
- * Render an Obsidian Date property with the vault's configured Daily Notes Moment format.
- *
- * Obsidian provides Moment at runtime on `window`. Do not import Moment into production code:
- * doing so either hits Obsidian's namespace-style typing mismatch or bundles a library that the
- * host already provides. This mirrors the long-standing approach used by Obsidian Tasks.
- */
-function formatDailyDate(isoDate: string, format: string): string | null {
-  const obsidianMoment = (window as unknown as { moment: ObsidianMomentFactory }).moment;
-  const parsed = obsidianMoment(isoDate, "YYYY-MM-DD", true);
-  return parsed.isValid() ? parsed.format(format) : null;
-}
-
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stableSemanticValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableSemanticValue);
-  if (!isUnknownRecord(value)) return value;
-  const output: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) {
-    if (key === "position") continue;
-    output[key] = stableSemanticValue(value[key]);
-  }
-  return output;
-}
-
-/** A compact, versioned equality token for semantic inputs. Four independent 32-bit lanes plus
- * the serialized byte/character length make accidental collisions impractical without retaining
- * the full per-file JSON in memory. This is deliberately wider than a single short hash because
- * fingerprint equality suppresses graph work after the body LRU has been evicted. */
-function compactFingerprint(serialized: string): string {
-  let a = 2166136261 >>> 0;
-  let b = 3339675911 >>> 0;
-  let c = 374761393 >>> 0;
-  let d = 668265263 >>> 0;
-  for (let i = 0; i < serialized.length; i += 1) {
-    const code = serialized.charCodeAt(i);
-    a = Math.imul(a ^ code, 16777619) >>> 0;
-    b = Math.imul(b ^ (code + i), 2246822519) >>> 0;
-    c = Math.imul(c ^ (code + (i << 1)), 3266489917) >>> 0;
-    d = Math.imul(d ^ (code + (i >>> 1)), 2654435761) >>> 0;
-  }
-  return [serialized.length, a, b, c, d].map((value) => value.toString(36)).join(":");
-}
 
 /** Small copy-on-write map used only while staging one incremental file patch. Reads fall through
  * to the published map; writes/deletes stay private until commit. */
 const MAX_PATCH_OVERLAY_DEPTH = 8;
+/** Existing synchronous publication scale bounds evidence buckets and total URL neighbor replay. */
+const MAX_SYNCHRONOUS_PATCH_CHANGES = 1024;
 
 class PatchOverlayMap<K, V> extends Map<K, V> {
   private readonly local = new Map<K, V>();
@@ -128,7 +131,9 @@ class PatchOverlayMap<K, V> extends Map<K, V> {
   private readonly clonedBaseKeys = new Set<K>();
   readonly depth: number;
 
-  constructor(private readonly base: Map<K, V>, private cloneOnRead?: (value: V) => V) {
+  /** Stage clones lazily; initialize first insertions and retire discarded private values before publication. */
+  constructor(private readonly base: Map<K, V>, private cloneOnRead?: (value: V) => V,
+    private initializeNew?: (value: V) => void, private retireValue?: (value: V) => void) {
     super();
     this.depth = base instanceof PatchOverlayMap ? base.depth + 1 : 1;
   }
@@ -154,19 +159,27 @@ class PatchOverlayMap<K, V> extends Map<K, V> {
     return clone;
   }
 
+  /** Apply a private write; initialize only first insertion, leaving canonical replacement untouched. */
   override set(key: K, value: V): this {
+    const previous = this.retireValue && this.local.get(key);
+    if (!this.base.has(key) && !this.local.has(key)) this.initializeNew?.(value);
+    if (previous !== undefined && previous !== value) this.retireValue?.(previous);
     if (this.base.has(key)) this.clonedBaseKeys.add(key);
     this.removed.delete(key);
     this.local.set(key, value);
     return this;
   }
+  /** Retire a removed private value before dropping its last local staging reference. */
   override delete(key: K): boolean {
     const existed = this.has(key);
+    if (this.local.has(key)) this.retireValue?.(this.local.get(key)!);
     this.local.delete(key);
     if (this.base.has(key)) this.removed.add(key);
     return existed;
   }
+  /** Retire all local private values before shadowing the captured base. */
   override clear(): void {
+    if (this.retireValue) for (const value of this.local.values()) this.retireValue(value);
     this.local.clear();
     for (const key of this.base.keys()) this.removed.add(key);
   }
@@ -216,20 +229,27 @@ class PatchOverlayMap<K, V> extends Map<K, V> {
   }
   /** Published overlays must become read-only views over their base. Clone-on-read is a staging
    * behavior only; leaving it enabled would make ordinary graph reads mutate the published map. */
-  seal(): this { this.cloneOnRead = undefined; return this; }
+  seal(): this { this.cloneOnRead = undefined; this.initializeNew = undefined; this.retireValue = undefined; return this; }
 }
 
 function isPatchOverlayMap<K, V>(map: Map<K, V>): map is PatchOverlayMap<K, V> {
   return map instanceof PatchOverlayMap;
 }
 
-function cloneGraphPage(page: GraphPage): GraphPage {
+/**
+ * Stage scalars and a private adjacency map. Only the isolated URL lane borrows array facets:
+ * every writer in that lane replaces arrays, including later aggregate alias publication. Ordinary
+ * Markdown callers retain their existing copied facets and no array mutation capability is added.
+ * Known owned URL maps fork without copying; unknown adjacency is copied before private writes.
+ */
+function cloneGraphPage(page: GraphPage, shareArrayFacets = false, privateAdjacency = false): GraphPage {
   return {
     ...page,
-    neighbours: new Map(page.neighbours),
-    aliases: [...page.aliases],
-    tags: [...page.tags],
-    styleTags: [...page.styleTags],
+    neighbours: privateAdjacency && page.url ? isUrlAdjacencyMap(page.neighbours)
+      ? page.neighbours.fork() : UrlAdjacencyMap.copyOf(page.neighbours) : new Map(page.neighbours),
+    aliases: shareArrayFacets ? page.aliases : [...page.aliases],
+    tags: shareArrayFacets ? page.tags : [...page.tags],
+    styleTags: shareArrayFacets ? page.styleTags : [...page.styleTags],
     transient: page.transient ? { ...page.transient } : undefined,
   };
 }
@@ -253,185 +273,96 @@ function publishGraphPage(target: GraphPage, staged: GraphPage): void {
 
 /**
  * Builds a complete graph snapshot from vault inputs. It does not publish state or service UI
- * queries; those responsibilities belong to GraphIndex. All collectors emit provenance-bearing
- * evidence and relationship resolution happens once, after collection is complete.
+ * queries; those responsibilities belong to GraphIndex. Collectors emit normalized source facts;
+ * the shared compiler selects reference policy and resolves relationships before publication.
  */
 export class GraphBuilder {
   private sliceStartedAt = perfNow();
   private patchTouchedPagePaths: Set<string> | null = null;
   private readonly semanticFrontmatterFields: Set<string>;
   private readonly semanticInlineFields: Set<string>;
+  private readonly metadataSourceHost: ObsidianMetadataSourceHost;
+  private readonly metadataSourceSettings: ObsidianMetadataSourceSettings;
 
+  /** Retain finite compatibility facets without selecting ontology/image inputs for collection. */
   constructor(
-    private plugin: ExcaliBrainPlugin,
+    private plugin: KplexPlugin,
     private app: App,
     private fieldCache: Map<string, FieldCacheEntry>,
     private metadataParser: MetadataParser,
     private bodyCache: KplexIndexedDbCache,
     private isCurrent: () => boolean,
     private semanticFingerprints: Map<string, string> = new Map(),
+    private sourceAcquisition: ObsidianSourceAcquisition | null = null,
+    private readonly backgroundCheckpoint?: () => Promise<void>,
   ) {
-    const hierarchy = plugin.settings.hierarchy;
+    this.metadataSourceHost = createObsidianMetadataSourceHost(app);
+    this.metadataSourceSettings = {
+      noteTypeField: plugin.settings.noteTypeField,
+      primaryTagField: plugin.settings.primaryTagField,
+    };
+    // Keep finite compatibility facets until SI4, but never select ontology/image source inputs.
     this.semanticFrontmatterFields = new Set([
-      "aliases", "alias", "tags", "tag",
-      plugin.settings.noteTypeField,
-      plugin.settings.primaryTagField,
-      plugin.settings.thumbnailProperty,
-      plugin.settings.nodeImageProperty,
-      ...hierarchy.hidden,
-      ...hierarchy.parents,
-      ...hierarchy.children,
-      ...hierarchy.leftFriends,
-      ...hierarchy.rightFriends,
-      ...hierarchy.previous,
-      ...hierarchy.next,
+      "aliases", "alias", "tags", "tag", plugin.settings.noteTypeField, plugin.settings.primaryTagField,
     ].map(normalizeFieldName).filter(Boolean));
     this.semanticInlineFields = new Set([
-      plugin.settings.noteTypeField,
-      plugin.settings.primaryTagField,
-      plugin.settings.thumbnailProperty,
-      plugin.settings.nodeImageProperty,
-      ...hierarchy.hidden,
-      ...hierarchy.parents,
-      ...hierarchy.children,
-      ...hierarchy.leftFriends,
-      ...hierarchy.rightFriends,
-      ...hierarchy.previous,
-      ...hierarchy.next,
+      plugin.settings.noteTypeField, plugin.settings.primaryTagField,
     ].map(normalizeFieldName).filter(Boolean));
   }
 
-
-  /**
-   * Fingerprint only metadata that can affect K-Plex graph semantics. Arbitrary frontmatter
-   * property names and values are intentionally excluded: lenses read them lazily from
-   * MetadataCache, while field discovery is maintained separately from relationship invalidation.
-   */
-  private semanticSourceSignature(file: TFile, body: ParsedBodyMetadata): string {
+  /** Borrow cached metadata and finite host summaries; do not mirror the complete frontmatter. */
+  private sourceFingerprintInputs(file: TFile, body: ParsedBodyMetadata): SourceFingerprintInputs {
     const cache = this.app.metadataCache.getFileCache(file);
-    const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
-    delete frontmatter.position;
-
-    const semanticFrontmatter: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(frontmatter)) {
-      if (this.semanticFrontmatterFields.has(normalizeFieldName(key)) || this.isDateProperty(key)) {
-        semanticFrontmatter[key] = stableSemanticValue(value);
-      }
-    }
-
-    const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
-    // Counts matter for presentation-only image suppression: one thumbnail link plus one ordinary
-    // link must remain graph-semantic, while a single thumbnail-only link is suppressed.
-    const resolved = Object.entries(this.app.metadataCache.resolvedLinks[file.path] ?? {}).sort(([a], [b]) => a.localeCompare(b));
-    const unresolved = Object.entries(this.app.metadataCache.unresolvedLinks[file.path] ?? {}).sort(([a], [b]) => a.localeCompare(b));
-    const relevantOccurrences = body.inlineFieldOccurrences
-      .filter((item) => this.semanticInlineFields.has(item.normalizedName));
-    const topologyBody = {
-      fields: relevantOccurrences.map((item) => [item.normalizedName, item.value]),
-      urls: body.urls.map((item) => [item.url, item.label ?? ""]),
-    };
-    const provenanceBody = {
-      fields: relevantOccurrences.map((item) => [item.normalizedName, item.value, item.syntax, item.line, item.start, item.end]),
-      urls: body.urls.map((item) => [item.url, item.label ?? "", item.line ?? 0]),
-    };
-
-    const topology = JSON.stringify({
-      frontmatter: stableSemanticValue(semanticFrontmatter),
-      tags,
-      resolved,
-      unresolved,
-      body: topologyBody,
-    });
-    const provenance = JSON.stringify(provenanceBody);
-    return `v2:${compactFingerprint(topology)}~${compactFingerprint(provenance)}`;
-  }
-
-  private async compactFingerprintCooperative(serialized: string): Promise<string | null> {
-    let a = 2166136261 >>> 0;
-    let b = 3339675911 >>> 0;
-    let c = 374761393 >>> 0;
-    let d = 668265263 >>> 0;
-    for (let i = 0; i < serialized.length; i += 1) {
-      const code = serialized.charCodeAt(i);
-      a = Math.imul(a ^ code, 16777619) >>> 0;
-      b = Math.imul(b ^ (code + i), 2246822519) >>> 0;
-      c = Math.imul(c ^ (code + (i << 1)), 3266489917) >>> 0;
-      d = Math.imul(d ^ (code + (i >>> 1)), 2654435761) >>> 0;
-      if ((i & 2047) === 0 && !(await this.yieldToHost())) return null;
-    }
-    return [serialized.length, a, b, c, d].map((value) => value.toString(36)).join(":");
-  }
-
-  /** Same token as semanticSourceSignature(), but the potentially large body-derived arrays and
-   * hashes are built cooperatively for live edits. */
-  private async semanticSourceSignatureCooperative(file: TFile, body: ParsedBodyMetadata): Promise<string | null> {
-    const cache = this.app.metadataCache.getFileCache(file);
-    const frontmatter: Record<string, unknown> = { ...(cache?.frontmatter ?? {}) };
-    delete frontmatter.position;
-    const semanticFrontmatter: Record<string, unknown> = {};
-    let processed = 0;
-    for (const [key, value] of Object.entries(frontmatter)) {
-      if (this.semanticFrontmatterFields.has(normalizeFieldName(key)) || this.isDateProperty(key)) {
-        semanticFrontmatter[key] = stableSemanticValue(value);
-      }
-      processed += 1;
-      if ((processed & 127) === 0 && !(await this.yieldToHost())) return null;
-    }
-
-    const tags = (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort();
-    const resolved = Object.entries(this.app.metadataCache.resolvedLinks[file.path] ?? {}).sort(([a], [b]) => a.localeCompare(b));
-    const unresolved = Object.entries(this.app.metadataCache.unresolvedLinks[file.path] ?? {}).sort(([a], [b]) => a.localeCompare(b));
-    const topologyFields: unknown[] = [];
-    const provenanceFields: unknown[] = [];
-    for (const item of body.inlineFieldOccurrences) {
-      if (!this.semanticInlineFields.has(item.normalizedName)) continue;
-      topologyFields.push([item.normalizedName, item.value]);
-      provenanceFields.push([item.normalizedName, item.value, item.syntax, item.line, item.start, item.end]);
-      if ((topologyFields.length & 127) === 0 && !(await this.yieldToHost())) return null;
-    }
-    const topologyUrls: unknown[] = [];
-    const provenanceUrls: unknown[] = [];
-    for (let i = 0; i < body.urls.length; i += 1) {
-      const item = body.urls[i];
-      topologyUrls.push([item.url, item.label ?? ""]);
-      provenanceUrls.push([item.url, item.label ?? "", item.line ?? 0]);
-      if ((i & 127) === 0 && !(await this.yieldToHost())) return null;
-    }
-    if (!(await this.yieldToHost())) return null;
-
-    const topology = JSON.stringify({
-      frontmatter: stableSemanticValue(semanticFrontmatter),
-      tags, resolved, unresolved,
-      body: { fields: topologyFields, urls: topologyUrls },
-    });
-    if (!(await this.yieldToHost())) return null;
-    const provenance = JSON.stringify({ fields: provenanceFields, urls: provenanceUrls });
-    if (!(await this.yieldToHost())) return null;
-    const topologyHash = await this.compactFingerprintCooperative(topology);
-    if (!topologyHash) return null;
-    const provenanceHash = await this.compactFingerprintCooperative(provenance);
-    return provenanceHash ? `v2:${topologyHash}~${provenanceHash}` : null;
-  }
-
-  private createPatchState(state: GraphState, forkEvidence = true): GraphState {
+    const { resolved, unresolved } = readHostLinkSignatureEntries(this.app.metadataCache, file.path);
     return {
-      pages: new PatchOverlayMap(state.pages, cloneGraphPage),
+      metadata: { frontmatter: cache?.frontmatter ?? {}, ...body },
+      tags: (cache?.tags ?? []).map((item: { tag: string }) => item.tag).sort(),
+      resolved, unresolved,
+      frontmatterFields: this.semanticFrontmatterFields,
+      inlineFields: this.semanticInlineFields,
+      isDateProperty: (field) => this.metadataSourceHost.isDateProperty(field),
+    };
+  }
+
+  /** Compact synchronous parity seam; ontology/image configuration never enters the token. */
+  private semanticSourceSignature(file: TFile, body: ParsedBodyMetadata): string {
+    return sourceFingerprint(this.sourceFingerprintInputs(file, body));
+  }
+
+  /** Full builds and patches hash the same neutral stream cooperatively before publication fences. */
+  private async semanticSourceSignatureCooperative(file: TFile, body: ParsedBodyMetadata): Promise<string | null> {
+    return sourceFingerprintCooperative(this.sourceFingerprintInputs(file, body), () => this.yieldToHost());
+  }
+
+
+  /** Prepare private map/evidence overlays; URL-only replace-only facets may borrow their arrays. */
+  private createPatchState(state: GraphState, forkEvidence = true, shareArrayFacets = false, privateAdjacency = false): GraphState {
+    return {
+      pages: new PatchOverlayMap(state.pages, /** Clone only this lane's permitted mutable page fields. */ page => cloneGraphPage(page, shareArrayFacets, privateAdjacency),
+        /** New URL maps become owned before any relationship is inserted; document maps stay native. */ page => {
+          if (privateAdjacency && page.url && !isUrlAdjacencyMap(page.neighbours)) page.neighbours = UrlAdjacencyMap.copyOf(page.neighbours);
+        }, privateAdjacency ? /** Pruned/replaced private maps must not escape retirement by leaving the local entries list. */ page => {
+          if (isUrlAdjacencyMap(page.neighbours) && state.pages.get(page.path)?.neighbours !== page.neighbours) page.neighbours.discard();
+        } : undefined),
       lowercasePathMap: new PatchOverlayMap(state.lowercasePathMap),
-      evidence: forkEvidence ? state.evidence.fork() : state.evidence,
+      evidence: forkEvidence ? state.evidence.forkForPatch() : state.evidence,
       discoveredFields: new PatchOverlayMap(state.discoveredFields, (value) => ({ ...value })),
     };
   }
 
   /** Bound retained copy-on-write history before starting another transaction. Compaction builds
-   * complete private replacements and publishes them together only after all checkpoints pass. */
-  private async compactPublishedPatchLayers(state: GraphState): Promise<boolean> {
+   * complete private replacements and publishes them together only after all checkpoints pass.
+   * @param includeEvidence A source with a matching fingerprint adds no evidence layer, leaving it intact;
+   * independent map-depth maintenance still runs for large field-discovery publications.
+   * @param sparseEvidence Only genuine ordinary Markdown edits opt into bounded positive override compaction. */
+  private async compactPublishedPatchLayers(state: GraphState, includeEvidence = true, sparseEvidence = false): Promise<boolean> {
     const pageOverlay = isPatchOverlayMap(state.pages) && state.pages.depth >= MAX_PATCH_OVERLAY_DEPTH
       ? state.pages : null;
     const lowercaseOverlay = isPatchOverlayMap(state.lowercasePathMap) && state.lowercasePathMap.depth >= MAX_PATCH_OVERLAY_DEPTH
       ? state.lowercasePathMap : null;
     const fieldOverlay = isPatchOverlayMap(state.discoveredFields) && state.discoveredFields.depth >= MAX_PATCH_OVERLAY_DEPTH
       ? state.discoveredFields : null;
-    const compactEvidence = state.evidence.depth >= MAX_PATCH_OVERLAY_DEPTH;
+    const compactEvidence = includeEvidence && state.evidence.depth >= MAX_PATCH_OVERLAY_DEPTH;
     if (!pageOverlay && !lowercaseOverlay && !fieldOverlay && !compactEvidence) return this.isCurrent();
 
     const pages = pageOverlay ? await pageOverlay.flattenCooperative(() => this.yieldToHost()) : state.pages;
@@ -442,8 +373,9 @@ export class GraphBuilder {
     const discoveredFields = fieldOverlay
       ? await fieldOverlay.flattenCooperative(() => this.yieldToHost()) : state.discoveredFields;
     if (!discoveredFields) return false;
-    const evidence = compactEvidence
-      ? await state.evidence.compactCooperative(() => this.yieldToHost()) : state.evidence;
+    const evidence = compactEvidence ? sparseEvidence
+      ? await state.evidence.compactOrdinaryPatchCooperative(/** Retain the ordinary caller's scheduling and lifetime fence. */ () => this.yieldToHost())
+      : await state.evidence.compactCooperative(() => this.yieldToHost()) : state.evidence;
     if (!evidence || !this.isCurrent()) return false;
 
     state.pages = pages;
@@ -468,11 +400,30 @@ export class GraphBuilder {
 
   /** Publish a fully staged file patch. All expensive parsing/evidence/resolution work happens in
    * the private overlay first; this short final section only preserves existing GraphPage identity
-   * and swaps the evidence transaction. */
-  private commitPatchState(live: GraphState, staged: GraphState): void {
+   * and swaps the evidence transaction. URL-only callers independently confirm exclusive evidence
+   * and adjacency ownership here, after all awaits; retained displayed maps never receive replay. */
+  private commitPatchState(live: GraphState, staged: GraphState,
+    canAdoptEvidence?: (evidence: RelationEvidenceStore) => boolean, canAdoptAdjacency?: UrlAdjacencyPrivacy): void {
     const pages = staged.pages as PatchOverlayMap<string, GraphPage>;
     const lowercase = staged.lowercasePathMap as PatchOverlayMap<string, string>;
     const fields = staged.discoveredFields as PatchOverlayMap<string, { name: string; count: number }>;
+    // Validate every child before changing any canonical identity. Admission is one total budget,
+    // independent of page count; neither ownership nor safety follows from evidence inequality.
+    const adopted = canAdoptAdjacency ? new Map<GraphPage, UrlAdjacencyMap<string, Relation>>() : undefined;
+    if (adopted && canAdoptAdjacency) {
+      const parents = new Map<Map<string, Relation>, number>();
+      for (const [, , parent] of pages.existingLocalEntries()) parents.set(parent.neighbours, (parents.get(parent.neighbours) ?? 0) + 1);
+      let budget = MAX_SYNCHRONOUS_PATCH_CHANGES;
+      for (const [path, child, parent] of pages.existingLocalEntries()) {
+        const map = child.neighbours;
+        if (!isUrlAdjacencyMap(map)) continue;
+        if (!map.isCurrent()) throw new Error("Stale private URL adjacency at publication");
+        const base = parent.neighbours;
+        if (isUrlAdjacencyMap(base) && parents.get(base) === 1 && base.canAdopt(map, budget) && canAdoptAdjacency(path, base)) {
+          adopted.set(child, base); budget -= map.replayCost;
+        }
+      }
+    }
 
     // Very large edits (for example a note containing ten thousand distinct external URLs) can
     // touch enough page keys that replaying every staged Map mutation would itself become the
@@ -483,11 +434,22 @@ export class GraphBuilder {
     // staged fields into those identities and make the overlay reference them before publication.
     // New pages can be published directly; deleted pages need no identity preservation.
     for (const [path, stagedPage, publishedPage] of pages.existingLocalEntries()) {
-      publishGraphPage(publishedPage, stagedPage);
+      const map = stagedPage.neighbours, parent = adopted?.get(stagedPage);
+      if (parent && isUrlAdjacencyMap(map)) {
+        parent.adopt(map, MAX_SYNCHRONOUS_PATCH_CHANGES);
+        // Retained private child wrappers are retired, never reassigned to the mutable parent.
+        publishGraphPage(publishedPage, { ...stagedPage, neighbours: parent });
+      } else {
+        if (isUrlAdjacencyMap(map)) {
+          if (isUrlAdjacencyMap(publishedPage.neighbours)) publishedPage.neighbours.freeze();
+          map.freezeBase();
+        }
+        publishGraphPage(publishedPage, stagedPage);
+      }
       pages.set(path, publishedPage);
     }
 
-    const bulkPublish = pages.changeCount() + lowercase.changeCount() + fields.changeCount() > 1024;
+    const bulkPublish = pages.changeCount() + lowercase.changeCount() + fields.changeCount() > MAX_SYNCHRONOUS_PATCH_CHANGES;
     if (bulkPublish) {
       live.pages = pages.seal();
       live.lowercasePathMap = lowercase.seal();
@@ -500,11 +462,236 @@ export class GraphBuilder {
       for (const key of fields.removedKeys()) live.discoveredFields.delete(key);
       for (const [key, value] of fields.localEntries()) live.discoveredFields.set(key, value);
     }
-    live.evidence = staged.evidence;
+    if (!canAdoptEvidence?.(live.evidence)
+      || !live.evidence.adoptPrivateFork(staged.evidence, MAX_SYNCHRONOUS_PATCH_CHANGES)) live.evidence = staged.evidence;
+  }
+
+  /** Compact only touched URL maps privately; cancellation leaves canonical storage unchanged. */
+  private async compactUrlAdjacency(staged: GraphState): Promise<boolean> {
+    const pages = staged.pages as PatchOverlayMap<string, GraphPage>;
+    for (const [, page] of pages.localEntries()) {
+      const map = page.neighbours;
+      if (!isUrlAdjacencyMap(map) || !map.needsCompaction(MAX_PATCH_OVERLAY_DEPTH)) continue;
+      const flattened = await map.flattenCooperative(/** Compaction yields after each bounded copied chunk. */ () => this.yieldToHost(true));
+      if (!flattened) return false;
+      page.neighbours = flattened; map.discard();
+    }
+    return this.isCurrent();
+  }
+
+  /** Release cancelled/consumed private wrappers; a published replacement retains its own storage. */
+  private disposeUrlAdjacency(live: GraphState, staged: GraphState): void {
+    for (const [path, page] of (staged.pages as PatchOverlayMap<string, GraphPage>).localEntries()) {
+      const map = page.neighbours;
+      if (isUrlAdjacencyMap(map) && live.pages.get(path)?.neighbours !== map) map.discard();
+    }
+  }
+
+  private materializePreparedNode(state: GraphState, node: CompiledGraphNode): boolean {
+    const path = node.semanticPath;
+    if (!path) return false;
+    if (state.pages.has(path)) return true;
+    // Existing materialized files are supplied through the stable read port. A previously unknown
+    // materialized document/attachment therefore requires structural reconciliation, not optimistic
+    // creation inside semantic preparation.
+    if (node.file || node.kind === "document" || node.kind === "attachment" || node.kind === "container") return false;
+    this.addPage(state, this.createPage({
+      path,
+      name: node.name,
+      url: node.url,
+      isTag: node.kind === "tag",
+      mtime: node.semanticMtime,
+      aliases: [...node.aliases],
+      tags: [...node.tags],
+      noteType: node.noteType,
+      primaryStyleTag: node.primaryStyleTag,
+      styleTags: [...node.styleTags],
+      maxLabelLength: node.maxLabelLength,
+    }));
+    return true;
+  }
+
+  private preparedEvidenceProvenance(item: CompiledRelationEvidence): EvidenceProvenance {
+    return {
+      sourceKind: item.sourceKind,
+      ...(item.definition === undefined ? {} : { definition: item.definition }),
+      ...(item.fieldName === undefined ? {} : { fieldName: item.fieldName }),
+      ...(item.rawValue === undefined ? {} : { rawValue: item.rawValue }),
+      ...(item.line === undefined ? {} : { line: item.line }),
+      ...(item.start === undefined ? {} : { start: item.start }),
+      ...(item.end === undefined ? {} : { end: item.end }),
+    };
+  }
+
+  private addPreparedDeclaration(state: GraphState, item: CompiledRelationEvidence): boolean {
+    const sourcePath = item.declaredByPath;
+    const targetPath = item.declaredTargetPath;
+    if (!sourcePath || !targetPath) return false;
+    // Tag hierarchy is shared derived structure. Keep one declaration even when many notes
+    // contribute the same nested tag path; leaf memberships retain their own multiplicity.
+    if (item.sourceKind === "tag-tree" && sourcePath.startsWith("tag:") && targetPath.startsWith("tag:")
+      && state.evidence.between(sourcePath, targetPath).some((existing) => existing.sourceKind === "tag-tree")) return true;
+    state.evidence.addDeclaration(sourcePath, targetPath, item.declaredRole, item.relationType, item.direction, this.preparedEvidenceProvenance(item));
+    return true;
+  }
+
+  /** Apply portable semantic preparation only to the private staging state. Publication, file
+   * binding, signatures and callbacks remain outside this method at the existing revision fence. */
+  private async applyPreparedSourcePatch(
+    state: GraphState,
+    sourcePath: string,
+    patch: PreparedSourcePatch,
+    affected: Set<string>,
+    desiredUrlOrigins: Map<string, string>,
+    discoveryMode: "patch" | "rebuild",
+  ): Promise<boolean> {
+    const sourceNode = patch.sourceNode;
+    const sourcePage = state.pages.get(sourcePath);
+    if (!sourceNode || sourceNode.semanticPath !== sourcePath || !sourcePage) return false;
+
+    let processed = 0;
+    for (const node of patch.newNodes()) {
+      if (!this.materializePreparedNode(state, node)) return false;
+      if (node.semanticPath) affected.add(node.semanticPath);
+      processed += 1;
+      if ((processed & 63) === 0 && !(await this.yieldToHost())) return false;
+    }
+
+    // Preserve the legacy first-meaningful URL label rule without cloning every referenced page.
+    // Inspect the published value and clone only a URL page that actually needs a label upgrade.
+    for (const node of patch.compilation.nodes.values()) {
+      if (node.kind !== "url" || !node.semanticPath || !node.name || node.name === node.url) continue;
+      const published = isPatchOverlayMap(state.pages)
+        ? state.pages.publicationValue(node.semanticPath)
+        : state.pages.get(node.semanticPath);
+      if (published?.url && published.name === published.url) {
+        const staged = state.pages.get(node.semanticPath);
+        if (!staged) return false;
+        staged.name = node.name;
+        affected.add(node.semanticPath);
+      }
+      processed += 1;
+      if ((processed & 63) === 0 && !(await this.yieldToHost())) return false;
+    }
+
+    sourcePage.aliases = [...sourceNode.aliases];
+    sourcePage.tags = [...sourceNode.tags];
+    sourcePage.noteType = sourceNode.noteType;
+    sourcePage.primaryStyleTag = sourceNode.primaryStyleTag;
+    sourcePage.styleTags = [...sourceNode.styleTags];
+    sourcePage.maxLabelLength = sourceNode.maxLabelLength;
+
+    for (const [normalized, value] of patch.compilation.discoveredFields) {
+      const current = state.discoveredFields.get(normalized);
+      if (discoveryMode === "rebuild") {
+        state.discoveredFields.set(normalized, {
+          name: current?.name ?? value.name,
+          count: (current?.count ?? 0) + value.count,
+        });
+      } else if (!current) {
+        // Runtime patches cannot cheaply subtract the prior per-file contribution, so they retain
+        // the historical discovery contract: learn newly seen fields and let the next full build
+        // restore exact counts. Cold progressive ingestion starts from zero and may count exactly.
+        state.discoveredFields.set(normalized, { ...value, count: 1 });
+      }
+    }
+
+    for (const item of patch.declarations()) {
+      const declaredBy = item.declaredByPath;
+      const declaredTarget = item.declaredTargetPath;
+      if (!declaredBy || !declaredTarget) return false;
+      affected.add(declaredBy);
+      affected.add(declaredTarget);
+      if (item.sourceKind === "url-origin") {
+        desiredUrlOrigins.set(declaredTarget, declaredBy);
+      } else if (!this.addPreparedDeclaration(state, item)) {
+        return false;
+      } else if (item.sourceKind === "tag-tree" && declaredBy.startsWith("tag:") && declaredTarget.startsWith("tag:")) {
+        this.resolvePatchEvidencePair(state, declaredBy, declaredTarget);
+        this.resolvePatchEvidencePair(state, declaredTarget, declaredBy);
+      }
+      processed += 1;
+      if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+    }
+    return this.isCurrent();
+  }
+
+  /**
+   * Reconcile origins with one shared URL policy. Only the isolated URL-owner lane opts into lazy
+   * private derived facts; ordinary Markdown edits retain their existing scan without activating a
+   * whole-graph index. Both paths preserve all origins and the exact four supporting source kinds.
+   */
+  private async reconcilePreparedUrlOriginsCooperative(
+    state: GraphState,
+    candidatePaths: Iterable<string>,
+    desiredOrigins: ReadonlyMap<string, string>,
+    affected: Set<string>,
+    selectiveFacts = false,
+  ): Promise<boolean> {
+    if (selectiveFacts && !(await state.evidence.ensureDeclaredTargetIndexCooperative(["url-origin"], () => this.yieldToHost()))) return false;
+    let processed = 0;
+    for (const urlPath of new Set(candidatePaths)) {
+      if (!/^https?:\/\//i.test(urlPath)) continue;
+      let referenceCount = 0;
+      const existingOrigins: string[] = [];
+      if (selectiveFacts) {
+        for (const kind of URL_ORIGIN_REFERENCE_KINDS) referenceCount += state.evidence.declaredTargetCount(urlPath, kind);
+        if (!(await state.evidence.visitDeclaredTargetKindCooperative(urlPath, "url-origin",
+          /** Retain every original origin in canonical order, including foreign and duplicate declarations. */
+          (item) => { existingOrigins.push(item.declaredByPath); }, () => this.yieldToHost()))) return false;
+      } else {
+        for (const item of state.evidence.declarationsTouchingIterator(urlPath)) {
+          if (item.declaredTargetPath === urlPath && URL_ORIGIN_REFERENCE_KINDS.has(item.sourceKind)) referenceCount++;
+          if (item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath) existingOrigins.push(item.declaredByPath);
+          processed++;
+          if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
+        }
+      }
+      /** Remove exactly original origin declarations; indexed preparation opens only selected buckets. */
+      const removeOrigins = (): Promise<number | null> => selectiveFacts
+        ? state.evidence.removeDeclaredTargetKindCooperative(urlPath, "url-origin", () => this.yieldToHost())
+        : state.evidence.removeDeclarationsTouchingCooperative(urlPath,
+          /** Native Markdown fallback retains the same target/kind predicate. */
+          item => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath, () => this.yieldToHost());
+      let desiredOrigin: string | undefined;
+      if (!referenceCount) {
+        if (existingOrigins.length) {
+          const removed = await removeOrigins();
+          if (removed === null) return false;
+        }
+      } else {
+        desiredOrigin = desiredOrigins.get(urlPath) ?? existingOrigins[0];
+        if (!desiredOrigin) {
+          // Root URLs point at their own origin and malformed external references have no origin.
+          // The legacy patch path deliberately kept both as URL nodes without a derived self-edge.
+          let derivedOrigin: string | null = null;
+          try { derivedOrigin = new URL(urlPath).origin; } catch { /* malformed URL */ }
+          if (derivedOrigin && derivedOrigin !== urlPath) return false;
+        } else {
+          if (existingOrigins.length !== 1 || existingOrigins[0] !== desiredOrigin) {
+            const removed = await removeOrigins();
+            if (removed === null) return false;
+            const originPage = state.pages.get(desiredOrigin);
+            const urlPage = state.pages.get(urlPath);
+            if (!originPage || !urlPage) return false;
+            state.evidence.addPair(desiredOrigin, urlPath, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
+          }
+          affected.add(desiredOrigin);
+        }
+      }
+      for (const origin of new Set([...existingOrigins, ...(desiredOrigin ? [desiredOrigin] : [])])) {
+        this.resolvePatchEvidencePair(state, origin, urlPath);
+        this.resolvePatchEvidencePair(state, urlPath, origin);
+      }
+      affected.add(urlPath);
+      processed += 1;
+      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
+    }
+    return this.isCurrent();
   }
 
   private topologySignature(signature: string | undefined): string | null {
-    if (!signature?.startsWith("v2:")) return signature ?? null;
+    if (!signature?.startsWith("v2:") && !signature?.startsWith("v3:")) return signature ?? null;
     const splitAt = signature.indexOf("~");
     return splitAt < 0 ? signature : signature.slice(0, splitAt);
   }
@@ -515,53 +702,461 @@ export class GraphBuilder {
     this.fieldCache.set(path, entry);
     const hotLimit = Platform.isIosApp ? 48 : Platform.isMobile ? 160 : 1200;
     while (this.fieldCache.size > hotLimit) {
-      const oldest = this.fieldCache.keys().next().value;
-      if (!oldest) break;
-      this.fieldCache.delete(oldest);
+      const oldest = this.fieldCache.keys().next();
+      if (oldest.done) break;
+      this.fieldCache.delete(oldest.value);
     }
   }
 
-  async build(): Promise<GraphState | null> {
-    const state = createGraphState();
-    if (!(await this.addVaultTree(state))) return null;
-    if (!(await this.addTagTree(state))) return null;
-    if (!(await this.addResolvedLinks(state))) return null;
-    if (!(await this.addUnresolvedLinks(state))) return null;
-    if (!(await this.enrichMarkdownPages(state))) return null;
-    if (!this.isCurrent()) return null;
-    if (!(await resolveEvidenceStoreCooperative(
-      state.pages,
-      state.evidence,
-      this.isCurrent,
-      Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 400,
-    ))) return null;
+  /**
+   * Build the authoritative complete graph privately.
+   *
+   * @param options A caller with an independent durable inventory may let that inventory acquire
+   * neutral source heads after graph publication, avoiding a storage transaction per note here.
+   * @returns A fully collected state only when every source family remains current through binding;
+   * otherwise `null` so the coordinator can retain the previous published graph.
+   */
+  async build(options: Readonly<{ acquireSources?: boolean }> = {}): Promise<GraphState | null> {
+    this.plugin.startupDiagnostics?.recordWork("fullBuildStarts");
+    const compiler = this.createFullCompiler();
+    const structuralRead = await this.collectStructuralSources(compiler);
+    if (!structuralRead) return null;
+    if (!(await this.collectHostLinkSources(compiler))) return null;
+    if (!(await this.collectMarkdownSources(compiler, options.acquireSources !== false))) return null;
+    if (!(await this.finalizeStructuralSources(compiler, structuralRead))) return null;
+
+    const compiled = await compiler.finish();
+    if (!compiled || !structuralRead.collector.isBoundaryCurrent(structuralRead.read.boundary) || !this.isCurrent()) return null;
+    const state = await this.bindCompiledGraph(compiled, structuralRead.collector);
+    if (!state || !structuralRead.collector.isBoundaryCurrent(structuralRead.read.boundary) || !this.isCurrent()) return null;
     return state;
   }
 
+  /**
+   * Build the low-cost cold-start baseline from vault structure, tag structure and Obsidian's
+   * already-resolved link maps without reading Markdown bodies.
+   *
+   * @returns A graph containing materialized vault nodes and optional host-link relationships, or `null` if
+   * the source revision changes while the private read is in flight. The caller may patch Markdown
+   * semantics into this state before publishing it as a non-authoritative startup preview.
+   */
+  async buildStructuralBaseline(): Promise<GraphState | null> {
+    return this.buildStructuralProjection("graph");
+  }
+
+  /** Compile URL vocabulary with the shared label/origin owner and discard all incidence.
+   * A background body scan must never materialize document relationships or ontology fields. */
+  async buildBodyUrlVocabulary(file: TFile, body: ParsedBodyMetadata): Promise<readonly GraphPage[] | null> {
+    if (!body.urls.length) return [];
+    const revision = this.captureFileRevision(file);
+    const current = (): boolean => this.isCurrent() && this.fileRevisionMatches(file, revision);
+    const compiler = new NormalizedGraphCompiler(this.fullCompilerSettings(), {
+      ...this.patchCompilerRuntime(), isCurrent: current,
+    }, "nodes");
+    const source = entityFactForFile(file);
+    if (!(await compiler.seedEntityFact(source))) return null;
+    const boundary = { generation: sourceGeneration(`url-vocabulary:${revision.path}:${revision.mtime}`),
+      snapshotRevision: sourceSnapshotRevision(`url-vocabulary:${revision.path}:${revision.mtime}`) };
+    const read = compiler.beginRead(boundary);
+    for (let start = 0, sequence = 0; start < body.urls.length; start += 256, sequence++) {
+      if (!current()) return null;
+      const records = body.urls.slice(start, start + 256).map(reference => normalizedBodyUrl(source.entity, source.sourceRevision, reference));
+      if (!(await compiler.acceptBatch(read, { boundary, sequence, final: start + 256 >= body.urls.length, records }))) return null;
+    }
+    if (!compiler.completeRead(read, boundary)) return null;
+    const nodes = await compiler.finishNodes();
+    if (!nodes || !current()) return null;
+    const pages: GraphPage[] = [];
+    for (const node of nodes.nodes.values()) if (node.kind === "url" && node.semanticPath && node.url) {
+      pages.push(this.createPage({ path: node.semanticPath, name: node.name, url: node.url, aliases: [...node.aliases] }));
+      if ((pages.length & 127) === 0 && !(await this.yieldToHost())) return null;
+    }
+    return current() ? pages : null;
+  }
+
+  /**
+   * Replace one owner's URL-only contribution in an independent disposable graph. The canonical
+   * patch preparer and origin-lifetime reconciliation are shared with ordinary Markdown patches;
+   * existing inline/property grammar is restricted to external targets; unrelated note relations and source inventory are not acquired here.
+   * Private copy-on-write staging is committed only after exact native file/lifetime checks.
+   * Evidence and adjacency adoption require independent live privacy checks during that commit.
+   * This isolated lane opts into cooperatively activated target/kind facts before origin reconciliation.
+   * @returns Paths affected by the synchronous publication, or null after supersession.
+   */
+  async patchUrlReferences(state: GraphState, file: TFile, body: ParsedBodyMetadata, publisher: PatchFilePublisher, cachedFrontmatter?: Record<string, unknown>,
+    canAdoptEvidence?: (evidence: RelationEvidenceStore) => boolean, canAdoptAdjacency?: UrlAdjacencyPrivacy): Promise<Set<string> | null> {
+    const revision = this.captureFileRevision(file), sourcePath = revision.path;
+    if (!this.isCurrent() || !(await this.compactPublishedPatchLayers(state))) return null;
+    const staged = this.createPatchState(state, true, true, Boolean(canAdoptAdjacency));
+    try {
+      if (!staged.pages.has(sourcePath)) this.addPage(staged, this.createPage({ path: sourcePath, name: file.basename, file }));
+      const source = entityFactForFile(file);
+      const preparer = new NormalizedSourcePatchPreparer(nodeId(sourcePath), this.fullCompilerSettings(),
+        this.patchCompilerRuntime(), this.patchReadPort(staged));
+      const boundary = { generation: sourceGeneration(`url-owner:${sourcePath}:${revision.mtime}`),
+        snapshotRevision: sourceSnapshotRevision(`url-owner:${sourcePath}:${revision.mtime}`) };
+      const read = preparer.beginRead(boundary);
+      const entityBatch = { boundary, sequence: 0, final: body.urls.length === 0, records: [source] };
+      if (!(await preparer.acceptBatch(read, entityBatch))) return null;
+      for (let start = 0, sequence = 1; start < body.urls.length; start += 256, sequence++) {
+        const records = body.urls.slice(start, start + 256).map(/** Preserve canonical identity and lexical provenance. */
+          reference => normalizedBodyUrl(source.entity, source.sourceRevision, reference));
+        if (!(await preparer.acceptBatch(read, { boundary, sequence, final: start + 256 >= body.urls.length, records }))) return null;
+      }
+      if (!preparer.completeRead(read, boundary)) return null;
+      const references = new ObsidianReferenceSourceCollector(
+        { metadataCache: this.app.metadataCache, resolvedLinkCount: this.metadataSourceHost.resolvedLinkCount },
+        { isCurrent: this.isCurrent, checkpoint: () => this.yieldToHost(), sourceRevision: () => 0 }, file,
+        mergeFileMetadata(this.app.metadataCache.getFileCache(file) ?? (cachedFrontmatter ? { frontmatter: cachedFrontmatter } : null), body), { externalOnly: true });
+      if (!(await this.collectPatchFinalSource(preparer, references))) return null;
+      const result = await preparer.finish();
+      if (result.outcome !== "prepared" || !this.fileRevisionMatches(file, revision)) return null;
+      const affected = new Set<string>([sourcePath]), urls = new Set<string>();
+      for (const item of staged.evidence.declarationsTouchingIterator(sourcePath)) {
+        affected.add(item.declaredTargetPath);
+        if (item.sourceKind !== "url-origin" && staged.pages.get(item.declaredTargetPath)?.url) urls.add(item.declaredTargetPath);
+      }
+      if (await staged.evidence.removeDeclarationsTouchingCooperative(sourcePath,
+        /** This isolated graph contains only the owner's canonical external URL evidence. */
+        item => item.declaredByPath === sourcePath && FILE_OWNED_EVIDENCE.has(item.sourceKind), () => this.yieldToHost()) === null) return null;
+      const origins = new Map<string, string>();
+      if (!(await this.applyPreparedSourcePatch(staged, sourcePath, result.patch, affected, origins, "patch"))) return null;
+      for (const path of affected) if (staged.pages.get(path)?.url) urls.add(path);
+      if (!(await this.reconcilePreparedUrlOriginsCooperative(staged, urls, origins, affected, true))) return null;
+      for (const path of affected) if (path !== sourcePath) {
+        this.resolvePatchEvidencePair(staged, sourcePath, path);
+        this.resolvePatchEvidencePair(staged, path, sourcePath);
+      }
+      if (!(await this.pruneUnusedUrlNodesCooperative(staged, urls, affected, false, true))) return null;
+      if (!(await this.compactUrlAdjacency(staged))) return null;
+      if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) return null;
+      // No await below: URL source evidence, incidence and shared origin lifetimes publish together.
+      this.publishUrlPatch(state, staged, sourcePath, affected, publisher, canAdoptEvidence, canAdoptAdjacency);
+      return affected;
+    } finally { this.disposeUrlAdjacency(state, staged); }
+  }
+
+  /**
+   * Retire a URL owner privately while preserving shared origins and remaining contributors.
+   * Independent evidence/adjacency privacy capabilities are checked only during synchronous commit.
+   * Selective canonical facts activate only on its private URL-only staging generation.
+   */
+  async removeUrlOwner(state: GraphState, path: string, publisher: PatchFilePublisher,
+    canAdoptEvidence?: (evidence: RelationEvidenceStore) => boolean, canAdoptAdjacency?: UrlAdjacencyPrivacy): Promise<Set<string> | null> {
+    if (!(await this.compactPublishedPatchLayers(state))) return null;
+    const staged = this.createPatchState(state, true, true, Boolean(canAdoptAdjacency)), affected = new Set<string>([path]), urls = new Set<string>();
+    try {
+      for (const item of staged.evidence.declarationsTouchingIterator(path)) {
+        affected.add(item.declaredTargetPath);
+        if (item.sourceKind !== "url-origin" && staged.pages.get(item.declaredTargetPath)?.url) urls.add(item.declaredTargetPath);
+      }
+      if (await staged.evidence.removeDeclarationsTouchingCooperative(path,
+        /** URL-only owner removal never erases shared synthetic origin declarations. */
+        item => item.declaredByPath === path && FILE_OWNED_EVIDENCE.has(item.sourceKind), () => this.yieldToHost()) === null) return null;
+      staged.pages.delete(path); staged.lowercasePathMap.delete(path.toLowerCase());
+      for (const target of affected) if (target !== path) staged.pages.get(target)?.neighbours.delete(path);
+      if (!(await this.reconcilePreparedUrlOriginsCooperative(staged, urls, new Map(), affected, true))
+        || !(await this.pruneUnusedUrlNodesCooperative(staged, urls, affected, false, true)) || !this.isCurrent()) return null;
+      if (!(await this.compactUrlAdjacency(staged))) return null;
+      this.publishUrlPatch(state, staged, path, affected, publisher, canAdoptEvidence, canAdoptAdjacency);
+      return affected;
+    } finally { this.disposeUrlAdjacency(state, staged); }
+  }
+
+  /** Enforce exactly-once URL publication; caller privacy is evaluated within the synchronous commit. */
+  private publishUrlPatch(live: GraphState, staged: GraphState, sourcePath: string, affected: Set<string>, publisher: PatchFilePublisher,
+    canAdoptEvidence?: (evidence: RelationEvidenceStore) => boolean, canAdoptAdjacency?: UrlAdjacencyPrivacy): void {
+    let accepting = true, published = false;
+    try {
+      publisher({ sourcePath, touchedPagePaths: affected, semanticChanged: true }, /** Commit only during the publisher call. */
+        () => {
+          if (!accepting || published) throw new Error("URL publisher callback expired or already used");
+          published = true; this.commitPatchState(live, staged, canAdoptEvidence, canAdoptAdjacency);
+        });
+    } finally { accepting = false; }
+    if (!published) throw new Error("URL publisher did not publish synchronously");
+  }
+
+  /** Recover structural vocabulary with canonical materialization and no retained relationships. */
+  async buildStructuralNodeBaseline(): Promise<GraphState | null> {
+    return this.buildStructuralProjection("nodes");
+  }
+
+  /** Shared structural/tag/host collection and final binding for graph and node-only baselines. */
+  private async buildStructuralProjection(projection: "graph" | "nodes"): Promise<GraphState | null> {
+    const compiler = this.createFullCompiler(projection);
+    const structuralRead = await this.collectStructuralSources(compiler);
+    if (!structuralRead) return null;
+    if (!(await this.collectHostLinkSources(compiler))) return null;
+    if (!(await this.finalizeStructuralSources(compiler, structuralRead))) return null;
+
+    const compiled = projection === "nodes" ? await compiler.finishNodes() : await compiler.finish();
+    if (!compiled || !structuralRead.collector.isBoundaryCurrent(structuralRead.read.boundary) || !this.isCurrent()) return null;
+    const state = await this.bindCompiledGraph(compiled, structuralRead.collector);
+    if (!state || !structuralRead.collector.isBoundaryCurrent(structuralRead.read.boundary) || !this.isCurrent()) return null;
+    return state;
+  }
+
+  /**
+   * Recover complete search/suggestion metadata from source authority after graph acceleration loss.
+   * This is a node projection, never a full graph build. One Markdown owner is pinned/decoded at a
+   * time in the full builder's native Markdown order, preserving the first meaningful URL label.
+   * Final physical/host/source fences discard all private nodes on interruption.
+   */
+  async buildSourceNodeCatalog(onProgress?: () => void): Promise<GraphState | null> {
+    this.plugin.startupDiagnostics?.recordWork("nodeCatalogStarts");
+    const acquisition = this.sourceAcquisition;
+    if (!acquisition?.hasSemanticDependencies()) return null;
+    const maintenance = acquisition.getMaintenanceRevision();
+    const current = (): boolean => this.isCurrent() && acquisition.hasSemanticDependencies()
+      && acquisition.getMaintenanceRevision() === maintenance;
+    const baseRuntime = this.patchCompilerRuntime();
+    const runtime = { ...baseRuntime, isCurrent: current,
+      /** Only completed compiler/replay slices advance the caller's progress observer. */
+      yield: async (): Promise<void> => {
+        await baseRuntime.yield();
+        if (current()) onProgress?.();
+      } };
+    const compiler = new NormalizedGraphCompiler(this.fullCompilerSettings(), runtime, "nodes");
+    const structuralRead = await this.collectStructuralSources(compiler);
+    if (!structuralRead || !current() || !(await this.collectHostLinkSources(compiler))) return null;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!current() || !(await acquisition.replayNodeMetadata(file.path,
+        this.metadataSourceSettings, compiler, runtime)) || !current()) return null;
+      onProgress?.();
+    }
+    if (!(await this.finalizeStructuralSources(compiler, structuralRead)) || !current()) return null;
+    const compiled = await compiler.finishNodes();
+    if (!compiled || !structuralRead.collector.isBoundaryCurrent(structuralRead.read.boundary) || !current()) return null;
+    const state = await this.bindCompiledGraph(compiled, structuralRead.collector);
+    return state && structuralRead.collector.isBoundaryCurrent(structuralRead.read.boundary) && current() ? state : null;
+  }
+
+  /**
+   * Stage the finite synthetic endpoints of a retired source against current contributor authority.
+   * Negative materialization closes obsolete partial evidence; positive results update finite facets
+   * or insert a newly materialized synthetic node. Copy-on-write state remains private until publish.
+   * Unclosed source incidence returns a pending patch without joining inventory; a foreground
+   * caller must never wait for the background owner it currently pre-empts.
+   */
+  async prepareNodeImpactPatch(state: GraphState, endpoints: Iterable<SourceEntityRef>): Promise<
+    Readonly<{ touched: ReadonlySet<string>; publish: () => void }> | null> {
+    if (!this.sourceAcquisition || !this.isCurrent()) return null;
+    const staged = this.createPatchState(state);
+    const touched = new Set<string>();
+    for (const endpoint of endpoints) {
+      if (!endpoint.semanticPath) return null;
+      const path = endpoint.semanticPath;
+      const node = await this.sourceAcquisition.currentEndpointNode(endpoint,
+        { revision: "source-node-impact", settings: this.fullCompilerSettings(), isCurrent: this.isCurrent },
+        this.metadataSourceSettings, this.patchCompilerRuntime());
+      if (node === null || !this.isCurrent()) return null;
+      const page = staged.pages.get(path);
+      if (page?.file || page?.isFolder) continue;
+      if (node) {
+        if (page) {
+          page.name = node.name;
+          // Remaining contributors own the URL aliases after an edit/deletion; retire removed labels.
+          page.aliases = [...node.aliases];
+        }
+        else {
+          const restored = this.createPage({ path, name: node.name, file: null, url: node.url,
+            isFolder: false, isTag: node.kind === "tag", mtime: node.semanticMtime,
+            aliases: [...node.aliases], tags: [...node.tags], noteType: node.noteType,
+            primaryStyleTag: node.primaryStyleTag, styleTags: [...node.styleTags], maxLabelLength: node.maxLabelLength });
+          this.addPage(staged, restored);
+        }
+      } else if (page) {
+        const removed = await staged.evidence.removeDeclarationsTouchingCooperative(path, () => true, () => this.yieldToHost());
+        if (removed === null || !this.isCurrent()) return null;
+        for (const neighbour of page.neighbours.keys()) { staged.pages.get(neighbour)?.neighbours.delete(path); touched.add(neighbour); }
+        staged.pages.delete(path); staged.lowercasePathMap.delete(path.toLowerCase());
+      }
+      touched.add(path);
+      if (!(await this.yieldToHost())) return null;
+    }
+    if (!this.isCurrent()) return null;
+    return { touched,
+      /** The caller performs the final synchronous lifetime fence immediately before publication. */
+      publish: (): void => { this.commitPatchState(state, staged); } };
+  }
+
+  /** Capture interpretation settings once for full/patch compilation, never for neutral collection. */
+  private fullCompilerSettings() {
+    return graphCompilerSettingsFromLegacy(this.plugin.settings);
+  }
+
+  /** Create either projection with the same captured policy and cooperative cancellation contract. */
+  private createFullCompiler(projection: "graph" | "nodes" = "graph"): NormalizedGraphCompiler {
+    return new NormalizedGraphCompiler(this.fullCompilerSettings(), {
+      now: perfNow,
+      /** Full and node-only compilation obey the caller's lane at every consumed CPU slice. */
+      yield: async () => { await this.yieldToHost(true); },
+      isCurrent: this.isCurrent,
+      sliceBudgetMs: Platform.isIosApp ? 7 : Platform.isMobile ? 9 : 13,
+      resolverBatchSize: Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 400,
+    }, projection);
+  }
+
+  /** Give per-file compiler work the same event-task continuation, slice budgets and lifetime as full builds. */
+  private patchCompilerRuntime() {
+    return {
+      now: perfNow,
+      /** Resume through the caller's existing priority/policy checkpoint after a compiler slice. */
+      yield: async () => { await this.yieldToHost(true); },
+      isCurrent: this.isCurrent,
+      sliceBudgetMs: Platform.isIosApp ? 7 : Platform.isMobile ? 9 : 13,
+      resolverBatchSize: Platform.isIosApp ? 96 : Platform.isMobile ? 160 : 400,
+    };
+  }
+
+  private patchReadPort(state: GraphState): SourcePatchReadPort {
+    return {
+      entity: (ref: SourceEntityRef): SourceEntityFact | undefined => {
+        if (!ref.semanticPath) return undefined;
+        // Preparation reads the stable published value, not a clone in the private transaction.
+        // The legacy GraphState is path-keyed; the portable side still retains/refers to the exact
+        // producer NodeId supplied in `ref`, and host path binding remains outside core.
+        const page = isPatchOverlayMap(state.pages)
+          ? state.pages.publicationValue(ref.semanticPath)
+          : state.pages.get(ref.semanticPath);
+        if (!page) return undefined;
+        const entity: SourceEntityRef = {
+          id: ref.id,
+          kind: ref.kind,
+          state: ref.state,
+          semanticPath: page.path,
+          ...(page.file ? { physicalPath: page.file.path } : ref.physicalPath ? { physicalPath: ref.physicalPath } : {}),
+        };
+        return {
+          kind: "entity",
+          source: entity,
+          sourceRevision: sourceRevision(`published:${page.path}\u0000${page.mtime ?? ""}`),
+          entity,
+          name: page.name,
+          url: page.url,
+          semanticMtime: page.mtime,
+          ...(page.file ? {
+            file: {
+              name: page.file.name,
+              extension: page.file.extension,
+              path: page.file.path,
+              mtime: page.file.stat.mtime,
+              basename: page.file.basename,
+              ctime: page.file.stat.ctime,
+              size: page.file.stat.size,
+            },
+          } : {}),
+        };
+      },
+    };
+  }
+
+  private async collectPatchFinalSource(
+    preparer: NormalizedSourcePatchPreparer,
+    collector: {
+      readonly boundary: SourceReadBoundary;
+      collectBatches(consume: (batch: NormalizedSourceBatch) => Promise<boolean> | boolean): Promise<boolean>;
+      isBoundaryCurrent(boundary: SourceReadBoundary): boolean;
+    },
+  ): Promise<boolean> {
+    const read = preparer.beginRead(collector.boundary);
+    if (!(await collector.collectBatches((batch) => preparer.acceptBatch(read, batch)))) return false;
+    return collector.isBoundaryCurrent(read.boundary)
+      && preparer.completeRead(read, collector.boundary)
+      && this.isCurrent();
+  }
+
+  private async collectPatchHostLinks(
+    preparer: NormalizedSourcePatchPreparer,
+    sourcePath: string,
+  ): Promise<boolean> {
+    const collector = new ObsidianHostLinkSourceCollector(
+      { vault: this.app.vault, metadataCache: this.app.metadataCache },
+      { isCurrent: this.isCurrent, checkpoint: () => this.yieldToHost(), sourceRevision: () => this.plugin.getIndexSourceRevision() },
+      sourcePath,
+    );
+    const read = preparer.beginRead(collector.boundary);
+    if (!(await collector.collectBatches((batch) => preparer.acceptBatch(read, batch)))) return false;
+    const finalBatch = await collector.finalize();
+    if (!finalBatch || !(await preparer.acceptBatch(read, finalBatch))) return false;
+    return collector.isBoundaryCurrent(read.boundary)
+      && preparer.completeRead(read, collector.boundary)
+      && this.isCurrent();
+  }
+
+  /** Stream one source through the same neutral collectors and policy gate used by full builds. */
+  private async prepareMarkdownSourcePatch(
+    state: GraphState,
+    file: TFile,
+    meta: ParsedFileMetadata,
+  ): Promise<Readonly<{ outcome: "prepared"; patch: PreparedSourcePatch }> | Readonly<{ outcome: "cancelled" | "rejected" | "rebuild-required" }>> {
+    const preparer = new NormalizedSourcePatchPreparer(
+      nodeId(file.path),
+      this.fullCompilerSettings(),
+      this.patchCompilerRuntime(),
+      this.patchReadPort(state),
+    );
+    const runtime = {
+      isCurrent: this.isCurrent,
+      checkpoint: () => this.yieldToHost(),
+      sourceRevision: () => this.plugin.getIndexSourceRevision(),
+    };
+    const structural = new ObsidianStructuralPatchSourceCollector(
+      { vault: this.app.vault, metadataCache: this.app.metadataCache }, runtime, file,
+    );
+    if (!(await this.collectPatchFinalSource(preparer, structural))) return { outcome: "cancelled" };
+    if (!(await this.collectPatchHostLinks(preparer, file.path))) return { outcome: "cancelled" };
+
+    const metadata = new ObsidianMetadataSourceCollector(
+      this.metadataSourceHost, runtime, file, meta, this.metadataSourceSettings, "metadata",
+    );
+    if (!(await this.collectPatchFinalSource(preparer, metadata))) return { outcome: "cancelled" };
+    const references = new ObsidianReferenceSourceCollector(
+      { metadataCache: this.app.metadataCache, resolvedLinkCount: this.metadataSourceHost.resolvedLinkCount }, runtime, file, meta,
+    );
+    if (!(await this.collectPatchFinalSource(preparer, references))) return { outcome: "cancelled" };
+    const relations = new ObsidianMetadataSourceCollector(
+      this.metadataSourceHost, runtime, file, meta, this.metadataSourceSettings, "relations",
+    );
+    if (!(await this.collectPatchFinalSource(preparer, relations))) return { outcome: "cancelled" };
+
+    const prepared = await preparer.finish();
+    if (prepared.outcome === "prepared") return prepared;
+    return { outcome: prepared.outcome };
+  }
+
+  /** Release a consumed CPU slice and pause background builders at a transaction-free priority boundary. */
   private async yieldToHost(force = false): Promise<boolean> {
     if (!this.isCurrent()) return false;
     const budgetMs = Platform.isIosApp ? 7 : Platform.isMobile ? 9 : 13;
     if (!force && perfNow() - this.sliceStartedAt < budgetMs) return true;
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    await yieldToHostTask();
+    await this.backgroundCheckpoint?.();
     this.sliceStartedAt = perfNow();
     return this.isCurrent();
   }
 
   private async parseBody(content: string): Promise<ParsedBodyMetadata | null> {
     try {
-      return await this.metadataParser.parse(content);
+      return await this.metadataParser.parse(content, this.backgroundCheckpoint);
     } catch (error) {
       if (error instanceof MetadataParseCancelledError || !this.isCurrent()) return null;
       throw error;
     }
   }
 
+  /** Capture observed host events as well as stats before acquiring a body or preparing graph work. */
   private captureFileRevision(file: TFile): FileRevision {
-    return { mtime: file.stat.mtime, size: file.stat.size };
+    return { path: file.path, mtime: file.stat.mtime, size: file.stat.size, ctime: file.stat.ctime,
+      sourceRevision: this.sourceAcquisition?.getFileRevision(file) };
   }
 
+  /** Equal-stat host edits still invalidate an awaited private build; published state stays untouched. */
   private fileRevisionMatches(file: TFile, revision: FileRevision): boolean {
-    return file.stat.mtime === revision.mtime && file.stat.size === revision.size;
+    return file.path === revision.path && file.stat.mtime === revision.mtime && file.stat.size === revision.size && file.stat.ctime === revision.ctime &&
+      this.app.vault.getFileByPath(revision.path) === file
+      && this.sourceAcquisition?.getFileRevision(file) === revision.sourceRevision;
   }
 
   private createPage(params: Partial<GraphPage> & Pick<GraphPage, "path" | "name">): GraphPage {
@@ -589,106 +1184,142 @@ export class GraphBuilder {
     this.patchTouchedPagePaths?.add(page.path);
   }
 
-  private async addVaultTree(state: GraphState): Promise<boolean> {
-    // Folder topology is a cheap structural layer sourced directly from Obsidian's in-memory
-    // Vault tree. Keep it indexed regardless of current visibility so the toolbar can reveal or
-    // hide folders instantly without scheduling a semantic rebuild.
-    const root = this.createPage({ path: "folder:/", name: "/", isFolder: true });
-    this.addPage(state, root);
-    const stack: Array<{ folder: TFolder; parent: GraphPage }> = [{ folder: this.app.vault.getRoot(), parent: root }];
-    let visited = 0;
-    while (stack.length) {
-      if (!this.isCurrent()) return false;
-      const { folder, parent } = stack.pop()!;
-      for (const item of folder.children) {
-        if (item instanceof TFolder) {
-          const node = this.createPage({ path: `folder:${item.path}`, name: item.name, isFolder: true });
-          this.addPage(state, node);
-          this.addEvidencePair(state, parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "file-tree", definition: "file-tree" });
-          stack.push({ folder: item, parent: node });
-        } else if (item instanceof TFile) {
-          const node = this.createPage({ path: item.path, name: item.extension === "md" ? item.basename : item.name, file: item });
-          this.addPage(state, node);
-          this.addEvidencePair(state, parent, node, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "file-tree", definition: "file-tree" });
-        }
-        visited += 1;
-        if (visited % 64 === 0 && !(await this.yieldToHost())) return false;
-      }
-      if (!(await this.yieldToHost())) return false;
-    }
-    return this.isCurrent();
+  private async collectStructuralSources(compiler: NormalizedGraphCompiler): Promise<{
+    collector: ObsidianStructuralSourceCollector;
+    read: GraphCompilerSourceRead;
+  } | null> {
+    const collector = new ObsidianStructuralSourceCollector(
+      { vault: this.app.vault, metadataCache: this.app.metadataCache },
+      { isCurrent: this.isCurrent, checkpoint: () => this.yieldToHost(), sourceRevision: () => this.plugin.getIndexSourceRevision() },
+    );
+    const read = compiler.beginRead(collector.boundary);
+    const consumed = await collector.collectBatches((batch) => compiler.acceptBatch(read, batch));
+    return consumed && this.isCurrent() ? { collector, read } : null;
   }
 
-  private async addTagTree(state: GraphState): Promise<boolean> {
-    // Tag topology comes entirely from Obsidian's MetadataCache; no Markdown body read or K-Plex
-    // parser pass is needed. Build each unique hierarchy once, then attach cached memberships.
-    // This keeps the structural layer cheap even when thousands of notes share the same tags.
-    const membersByTag = new Map<string, GraphPage[]>();
-    let scannedFiles = 0;
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (!this.isCurrent()) return false;
-      const page = getGraphPage(state, file.path);
-      const cache = this.app.metadataCache.getFileCache(file);
-      if (page && cache) {
-        for (const rawTag of getAllTags(cache) ?? []) {
-          const members = membersByTag.get(rawTag);
-          if (members) members.push(page);
-          else membersByTag.set(rawTag, [page]);
-        }
-      }
-      scannedFiles += 1;
-      if (scannedFiles % 128 === 0 && !(await this.yieldToHost())) return false;
-    }
-
-    let attached = 0;
-    for (const [rawTag, members] of membersByTag) {
-      if (!this.isCurrent()) return false;
-      const tagPage = this.ensureTagPath(state, rawTag);
-      if (!tagPage) continue;
-      for (const page of members) {
-        this.addEvidencePair(state, tagPage, page, "child", RelationType.DEFINED, LinkDirection.TO, { sourceKind: "tag-tree", definition: "tag-tree" });
-        attached += 1;
-        if (attached % 256 === 0 && !(await this.yieldToHost())) return false;
-      }
-    }
-    return this.isCurrent();
+  private async finalizeStructuralSources(
+    compiler: NormalizedGraphCompiler,
+    context: { collector: ObsidianStructuralSourceCollector; read: GraphCompilerSourceRead },
+  ): Promise<boolean> {
+    const finalBatch = await context.collector.finalize();
+    if (!finalBatch || !(await compiler.acceptBatch(context.read, finalBatch))) return false;
+    return context.collector.isBoundaryCurrent(context.read.boundary)
+      && compiler.completeRead(context.read, context.collector.boundary)
+      && this.isCurrent();
   }
 
-  private async addResolvedLinks(state: GraphState): Promise<boolean> {
-    let visitedTargets = 0;
-    for (const [sourcePath, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
-      if (!this.isCurrent()) return false;
-      const source = getGraphPage(state, sourcePath);
-      if (!source) continue;
-      for (const targetPath of Object.keys(targets)) {
-        const target = getGraphPage(state, targetPath);
-        if (target) this.addInferredParentChild(state, source, target, "obsidian-link");
-        visitedTargets += 1;
-        if (visitedTargets % 64 === 0 && !(await this.yieldToHost())) return false;
-      }
-      if (!(await this.yieldToHost())) return false;
-    }
-    return this.isCurrent();
+  private async collectHostLinkSources(compiler: NormalizedGraphCompiler): Promise<boolean> {
+    const collector = new ObsidianHostLinkSourceCollector(
+      { vault: this.app.vault, metadataCache: this.app.metadataCache },
+      { isCurrent: this.isCurrent, checkpoint: () => this.yieldToHost(), sourceRevision: () => this.plugin.getIndexSourceRevision() },
+    );
+    const read = compiler.beginRead(collector.boundary);
+    if (!(await collector.collectBatches((batch) => compiler.acceptBatch(read, batch)))) return false;
+    const finalBatch = await collector.finalize();
+    if (!finalBatch || !(await compiler.acceptBatch(read, finalBatch))) return false;
+    return collector.isBoundaryCurrent(read.boundary)
+      && compiler.completeRead(read, collector.boundary)
+      && this.isCurrent();
   }
 
-  private async addUnresolvedLinks(state: GraphState): Promise<boolean> {
-    let visitedTargets = 0;
-    for (const [sourcePath, targets] of Object.entries(this.app.metadataCache.unresolvedLinks)) {
-      if (!this.isCurrent()) return false;
-      const source = getGraphPage(state, sourcePath);
-      if (!source || sourcePath === this.plugin.settings.excalibrainFilepath) continue;
-      for (const targetPath of Object.keys(targets)) {
-        const target = this.ensureVirtual(state, targetPath);
-        this.addInferredParentChild(state, source, target, "unresolved-link");
-        visitedTargets += 1;
-        if (visitedTargets % 64 === 0 && !(await this.yieldToHost())) return false;
-      }
-      if (!(await this.yieldToHost())) return false;
-    }
-    return this.isCurrent();
+  private async collectFinalCompilerSource(
+    compiler: NormalizedGraphCompiler,
+    collector: {
+      readonly boundary: SourceReadBoundary;
+      collectBatches(consume: (batch: NormalizedSourceBatch) => Promise<boolean> | boolean): Promise<boolean>;
+      isBoundaryCurrent(boundary: SourceReadBoundary): boolean;
+    },
+  ): Promise<boolean> {
+    const read = compiler.beginRead(collector.boundary);
+    if (!(await collector.collectBatches((batch) => compiler.acceptBatch(read, batch)))) return false;
+    return collector.isBoundaryCurrent(read.boundary)
+      && compiler.completeRead(read, collector.boundary)
+      && this.isCurrent();
   }
 
-  private async enrichMarkdownPages(state: GraphState): Promise<boolean> {
+  /** Collect finite metadata, neutral references and body relations under independent read fences. */
+  private async collectMetadataSources(
+    compiler: NormalizedGraphCompiler,
+    file: TFile,
+    meta: ParsedFileMetadata,
+  ): Promise<boolean> {
+    const runtime = {
+      isCurrent: this.isCurrent,
+      checkpoint: () => this.yieldToHost(),
+      sourceRevision: () => this.plugin.getIndexSourceRevision(),
+    };
+    const metadata = new ObsidianMetadataSourceCollector(
+      this.metadataSourceHost, runtime, file, meta, this.metadataSourceSettings, "metadata",
+    );
+    if (!(await this.collectFinalCompilerSource(compiler, metadata))) return false;
+
+    const references = new ObsidianReferenceSourceCollector(
+      { metadataCache: this.app.metadataCache, resolvedLinkCount: this.metadataSourceHost.resolvedLinkCount }, runtime, file, meta,
+    );
+    if (!(await this.collectFinalCompilerSource(compiler, references))) return false;
+
+    const relations = new ObsidianMetadataSourceCollector(
+      this.metadataSourceHost, runtime, file, meta, this.metadataSourceSettings, "relations",
+    );
+    return this.collectFinalCompilerSource(compiler, relations);
+  }
+
+  /** Bind canonical node facets to exact current host files; node projections retain empty evidence. */
+  private async bindCompiledGraph(
+    compiled: PortableGraphCompilation | PortableNodeCompilation,
+    structuralCollector: ObsidianStructuralSourceCollector,
+  ): Promise<GraphState | null> {
+    if (!this.isCurrent()) return null;
+    const evidence = "legacyEvidence" in compiled ? compiled.legacyEvidence() : createGraphState().evidence;
+    if (!evidence) return null;
+    const state = createGraphState();
+    state.evidence = evidence;
+    state.discoveredFields = new Map(compiled.discoveredFields);
+    const pagesById = new Map<NodeId, GraphPage>();
+    let processed = 0;
+
+    for (const node of compiled.nodes.values()) {
+      if (!node.semanticPath) return null;
+      let file: TFile | null = null;
+      if (node.file) {
+        file = structuralCollector.materializedFile(node.file);
+        if (!file || file.path !== node.physicalPath) return null;
+      }
+      const page = this.createPage({
+        path: node.semanticPath,
+        name: node.name,
+        file,
+        url: node.url,
+        isFolder: node.kind === "container",
+        isTag: node.kind === "tag",
+        mtime: node.semanticMtime,
+        aliases: [...node.aliases],
+        tags: [...node.tags],
+        noteType: node.noteType,
+        primaryStyleTag: node.primaryStyleTag,
+        styleTags: [...node.styleTags],
+        maxLabelLength: node.maxLabelLength,
+      });
+      this.addPage(state, page);
+      pagesById.set(node.id, page);
+      if ((++processed & 127) === 0 && !(await this.yieldToHost())) return null;
+    }
+
+    for (const node of compiled.nodes.values()) {
+      const page = pagesById.get(node.id);
+      if (!page) return null;
+      for (const relation of node.neighbours.values()) {
+        const target = pagesById.get(relation.target.id);
+        if (!target) return null;
+        page.neighbours.set(target.path, { ...relation, target });
+        if ((++processed & 127) === 0 && !(await this.yieldToHost())) return null;
+      }
+    }
+    return state;
+  }
+
+  /** Acquire bounded body batches, stream neutral facts and hash cooperatively under source/file fences. */
+  private async collectMarkdownSources(compiler: NormalizedGraphCompiler, acquireSources: boolean): Promise<boolean> {
     const files = this.app.vault.getMarkdownFiles();
     const alive = new Set(files.map((file) => file.path));
     for (const cachedPath of this.fieldCache.keys()) {
@@ -704,7 +1335,7 @@ export class GraphBuilder {
     const writeBatchSize = Platform.isIosApp ? 48 : Platform.isMobile ? 64 : 128;
     const readConcurrency = Platform.isIosApp ? 1 : Platform.isMobile ? 2 : 6;
     const readByteBudget = Platform.isIosApp ? 1.5 * 1024 * 1024 : Platform.isMobile ? 3 * 1024 * 1024 : 8 * 1024 * 1024;
-    const pendingWrites: Array<{ path: string; mtime: number; body: ParsedBodyMetadata }> = [];
+    const pendingWrites: BodyCacheWrite[] = [];
 
     const flushWrites = async (): Promise<boolean> => {
       if (!pendingWrites.length) return true;
@@ -740,40 +1371,81 @@ export class GraphBuilder {
     for (let batchStart = 0; batchStart < files.length; batchStart += lookupBatchSize) {
       if (!this.isCurrent()) return false;
       const batchFiles = files.slice(batchStart, batchStart + lookupBatchSize);
-      const revisions = new Map(batchFiles.map((file) => [file.path, this.captureFileRevision(file)] as const));
+      const revisions = new Map(batchFiles.map((file) => [file, this.captureFileRevision(file)] as const));
       const misses = batchFiles.filter((file) => {
-        const revision = revisions.get(file.path)!;
-        const hot = this.fieldCache.get(file.path);
-        return hot?.mtime !== revision.mtime;
+        const revision = revisions.get(file)!;
+        const hot = this.fieldCache.get(revision.path);
+        const inputToken = this.sourceAcquisition?.getBodyCacheRequest(file)?.inputToken;
+        return hot?.mtime !== revision.mtime || this.sourceAcquisition?.needsBodyRead(file)
+          && (inputToken === undefined || hot.inputToken !== inputToken);
       });
-      const durable = await this.bodyCache.getBodies(misses.map((file) => ({
-        path: file.path,
-        mtime: revisions.get(file.path)!.mtime,
-      })));
+      const durable = new Map<string, ParsedBodyMetadata>();
+      const durableTokens = new Map<string, string>();
+      // Current grammar body-cache records are already batched. On a complete settings rebuild, use those
+      // first, then decode neutral chunks only for actual body-cache misses. Reading and pinning
+      // every neutral source before the batch lookup made large-vault rebuilds IDB-bound.
+      const legacyRequests = misses.flatMap((file) => {
+        const revision = revisions.get(file)!;
+        const request: BodyCacheRequest | null = this.sourceAcquisition ? this.sourceAcquisition.getBodyCacheRequest(file)
+          : { path: revision.path, mtime: revision.mtime };
+        return request ? [request] : [];
+      });
+      const legacy = await this.bodyCache.getBodies(legacyRequests);
+      for (const [path, body] of legacy) durable.set(path, body);
+      for (const request of legacyRequests) if (request.inputToken !== undefined && legacy.has(request.path)) {
+        durableTokens.set(request.path, request.inputToken);
+      }
+      if (this.sourceAcquisition) for (const file of misses) {
+        if (durable.has(file.path) || this.sourceAcquisition.needsBodyRead(file)) continue;
+        const body = await this.sourceAcquisition.readBody(file, this.isCurrent, true);
+        if (!this.isCurrent() || !this.fileRevisionMatches(file, revisions.get(file)!)) return false;
+        if (body) durable.set(file.path, body);
+      }
       if (!this.isCurrent()) return false;
       // TFile.stat is mutable. Never let an old body read be committed under a newer revision.
       // Abort this private full build if a source changed while the durable lookup was in flight;
       // Main.ts retains the dirty backlog and coalesces the replacement build.
-      if (batchFiles.some((file) => !this.fileRevisionMatches(file, revisions.get(file.path)!))) return false;
+      if (batchFiles.some((file) => !this.fileRevisionMatches(file, revisions.get(file)!))) return false;
 
-      const fresh = new Map<string, ParsedBodyMetadata>();
+      const fresh = new Map<string, FieldCacheEntry>();
       const needsRead = misses.filter((file) => !durable.has(file.path));
       for (const group of readGroups(needsRead)) {
         if (!this.isCurrent()) return false;
         const contents = await Promise.all(group.map(async (file) => ({
           file,
-          revision: revisions.get(file.path)!,
+          revision: revisions.get(file)!,
+          bodyInput: this.sourceAcquisition?.captureBodyInput(file, this.isCurrent),
           content: Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file),
         })));
         if (!this.isCurrent()) return false;
         // One worker services parser requests serially. Awaiting each result avoids retaining cloned
         // payloads while still benefiting from overlapped native reads above.
-        for (const { file, revision, content } of contents) {
-          if (!this.fileRevisionMatches(file, revision)) return false;
+        for (const { file, revision, content, bodyInput } of contents) {
+          // The worker itself does not checkpoint. Admit this P4 submission before checking whether
+          // higher-priority work completed the exact input during native I/O or priority suspension.
+          if (this.backgroundCheckpoint) await this.backgroundCheckpoint();
+          if (!this.isCurrent() || !this.fileRevisionMatches(file, revision) || bodyInput?.isCurrent() === false) return false;
+          const request = this.sourceAcquisition?.getBodyCacheRequest(file);
+          if (request?.inputToken !== undefined) {
+            const hot = this.fieldCache.get(revision.path);
+            const shared = hot?.mtime === revision.mtime && hot.inputToken === request.inputToken ? hot.body
+              : this.bodyCache.getQueuedBody(revision.path, revision.mtime, request.inputToken);
+            if (shared) {
+              const entry = { mtime: revision.mtime, body: shared, inputToken: request.inputToken };
+              fresh.set(revision.path, entry);
+              this.rememberFieldCache(revision.path, entry);
+              continue;
+            }
+          }
           const body = await this.parseBody(content);
-          if (!body || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) return false;
-          fresh.set(file.path, body);
-          pendingWrites.push({ path: file.path, mtime: revision.mtime, body });
+          if (!body || !this.isCurrent() || !this.fileRevisionMatches(file, revision) || bodyInput?.accept() === false) return false;
+          const entry = { mtime: revision.mtime, body, inputToken: bodyInput?.inputToken };
+          fresh.set(revision.path, entry);
+          // Complete lexical input may serve URL/foreground work before this private graph's
+          // group yield. Durability stays batched; semantic signatures publish only below.
+          this.rememberFieldCache(revision.path, entry);
+          pendingWrites.push({ path: revision.path, mtime: revision.mtime, body,
+            inputToken: bodyInput?.inputToken, isCurrent: bodyInput?.isCurrent });
           if (pendingWrites.length >= writeBatchSize && !(await flushWrites())) return false;
         }
         if (!(await this.yieldToHost())) return false;
@@ -781,23 +1453,30 @@ export class GraphBuilder {
 
       for (const file of batchFiles) {
         if (!this.isCurrent()) return false;
-        const revision = revisions.get(file.path)!;
+        const revision = revisions.get(file)!;
         if (!this.fileRevisionMatches(file, revision)) return false;
-        const page = getGraphPage(state, file.path);
-        if (!page) continue;
-
-        let entry = this.fieldCache.get(file.path);
-        if (!entry || entry.mtime !== revision.mtime) {
-          const body = durable.get(file.path) ?? fresh.get(file.path);
+        let entry = this.fieldCache.get(revision.path);
+        const inputToken = this.sourceAcquisition?.getBodyCacheRequest(file)?.inputToken;
+        if (!entry || entry.mtime !== revision.mtime || this.sourceAcquisition?.needsBodyRead(file)
+          && (inputToken === undefined || entry.inputToken !== inputToken)) {
+          const body = durable.get(revision.path) ?? fresh.get(revision.path)?.body;
           if (!body) return false;
-          entry = { mtime: revision.mtime, body };
-          this.rememberFieldCache(file.path, entry);
+          entry = { mtime: revision.mtime, body,
+            inputToken: durable.has(revision.path) ? durableTokens.get(revision.path) : fresh.get(revision.path)?.inputToken };
+          this.rememberFieldCache(revision.path, entry);
         }
 
+        // A complete semantic build already validates its own source revision and publication.
+        // Its durable source inventory runs independently after publication; awaiting one source
+        // activation per file here would put storage latency on every settings rebuild.
+        const acquisition = acquireSources ? await this.sourceAcquisition?.acquire(file, entry.body, this.isCurrent, true) : undefined;
+        if (acquisition?.current === false || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) return false;
         const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), entry.body);
-        entry.semanticSignature = this.semanticSourceSignature(file, entry.body);
-        this.semanticFingerprints.set(file.path, entry.semanticSignature);
-        this.applyMetadata(state, page, file, meta);
+        const signature = await this.semanticSourceSignatureCooperative(file, entry.body);
+        if (!signature || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) return false;
+        entry.semanticSignature = signature;
+        this.semanticFingerprints.set(revision.path, signature);
+        if (!(await this.collectMetadataSources(compiler, file, meta))) return false;
         if (!(await this.yieldToHost())) return false;
       }
     }
@@ -806,12 +1485,16 @@ export class GraphBuilder {
   }
 
   /**
-   * Re-index only modified Markdown sources on top of a hydrated semantic snapshot.
+   * Parse Markdown sources and commit each source through the existing atomic patch boundary.
    *
-   * This is the normal warm-start path for a large vault: restore the last complete graph from
-   * IndexedDB, then replace declarations owned by the handful of files whose mtimes changed while
-   * K-Plex was closed. Incoming declarations from other notes remain untouched. Structural vault
-   * changes (create/delete/rename) are intentionally handled by a full rebuild instead.
+   * Runtime/warm-start callers replace declarations owned by modified files on a hydrated graph.
+   * Cold progressive startup sets `discoveryMode: "rebuild"` and feeds every source exactly once
+   * into a structural baseline, forcing semantic application even when a prior cancelled attempt
+   * left a hot body/fingerprint cache entry behind. Structural vault changes remain the caller's
+   * responsibility. Cancellation still retains previously committed sources; progress is durable
+   * through neutral source heads without pausing ingestion to serialize a full graph.
+   * Matching source fingerprints retain adjacency and evidence; field discovery, mtime, hot body
+   * and fingerprint still publish together after source acquisition and exact revision/lifetime checks.
    */
   async patchMarkdownFiles(
     state: GraphState,
@@ -819,7 +1502,16 @@ export class GraphBuilder {
     options: {
       useDurableCache?: boolean;
       awaitBodyWrite?: boolean;
-      onFileCommitted?: (commit: PatchFileCommit) => void;
+      publishFileCommit?: PatchFilePublisher;
+      /** A recovered vocabulary has no complete evidence; validate shared synthetic lifetimes locally. */
+      sourceNodeBaseline?: boolean;
+      /** Full cold-start ingestion counts every discovered field exactly once per source. */
+      discoveryMode?: "patch" | "rebuild";
+      /** Reinterpret unchanged neutral source facts after a demanded semantic policy change. */
+      forceRecompile?: boolean;
+      /** The owning progressive writer may service visible edits before private source staging.
+       * Synchronous no-work/skip decisions add no task yield; a failed nested patch cancels this pass. */
+      beforeFile?: (file: TFile) => Promise<"skip" | "cancel" | undefined> | "skip" | undefined;
     } = {},
   ): Promise<PatchMarkdownResult> {
     const touchedPagePaths = new Set<string>();
@@ -827,552 +1519,324 @@ export class GraphBuilder {
     let semanticNoops = 0;
     const useDurableCache = options.useDurableCache === true;
     const awaitBodyWrite = options.awaitBodyWrite === true;
-
+    const discoveryMode = options.discoveryMode ?? "patch";
 
     for (const file of files) {
-      if (!this.isCurrent()) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!this.isCurrent()) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+      const admitted = options.beforeFile?.(file);
+      const decision = admitted && typeof admitted !== "string" ? await admitted : admitted;
+      if (decision === "skip") continue;
+      if (decision === "cancel" || !this.isCurrent()) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+      const revision = this.captureFileRevision(file);
+      const sourcePath = revision.path;
       const fileTouchedPagePaths = new Set<string>();
       this.patchTouchedPagePaths = fileTouchedPagePaths;
-      const publishFileCommit = (semanticChanged: boolean): void => {
-        fileTouchedPagePaths.add(file.path);
+      const publishFileCommit = (semanticChanged: boolean, publishPreparedState: () => void): void => {
+        fileTouchedPagePaths.add(sourcePath);
+        const commit: PatchFileCommit = {
+          sourcePath,
+          touchedPagePaths: new Set(fileTouchedPagePaths),
+          semanticChanged,
+        };
         for (const path of fileTouchedPagePaths) touchedPagePaths.add(path);
-        options.onFileCommitted?.({ sourcePath: file.path, touchedPagePaths: new Set(fileTouchedPagePaths), semanticChanged });
-      };
-      const page = getGraphPage(state, file.path);
-      if (!page) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
-      const revision = this.captureFileRevision(file);
-
-      // Live metadata events imply a new mtime, so a durable lookup is normally guaranteed to
-      // miss and can be badly delayed by unrelated IndexedDB maintenance. Startup reconciliation
-      // opts into durable lookup because it can legitimately hit a body written in the prior run.
-      const previousEntry = this.fieldCache.get(file.path);
-      let body: ParsedBodyMetadata | null = null;
-      if (previousEntry && previousEntry.mtime === revision.mtime) {
-        body = previousEntry.body;
-      } else if (useDurableCache) {
-        body = await this.bodyCache.getBody(file.path, revision.mtime);
-        if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        if (!options.publishFileCommit) {
+          publishPreparedState();
+          return;
         }
+        let published = false;
+        let acceptingPublication = true;
+        const publishOnce = (): void => {
+          if (!acceptingPublication) throw new Error(`Patch publisher callback expired: ${sourcePath}`);
+          if (published) throw new Error(`Patch commit published more than once: ${sourcePath}`);
+          published = true;
+          publishPreparedState();
+        };
+        try {
+          options.publishFileCommit(commit, publishOnce);
+        } finally {
+          acceptingPublication = false;
+        }
+        if (!published) throw new Error(`Patch publisher did not publish synchronously: ${sourcePath}`);
+      };
+      const page = getGraphPage(state, sourcePath);
+      if (!page) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+
+      // Reuse neutral bodies on metadata/target-only changes. An observed content edit requires
+      // either new parsing or its exact completed-input token, even at equal mtime/size. Legacy body
+      // lookup remains opt-in; private source staging has an independent bounded storage lifetime.
+      const previousEntry = this.fieldCache.get(sourcePath);
+      let body: ParsedBodyMetadata | null = null;
+      let bodyToken: string | undefined;
+      const cacheRequest = this.sourceAcquisition?.getBodyCacheRequest(file);
+      const freshBodyRequired = this.sourceAcquisition?.needsBodyRead(file) === true;
+      if (previousEntry && previousEntry.mtime === revision.mtime && (!freshBodyRequired
+        || cacheRequest?.inputToken !== undefined && previousEntry.inputToken === cacheRequest.inputToken)) {
+        body = previousEntry.body;
+        bodyToken = previousEntry.inputToken;
+      } else if (!freshBodyRequired && (useDurableCache || this.sourceAcquisition)) {
+        body = await this.sourceAcquisition?.readBody(file, this.isCurrent, true) ?? null;
+        if (!body && useDurableCache) body = await this.bodyCache.getBody(sourcePath, revision.mtime);
+        if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+        }
+      }
+
+      if (!body && cacheRequest?.inputToken !== undefined) {
+        body = this.bodyCache.getQueuedBody(cacheRequest.path, cacheRequest.mtime, cacheRequest.inputToken);
+        if (!body && useDurableCache) body = (await this.bodyCache.getBodies([cacheRequest])).get(sourcePath) ?? null;
+        if (body) bodyToken = cacheRequest.inputToken;
       }
 
       if (!body) {
+        const bodyInput = this.sourceAcquisition?.captureBodyInput(file, this.isCurrent);
         const content = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
         if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }
 
         body = await this.parseBody(content);
-        if (!body || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        if (!body || !this.isCurrent() || !this.fileRevisionMatches(file, revision) || bodyInput?.accept() === false) {
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }
 
         if (awaitBodyWrite) {
-          await this.bodyCache.putBody(file.path, revision.mtime, body);
+          await this.bodyCache.putBody(sourcePath, revision.mtime, body, bodyInput);
           if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
-            return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+            return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
           }
         } else {
-          this.bodyCache.queueBodyWrite(file.path, revision.mtime, body);
+          this.bodyCache.queueBodyWrite(sourcePath, revision.mtime, body, bodyInput);
         }
+        bodyToken = bodyInput?.inputToken;
       }
 
       if (!this.fileRevisionMatches(file, revision)) {
-        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
+      const acquisition = await this.sourceAcquisition?.acquire(file, body, this.isCurrent, true);
+      if (acquisition?.current === false || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+      }
+      const retiredEndpoints = options.sourceNodeBaseline ? this.sourceAcquisition?.nodeImpactEndpoints(sourcePath) : undefined;
+      if (retiredEndpoints === null) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       const signature = await this.semanticSourceSignatureCooperative(file, body);
       if (!signature || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
-        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      const previousSignature = this.semanticFingerprints.get(file.path) ?? previousEntry?.semanticSignature;
-      if (!(await this.compactPublishedPatchLayers(state)) || !this.fileRevisionMatches(file, revision)) {
-        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      // A progressive rebuild starts from a structural-only baseline. A body cache entry left by a
+      // cancelled earlier attempt is useful for parsing, but its semantic fingerprint must never
+      // suppress applying that source to the fresh baseline. Runtime patches do have prior semantics.
+      const previousSignature = discoveryMode === "rebuild" || options.forceRecompile
+        ? undefined
+        : this.semanticFingerprints.get(sourcePath) ?? previousEntry?.semanticSignature;
+      if (!(await this.compactPublishedPatchLayers(state, previousSignature !== signature, true)) || !this.fileRevisionMatches(file, revision)) {
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
       const stagedState = this.createPatchState(state, previousSignature !== signature);
-      const stagedPage = getGraphPage(stagedState, file.path);
-      if (!stagedPage) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
 
       if (previousSignature === signature) {
-        // Even semantic no-ops stage their small metadata/cache-visible mutations. Cancellation can
-        // therefore never leave a half-updated discovered-field table or mtime behind.
+        // Only field discovery needs an overlay. The existing canonical page receives its scalar
+        // mtime at commit; reading it through the staging map would clone all of its unchanged
+        // adjacency/arrays. No shared page value is mutated during awaited source/field preparation.
         const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
-        if (!(await this.recordDiscoveredFieldsCooperative(stagedState, meta))) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        if (!(await this.applyFieldNameSourceFacts(stagedState, file, meta))) {
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }
-        stagedPage.mtime = revision.mtime;
         if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }
         if (!(await this.yieldToHost(true)) || !this.fileRevisionMatches(file, revision)) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }
-        this.commitPatchState(state, stagedState);
-        this.rememberFieldCache(file.path, { mtime: revision.mtime, body, semanticSignature: signature });
-        this.semanticFingerprints.set(file.path, signature);
+        publishFileCommit(false, /** Publish metadata/cache together without an adjacency write. */ () => {
+          this.commitPatchState(state, stagedState);
+          page.mtime = revision.mtime;
+          if (retiredEndpoints) this.sourceAcquisition?.acknowledgeNodeImpacts(sourcePath, retiredEndpoints);
+          this.rememberFieldCache(sourcePath, { mtime: revision.mtime, body, inputToken: bodyToken, semanticSignature: signature });
+          this.semanticFingerprints.set(sourcePath, signature);
+        });
         semanticNoops += 1;
-        publishFileCommit(false);
-        if (!(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        if (!(await this.yieldToHost())) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         continue;
       }
 
+      const stagedPage = getGraphPage(stagedState, sourcePath);
+      if (!stagedPage) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       const topologyChanged = this.topologySignature(previousSignature) !== this.topologySignature(signature);
       const affected = new Set<string>();
       const oldTagPaths = new Set<string>();
       const oldUrlPaths = new Set<string>();
-      touchedPagePaths.add(file.path);
+      const oldVirtualPaths = new Set<string>();
+      for (const endpoint of retiredEndpoints?.values() ?? []) {
+        if (!endpoint.semanticPath) continue;
+        if (endpoint.kind === "tag") oldTagPaths.add(endpoint.semanticPath);
+        else if (endpoint.kind === "url") oldUrlPaths.add(endpoint.semanticPath);
+        else if (endpoint.kind === "unresolved") oldVirtualPaths.add(endpoint.semanticPath);
+      }
+      const desiredUrlOrigins = new Map<string, string>();
+      touchedPagePaths.add(sourcePath);
+      const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
+      const preparation = await this.prepareMarkdownSourcePatch(stagedState, file, meta);
+      if (preparation.outcome === "rebuild-required") {
+        return { ok: false, cancelled: false, rebuildRequired: true, touchedPagePaths, semanticChanges, semanticNoops };
+      }
+      if (preparation.outcome !== "prepared" || !this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+      }
+      const preparedPatch = preparation.patch;
+
       let processed = 0;
-      for (const item of stagedState.evidence.declarationsTouchingIterator(file.path)) {
-        const ownedByFile = item.declaredByPath === file.path && FILE_OWNED_EVIDENCE.has(item.sourceKind);
-        const tagMembership = item.sourceKind === "tag-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("tag:");
+      for (const item of stagedState.evidence.declarationsTouchingIterator(sourcePath)) {
+        const ownedByFile = item.declaredByPath === sourcePath && FILE_OWNED_EVIDENCE.has(item.sourceKind);
+        const tagMembership = item.sourceKind === "tag-tree" && item.declaredTargetPath === sourcePath && item.declaredByPath.startsWith("tag:");
         if (ownedByFile || tagMembership) {
           affected.add(item.declaredByPath);
           affected.add(item.declaredTargetPath);
           if (tagMembership) oldTagPaths.add(item.declaredByPath);
-          if (item.sourceKind === "body-url") oldUrlPaths.add(item.declaredTargetPath);
+          if (stagedState.pages.get(item.declaredTargetPath)?.url && (item.sourceKind === "body-url"
+            || item.sourceKind === "property-url" || item.sourceKind === "frontmatter-ontology" || item.sourceKind === "inline-ontology")) oldUrlPaths.add(item.declaredTargetPath);
         }
         processed += 1;
         if ((processed & 127) === 0 && !(await this.yieldToHost())) {
-          return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+          return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }
       }
-      const removed = await stagedState.evidence.removeDeclarationsTouchingCooperative(file.path, (item) => {
-        if (item.declaredByPath === file.path && FILE_OWNED_EVIDENCE.has(item.sourceKind)) return true;
-        return item.sourceKind === "tag-tree" && item.declaredTargetPath === file.path && item.declaredByPath.startsWith("tag:");
+      const removed = await stagedState.evidence.removeDeclarationsTouchingCooperative(sourcePath, (item) => {
+        if (item.declaredByPath === sourcePath && FILE_OWNED_EVIDENCE.has(item.sourceKind)) return true;
+        return item.sourceKind === "tag-tree" && item.declaredTargetPath === sourcePath && item.declaredByPath.startsWith("tag:");
       }, () => this.yieldToHost());
-      if (removed === null) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (removed === null) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
 
-      for (const targetPath of Object.keys(this.app.metadataCache.resolvedLinks[file.path] ?? {})) {
-        const target = getGraphPage(stagedState, targetPath);
-        if (target) {
-          this.addInferredParentChild(stagedState, stagedPage, target, "obsidian-link");
-          affected.add(target.path);
-        }
-        processed += 1;
-        if ((processed & 63) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
-      }
-      for (const targetPath of Object.keys(this.app.metadataCache.unresolvedLinks[file.path] ?? {})) {
-        if (file.path !== this.plugin.settings.excalibrainFilepath) {
-          const target = this.ensureVirtual(stagedState, targetPath);
-          this.addInferredParentChild(stagedState, stagedPage, target, "unresolved-link");
-          affected.add(target.path);
-        }
-        processed += 1;
-        if ((processed & 63) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
-      }
-
-      const meta = mergeFileMetadata(this.app.metadataCache.getFileCache(file), body);
-      if (!(await this.applyMetadataPatchCooperative(stagedState, stagedPage, file, meta))) {
-        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!(await this.applyPreparedSourcePatch(stagedState, sourcePath, preparedPatch, affected, desiredUrlOrigins, discoveryMode))) {
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
       stagedPage.mtime = revision.mtime;
-      for (const item of stagedState.evidence.declarationsTouchingIterator(file.path)) {
+      for (const item of stagedState.evidence.declarationsTouchingIterator(sourcePath)) {
         affected.add(item.declaredByPath);
         affected.add(item.declaredTargetPath);
-        if (item.sourceKind === "body-url") oldUrlPaths.add(item.declaredTargetPath);
+        if (stagedState.pages.get(item.declaredTargetPath)?.url && (item.sourceKind === "body-url"
+            || item.sourceKind === "property-url" || item.sourceKind === "frontmatter-ontology" || item.sourceKind === "inline-ontology")) oldUrlPaths.add(item.declaredTargetPath);
         processed += 1;
-        if ((processed & 127) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        if ((processed & 127) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      if (!(await this.pruneEmptyTagNodesCooperative(stagedState, oldTagPaths, affected))) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
-      if (!(await this.refreshDerivedUrlOriginsCooperative(stagedState, oldUrlPaths, affected))) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!(await this.pruneEmptyTagNodesCooperative(stagedState, oldTagPaths, affected, options.sourceNodeBaseline))) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!(await this.reconcilePreparedUrlOriginsCooperative(stagedState, oldUrlPaths, desiredUrlOrigins, affected))) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       for (const targetPath of affected) {
         fileTouchedPagePaths.add(targetPath);
-        if (targetPath !== file.path) {
-          this.resolvePatchEvidencePair(stagedState, file.path, targetPath);
-          this.resolvePatchEvidencePair(stagedState, targetPath, file.path);
+        if (targetPath !== sourcePath) {
+          this.resolvePatchEvidencePair(stagedState, sourcePath, targetPath);
+          this.resolvePatchEvidencePair(stagedState, targetPath, sourcePath);
         }
         processed += 1;
-        if ((processed & 31) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        if ((processed & 31) === 0 && !(await this.yieldToHost())) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      if (!(await this.pruneUnusedUrlNodesCooperative(stagedState, oldUrlPaths, affected))) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!(await this.pruneUnusedUrlNodesCooperative(stagedState, oldUrlPaths, affected, options.sourceNodeBaseline))) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+      for (const path of oldVirtualPaths) {
+        const old = stagedState.pages.get(path);
+        if (!old || old.file || old.url || old.isTag || old.isFolder) continue;
+        const ref: SourceEntityRef = { id: nodeId(path), kind: "unresolved", state: "unresolved", semanticPath: path };
+        const node = await this.sourceAcquisition?.currentEndpointNode(ref,
+          { revision: "source-node-prune", settings: this.fullCompilerSettings(), isCurrent: this.isCurrent },
+          this.metadataSourceSettings, this.patchCompilerRuntime());
+        if (node === null || !this.sourceAcquisition || !this.isCurrent()) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
+        if (!node) { stagedState.pages.delete(path); stagedState.lowercasePathMap.delete(path.toLowerCase()); affected.add(path); }
+      }
       for (const targetPath of affected) fileTouchedPagePaths.add(targetPath);
 
-      if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       // Start the atomic publication section at a fresh event-loop slice. The graph/search commit
       // itself must remain synchronous for consistency, so do not let earlier staged work consume
       // part of the same responsiveness budget.
       if (!(await this.yieldToHost(true)) || !this.fileRevisionMatches(file, revision)) {
-        return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+        return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
       }
-      this.commitPatchState(state, stagedState);
-      this.rememberFieldCache(file.path, { mtime: revision.mtime, body, semanticSignature: signature });
-      this.semanticFingerprints.set(file.path, signature);
+      publishFileCommit(topologyChanged, () => {
+        this.commitPatchState(state, stagedState);
+        if (retiredEndpoints) this.sourceAcquisition?.acknowledgeNodeImpacts(sourcePath, retiredEndpoints);
+        this.rememberFieldCache(sourcePath, { mtime: revision.mtime, body, inputToken: bodyToken, semanticSignature: signature });
+        this.semanticFingerprints.set(sourcePath, signature);
+      });
       if (topologyChanged) semanticChanges += 1;
       else semanticNoops += 1;
-      publishFileCommit(topologyChanged);
-      if (!(await this.yieldToHost())) return { ok: false, cancelled: true, touchedPagePaths, semanticChanges, semanticNoops };
+      if (!(await this.yieldToHost())) return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
     }
 
     this.patchTouchedPagePaths = null;
-    return { ok: this.isCurrent(), cancelled: !this.isCurrent(), touchedPagePaths, semanticChanges, semanticNoops };
+    return { ok: this.isCurrent(), cancelled: !this.isCurrent(), rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
   }
 
-  private recordDiscoveredFields(
+  private consumeFieldNameRecord(
     state: GraphState,
-    meta: ParsedFileMetadata,
+    record: SourceFieldNameFact,
     discoveryMode: "rebuild" | "patch",
-  ): void {
-    const recordField = (name: string): void => {
-      const normalized = normalizeFieldName(name);
-      if (!normalized) return;
-      const current = state.discoveredFields.get(normalized);
-      if (discoveryMode === "patch") {
-        // Incremental edits must not inflate counts every time the same note is saved. Exact counts
-        // are rebuilt on an authoritative full build; during patches we only discover new fields.
-        if (!current) state.discoveredFields.set(normalized, { name: name.trim(), count: 1 });
-        return;
-      }
-      state.discoveredFields.set(normalized, { name: current?.name ?? name.trim(), count: (current?.count ?? 0) + 1 });
-    };
-    Object.keys(meta.frontmatter).forEach(recordField);
-    meta.inlineFieldOccurrences.forEach((occurrence) => recordField(occurrence.name));
-  }
-
-  private async recordDiscoveredFieldsCooperative(
-    state: GraphState,
-    meta: ParsedFileMetadata,
-  ): Promise<boolean> {
-    const recordField = (name: string): void => {
-      const normalized = normalizeFieldName(name);
-      if (!normalized) return;
-      const current = state.discoveredFields.get(normalized);
-      if (!current) state.discoveredFields.set(normalized, { name: name.trim(), count: 1 });
-    };
-    let processed = 0;
-    for (const name of Object.keys(meta.frontmatter)) {
-      recordField(name);
-      processed += 1;
-      if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
-    }
-    for (const occurrence of meta.inlineFieldOccurrences) {
-      recordField(occurrence.name);
-      processed += 1;
-      if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
-    }
-    return this.isCurrent();
-  }
-
-  /** Incremental metadata application runs against a private patch overlay. Every potentially large
-   * collection is checkpointed so parsing a note in a worker cannot simply move the UI stall into
-   * URL/tag/evidence construction on the main thread. */
-  private async applyMetadataPatchCooperative(
-    state: GraphState,
-    page: GraphPage,
-    file: TFile,
-    meta: ParsedFileMetadata,
-  ): Promise<boolean> {
-    page.aliases = meta.aliases;
-    page.tags = meta.tags;
-    if (!(await this.recordDiscoveredFieldsCooperative(state, meta))) return false;
-
-    const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
-    const frontmatterNoteType = getNormalizedFrontmatterValues(meta, noteTypeField)[0];
-    const inlineNoteType = getNormalizedInlineFieldValues(meta, noteTypeField)[0];
-    const unwrapNoteType = (value: unknown): string | null => {
-      const first: unknown = Array.isArray(value) ? (value as unknown[])[0] : value;
-      if (typeof first !== "string" && typeof first !== "number") return null;
-      let text = String(first).trim();
-      const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/);
-      if (wiki) text = wiki[1].trim();
-      text = text.replace(/^#/, "").trim();
-      return text || null;
-    };
-    page.noteType = unwrapNoteType(frontmatterNoteType ?? inlineNoteType);
-
-    const styleTags = page.tags.filter((tag) => this.plugin.settings.tagStyleList.some((prefix) => tag.startsWith(prefix)));
-    const primaryField = normalizeFieldName(this.plugin.settings.primaryTagField);
-    const primaryValues = getNormalizedFieldValues(meta, primaryField)
-      .flatMap((v) => typeof v === "string" ? v.match(/#[^\s\])$"'\\]+/g) ?? [] : []);
-    page.primaryStyleTag = primaryValues.find((tag) => styleTags.some((s) => s.startsWith(tag))) ?? styleTags[0] ?? null;
-    page.styleTags = styleTags.filter((tag) => tag !== page.primaryStyleTag);
-
-    let processed = 0;
-    for (const tag of page.tags) {
-      const tagPage = this.ensureTagPath(state, tag);
-      if (tagPage) this.addEvidencePair(state, tagPage, page, "child", RelationType.DEFINED, LinkDirection.TO, { sourceKind: "tag-tree", definition: "tag-tree" });
-      processed += 1;
-      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
-    }
-
-    const hierarchy = this.plugin.settings.hierarchy;
-    const groups: Array<[string[], EvidenceRole]> = [
-      [hierarchy.hidden, "hidden"], [hierarchy.parents, "parent"], [hierarchy.children, "child"],
-      [hierarchy.leftFriends, "left"], [hierarchy.rightFriends, "right"],
-      [hierarchy.previous, "previous"], [hierarchy.next, "next"],
-    ];
-    for (const [fieldNames, role] of groups) {
-      for (const originalName of fieldNames) {
-        const field = normalizeFieldName(originalName);
-        for (const value of getNormalizedFrontmatterValues(meta, field)) {
-          for (const path of extractLinksFromValue(this.app, value, file)) {
-            const target = this.ensureTarget(state, path);
-            this.addOntologyEvidence(state, page, target, role, {
-              sourceKind: "frontmatter-ontology", definition: field, fieldName: originalName,
-              rawValue: typeof value === "string" ? value : JSON.stringify(value),
-            });
-            processed += 1;
-            if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
-          }
-        }
-        for (const occurrence of getInlineFieldOccurrences(meta, field)) {
-          for (const path of extractLinksFromValue(this.app, occurrence.value, file)) {
-            const target = this.ensureTarget(state, path);
-            this.addOntologyEvidence(state, page, target, role, {
-              sourceKind: "inline-ontology", definition: field, fieldName: occurrence.name, rawValue: occurrence.value,
-              line: occurrence.line, start: occurrence.start, end: occurrence.end,
-            });
-            processed += 1;
-            if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
-          }
-        }
-      }
-    }
-
-    this.addDatePropertyEvidence(state, page, meta);
-    if (!(await this.yieldToHost())) return false;
-    for (const reference of meta.urls) {
-      const urlPage = this.ensureUrl(state, reference.url, reference.label || reference.url);
-      this.addInferredParentChild(state, page, urlPage, "body-url", reference.line ? { line: reference.line } : undefined);
-      try {
-        const origin = new URL(reference.url).origin;
-        const originPage = this.ensureUrl(state, origin, origin);
-        const hasOriginEvidence = state.evidence.between(originPage.path, urlPage.path).some((item) => item.sourceKind === "url-origin");
-        if (!hasOriginEvidence) this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
-      } catch { /* malformed URL - keep the raw URL node */ }
-      processed += 1;
-      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
-    }
-
-    this.suppressPresentationOnlyImageLinks(state, page, file, meta);
-    return this.yieldToHost();
-  }
-
-  private applyMetadata(
-    state: GraphState,
-    page: GraphPage,
-    file: TFile,
-    meta: ParsedFileMetadata,
-    discoveryMode: "rebuild" | "patch" = "rebuild",
-  ): void {
-    page.aliases = meta.aliases;
-    page.tags = meta.tags;
-    this.recordDiscoveredFields(state, meta, discoveryMode);
-
-    const noteTypeField = normalizeFieldName(this.plugin.settings.noteTypeField);
-    const frontmatterNoteType = getNormalizedFrontmatterValues(meta, noteTypeField)[0];
-    const inlineNoteType = getNormalizedInlineFieldValues(meta, noteTypeField)[0];
-    const unwrapNoteType = (value: unknown): string | null => {
-      const first: unknown = Array.isArray(value) ? (value as unknown[])[0] : value;
-      if (typeof first !== "string" && typeof first !== "number") return null;
-      let text = String(first).trim();
-      const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/);
-      if (wiki) text = wiki[1].trim();
-      text = text.replace(/^#/, "").trim();
-      return text || null;
-    };
-    // Frontmatter wins when both forms are present, but classic Dataview body fields remain valid.
-    page.noteType = unwrapNoteType(frontmatterNoteType ?? inlineNoteType);
-
-    const styleTags = page.tags.filter((tag) => this.plugin.settings.tagStyleList.some((prefix) => tag.startsWith(prefix)));
-    const primaryField = normalizeFieldName(this.plugin.settings.primaryTagField);
-    const primaryValues = getNormalizedFieldValues(meta, primaryField)
-      .flatMap((v) => typeof v === "string" ? v.match(/#[^\s\])$"'\\]+/g) ?? [] : []);
-    page.primaryStyleTag = primaryValues.find((tag) => styleTags.some((s) => s.startsWith(tag))) ?? styleTags[0] ?? null;
-    page.styleTags = styleTags.filter((tag) => tag !== page.primaryStyleTag);
-
+  ): boolean {
+    const normalized = record.normalizedFieldName;
+    if (!normalized) return true;
+    const current = state.discoveredFields.get(normalized);
     if (discoveryMode === "patch") {
-      for (const tag of page.tags) {
-        const tagPage = this.ensureTagPath(state, tag);
-        if (tagPage) this.addEvidencePair(state, tagPage, page, "child", RelationType.DEFINED, LinkDirection.TO, { sourceKind: "tag-tree", definition: "tag-tree" });
-      }
+      // Incremental edits must not inflate counts every time the same note is saved. Exact counts
+      // are rebuilt on an authoritative full build; during patches we only discover new fields.
+      if (!current) state.discoveredFields.set(normalized, { name: record.fieldName.trim(), count: 1 });
+      return true;
     }
-
-    const hierarchy = this.plugin.settings.hierarchy;
-    const groups: Array<[string[], EvidenceRole]> = [
-      [hierarchy.hidden, "hidden"],
-      [hierarchy.parents, "parent"],
-      [hierarchy.children, "child"],
-      [hierarchy.leftFriends, "left"],
-      [hierarchy.rightFriends, "right"],
-      [hierarchy.previous, "previous"],
-      [hierarchy.next, "next"],
-    ];
-
-    // Record all ontology evidence. Precedence belongs to the resolver, not the collector.
-    for (const [fieldNames, role] of groups) {
-      for (const originalName of fieldNames) {
-        const field = normalizeFieldName(originalName);
-        for (const value of getNormalizedFrontmatterValues(meta, field)) {
-          for (const path of extractLinksFromValue(this.app, value, file)) {
-            const target = this.ensureTarget(state, path);
-            this.addOntologyEvidence(state, page, target, role, {
-              sourceKind: "frontmatter-ontology",
-              definition: field,
-              fieldName: originalName,
-              rawValue: typeof value === "string" ? value : JSON.stringify(value),
-            });
-          }
-        }
-
-        for (const occurrence of getInlineFieldOccurrences(meta, field)) {
-          for (const path of extractLinksFromValue(this.app, occurrence.value, file)) {
-            const target = this.ensureTarget(state, path);
-            this.addOntologyEvidence(state, page, target, role, {
-              sourceKind: "inline-ontology",
-              definition: field,
-              fieldName: occurrence.name,
-              rawValue: occurrence.value,
-              line: occurrence.line,
-              start: occurrence.start,
-              end: occurrence.end,
-            });
-          }
-        }
-      }
-    }
-
-    this.addDatePropertyEvidence(state, page, meta);
-
-    for (const reference of meta.urls) {
-      const urlPage = this.ensureUrl(state, reference.url, reference.label || reference.url);
-      this.addInferredParentChild(state, page, urlPage, "body-url", reference.line ? { line: reference.line } : undefined);
-      try {
-        const origin = new URL(reference.url).origin;
-        const originPage = this.ensureUrl(state, origin, origin);
-        const hasOriginEvidence = state.evidence.between(originPage.path, urlPage.path)
-          .some((item) => item.sourceKind === "url-origin");
-        if (!hasOriginEvidence) {
-          this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
-        }
-      } catch { /* malformed URL - keep the raw URL node */ }
-    }
-
-    this.suppressPresentationOnlyImageLinks(state, page, file, meta);
+    state.discoveredFields.set(normalized, {
+      name: current?.name ?? record.fieldName.trim(),
+      count: (current?.count ?? 0) + 1,
+    });
+    return true;
   }
 
-  /**
-   * `thumbnail` / `node-image` are presentation metadata, not graph semantics. Obsidian's
-   * resolvedLinks includes links stored in those fields, so without this small reconciliation an
-   * image used only to decorate a thought also appears as an inferred child. Compare Obsidian's
-   * occurrence count with the links K-Plex can account for inside the two visual fields: only when
-   * every occurrence is presentation-only do we remove the generic inferred-link declaration.
-   * A second prose/ontology link therefore keeps the attachment visible in the Plex as expected.
-   */
-  private suppressPresentationOnlyImageLinks(
+  private async applyFieldNameSourceFacts(
     state: GraphState,
-    page: GraphPage,
     file: TFile,
     meta: ParsedFileMetadata,
-  ): void {
-    const fields = [this.plugin.settings.thumbnailProperty, this.plugin.settings.nodeImageProperty]
-      .map(normalizeFieldName)
-      .filter(Boolean);
-    if (!fields.length) return;
-
-    const visualCounts = new Map<string, number>();
-    for (const field of new Set(fields)) {
-      const values = [
-        ...getNormalizedFrontmatterValues(meta, field),
-        ...getNormalizedInlineFieldValues(meta, field),
-      ];
-      for (const value of values) {
-        for (const targetPath of extractLinksFromValue(this.app, value, file)) {
-          visualCounts.set(targetPath, (visualCounts.get(targetPath) ?? 0) + 1);
-        }
+  ): Promise<boolean> {
+    const collector = new ObsidianMetadataSourceCollector(
+      this.metadataSourceHost,
+      { isCurrent: this.isCurrent, checkpoint: () => this.yieldToHost(), sourceRevision: () => this.plugin.getIndexSourceRevision() },
+      file,
+      meta,
+      this.metadataSourceSettings,
+      "field-names",
+    );
+    let cursor = beginSourceRead(collector.boundary);
+    const consume = async (batch: NormalizedSourceBatch): Promise<boolean> => {
+      const accepted = acceptSourceBatch(cursor, batch);
+      if (!accepted.accepted) return false;
+      for (const record of batch.records) {
+        if (record.kind !== "field-name" || record.source.semanticPath !== file.path) return false;
+        if (!this.consumeFieldNameRecord(state, record, "patch")) return false;
       }
-    }
-    if (!visualCounts.size) return;
-
-    const resolved = this.app.metadataCache.resolvedLinks[file.path] ?? {};
-    for (const [targetPath, visualCount] of visualCounts) {
-      const totalCount = resolved[targetPath] ?? 0;
-      if (totalCount <= 0 || totalCount > visualCount) continue;
-      state.evidence.removeDeclarationsTouching(file.path, (item) =>
-        item.declaredByPath === page.path &&
-        item.declaredTargetPath === targetPath &&
-        item.sourceKind === "obsidian-link",
-      );
-    }
+      cursor = accepted.cursor;
+      return this.isCurrent();
+    };
+    if (!(await collector.collectBatches(consume))) return false;
+    return collector.isBoundaryCurrent(cursor.boundary)
+      && sourceReadCanPublish(cursor, collector.boundary)
+      && this.isCurrent();
   }
 
-  private addOntologyEvidence(state: GraphState, source: GraphPage, target: GraphPage, role: EvidenceRole, provenance: EvidenceProvenance): void {
-    if (role === "hidden") {
-      if (target.path !== this.plugin.settings.excalibrainFilepath && target.path !== source.path) state.evidence.addHidden(source.path, target.path, provenance);
-      return;
-    }
-    this.addEvidencePair(state, source, target, role, RelationType.DEFINED, LinkDirection.FROM, provenance);
+  /** Reuse closed source-local authority to distinguish shared nodes from orphans; null defers pruning without a global flush. */
+  private async retainSourceNode(page: GraphPage): Promise<boolean | null> {
+    if (!this.sourceAcquisition) return null;
+    const endpoint: SourceEntityRef = { id: nodeId(page.path), semanticPath: page.path,
+      kind: page.isTag ? "tag" : "url", state: "materialized" };
+    const runtime = this.patchCompilerRuntime();
+    const node = await this.sourceAcquisition.currentEndpointNode(endpoint,
+      { revision: "source-node-prune", settings: this.fullCompilerSettings(), isCurrent: this.isCurrent },
+      this.metadataSourceSettings, runtime);
+    if (node === null || !this.isCurrent()) return null;
+    if (!node) return false;
+    page.name = node.name;
+    return true;
   }
 
-  private ensureTagPath(state: GraphState, rawTag: string): GraphPage | null {
-    const parts = rawTag.replace(/^#/, "").split("/").map((part) => part.trim()).filter(Boolean);
-    let parent: GraphPage | null = null;
-    let leaf: GraphPage | null = null;
-    for (let index = 0; index < parts.length; index += 1) {
-      const tagPath = parts.slice(0, index + 1).join("/");
-      const path = `tag:${tagPath}`;
-      let page = state.pages.get(path);
-      if (!page) {
-        page = this.createPage({ path, name: this.plugin.settings.showFullTagName ? tagPath : parts[index], isTag: true });
-        this.addPage(state, page);
-      }
-      if (parent) {
-        const exists = state.evidence.between(parent.path, page.path).some((item) => item.sourceKind === "tag-tree");
-        if (!exists) {
-          this.addEvidencePair(state, parent, page, "child", RelationType.DEFINED, LinkDirection.FROM, { sourceKind: "tag-tree", definition: "tag-tree" });
-          if (this.patchTouchedPagePaths) {
-            this.resolvePatchEvidencePair(state, parent.path, page.path);
-            this.resolvePatchEvidencePair(state, page.path, parent.path);
-            this.patchTouchedPagePaths.add(parent.path);
-            this.patchTouchedPagePaths.add(page.path);
-          }
-        }
-      }
-      parent = page;
-      leaf = page;
-    }
-    return leaf;
-  }
-
-  /** Remove tag nodes made unreachable by an incremental tag edit. Only the edited tag's ancestor
-   * chain is visited, so enabling tag thoughts no longer turns every metadata change into a full build. */
-  private pruneEmptyTagNodes(state: GraphState, candidates: Iterable<string>, affected: Set<string>): void {
-    const pending = new Set([...candidates].filter((path) => path.startsWith("tag:")));
-    const ordered = () => [...pending].sort((a, b) => b.split("/").length - a.split("/").length || b.length - a.length);
-    for (;;) {
-      const paths = ordered();
-      if (!paths.length) break;
-      pending.clear();
-      let removedAny = false;
-      for (const path of paths) {
-        const page = state.pages.get(path);
-        if (!page?.isTag) continue;
-        const local = state.evidence.declarationsTouching(path);
-        const hasOutgoing = local.some((item) => item.sourceKind === "tag-tree" && item.declaredByPath === path);
-        if (hasOutgoing) continue;
-        const parents = local
-          .filter((item) => item.sourceKind === "tag-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("tag:"))
-          .map((item) => item.declaredByPath);
-        state.evidence.removeDeclarationsTouching(path, (item) =>
-          item.sourceKind === "tag-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("tag:"));
-        for (const parentPath of parents) {
-          const parent = state.pages.get(parentPath);
-          parent?.neighbours.delete(path);
-          affected.add(parentPath);
-          pending.add(parentPath);
-        }
-        for (const targetPath of page.neighbours.keys()) state.pages.get(targetPath)?.neighbours.delete(path);
-        state.pages.delete(path);
-        state.lowercasePathMap.delete(path.toLowerCase());
-        affected.add(path);
-        removedAny = true;
-      }
-      if (!removedAny) break;
-    }
-  }
-
+  /** Prune old tag candidates only when neither staged evidence nor current source owners retain them. */
   private async pruneEmptyTagNodesCooperative(
     state: GraphState,
     candidates: Iterable<string>,
     affected: Set<string>,
+    sourceNodeBaseline = false,
   ): Promise<boolean> {
     const pending = new Set([...candidates].filter((path) => path.startsWith("tag:")));
     let processed = 0;
@@ -1392,6 +1856,11 @@ export class GraphBuilder {
         }
         const hasOutgoing = local.some((item) => item.sourceKind === "tag-tree" && item.declaredByPath === path);
         if (hasOutgoing) continue;
+        if (sourceNodeBaseline) {
+          const retained = await this.retainSourceNode(page);
+          if (retained === null) return false;
+          if (retained) { affected.add(path); continue; }
+        }
         const parents = local
           .filter((item) => item.sourceKind === "tag-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("tag:"))
           .map((item) => item.declaredByPath);
@@ -1419,110 +1888,17 @@ export class GraphBuilder {
     return this.isCurrent();
   }
 
-  /** URL-origin edges are derived from body URL references, not declarations owned by the origin
-   * node. Recompute only the URL nodes touched by one edited Markdown file to prevent duplicate
-   * declarations and stale derived relations from accumulating over long sessions. */
-  private refreshDerivedUrlOrigins(state: GraphState, candidatePaths: Iterable<string>, affected: Set<string>): void {
-    for (const urlPath of new Set(candidatePaths)) {
-      if (!/^https?:\/\//i.test(urlPath)) continue;
-      let origin: string;
-      try { origin = new URL(urlPath).origin; } catch { continue; }
-      if (origin === urlPath) continue;
-      const references = state.evidence.declarationsTouching(urlPath)
-        .filter((item) => item.sourceKind === "body-url" && item.declaredTargetPath === urlPath);
-      const existing = state.evidence.between(origin, urlPath).filter((item) => item.sourceKind === "url-origin");
-      if (!references.length) {
-        if (existing.length) state.evidence.removeDeclarationsTouching(urlPath, (item) => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath);
-      } else if (existing.length !== 1) {
-        state.evidence.removeDeclarationsTouching(urlPath, (item) => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath);
-        const urlPage = state.pages.get(urlPath);
-        const originPage = this.ensureUrl(state, origin, origin);
-        if (urlPage) this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
-      }
-      affected.add(urlPath);
-      affected.add(origin);
-      this.resolvePatchEvidencePair(state, origin, urlPath);
-      this.resolvePatchEvidencePair(state, urlPath, origin);
-    }
-  }
-
-  private async refreshDerivedUrlOriginsCooperative(
-    state: GraphState,
-    candidatePaths: Iterable<string>,
-    affected: Set<string>,
-  ): Promise<boolean> {
-    let processed = 0;
-    for (const urlPath of new Set(candidatePaths)) {
-      if (!/^https?:\/\//i.test(urlPath)) continue;
-      let origin: string;
-      try { origin = new URL(urlPath).origin; } catch { continue; }
-      if (origin === urlPath) continue;
-      let referenceCount = 0;
-      for (const item of state.evidence.declarationsTouchingIterator(urlPath)) {
-        if (item.sourceKind === "body-url" && item.declaredTargetPath === urlPath) referenceCount += 1;
-        processed += 1;
-        if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
-      }
-      const existing = state.evidence.between(origin, urlPath).filter((item) => item.sourceKind === "url-origin");
-      if (!referenceCount) {
-        if (existing.length) {
-          const removed = await state.evidence.removeDeclarationsTouchingCooperative(
-            urlPath,
-            (item) => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath,
-            () => this.yieldToHost(),
-          );
-          if (removed === null) return false;
-        }
-      } else if (existing.length !== 1) {
-        const removed = await state.evidence.removeDeclarationsTouchingCooperative(
-          urlPath,
-          (item) => item.sourceKind === "url-origin" && item.declaredTargetPath === urlPath,
-          () => this.yieldToHost(),
-        );
-        if (removed === null) return false;
-        const urlPage = state.pages.get(urlPath);
-        const originPage = this.ensureUrl(state, origin, origin);
-        if (urlPage) this.addEvidencePair(state, originPage, urlPage, "child", RelationType.INFERRED, LinkDirection.TO, { sourceKind: "url-origin", definition: "url-origin" });
-      }
-      affected.add(urlPath);
-      affected.add(origin);
-      this.resolvePatchEvidencePair(state, origin, urlPath);
-      this.resolvePatchEvidencePair(state, urlPath, origin);
-      processed += 1;
-      if ((processed & 31) === 0 && !(await this.yieldToHost())) return false;
-    }
-    return this.isCurrent();
-  }
-
-  /** Release URL nodes that became purely derived and no longer have any declaration touching
-   * them. Shared origins survive as long as any URL/referrer still owns evidence. */
-  private pruneUnusedUrlNodes(state: GraphState, candidatePaths: Iterable<string>, affected: Set<string>): void {
-    const candidates = new Set<string>();
-    for (const urlPath of candidatePaths) {
-      if (!/^https?:\/\//i.test(urlPath)) continue;
-      candidates.add(urlPath);
-      try { candidates.add(new URL(urlPath).origin); } catch { /* malformed external target */ }
-    }
-    // Child URL pages first, then origins. That lets an origin become removable after its final
-    // derived child is released in the same patch.
-    const ordered = [...candidates].sort((a, b) => b.length - a.length);
-    for (const path of ordered) {
-      const page = state.pages.get(path);
-      if (!page?.url || page.file || state.evidence.declarationsTouching(path).length > 0) continue;
-      for (const neighborPath of page.neighbours.keys()) {
-        state.pages.get(neighborPath)?.neighbours.delete(path);
-        affected.add(neighborPath);
-      }
-      state.pages.delete(path);
-      state.lowercasePathMap.delete(path.toLowerCase());
-      affected.add(path);
-    }
-  }
-
+  /**
+   * Remove old URL candidates after the same canonical shared-lifetime existence rule. Independent
+   * URL-owner staging opts into lazy cooperative existence, avoiding whole-degree key unions.
+   * Ordinary Markdown/source-baseline pruning retains its existing ordered-iterator fallback.
+   */
   private async pruneUnusedUrlNodesCooperative(
     state: GraphState,
     candidatePaths: Iterable<string>,
     affected: Set<string>,
+    sourceNodeBaseline = false,
+    lazyExistence = false,
   ): Promise<boolean> {
     const children = new Set<string>();
     const origins = new Set<string>();
@@ -1541,11 +1917,21 @@ export class GraphBuilder {
       if ((processed & 127) === 0 && !(await this.yieldToHost())) return false;
     }
 
+    /** A cancelled existence scan cannot be mistaken for an unused page or leave private preparation accepted. */
     const removeIfUnused = async (path: string): Promise<boolean> => {
       const page = state.pages.get(path);
       let hasEvidence = false;
       if (page?.url && !page.file) {
-        hasEvidence = !state.evidence.declarationsTouchingIterator(path).next().done;
+        if (lazyExistence) {
+          const found = await state.evidence.hasDeclarationsTouchingCooperative(path, () => this.yieldToHost());
+          if (found === null) return false;
+          hasEvidence = found;
+        } else hasEvidence = !state.evidence.declarationsTouchingIterator(path).next().done;
+      }
+      if (page?.url && !page.file && !hasEvidence && sourceNodeBaseline) {
+        const retained = await this.retainSourceNode(page);
+        if (retained === null) return false;
+        if (retained) { hasEvidence = true; affected.add(path); }
       }
       if (page?.url && !page.file && !hasEvidence) {
         for (const neighborPath of page.neighbours.keys()) {
@@ -1568,113 +1954,4 @@ export class GraphBuilder {
     return this.isCurrent();
   }
 
-  private addDatePropertyEvidence(state: GraphState, source: GraphPage, meta: ParsedFileMetadata): void {
-    const daily = this.dailyNotesSettings();
-    if (!daily) return;
-    for (const [fieldName, rawValue] of Object.entries(meta.frontmatter)) {
-      if (!this.isDateProperty(fieldName)) continue;
-      for (const value of flatten(rawValue)) {
-        if (typeof value !== "string") continue;
-        const rendered = formatDailyDate(value.trim(), daily.format);
-        if (!rendered) continue;
-        const relative = normalizePath([daily.folder, rendered].filter(Boolean).join("/"));
-        const targetPath = relative.toLowerCase().endsWith(".md") ? relative : `${relative}.md`;
-        const target = this.ensureVirtualOrExisting(state, targetPath);
-        this.addEvidencePair(state, source, target, this.inferredRole(), RelationType.INFERRED, LinkDirection.FROM, {
-          sourceKind: "date-property",
-          definition: fieldName,
-          fieldName,
-          rawValue: value,
-        });
-      }
-    }
-  }
-
-  private isDateProperty(fieldName: string): boolean {
-    const app = this.app as App & {
-      metadataTypeManager?: {
-        getPropertyInfo?: (name: string) => { widget?: string } | null;
-        getAssignedWidget?: (name: string) => string | null;
-      };
-    };
-    const info = app.metadataTypeManager?.getPropertyInfo?.(fieldName);
-    const widget = info?.widget ?? app.metadataTypeManager?.getAssignedWidget?.(fieldName);
-    return widget === "date";
-  }
-
-  private dailyNotesSettings(): { folder: string; format: string } | null {
-    const app = this.app as App & {
-      internalPlugins?: {
-        getPluginById?: (id: string) => unknown;
-        plugins?: Record<string, unknown>;
-      };
-    };
-    const registry = app.internalPlugins;
-    const candidate = registry?.getPluginById?.("daily-notes") ?? registry?.plugins?.["daily-notes"];
-    if (!candidate || typeof candidate !== "object") return null;
-    const record = candidate as Record<string, unknown>;
-    if (record.enabled === false) return null;
-    const instance = record.instance && typeof record.instance === "object" ? record.instance as Record<string, unknown> : record;
-    const options = instance.options && typeof instance.options === "object" ? instance.options as Record<string, unknown> : instance;
-    const folder = typeof options.folder === "string" ? options.folder : "";
-    const format = typeof options.format === "string" && options.format.trim() ? options.format : "YYYY-MM-DD";
-    return { folder: normalizePath(folder), format };
-  }
-
-  private ensureVirtual(state: GraphState, path: string): GraphPage {
-    const existing = getGraphPage(state, path);
-    if (existing) return existing;
-    const name = path.split("/").pop()?.replace(/\.md$/i, "") || path;
-    const page = this.createPage({ path, name });
-    this.addPage(state, page);
-    return page;
-  }
-
-  private ensureVirtualOrExisting(state: GraphState, path: string): GraphPage {
-    return getGraphPage(state, path) ?? this.ensureVirtual(state, path);
-  }
-
-  private ensureUrl(state: GraphState, url: string, alias?: string): GraphPage {
-    const existing = state.pages.get(url);
-    if (existing) {
-      if (alias && existing.name === existing.url) existing.name = alias;
-      return existing;
-    }
-    const page = this.createPage({ path: url, name: alias || url, url });
-    this.addPage(state, page);
-    return page;
-  }
-
-  private ensureTarget(state: GraphState, path: string): GraphPage {
-    if (/^https?:\/\//i.test(path)) return this.ensureUrl(state, path);
-    return getGraphPage(state, path) ?? this.ensureVirtual(state, path);
-  }
-
-  private inferredRole(): Exclude<EvidenceRole, "hidden"> {
-    if (this.plugin.settings.inferAllLinksAsFriends) return "left";
-    return this.plugin.settings.inverseInfer ? "parent" : "child";
-  }
-
-  private addInferredParentChild(
-    state: GraphState,
-    source: GraphPage,
-    target: GraphPage,
-    sourceKind: EvidenceSourceKind,
-    extra?: Omit<EvidenceProvenance, "sourceKind">,
-  ): void {
-    this.addEvidencePair(state, source, target, this.inferredRole(), RelationType.INFERRED, LinkDirection.FROM, { sourceKind, ...extra });
-  }
-
-  private addEvidencePair(
-    state: GraphState,
-    source: GraphPage,
-    target: GraphPage,
-    role: Exclude<EvidenceRole, "hidden">,
-    relationType: RelationType,
-    direction: LinkDirection,
-    provenance: EvidenceProvenance,
-  ): void {
-    if (source.path === target.path || target.path === this.plugin.settings.excalibrainFilepath) return;
-    state.evidence.addPair(source.path, target.path, role, relationType, direction, provenance);
-  }
 }

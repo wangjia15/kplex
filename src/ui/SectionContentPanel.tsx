@@ -9,6 +9,9 @@ import { MathText } from "./MathText";
 import { containsMath } from "./mathSegments";
 import { ObsidianIcon } from "./ObsidianIcon";
 import { ResizeHandle } from "./ResizeHandle";
+import { createObsidianTranslator } from "../adapters/obsidian/localization";
+
+const translate = createObsidianTranslator();
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -115,8 +118,8 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
       style={{ height: SECTION_PANEL.header }}
       aria-expanded={!panel.collapsed}
       aria-label={panel.collapsed
-        ? (figuresPanel ? "Show figures" : "Show section content")
-        : (figuresPanel ? "Hide figures" : "Hide section content")}
+        ? (figuresPanel ? translate("sections.panel.showFigures") : translate("sections.panel.showContent"))
+        : (figuresPanel ? translate("sections.panel.hideFigures") : translate("sections.panel.hideContent"))}
       onPointerDown={startDrag}
       onPointerMove={moveDrag}
       onPointerUp={endDrag}
@@ -134,7 +137,7 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
       type="button"
       className="kplex-section-panel-theme clickable-icon"
       style={{ height: SECTION_PANEL.header }}
-      aria-label="Reading theme"
+      aria-label={translate("sections.panel.readingTheme")}
       onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => event.stopPropagation()}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
@@ -148,7 +151,7 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
       type="button"
       className="kplex-section-panel-read clickable-icon"
       style={{ height: SECTION_PANEL.header }}
-      aria-label="Read panel aloud"
+      aria-label={translate("sections.panel.readAloud")}
       disabled={!speechText.trim()}
       onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => event.stopPropagation()}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {

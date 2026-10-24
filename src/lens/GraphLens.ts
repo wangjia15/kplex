@@ -1,15 +1,20 @@
-import type { GraphIndex } from "../index/GraphIndex";
+/**
+ * Legacy host composition for persisted Graph Lenses, sanitation and portable predicate compilation. Validation returns structured issues; UI consumers own names and error copy.
+ * Shared color sanitation preserves typed theme/palette references through portable lens layering.
+ */
 import type { GraphPage, LinkStyle, NodeStyle, StrokeStyle, FillStyle } from "../types";
+import { createLegacyEvidenceProvider, lensCandidateFromLegacy, type LegacyEvidenceSource } from "../adapters/obsidian/predicateContracts";
+import { matchesPortableLenses, portableLensStyle } from "../core/plex/lens";
+import { NODE_COLOR_FIELDS, LINK_COLOR_FIELDS, colorValuesEqual, sanitizeColorValue, type ColorValue } from "../core/contracts/colorValue";
 import {
   compileGraphPredicate,
   type CompiledGraphPredicate,
-  type GraphPredicateContext,
   type GraphPredicateEdgeContext,
   type GraphPredicateEngine,
   type GraphPredicateExpression,
   type GraphPredicateValue,
 } from "./GraphPredicate";
-import { tryParseGraphPredicateExpression } from "./GraphPredicateParser";
+import { tryParseGraphPredicateExpression, type PredicateParseIssue } from "./GraphPredicateParser";
 
 export type GraphLensScope = "node" | "edge" | "evidence";
 export type GraphLensMode = "include" | "exclude" | "style";
@@ -35,7 +40,14 @@ export type CompiledGraphLens = GraphLensDefinition & {
   predicate: CompiledGraphPredicate;
 };
 
-export type GraphLensCompileError = { id: string; name: string; error: string };
+export type GraphLensValidationIssue =
+  | { code: "parse"; issue: PredicateParseIssue }
+  | { code: "selector-reference-required" }
+  | { code: "unknown-edge-role"; value: string }
+  | { code: "unknown-edge-kind"; value: string }
+  | { code: "unknown-edge-direction"; value: string };
+
+export type GraphLensCompileError = { id: string; name: string; error: GraphLensValidationIssue };
 
 export type CompiledGraphLensSet = {
   lenses: CompiledGraphLens[];
@@ -77,8 +89,9 @@ function migrateEarlyCheckpointLensExpression(scope: GraphLensScope, source: str
   return `edge.definition.equals(${JSON.stringify(value)})`;
 }
 
-function graphLensSemanticError(expression: GraphPredicateExpression): string | null {
-  const inspect = (item: GraphPredicateExpression): string | null => {
+/** Validate enum-valued relationship selectors recursively and return the first structured issue without formatting English. */
+function graphLensSemanticError(expression: GraphPredicateExpression): GraphLensValidationIssue | null {
+  const inspect = (item: GraphPredicateExpression): GraphLensValidationIssue | null => {
     if (item.kind === "all" || item.kind === "any") {
       for (const child of item.expressions) {
         const error = inspect(child);
@@ -99,10 +112,10 @@ function graphLensSemanticError(expression: GraphPredicateExpression): string | 
     if (!property || value === null) return null;
     const normalized = value.trim().toLocaleLowerCase();
     if (property === "edge.role" && !VALID_EDGE_ROLES.has(normalized)) {
-      return `Unknown Plex position “${value}”. To match a relationship property such as working-on, use Relationship property in Simple view (edge.definition in Code view).`;
+      return { code: "unknown-edge-role", value };
     }
-    if (property === "edge.kind" && !VALID_EDGE_KINDS.has(normalized)) return `Unknown relationship kind “${value}”. Use defined or inferred.`;
-    if (property === "edge.direction" && !VALID_EDGE_DIRECTIONS.has(normalized)) return `Unknown relationship direction “${value}”. Use from, to, or both.`;
+    if (property === "edge.kind" && !VALID_EDGE_KINDS.has(normalized)) return { code: "unknown-edge-kind", value };
+    if (property === "edge.direction" && !VALID_EDGE_DIRECTIONS.has(normalized)) return { code: "unknown-edge-direction", value };
     return null;
   };
   return inspect(expression);
@@ -110,11 +123,8 @@ function graphLensSemanticError(expression: GraphPredicateExpression): string | 
 
 const VALID_STROKE_STYLES = new Set<StrokeStyle>(["solid", "dashed", "dotted"]);
 const VALID_FILL_STYLES = new Set<FillStyle>(["solid", "hachure", "cross-hatch"]);
-const HEX_COLOR = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
-
-function sanitizeColor(value: unknown): string | undefined {
-  return typeof value === "string" && HEX_COLOR.test(value.trim()) ? value.trim() : undefined;
-}
+/** Reuse the color contract; references remain identities and never become sampled RGB values. */
+function sanitizeColor(value: unknown): ColorValue | undefined { return sanitizeColorValue(value); }
 
 function sanitizeWidth(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -149,14 +159,15 @@ function sanitizeGraphLensStyle(value: unknown, scope: GraphLensScope): GraphLen
 
 export function defaultGraphLensStyle(scope: GraphLensScope): GraphLensStyle {
   return scope === "node"
-    ? { node: { borderColor: "#ffb300", strokeWidth: 2 } }
-    : { edge: { strokeColor: "#ffb300", strokeWidth: 2 } };
+    ? { node: { borderColor: {kind: "theme", variable: "--interactive-accent"}, strokeWidth: 2 } }
+    : { edge: { strokeColor: {kind: "theme", variable: "--interactive-accent"}, strokeWidth: 2 } };
 }
 
 export function createGraphLensId(): string {
   return `lens-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Validate persisted lens records and retain their stable keys/expressions; blank names stay data, with the display fallback owned by UI. */
 export function sanitizeGraphLensDefinitions(value: unknown): GraphLensDefinition[] {
   if (!Array.isArray(value)) return [];
   const output: GraphLensDefinition[] = [];
@@ -173,7 +184,7 @@ export function sanitizeGraphLensDefinitions(value: unknown): GraphLensDefinitio
     ids.add(id);
     output.push({
       id,
-      name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : "Untitled lens",
+      name: typeof raw.name === "string" ? raw.name.trim() : "",
       enabled: raw.enabled === true,
       scope,
       mode: raw.mode === "exclude" ? "exclude" : raw.mode === "style" ? "style" : "include",
@@ -184,6 +195,7 @@ export function sanitizeGraphLensDefinitions(value: unknown): GraphLensDefinitio
   return output;
 }
 
+/** Compile enabled lenses through the shared parser/evaluator and collect structured failures and lazy property dependencies. */
 export function compileGraphLensDefinitions(definitions: readonly GraphLensDefinition[]): CompiledGraphLensSet {
   const lenses: CompiledGraphLens[] = [];
   const errors: GraphLensCompileError[] = [];
@@ -193,12 +205,12 @@ export function compileGraphLensDefinitions(definitions: readonly GraphLensDefin
     if (!lens.enabled) continue;
     const parsed = tryParseGraphPredicateExpression(lens.expression);
     if (!parsed.expression) {
-      errors.push({ id: lens.id, name: lens.name, error: parsed.error ?? "Invalid expression" });
+      errors.push({ id: lens.id, name: lens.name, error: { code: "parse", issue: parsed.error ?? { code: "invalid-expression", position: 1 } } });
       continue;
     }
     const predicate = compileGraphPredicate(parsed.expression);
     if (predicate.dependencies.namespaces.size === 0) {
-      errors.push({ id: lens.id, name: lens.name, error: "The selector must reference a note, relationship, evidence, file, or this." });
+      errors.push({ id: lens.id, name: lens.name, error: { code: "selector-reference-required" } });
       continue;
     }
     const semanticError = graphLensSemanticError(parsed.expression);
@@ -213,11 +225,12 @@ export function compileGraphLensDefinitions(definitions: readonly GraphLensDefin
   return { lenses, errors, usesFrontmatter, noteProperties };
 }
 
-export function validateGraphLensExpression(expression: string): string | null {
+/** Validate syntax, selector dependencies and relationship enum values for editor feedback without producing UI text. */
+export function validateGraphLensExpression(expression: string): GraphLensValidationIssue | null {
   const parsed = tryParseGraphPredicateExpression(expression);
-  if (!parsed.expression) return parsed.error ?? "Invalid expression";
+  if (!parsed.expression) return { code: "parse", issue: parsed.error ?? { code: "invalid-expression", position: 1 } };
   const predicate = compileGraphPredicate(parsed.expression);
-  if (predicate.dependencies.namespaces.size === 0) return "The selector must reference a note, relationship, evidence, file, or this.";
+  if (predicate.dependencies.namespaces.size === 0) return { code: "selector-reference-required" };
   return graphLensSemanticError(parsed.expression);
 }
 
@@ -228,96 +241,66 @@ export type GraphLensCandidate = {
   edge?: GraphPredicateEdgeContext;
 };
 
-function matchesEvidenceLens(
-  engine: GraphPredicateEngine,
-  index: GraphIndex,
-  lens: CompiledGraphLens,
-  candidate: GraphLensCandidate,
-): boolean {
-  const center = candidate.center;
-  const sourcePath = candidate.edge?.sourcePath ?? center?.path;
-  const targetPath = candidate.edge?.targetPath ?? candidate.page.path;
-  if (!sourcePath || sourcePath === targetPath) return false;
-  const explanation = index.explainRelationship(sourcePath, targetPath);
-  if (!explanation) return false;
-  return explanation.decisions.some((decision) => {
-    const evidence = {
-      ...decision.evidence,
-      active: decision.active,
-      suppressionReason: decision.suppressionReason,
-    };
-    const context: GraphPredicateContext = {
-      node: { page: candidate.page, label: candidate.label },
-      center,
-      edge: candidate.edge,
-      evidence,
-    };
-    return engine.matches(lens.predicate, context);
-  });
+/** Include lenses union, excludes subtract; evaluation is delegated to the host-free core. */
+export function matchesGraphLenses(engine: GraphPredicateEngine, index: LegacyEvidenceSource, lensSet: CompiledGraphLensSet, candidate: GraphLensCandidate): boolean {
+  if (!lensSet.lenses.some((lens) => lens.mode === "include" || lens.mode === "exclude")) return true;
+  return matchesPortableLenses(engine.portable, createLegacyEvidenceProvider(index), lensSet.lenses, lensCandidateFromLegacy(candidate));
 }
-
-function matchesLens(
-  engine: GraphPredicateEngine,
-  index: GraphIndex,
-  lens: CompiledGraphLens,
-  candidate: GraphLensCandidate,
-): boolean {
-  if (lens.scope === "evidence") return matchesEvidenceLens(engine, index, lens, candidate);
-  const context: GraphPredicateContext = {
-    node: { page: candidate.page, label: candidate.label },
-    center: candidate.center,
-    edge: candidate.edge,
-  };
-  return engine.matches(lens.predicate, context);
-}
-
-/**
- * Active include lenses are OR'ed (union); active exclude lenses subtract from that result.
- * With no include lens the whole currently materialized Plex is the baseline. This function never
- * discovers or traverses additional graph depth: it only decides whether an already-visible
- * candidate survives the lens layer.
- */
-export function matchesGraphLenses(
-  engine: GraphPredicateEngine,
-  index: GraphIndex,
-  lensSet: CompiledGraphLensSet,
-  candidate: GraphLensCandidate,
-): boolean {
-  if (!lensSet.lenses.length) return true;
-  const includes = lensSet.lenses.filter((lens) => lens.mode === "include");
-  const excludes = lensSet.lenses.filter((lens) => lens.mode === "exclude");
-  const included = includes.length === 0 || includes.some((lens) => matchesLens(engine, index, lens, candidate));
-  if (!included) return false;
-  return !excludes.some((lens) => matchesLens(engine, index, lens, candidate));
-}
-
 
 /** Merge matching style lenses in list order. Later lenses override earlier style fields. */
-export function graphLensNodeStyle(
-  engine: GraphPredicateEngine,
-  index: GraphIndex,
-  lensSet: CompiledGraphLensSet,
-  candidate: GraphLensCandidate,
-): GraphLensNodeStyle {
-  const style: GraphLensNodeStyle = {};
-  for (const lens of lensSet.lenses) {
-    if (lens.mode !== "style" || lens.scope !== "node" || !lens.style?.node) continue;
-    if (matchesLens(engine, index, lens, candidate)) Object.assign(style, lens.style.node);
-  }
-  return style;
+export function graphLensNodeStyle(engine: GraphPredicateEngine, index: LegacyEvidenceSource, lensSet: CompiledGraphLensSet, candidate: GraphLensCandidate): GraphLensNodeStyle {
+  if (!lensSet.lenses.some((lens) => lens.mode === "style" && lens.scope === "node" && lens.style?.node)) return {};
+  return portableLensStyle(engine.portable, createLegacyEvidenceProvider(index), lensSet.lenses, lensCandidateFromLegacy(candidate), "node");
 }
 
 /** Edge and evidence style lenses both decorate the resolved visible relationship. */
-export function graphLensEdgeStyle(
-  engine: GraphPredicateEngine,
-  index: GraphIndex,
-  lensSet: CompiledGraphLensSet,
-  candidate: GraphLensCandidate,
-): GraphLensEdgeStyle {
-  const style: GraphLensEdgeStyle = {};
-  for (const lens of lensSet.lenses) {
-    if (lens.mode !== "style" || lens.scope === "node" || !lens.style?.edge) continue;
-    if (matchesLens(engine, index, lens, candidate)) Object.assign(style, lens.style.edge);
+export function graphLensEdgeStyle(engine: GraphPredicateEngine, index: LegacyEvidenceSource, lensSet: CompiledGraphLensSet, candidate: GraphLensCandidate): GraphLensEdgeStyle {
+  if (!lensSet.lenses.some((lens) => lens.mode === "style" && lens.scope !== "node" && lens.style?.edge)) return {};
+  return portableLensStyle(engine.portable, createLegacyEvidenceProvider(index), lensSet.lenses, lensCandidateFromLegacy(candidate), "edge");
+}
+
+/** Merge one detached editor action against the latest queued definitions without resurrecting stale colors. */
+export function mergeGraphLensDefinitions(initial: readonly GraphLensDefinition[], edited: readonly GraphLensDefinition[], latest: readonly GraphLensDefinition[]): GraphLensDefinition[] {
+  const before = new Map(initial.map(lens => [lens.id, lens])), after = new Map(edited.map(lens => [lens.id, lens]));
+  const current = new Map(latest.map(lens => [lens.id, lens]));
+  for (const opening of initial) if (!after.has(opening.id)) current.delete(opening.id);
+  for (const candidate of edited) {
+    const opening = before.get(candidate.id), live = current.get(candidate.id);
+    if (!opening) {if (live) throw new Error("Lens identity already exists"); current.set(candidate.id, structuredClone(candidate)); continue;}
+    if (JSON.stringify(opening) === JSON.stringify(candidate)) continue;
+    if (!live) throw new Error("Edited lens no longer exists");
+    const next = {...live};
+    for (const field of ["name", "enabled", "scope", "mode", "expression"] as const)
+      if (opening[field] !== candidate[field]) Object.assign(next, {[field]: candidate[field]});
+    if (JSON.stringify(opening.style) !== JSON.stringify(candidate.style)) {
+      const style = {...live.style};
+      for (const target of ["node", "edge"] as const) {
+        const first = opening.style?.[target], proposed = candidate.style?.[target];
+        if (JSON.stringify(first) === JSON.stringify(proposed)) continue;
+        if (proposed === undefined) {delete style[target]; continue;}
+        const layer = {...live.style?.[target]};
+        const fields = target === "node" ? [...NODE_COLOR_FIELDS, "fillStyle", "strokeWidth", "strokeStyle"]
+          : [...LINK_COLOR_FIELDS, "strokeWidth", "strokeStyle", "showLabel"];
+        for (const field of fields) {
+          const oldValue: unknown = first && Reflect.get(first, field), newValue: unknown = Reflect.get(proposed, field);
+          const unchanged = (target === "node" ? NODE_COLOR_FIELDS : LINK_COLOR_FIELDS).some(color => color === field)
+            ? colorValuesEqual(oldValue, newValue) : oldValue === newValue;
+          if (unchanged) continue;
+          if (newValue === undefined) Reflect.deleteProperty(layer, field); else Object.assign(layer, {[field]: newValue});
+        }
+        Object.assign(style, {[target]: layer});
+      }
+      next.style = Object.keys(style).length ? style : undefined;
+    }
+    current.set(candidate.id, next);
   }
-  return style;
+  const result = latest.filter(lens => current.has(lens.id)).map(lens => current.get(lens.id)!);
+  for (const candidate of edited) if (!latest.some(lens => lens.id === candidate.id)) {const added = current.get(candidate.id); if (added) result.push(added);}
+  const oldOrder = initial.filter(lens => after.has(lens.id)).map(lens => lens.id);
+  const newOrder = edited.filter(lens => before.has(lens.id) && current.has(lens.id)).map(lens => lens.id);
+  if (JSON.stringify(oldOrder) !== JSON.stringify(newOrder)) {
+    const ordered = newOrder.map(id => current.get(id)!); let position = 0;
+    return result.map(lens => newOrder.includes(lens.id) ? ordered[position++] : lens);
+  }
+  return result;
 }

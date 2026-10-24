@@ -3,7 +3,7 @@
 // direction and abstract saving. Obsidian is a small in-memory fake; HTTP is fixture-backed.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,14 +20,30 @@ function walk(dir) {
   });
 }
 
-for (const sourcePath of [...walk(join(root, "src/paper")).filter((path) => path.endsWith(".ts")), join(root, "src/index/fieldParser.ts")]) {
+// Compile the paper tree plus the transitive closure of its relative imports so upstream
+// refactors of shared modules keep this fixture self-contained. The English catalog backs the
+// translator stub with production copy.
+const seedPaths = [...walk(join(root, "src/paper")).filter((path) => path.endsWith(".ts")), join(root, "src/index/fieldParser.ts"), join(root, "src/lang/en.ts")];
+const pending = [...seedPaths];
+const copied = new Set();
+while (pending.length) {
+  const sourcePath = pending.pop();
+  if (copied.has(sourcePath)) continue;
+  copied.add(sourcePath);
   const outputPath = join(temp, relative(root, sourcePath).replace(/\.ts$/, ".js"));
   mkdirSync(dirname(outputPath), { recursive: true });
-  const result = ts.transpileModule(readFileSync(sourcePath, "utf8"), {
+  const source = readFileSync(sourcePath, "utf8");
+  const result = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
     fileName: sourcePath,
   });
   writeFileSync(outputPath, result.outputText);
+  for (const match of source.matchAll(/from\s+"(\.[^"]+)"/g)) {
+    for (const suffix of [".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+      const candidate = join(sourcePath, "..", match[1] + suffix);
+      if (existsSync(candidate)) pending.push(candidate);
+    }
+  }
 }
 
 const obsidianDir = join(temp, "node_modules/obsidian");
@@ -54,6 +70,7 @@ globalThis.window = globalThis;
 
 const { TFile, notices } = require(join(obsidianDir, "index.js"));
 const { PaperReadingController } = require(join(temp, "src/paper/obsidian/PaperReadingController.js"));
+const { englishCatalog } = require(join(temp, "src/lang/en.js"));
 
 // ---------------------------------------------------------------------------------------------
 // Fixtures: an S2 record for the center paper, its references and citing papers.
@@ -172,6 +189,11 @@ const plugin = {
     const file = addFile(`${folder}/${stem}.md`, fm, body);
     created.push({ path: file.path, body, fm });
     return file;
+  },
+  translator: (key, params = {}) => {
+    const entry = englishCatalog[key];
+    const message = entry?.plural ? entry.plural.other : entry?.message ?? key;
+    return message.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ""));
   },
 };
 

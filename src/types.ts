@@ -1,19 +1,17 @@
+/**
+ * Legacy host graph and Plex presentation contracts shared by index binding and rendering. Semantic
+ * flags delegate to the portable graph owner; host file references and display facets stay here.
+ * Gate coverage may be partial: omitted completeness preserves complete callers, while false marks
+ * available counts as lower bounds without granting relationship authority.
+ */
 import type { TFile } from "obsidian";
+import type { ColorValue } from "./core/contracts/colorValue";
+import { LinkDirection, RelationType, type Role, type RelationshipRole, type SemanticRelation } from "./core/graph/relations";
 
-export enum RelationType {
-  DEFINED = 1,
-  INFERRED = 2
-}
+export { LinkDirection, RelationType };
+export type { Role, RelationshipRole };
 
-export enum LinkDirection {
-  TO = 1,
-  FROM = 2,
-  BOTH = 3
-}
-
-export type Role = "parent" | "child" | "left" | "right" | "previous" | "next" | "sibling";
 export type GateRole = "parent" | "child" | "left" | "right";
-export type RelationshipRole = Exclude<Role, "sibling">;
 export type GateSide = "top" | "bottom" | "left" | "right";
 export type ScrollZone = "parent" | "child" | "left" | "right" | "sibling";
 export type StrokeStyle = "solid" | "dashed" | "dotted";
@@ -35,13 +33,14 @@ export type Hierarchy = {
 export type NodeStyle = {
   prefix?: string;
   icon?: string;
-  backgroundColor?: string;
+  backgroundColor?: ColorValue;
   fillStyle?: FillStyle;
-  textColor?: string;
-  borderColor?: string;
+  textColor?: ColorValue;
+  borderColor?: ColorValue;
   fontSize?: number;
   fontFamily?: number;
   maxLabelLength?: number;
+  maxWidth?: number;
   roughness?: number;
   strokeShaprness?: "round" | "sharp";
   strokeWidth?: number;
@@ -49,15 +48,15 @@ export type NodeStyle = {
   padding?: number;
   gateRadius?: number;
   gateOffset?: number;
-  gateStrokeColor?: string;
-  gateBackgroundColor?: string;
+  gateStrokeColor?: ColorValue;
+  gateBackgroundColor?: ColorValue;
   gateFillStyle?: FillStyle;
   embedWidth?: number;
   embedHeight?: number;
 };
 
 export type LinkStyle = {
-  strokeColor?: string;
+  strokeColor?: ColorValue;
   strokeWidth?: number;
   strokeStyle?: StrokeStyle;
   roughness?: number;
@@ -66,32 +65,10 @@ export type LinkStyle = {
   showLabel?: boolean;
   fontSize?: number;
   fontFamily?: number;
-  textColor?: string;
+  textColor?: ColorValue;
 };
 
-export type Relation = {
-  target: GraphPage;
-  direction: LinkDirection | null;
-  isHidden: boolean;
-  isParent: boolean;
-  parentType?: RelationType;
-  parentTypeDefinition?: string;
-  isChild: boolean;
-  childType?: RelationType;
-  childTypeDefinition?: string;
-  isLeftFriend: boolean;
-  leftFriendType?: RelationType;
-  leftFriendTypeDefinition?: string;
-  isRightFriend: boolean;
-  rightFriendType?: RelationType;
-  rightFriendTypeDefinition?: string;
-  isNextFriend: boolean;
-  nextFriendType?: RelationType;
-  nextFriendTypeDefinition?: string;
-  isPreviousFriend: boolean;
-  previousFriendType?: RelationType;
-  previousFriendTypeDefinition?: string;
-};
+export type Relation = SemanticRelation<GraphPage>;
 
 export type GraphPage = {
   path: string;
@@ -108,12 +85,14 @@ export type GraphPage = {
   primaryStyleTag: string | null;
   styleTags: string[];
   maxLabelLength: number;
-  /** Runtime-only visual identity used by central-section expansion. Never persisted in GraphIndex. */
+  /** Runtime-only visual identity for section expansion and relation groups. Never persisted in GraphIndex. */
   transient?: {
-    kind: "section" | "section-target";
+    kind: "section" | "section-target" | "group";
     sourcePath: string;
     actualPath?: string;
     sectionId: string;
+    /** Runtime-only relation bucket; never serialized or treated as a native endpoint. */
+    groupMembers?: readonly Neighbour[];
     heading?: string;
     level?: number;
     subpath?: string;
@@ -141,11 +120,19 @@ export type Neighborhood = {
 };
 
 export type GateStat = {
-  /** Connections currently visible after K-Plex visibility/inferred filters, before a local Plex filter/lens. */
+  /** Available connections after visibility/inferred filters, before a local Plex filter/lens. */
   visibleCount: number;
+  /** False means global semantic coverage is uncertified. With local coverage, numbers still count
+   * all available host/indexed incidence; otherwise they are lower bounds. Never grants editing authority. */
+  complete?: boolean;
+  /** Local counts cover available host/indexed incidence; cached counts describe the last coherent
+   * snapshot awaiting current validation. Neither grants current/global negative-evidence authority. */
+  coverage?: "local" | "cached";
+  /** Current host inputs failed a decode/record guard or are missing; no numerical total is asserted. */
+  countUnavailable?: boolean;
   /** Connections surviving the currently active Quick Filter / Graph Lenses. Undefined when no global filter is active. */
   shownCount?: number;
-  /** True when the semantic gate has any relationship, even when its target is filtered out. */
+  /** True when an available semantic relationship occupies the gate, even if its target is filtered out. */
   hasAny: boolean;
 };
 
@@ -201,6 +188,8 @@ export type PositionedNode = {
 };
 
 export type PositionedEdge = {
+  /** Display-only directional wording; physical typeDefinition remains the style/filter/mutation key. */
+  caption?: string;
   id: string;
   sourcePath: string;
   targetPath: string;
