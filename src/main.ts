@@ -1559,8 +1559,9 @@ export default class KplexPlugin extends Plugin {
   }
 
   /** Run the host rebuild workflow and report localized progress/completion while retaining the
-   * existing semantic publication and cancellation ownership. Automatic startup-only backlog
-   * remains with source adoption after hydration; genuine edits and explicit rebuilds stay owed. */
+   * existing semantic publication and cancellation ownership. Known startup backlog plus covered
+   * patch/scheduling reasons remains with source adoption when no dirty Markdown owner is owed;
+   * genuine structural work, dirty sources and explicit rebuilds keep their existing admission. */
   private async performRebuild(showNotice: boolean, force: boolean, reason: string, allowClosed: boolean): Promise<void> {
     if (this.unloading) return;
     if (this.index.hasPendingStructuralMaintenance()) await this.index.waitForStructuralMaintenance();
@@ -1594,12 +1595,21 @@ export default class KplexPlugin extends Plugin {
       } else await this.ensureInitialIndex();
       if (this.unloading) return;
     }
-    // Snapshot hydration can finish before source adoption. The legacy dirty-index interval
-    // must not cancel that inventory with a second whole-vault builder for startup-only reasons.
-    // Preserve the backlog and completion state: the initial owner/recovery continuation settles it.
+    // Snapshot hydration can finish before source adoption. A metadata/create path removed by
+    // native deletion leaves its patch reason beside startup work; that bookkeeping must not
+    // bypass source ownership and pause inventory with a competing whole-vault builder. Keep an
+    // exact reason inventory: unknown reasons and real structural events still require admission.
+    // Preserve the backlog and completion state for the initial owner/recovery continuation.
     if (!force && !showNotice && !allowClosed && !this.initialIndexComplete && !this.index.isOnDemandMode()
       && this.index.hasSourceBackedStartup() && this.dirtyMarkdownPaths.size === 0
-      && this.indexBacklogReasons.size > 0 && [...this.indexBacklogReasons].every(item => item.startsWith("startup:"))) return;
+      && this.indexBacklogReasons.size > 0) {
+      const startupReasons = new Set(["startup:no-snapshot", "startup:stale-snapshot",
+        "startup:partial-restore-incomplete", "startup:post-initial-backlog", "startup:initial-index"]);
+      const reasons = [...this.indexBacklogReasons];
+      if (reasons.some(item => startupReasons.has(item)) && reasons.every(item => startupReasons.has(item)
+        || item === "metadata:changed" || item === "vault:create-markdown"
+        || item === "coalesced-backlog" || item === "interval")) return;
+    }
     const explicitlyRequested = showNotice;
     if (!this.hasVisibleKplexSurface() && !allowClosed && !explicitlyRequested) {
       return;

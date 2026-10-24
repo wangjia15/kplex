@@ -74,6 +74,8 @@ export type FieldCacheEntry = {
   inputToken?: string;
   /** Runtime-only semantic fingerprint used to suppress graph work for drawing-only/format-only edits. */
   semanticSignature?: string;
+  /** Runtime-only policy of the actual canonical commit; absent cache entries cannot prove reuse. */
+  semanticPolicyRevision?: number;
 };
 
 export type PatchMarkdownResult = {
@@ -89,6 +91,8 @@ export type PatchFileCommit = Readonly<{
   sourcePath: string;
   touchedPagePaths: ReadonlySet<string>;
   semanticChanged: boolean;
+  /** Exact source fingerprint matched; unlike node-only repairs, no compiled incidence changed. */
+  unchangedSource?: boolean;
 }>;
 
 export type PatchFilePublisher = (commit: PatchFileCommit, publishPreparedState: () => void) => void;
@@ -1537,6 +1541,7 @@ export class GraphBuilder {
           sourcePath,
           touchedPagePaths: new Set(fileTouchedPagePaths),
           semanticChanged,
+          ...(!semanticChanged ? { unchangedSource: true } : {}),
         };
         for (const path of fileTouchedPagePaths) touchedPagePaths.add(path);
         if (!options.publishFileCommit) {

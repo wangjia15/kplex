@@ -776,15 +776,80 @@ for(const mode of ['on-demand','eager'])for(const remove of [false,true])for(con
   index.metadataParser.parse=async(...args)=>{if(first){first=false;entered();await hold}return parse(...args)};
   f.texts.set('A.md',${remove}?'Prose without the parent declaration.':'Parent:: [[B]]\\n\\nAnother paragraph.');if(!${sameStat})file.stat.mtime++;
   f.app.metadataCache.resolvedLinks={'A.md':${remove}?{}:{'B.md':1}};
-  f.app.vault.trigger('modify',file);o.bump();index.refreshVisibleHostMetadataPreviews('A.md',0);await parsing;
+  f.app.vault.trigger('modify',file);o.bump();index.refreshVisibleHostMetadataPreviews('A.md',0);
+  // Main's existing metadata callback services a previously compiled Eager source through this
+  // foreground patch owner; the local-only fixture has no native main coordinator attached.
+  const refresh=${JSON.stringify(mode)}==='eager'?index.refreshVisibleMarkdownPath('A.md'):undefined;await parsing;
   equal(index.getNeighborhood('A.md').parents.map(row=>row.page.path),['B.md'],'Pending host projection cannot demote a compiled body parent');
   ok(!index.isSemanticWriteReady('A.md','B.md'),'Presentation retention never renews source or relationship-write authority');
-  unblock();await settleDemand(index);
+  unblock();await refresh;await settleDemand(index);
   equal(index.getNeighborhood('A.md').parents.map(row=>row.page.path),${remove}?[]:['B.md'],'Real replacement publishes after parsing, including parent removal');
   equal(index.onDemandIndexed.get('A.md').mtime,file.stat.mtime,'Newest source revision is indexed');
   if(!${remove}){ok(commits.length>0,'The ordinary source patch still commits');ok(commits.every(changed=>!changed),'Prose-only source uses existing fingerprint no-op instead of forced compilation')}
   equal(o.inventoryStarts,0,'No global inventory/rebuild workaround');return true;
  }finally{unblock?.();release?.();o.close()}
+})()`));
+
+for (const remove of [false, true]) test('Eager requested counts retain their coherent read during autosave without renewing write authority (remove='+remove+')', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('stable-eager-badges-'+${remove},{indexingMode:'eager'}),{f,index}=o;let release,unblock;
+  try{
+    const file=f.add('A.md','Parent:: [[B]]');f.add('B.md','');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    ok(await index.initializeOnDemandBaseline(),'Physical baseline');index.sourceAcquisition.enableInventory();
+    ok(await index.sourceAcquisition.reconcile(),'Real initial inventory');await index.sourceAcquisition.flush();
+    equal((await index.patchMarkdownPaths(['A.md','B.md'])).outcome,'patched','Actual initial canonical source commits');
+    release=index.acquireSemanticDemand('A.md');await index.ensureSemanticScope('A.md');await settleDemand(index);
+    ok(index.semanticScopes.has('A.md'),'Actual requested source scope prepared');
+    // Coverage may conservatively weaken during validation. Badge continuity is tested in real
+    // React; this owner test checks actual values and preserves the independent write fence.
+    const counts=()=>JSON.stringify(Object.fromEntries(Object.entries(index.gateStats(index.get('A.md'))).map(([side,stat])=>[side,{visibleCount:stat.visibleCount,hasAny:stat.hasAny}])));
+    const gates=counts();
+    const commits=[],publish=index.publishIncrementalFile;index.publishIncrementalFile=(commit,apply)=>{commits.push({semanticChanged:commit.semanticChanged,unchangedSource:commit.unchangedSource});return publish(commit,apply)};
+    equal(index.getNeighborhood('A.md').parents.map(row=>row.page.path),['B.md'],'Initial independently expected parent');
+    const parse=index.metadataParser.parse.bind(index.metadataParser);let entered,first=true;
+    const parsing=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);
+    index.metadataParser.parse=async(...args)=>{if(first){first=false;entered();await hold}return parse(...args)};
+    f.texts.set('A.md',${remove}?'Ordinary prose with the relationship removed.':'Parent:: [[B]]\\n\\nNew ordinary paragraph.');file.stat.mtime++;
+    f.app.metadataCache.resolvedLinks={'A.md':${remove}?{}:{'B.md':1}};
+    f.app.vault.trigger('modify',file);o.bump();index.refreshVisibleHostMetadataPreviews('A.md',0);
+    const refresh=index.refreshVisibleMarkdownPath('A.md');await parsing;
+    equal(counts(),gates,'Pending source validation retains the actual count values');
+    ok(!index.isSemanticWriteReady('A.md','B.md'),'Retained read does not renew write authority');
+    unblock();await refresh;await settleDemand(index);
+    if(!${remove}){
+      ok(commits.length>0&&commits.every(c=>!c.semanticChanged&&c.unchangedSource),'Actual source fingerprint reuse, never a forced recompilation');
+      equal(counts(),gates,'No-op source publication retains actual count values');
+    }else equal(index.getNeighborhood('A.md').parents.map(row=>row.page.path),[],'Real removal retires the predecessor at commit');
+    await index.sourceAcquisition.reconcile();await index.sourceAcquisition.flush();await index.ensureSemanticScope('A.md');
+    equal(index.getNeighborhood('A.md').parents.map(row=>row.page.path),${remove}?[]:['B.md'],'Final exact source revalidation reflects latest semantics');
+    return true;
+  }finally{unblock?.();release?.();o.close();}
+})()`));
+
+test('cached structural gates exclude a deleted virtual member without hiding ordinary unresolved links', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('stable-structural-native-members',{indexingMode:'eager',showFolderNodes:true,showTagNodes:true,showVirtualNodes:true}),{f,index}=o;
+  try{
+    f.add('A.md','Friend:: [[Deleted]]');f.add('Live.md','');f.add('Deleted.md','');
+    f.metadata.get('Live.md').hostTags=['#topic'];f.metadata.get('Deleted.md').hostTags=['#topic'];
+    ok(await index.initializeOnDemandBaseline(),'Actual native structural baseline');
+    equal((await index.patchMarkdownPaths(['A.md','Live.md','Deleted.md'])).outcome,'patched','Actual compiled sources and IndexedDB activation');
+    f.app.metadataCache.resolvedLinks={'A.md':{'Live.md':1}};
+    const preview=await index.hostPreview.build('A.md');ok(preview,'Actual first-order native preview');
+    const neighbor=preview.state.pages.get('Live.md');
+    equal(index.relationView(neighbor,{page:neighbor,settings:preview.settings}).gateStats.top.visibleCount,2,
+      'A captured neighbor retains both its incoming note and native folder parents');
+    const tag=index.state.pages.get('tag:topic'),folder=index.state.pages.get('folder:/'),note=index.state.pages.get('A.md');
+    const gates=page=>index.relationView(page,{page,settings:index.fullSemanticSettings}).gateStats;
+    equal(gates(tag).bottom.visibleCount,2,'Initial two live tag members');equal(gates(folder).bottom.visibleCount,3,'Initial three live folder members');
+    // Model a retained legacy/read-only cache: deletion dematerializes the note, while its old
+    // incidence remains readable until replacement. Ordinary body links may still target it.
+    f.files.delete('Deleted.md');index.state.pages.get('Deleted.md').file=null;index.relationViewCache=new WeakMap();
+    equal(gates(tag).bottom.visibleCount,1,'Deleted virtual note is not a tag member');
+    equal(gates(folder).bottom.visibleCount,2,'Deleted virtual note is not a folder member');
+    equal(gates(note).left.visibleCount,1,'Ordinary unresolved Markdown link remains visible');
+    ok(tag.neighbours.has('Deleted.md')&&folder.neighbours.has('Deleted.md'),'Read filter does not mutate cached incidence');
+    return true;
+  }finally{o.close();}
 })()`));
 
 test('foreground navigation preempts and resumes an optional URL scan without acquiring unrelated ontology', async()=>scenario(`(async()=>{

@@ -13,7 +13,9 @@ const require = createRequire(import.meta.url), ts = require('typescript');
 const source = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const module = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true);
 const plugin = module.statements.find(/** Select the real plugin lifecycle owner. */ node => ts.isClassDeclaration(node) && node.name?.text === 'KplexPlugin');
-const names = new Set(['performRebuild', 'rebuildIndex', 'pruneMissingDirtyMarkdownPaths']);
+const names = new Set(['performRebuild', 'rebuildIndex', 'pruneMissingDirtyMarkdownPaths',
+  'registerReactiveIndexListeners', 'pruneManagedMetadataWrites', 'scheduleRebuild',
+  'settlePatchOnlyBacklogIfIdle', 'countDeletedMarkdownFile']);
 const methods = plugin.members.filter(/** Copy complete production implementations, not alternate fixture algorithms. */ member => names.has(member.name?.getText(module)));
 assert.equal(methods.length, names.size);
 const onload = plugin.members.find(/** Locate the original timer registration. */ member => member.name?.getText(module) === 'onload');
@@ -31,11 +33,22 @@ const load = new Function('Platform', 'TFile', 'TFolder', 'Notice', 'window', js
 /** Native notice presentation is outside this coordinator ownership fixture. */
 class Notice { /** Accept the real command's notification without emulating UI. */ constructor() {} }
 
+/** Native identity is explicit so the production event callbacks retain their instanceof checks. */
+class HostFile {
+  /** Supply the exact path and physical revision observed by metadata and delete callbacks. */
+  constructor(path) { this.path = path; this.extension = 'md'; this.stat = {mtime: 1, ctime: 1, size: 1}; }
+}
+/** A real folder-shaped native event must remain structurally owed during source adoption. */
+class HostFolder { /** Retain folder identity independently of its path. */ constructor(path) { this.path = path; } }
+
 /** Supply a held initial adopter and finite graph effects to the actual legacy interval callback. */
-function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacked = true, complete = false, onDemand = false } = {}) {
+function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacked = true, complete = false, onDemand = false, published = false } = {}) {
   let callback, period, pending, release;
-  const timers = { /** Capture registration without changing its requested production interval. */ setInterval(work, delay) { callback = work; period = delay; return 1; } };
-  const Coordinator = load({ isIosApp: false }, class {}, class {}, Notice, timers), p = new Coordinator();
+  const timers = {
+    /** Capture registration without changing its requested production interval. */ setInterval(work, delay) { callback = work; period = delay; return 1; },
+    /** The production no-op retirement clears the test-owned scheduled marker only. */ clearTimeout() {},
+  };
+  const Coordinator = load({ isIosApp: false }, HostFile, HostFolder, Notice, timers), p = new Coordinator();
   const counts = { full: 0, local: 0 }, initial = new Promise(/** Hold source adoption independently of automatic graph rebuild. */ done => { release = done; });
   p.app = { vault: { /** Retain the genuine named dirty source. */ getFileByPath: path => path === 'A.md' ? { path, extension: 'md' } : null } };
   p.settings = { indexUpdateInterval: 120000 }; p.layoutReady = true; p.indexPreparationAdmitted = true;
@@ -55,7 +68,7 @@ function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacke
     /** Keep mode-specific refresh separate from eager adoption. */ isOnDemandMode: () => onDemand,
     /** The coherent physical baseline remains navigable. */ hasPhysicalBaseline: () => true,
     /** This test observes ordinary full-builder admission, not progressive compilation. */ isFullSnapshotHydrated: () => true,
-    /** Count the actual builder boundary without simulating source/cache algorithms. */ rebuild: async () => { counts.full++; return false; },
+    /** Count admission only; a false result here is not evidence of a real incomplete build. */ rebuild: async () => { counts.full++; return published; },
     /** Preserve the on-demand branch's own local refresh. */ refreshOnDemandGraph: async () => { counts.local++; return false; },
     /** Decision formatting is outside this admission test. */ noteBuildDecision() {},
   };
@@ -71,7 +84,117 @@ function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacke
   };
 }
 
-for (const reason of ['startup:stale-snapshot', 'startup:no-snapshot', 'startup:partial-restore-incomplete']) {
+/** Deliver native-shaped events through the unmodified registered production callbacks. */
+function eventFixture(options = {}) {
+  const f = fixture({...options, published: true}), {p} = f;
+  f.counts.dematerialized = 0;
+  const vaultListeners = new Map(), metadataListeners = new Map(), files = new Map();
+  const file = new HostFile('A.md'); files.set(file.path, file);
+  p.app.vault = {
+    /** Event registration captures production callbacks without emulating their implementation. */
+    on(name, callback) { vaultListeners.set(name, callback); return callback; },
+    /** Physical identity disappears before the native delete notification is delivered. */
+    getFileByPath(path) { return files.get(path) ?? null; },
+  };
+  p.app.metadataCache = {
+    /** Metadata callback ordering is controlled; source policy remains in production methods. */
+    on(name, callback) { metadataListeners.set(name, callback); return callback; },
+  };
+  p.registerEvent = /** No external event subscription survives this fixture. */ () => {};
+  p.managedMetadataWrites = new Map(); p.managedCreatedPaths = new Map(); p.renameMetadataSuppressions = new Map();
+  p.managedCreatedFiles = new WeakSet(); p.deletedMarkdownFiles = new WeakSet();
+  p.adjustCachedMarkdownFileCount = /** Cached count presentation is outside rebuild admission. */ () => {};
+  p.index.invalidateHostStructure = /** Retain admission independently of graph storage or structural algorithms. */ () => {};
+  p.index.dematerializeFile = /** Observe delegation to semantic deletion without duplicating that algorithm. */ () => { f.counts.dematerialized++; };
+  p.index.insertCreatedFile = /** Successful full publication keeps a genuinely dirty native endpoint available. */ () => {};
+  p.index.updateHostFileAvailability = /** A native create can publish availability without granting graph authority. */ () => {};
+  p.index.refreshVisiblePresentation = /** Optional visible presentation grants no completion authority. */ async () => {};
+  p.index.refreshVisibleHostMetadataPreviews = /** No preview is requested by this owner-only fixture. */ () => false;
+  p.registerReactiveIndexListeners();
+  return {...f,
+    /** Keep a genuine dirty Markdown owner for the dirty-path negative control. */
+    changed() { metadataListeners.get('changed')(file); },
+    /** A created source is owed until its native deletion retires that exact dirty path. */
+    created() { vaultListeners.get('create')(file); },
+    /** Delete through Vault's real callback after a preceding metadata notification. */
+    deleted() { files.delete(file.path); vaultListeners.get('delete')(file); },
+    /** Startup has no complete physical graph, so a new folder remains structural work. */
+    folderCreated() { vaultListeners.get('create')(new HostFolder('New folder')); },
+  };
+}
+
+test('mixed startup and covered metadata backlog cannot compete with source adoption', /** A removed dirty source leaves no Markdown patch for a competing builder to consume. */ async () => {
+  const f = eventFixture();
+  try {
+    f.changed(); f.deleted();
+    assert.equal(f.p.dirtyMarkdownPaths.size, 0);
+    assert.equal(f.counts.dematerialized, 1, 'The actual delete callback has delegated endpoint removal');
+    assert.deepEqual([...f.p.indexBacklogReasons], ['startup:stale-snapshot', 'metadata:changed']);
+    await f.interval();
+    assert.equal(f.counts.full, 0, 'Covered metadata bookkeeping must not bypass the existing source-adoption owner');
+    assert.equal(f.p.initialIndexComplete, false, 'Suppression cannot fabricate initial completion');
+    assert.equal(f.p.initialIndexTask, f.initial, 'The pending initial owner remains unchanged');
+  } finally { f.close(); }
+});
+
+test('covered patch-only metadata deletion remains a zero-path no-op', /** Without startup reasons the existing delete callback already retires the covered backlog. */ async () => {
+  const f = eventFixture({reasons: []});
+  try {
+    f.changed(); f.deleted(); await f.interval();
+    assert.equal(f.counts.full, 0); assert.equal(f.p.indexDirty, false);
+    assert.equal(f.p.indexBacklogReasons.size, 0); assert.equal(f.p.dirtyMarkdownPaths.size, 0);
+  } finally { f.close(); }
+});
+
+for (const reason of ['startup:no-snapshot', 'startup:partial-restore-incomplete', 'startup:post-initial-backlog']) {
+  test(`covered native create/delete preserves ${reason} ownership`, /** Only the zero-path bookkeeping is suppressed; no pending source adoption is declared complete. */ async () => {
+    const f = eventFixture({reasons: [reason]});
+    try {
+      f.created(); f.deleted(); await f.interval();
+      assert.equal(f.counts.full, 0); assert.equal(f.p.dirtyMarkdownPaths.size, 0);
+      assert.equal(f.p.indexDirty, true); assert.equal(f.p.initialIndexComplete, false);
+      assert.deepEqual([...f.p.indexBacklogReasons], [reason, 'vault:create-markdown']);
+    } finally { f.close(); }
+  });
+}
+
+for (const reason of ['startup:unknown-prerequisite', 'vault:create', 'vault:rename-folder']) {
+  test(`zero-path ${reason} remains outside covered startup suppression`, /** New startup labels and genuine structural reasons need positive admission evidence, not a prefix exemption. */ async () => {
+    const f = eventFixture({reasons: ['startup:stale-snapshot', reason]});
+    try {
+      f.changed(); f.deleted(); await f.interval();
+      assert.equal(f.counts.full, 1, 'An unqualified reason cannot be consumed as covered bookkeeping');
+    } finally { f.close(); }
+  });
+}
+
+for (const reason of ['coalesced-backlog', 'interval']) {
+  test(`covered mixed backlog retains source ownership with ${reason} bookkeeping`, /** Earlier automatic calls can leave their scheduling label without adding a dirty source. */ async () => {
+    const f = eventFixture({reasons: ['startup:stale-snapshot', reason]});
+    try {
+      f.changed(); f.deleted(); await f.interval();
+      assert.equal(f.counts.full, 0); assert.equal(f.p.indexDirty, true);
+      assert.equal(f.p.initialIndexComplete, false); assert.equal(f.p.initialIndexTask, f.initial);
+      assert.deepEqual([...f.p.indexBacklogReasons], ['startup:stale-snapshot', reason, 'metadata:changed']);
+    } finally { f.close(); }
+  });
+}
+
+for (const kind of ['dirty-source', 'new-folder', 'manual']) {
+  test(`actual ${kind} retains rebuild admission during source adoption`, /** Genuine changed facts and explicit user work must not disappear behind startup suppression. */ async () => {
+    const f = eventFixture();
+    try {
+      f.changed();
+      if (kind !== 'dirty-source') f.deleted();
+      if (kind === 'new-folder') f.folderCreated();
+      if (kind === 'manual') await f.p.rebuildIndex(true, false, 'explicit');
+      else await f.interval();
+      assert.equal(f.counts.full, 1, 'A real dirty path, structural event or explicit command remains owed');
+    } finally { f.close(); }
+  });
+}
+
+for (const reason of ['startup:stale-snapshot', 'startup:no-snapshot', 'startup:partial-restore-incomplete', 'startup:initial-index']) {
   test(`automatic ${reason} cannot compete with initial source adoption`, /** Keep startup reasons owned without clearing or falsely completing them. */ async () => {
     const f = fixture({ reasons: [reason] });
     try {

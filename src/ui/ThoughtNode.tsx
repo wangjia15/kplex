@@ -9,6 +9,8 @@
  * retain the compact browser title, while gate hints and explicit page previews keep their owners.
  * Optional native body dragging preserves embedded editor input and delegates its host payload.
  * Relation groups replace ordinary gates with an external member count and an unfold accessible name.
+ * Revalidation retains only this mounted node's unchanged badge text as cached presentation;
+ * native incarnation/value changes retire it, independently of index and relationship-write proof.
  */
 import { useId, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { GateSide, NodeVisual, PositionedNode } from "../types";
@@ -20,6 +22,7 @@ import { ResizeHandle, type SizeLimits } from "./ResizeHandle";
 import type { Translator } from "../lang";
 import { physicalPositionLabel } from "./features/positionPresentation";
 import { canDisplayNodeImage } from "../core/plex/nodeImagePolicy";
+import { useGateCountPresentation } from "./useGateCountPresentation";
 
 const GATES: GateSide[] = ["top", "bottom", "left", "right"];
 export type ConnectionDragState = "normal" | "candidate" | "blocked" | "origin";
@@ -99,6 +102,7 @@ export function ThoughtNode({
   };
 }) {
   const accessibleNameId = useId();
+  const gateLabels = useGateCountPresentation(node.page.path, node.gateStats, !!(node.page.isTag || node.page.isFolder), settings.showNeighborCount, node.page.file);
   // Cached props can outlive resolution. Remove the image before React can assign a denied src.
   if (visual && !canDisplayNodeImage(visual.path, settings.allowRemoteNodeImages)) visual = undefined;
   const style = node.style;
@@ -253,7 +257,9 @@ export function ThoughtNode({
     />}
     {group && <span className="kplex-group-count" aria-hidden="true">{group.groupMembers?.length}</span>}
     {!group && GATES.map((gate) => {
-      const stat = node.gateStats[gate];
+      // Structural nodes have no lateral relationship vocabulary, even before other counts close.
+      const structuralLateral = (node.page.isTag || node.page.isFolder) && (gate === "left" || gate === "right");
+      const stat = structuralLateral ? { visibleCount: 0, hasAny: false, complete: true } : node.gateStats[gate];
       const gateDisabled = Boolean(node.page.transient);
       const gateLabel = physicalPositionLabel(gate, translate);
       const gateHint = node.page.isTag
@@ -266,6 +272,7 @@ export function ThoughtNode({
             ? translate("node.gateVisible", { gate: gateLabel, count: stat.visibleCount })
             : translate("node.gateEmpty", { gate: gateLabel });
       const gateTitle = stat.countUnavailable ? `${gateLabel} · ${translate("node.gateHostUnavailable")}`
+        : gateLabels[gate].retained ? `${gateHint} · ${translate("node.gateCachedCount")}`
         : stat.coverage === "cached" ? `${gateHint} · ${translate("node.gateCachedCount")}`
         : stat.coverage === "local" ? `${gateHint} · ${translate("node.gateLocalCount")}`
         : stat.complete === false ? `${gateHint} · ${translate("node.gatePartial")}` : gateHint;
@@ -282,11 +289,7 @@ export function ThoughtNode({
           data-kplex-tooltip-requires-alt={settings.gateTooltipRequiresAlt !== false ? "true" : undefined}
           data-tooltip-position={gate === "top" ? "bottom" : "top"}
         />
-        {settings.showNeighborCount && (stat.visibleCount > 0 || stat.complete === false) && <span className="kplex-gate-count">{
-          stat.countUnavailable ? "…" : stat.complete === false && stat.coverage !== "local" && stat.coverage !== "cached"
-            ? stat.visibleCount === 0 ? "…" : stat.shownCount === undefined ? `≥${stat.visibleCount}` : `${stat.shownCount}/≥${stat.visibleCount}`
-            : stat.shownCount === undefined ? stat.visibleCount : `${stat.shownCount}/${stat.visibleCount}`
-        }</span>}
+        {gateLabels[gate].text !== null && <span className="kplex-gate-count">{gateLabels[gate].text}</span>}
       </span>;
     })}
   </div>;

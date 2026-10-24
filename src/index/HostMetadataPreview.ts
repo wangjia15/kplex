@@ -574,7 +574,10 @@ export class HostMetadataPreview {
         const read = compiler.beginRead(boundary);
         if (!(await compiler.acceptBatch(read, { boundary, sequence: 0, final: true, records: facts })) || !compiler.completeRead(read, boundary)) return null;
       }
-      if (path === centerPath) {
+      // Each already captured owner keeps its native folder parent in this first-order cover.
+      // Omitting a neighbour's parent transiently shrinks its gate when a preview replaces a
+      // canonical scope. This adds no owner reads or folder scans; record guards still bound it.
+      {
         const structural = [entityFactForFile(file)];
         const folder = file.parent;
         const boundary = { generation: sourceGeneration(`host-preview:${revision}`), snapshotRevision: sourceSnapshotRevision(`host-preview:${revision}`) };
@@ -586,7 +589,7 @@ export class HostMetadataPreview {
         }
         const read = compiler.beginRead(boundary);
         const relationFacts = folder ? [structuralFileTreeOccurrence(folder, file, sourceRevision(`host-preview-folder:${revision}:${folder.path}`))] : [];
-        const tagFacts = metadataAllowed ? structuralTagMembershipFacts(file, this.app.metadataCache) : [];
+        const tagFacts = path === centerPath && metadataAllowed ? structuralTagMembershipFacts(file, this.app.metadataCache) : [];
         const allFacts = [...facts, ...relationFacts, ...tagFacts];
         records += allFacts.length;
         if (records > MAX_PREVIEW_RECORDS) { options.onUnavailable?.(); return null; }

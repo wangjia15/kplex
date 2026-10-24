@@ -1339,6 +1339,7 @@ const warnings = [], originalError = console.error;
 console.error = (...args) => { warnings.push(args.map(String).join(" ")); originalError(...args); };
 // Native icons are the only thought-rendering host boundary; this scenario has no icon effects.
 const ObsidianIcon = () => null;
+import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions("src/ui/ThoughtNode.tsx", ["GATES", "ThoughtNode"])}
 
 const settings = { horizontalCompactingFactor: 2, compactingFactor: 2, baseFontSize: 12.4, wrapNodeLabels: false, showNeighborCount: true, graphDepth: 2, minLinkLength: 18, childColumns: 2, maxItemCount: 100, siblingRelativeSize: 85 };
@@ -2144,6 +2145,7 @@ import {canDisplayNodeImage} from ${JSON.stringify(join(root,'src/core/plex/node
 import {createTranslator} from ${JSON.stringify(join(root,'src/lang/index.ts'))};
 import {HoverPreview,bindHoverPreview} from ${JSON.stringify(join(root,'src/ui/components/hoverPreview.ts'))};
 const ObsidianIcon=()=>null;
+import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions('src/ui/ThoughtNode.tsx',['GATES','ThoughtNode'])}
 const result=document.querySelector('#result'),container=document.body.appendChild(document.createElement('div')),root=createRoot(container);
 const check=(condition,message)=>{if(!condition)throw Error(message)},translate=createTranslator('en'),noop=()=>{};
@@ -2197,6 +2199,65 @@ test('nodes retain compact delayed titles and accessible names without a duplica
  runBrowserDom(nodeTooltipBrowserEntry(),'Node tooltip ownership passed');
 });
 
+/** Render the real gate markup across partial/cached/unavailable structural count states. */
+function structuralGateCountsBrowserEntry() {
+ return `
+import React, {useId} from 'react';
+import {flushSync} from 'react-dom';
+import {createRoot} from 'react-dom/client';
+import {nodePaint,nodePaintFallbacks} from ${JSON.stringify(join(root,'src/index/style.ts'))};
+import {effectiveLabelLimit,nodeLabelFontSize,gateDiameter} from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
+import {physicalPositionLabel} from ${JSON.stringify(join(root,'src/ui/features/positionPresentation.ts'))};
+import {canDisplayNodeImage} from ${JSON.stringify(join(root,'src/core/plex/nodeImagePolicy.ts'))};
+const ObsidianIcon=()=>null;
+import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
+${uiDefinitions('src/ui/ThoughtNode.tsx',['GATES','ThoughtNode'])}
+const result=document.querySelector('#result'),container=document.body.appendChild(document.createElement('div')),root=createRoot(container),noop=()=>{};
+const check=(condition,message)=>{if(!condition)throw Error(message)};
+try{
+ const settings={baseFontSize:12.4,showNeighborCount:true};
+ const node={page:{path:'ordinary',name:'Name'},label:'Name',role:'child',style:{},x:0,y:0,width:180,height:40};
+ const props={node,settings,selected:false,highlighted:false,dimmed:false,highlightedGates:new Set(),translate:key=>key,onActivate:noop,onOpen:noop,onHoverNode:noop,onHoverGate:noop,onHoverEnd:noop,onHoverPreview:noop,onGatePointerDown:noop,onNodePointerDown:noop};
+ for(const kind of ['tag','folder','ordinary'])for(const coverage of [undefined,'local','cached'])for(const unavailable of [false,true]){
+  node.page.isTag=kind==='tag';node.page.isFolder=kind==='folder';
+  node.gateStats=Object.fromEntries(['top','bottom','left','right'].map(side=>[side,{visibleCount:0,hasAny:false,complete:false,coverage,countUnavailable:unavailable}]));
+  flushSync(()=>root.render(<ThoughtNode {...props}/>));
+  for(const side of ['left','right']){
+   const text=container.querySelector('.gate-wrap-'+side+' .kplex-gate-count')?.textContent;
+   check(text===(kind==='ordinary'?(unavailable||coverage===undefined?'…':'0'):'0'),'Incorrect lateral display: '+kind+'/'+coverage+'/'+unavailable+'/'+text);
+   if(kind!=='ordinary')check(!container.querySelector('.gate-'+side).getAttribute('aria-label').includes('node.gateHostUnavailable'),'Structural zero inherited an unrelated unavailable tooltip');
+  }
+  check(container.querySelector('.gate-wrap-top .kplex-gate-count'),'Structural lateral rule incorrectly hid unresolved hierarchy counts');
+ }
+ node.page={path:'Stable.md',name:'Stable'};
+ node.gateStats=Object.fromEntries(['top','bottom','left','right'].map(side=>[side,{visibleCount:side==='top'?2:0,hasAny:side==='top',complete:true}]));
+ flushSync(()=>root.render(<ThoughtNode {...props}/>));
+ const badge=container.querySelector('.gate-wrap-top .kplex-gate-count'),observation=new MutationObserver(()=>{});
+ observation.observe(container,{subtree:true,childList:true,characterData:true});
+ for(const stat of Object.values(node.gateStats))stat.complete=false;
+ flushSync(()=>root.render(<ThoughtNode {...props}/>));
+ check(container.querySelector('.gate-wrap-top .kplex-gate-count')===badge&&badge.textContent==='2','Unchanged displayed total flickered to a weaker qualifier');
+ check(!container.querySelector('.gate-wrap-bottom .kplex-gate-count'),'An unchanged empty gate flashed an unknown/zero badge');
+ check(observation.takeRecords().length===0,'Revalidation changed badge DOM despite unchanged values');
+ check(node.gateStats.top.complete===false,'Presentation continuity mutated the count proof');
+ check(container.querySelector('.gate-top').getAttribute('aria-label').includes('node.gateCachedCount'),'Retained display lacks its cached qualifier');
+ node.gateStats.top.visibleCount=3;flushSync(()=>root.render(<ThoughtNode {...props}/>));check(badge.textContent==='≥3','Real count change did not publish immediately');
+ node.gateStats.top.complete=true;flushSync(()=>root.render(<ThoughtNode {...props}/>));check(badge.textContent==='3','Complete proof did not upgrade the lower bound');
+ node.gateStats.top.countUnavailable=true;flushSync(()=>root.render(<ThoughtNode {...props}/>));check(badge.textContent==='…','Unavailable input was hidden behind a retained value');
+ delete node.gateStats.top.countUnavailable;node.gateStats.top.complete=false;node.page={path:'Other.md',name:'Other'};
+ flushSync(()=>root.render(<ThoughtNode {...props}/>));check(badge.textContent==='≥3','Navigation inherited the previous node count proof');
+ node.gateStats.top.complete=true;node.page.file={};flushSync(()=>root.render(<ThoughtNode {...props}/>));check(badge.textContent==='3','Current native incarnation did not display complete proof');
+ node.page.file={};node.gateStats.top.complete=false;flushSync(()=>root.render(<ThoughtNode {...props}/>));check(badge.textContent==='≥3','Same-path recreation inherited an old native count label');
+ observation.disconnect();settings.showNeighborCount=false;flushSync(()=>root.render(<ThoughtNode {...props}/>));check(!container.querySelector('.kplex-gate-count'),'Count visibility preference changed');
+ result.dataset.status='passed';result.textContent='Structural gate counts passed';
+}catch(error){result.dataset.status='failed';result.textContent=String(error?.stack??error)}finally{flushSync(()=>root.unmount());container.remove()}
+`;
+}
+
+test('tag and folder lateral gates show exact zero independently of partial hierarchy coverage',()=>{
+ runBrowserDom(structuralGateCountsBrowserEntry(),'Structural gate counts passed');
+});
+
 /** Render the actual ThoughtNode text and geometry for long titles/aliases across independent density values. */
 function typographyLabelsBrowserEntry() {
   return `
@@ -2208,6 +2269,7 @@ import { effectiveLabelLimit, nodeLabelFontSize, gateDiameter } from ${JSON.stri
 ${uiDefinitions("src/ui/layout.ts", ["clamp", "nodeSize"])}
 import { physicalPositionLabel } from ${JSON.stringify(join(root, "src/ui/features/positionPresentation.ts"))};
 const ObsidianIcon=({className,size})=><span className={"kplex-icon "+className} style={{width:size,height:size}}/>;
+import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions("src/ui/ThoughtNode.tsx", ["GATES", "ThoughtNode"])}
 const result=document.querySelector("#result"),container=document.createElement("div");document.body.append(container);
 container.className="kplex-view-host";container.style.fontFamily="Arial, sans-serif";

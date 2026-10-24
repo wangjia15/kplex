@@ -77,10 +77,12 @@ let installed=false;
 try{
  assert.equal(cli('vault','info=path'),target.vault);
  report.obsidian=cli('version');cli('dev:errors','clear');
- for(const name of ['main.js','styles.css','manifest.json']){const built=readFileSync(join(projectRoot,'dist',name)),actual=readFileSync(join(target.pluginDir,name));assert(built.equals(actual),`Installed ${name} mismatch`);report.artifacts[name]=createHash('sha256').update(actual).digest('hex')}
+ const artifactDir=process.env.KPLEX_PROBE_ARTIFACT_DIR??join(projectRoot,'dist');
+ if(process.env.KPLEX_PROBE_ARTIFACT_DIR){assert(/^[a-f0-9]{7,40}$/.test(process.env.KPLEX_PROBE_BASELINE_REF??''),'Alternate artifact root requires exact baseline attribution');report.baselineRef=process.env.KPLEX_PROBE_BASELINE_REF}
+ for(const name of ['main.js','styles.css','manifest.json']){const built=readFileSync(join(artifactDir,name)),actual=readFileSync(join(target.pluginDir,name));assert(built.equals(actual),`Installed ${name} mismatch`);report.artifacts[name]=createHash('sha256').update(actual).digest('hex')}
  cli('command','id=k-plex:kplex-start');await delay(1000);evaluate(`JSON.stringify((${probe.toString()})(${acceptMarkdownSaveContinuity.toString()},${process.env.KPLEX_MARKDOWN_SAVE_ONLY==='true'},${process.env.KPLEX_MARKDOWN_SAVE_OBSERVE_ONLY==='true'}))`);installed=true;
  const end=Date.now()+180000;
- while(true){const state=evaluate('JSON.stringify((()=>{const c=window.__kplexAutoFitProbe;return {done:c?.done,error:c?.error,cases:c?.cases,stopAnimations:c?.stopAnimations}})())');report.scenarios=state.cases??[];if(state.stopAnimations)report.stopAnimations=state.stopAnimations;if(state.done){if(state.error)throw Error(state.error);break}assert(Date.now()<end,'Native adaptive fit deadline exceeded');await delay(500)}
+ while(true){const state=evaluate('JSON.stringify((()=>{const c=window.__kplexAutoFitProbe;return {done:c?.done,error:c?.error,cases:c?.cases,saveObservations:c?.saveObservations,stopAnimations:c?.stopAnimations}})())');report.scenarios=state.cases??[];if(state.saveObservations)report.saveObservations=state.saveObservations;if(state.stopAnimations)report.stopAnimations=state.stopAnimations;if(state.done){if(state.error)throw Error(state.error);break}assert(Date.now()<end,'Native adaptive fit deadline exceeded');await delay(500)}
  report.nativeErrors=cli('dev:errors');assert(!report.nativeErrors||/^No errors captured\.?$/i.test(report.nativeErrors),'Native JavaScript errors captured');
  report.status='passed';
 }catch(error){report.status='failed';report.error=String(error.stack??error)}

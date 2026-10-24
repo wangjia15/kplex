@@ -19,78 +19,20 @@ Obsidian is the production host; preserve the established portable semantic, ide
 
 ---
 
-# Final acceptance return: PR206 integrated with current accepted main
+# Assignment: stable gate counts - final runtime verification
 
-Prepared by **Zsolt's Codex Agent**, 2026-10-23, Europe/Budapest.
-No offline implementation/optimization assignment remains. Main validation agent owns final
-remote documentary-head CI and authorized normal merge. At this documentary checkpoint those
-are the remaining gates; exact final remote/CI/merge proof is recorded on #206/private checkpoint
-at delivery to avoid a self-referential report/commit loop. Consult actual PR state before acting.
+Prepared by Zsolt's Codex Agent. Branch: 2026-10-24-stable-gate-counts; PR211 remains draft. Base894437d97bd0e21733e9072fcbecafa7e5d46e0e. No merge/release/production deployment authorized.
 
-Current integrated runtime source: `823d1d3c8272be44ab5494af85445b66fd28f944`.
-Normal merge parents cf14b1c (completed first integration evidence) and accepted main
-`ea89a831aee433bfcfa2847f710ff82ebcfe158c` (merged #207, plus #201/#203/#204/#205).
-Reviewed12c911a and first normal merge95b0093 preserved. Only HANDOFF/ledger/package testlist
-conflicts; current206 assignment/header, both full histories/reports/inventories retained.
-SourceRepository exactly accepted #207 d8d6d532...809d8; #205 protected reader and #206's three
-startup owners preserved. No unmerged Windows input, custom count/lease/schema/read-plumbing
-change, rebase/force-push or207experiment/branch modification. Do not resume207causal/storagework.
-C14 accepted; structural C15-C26 paused.
+The requested two improvements are implemented. Read docs/validation/stable-gate-counts-2026-10-24.md for the exact source/freshness/display contracts, prior successful checks and retained failures. Existing read protection, repository/count maintenance, source authority and actual relationship edits remain intact.
 
-NEW exact artifact, Node22.22.2/real dependencies/installed Obsidian1.13.0 declarations:
-- main.js `9912395b8a7927067ba6d366e634e3839a0f374bc5473d4284291be63062b653`
-- manifest.json `3395e425860e5068e9f3b3d9a0e3d58cefd2c11dededc690beb87f60e733ed7d`
-- styles.css `88b61aa508ede97b10fbd30c957d14ba19b257aa26f5ee9f547f13faa0f43974`
-SourceCI421 passes. Full npmverify passes7architecture/130core/1395main/227DOM/357portable/
-721realIDB, zero failures/skips; separate174combined startup/discovery/recovery/count/journal/
-lease/foreground checks pass. Runtime/build inputs remain source823; later changes documentary.
+Foreground validation found and corrected two additional causes of genuine count changes: a retained deleted virtual note was counted as a physical folder/tag member, and first-order host previews omitted already captured neighbors' native folder parents. GraphIndex now filters only nonphysical note members from structural reads without changing ordinary unresolved Markdown links or mutating cached incidence. HostMetadataPreview includes native folder facts for already captured owners, preserving center-scoped tags and existing read/record/byte/finality guards. No extra owner read or folder scan.
 
-Exact new-build native Small checks pass: strict staging/render, all5SI5 source/cache/reload
-cases, genuine failed-adoption recovery exactly2(false,true) with0fullbuild/mask, bounded eight-
-note selectedrepair create/edit/change/delete/lateredit and ready localinventory, held-background
-foreground navigation/edit/provenance, real native/same-stat-event/offlinealias/rename/delete.
-SI5 originalobserver failedCLIevalafterfirstcase; capturedstate ready/no sourcefailure and cleanup
-passes. Fresh native-result-file observer keeps native scenario/cleanup bytes and deadlines,
-passesall5 with0transportretry; failedreceiptretained. Stop owner initiallyconflated unload with
-saved enablement; observed loadedfalse/enabled[kplex], thennormalCLIclear +guardedclose restores
-all19Smalloriginalfiles afterregistryclosed. No productcheck/deadline weakened; privatehelpers only.
+Focused real-IndexedDB controls13/13 pass, zero skips; actual-dependency production build and official scanner pass. Final runtime full verification PASSED via runPortableVerification (Node and shell exit0, suite totals7/130/1417/228/357/739, zero failures/cancellations/skips), with an explicit Node outcome receipt: %TEMP%/kplex-stable-gates-final-runtime-verification.json and final-runtime-verify.log. Earlier09b84be complete-suite results/CI436 do not silently validate the new corrections. Documentation-only CI438 on identical09b84be runtime failed the existing URL-heavy timer bound55.6ms/50ms. Preserve it as failed, unchanged assertion. No thresholds/deadlines weakened.
 
-Read-only Brain activation verifies exact live database and loadednewrepair method. Actual
-fullsnapshotroute/initial/source/URLcompletion; sourcechecked/bodyreads/parses/repairs/failures0,
-allsource/write/deleteowners0. Complete vocabulary and seven strict semantic/gate/search/
-provenance hashes match both retained controls, no normalization. Original broadtag still fails
-at30.841s with2pending/256visits; no new semantic divergence/crash. Observertransporterrors0.
+Current native-tested production main.js SHA-256 b808dd5f1bf3db150c66efe352b73fd0fb64b2f1528d58cad60547441d66cb32, version0.2.3. Manifest843d327e4a634a6e28cd645be8c533adc873a1ac1c6498502b5ca44e70120109; styles88b61aa508ede97b10fbd30c957d14ba19b257aa26f5ee9f547f13faa0f43974. Production build identity depends only on manifest version, not Git HEAD/dirty state; renewed full build reproduced all three exact native-tested hashes.
 
-Firstintegration95/main08 remains FROZEN: retainedS2 startup408.930s +602.128squiet /620.420CPU-s,
-ordinarywarm153.016s +603.971squiet /267.606CPU-s. Startup latecounters/12unfocusedwork samples
-qualified; warmvalid/focused/AC.0unnecessarybodyreads/parses/replacements/URLreads/fullbuilders/
-masks; cachedvaliditywork remains. Both had0selectedrepair/replacement, so newer207production
-branch was not exercised. Those CPU observations are NOT relabeled as main991 or a new statistical
-speedup. Current-source affected realIDB/native positivebranch and realcopyparity supply later
-integration evidence; no historicalmatrix rerun. Actual204reuse0 for no-replacement realcopyruns;
-native13/32matching projections are eligibility, not realizedreuse or exclusiveCPU attribution.
-Historical6ad belongsonly to independentstudy. Preserve allprevious artifacts/measurements/limits.
+Guarded Small exact build passed three actual native-editor autosaves with zero observed badge/scene DOM mutations, retained editor focus, structural lateral0, real link removal/addition and exact cleanup (%TEMP%/kplex-stable-gates-editor-preview-fixed/stable-gate-counts.json). Foreground inventory lane passed all6 cases, zero manual flushes, background resumed and config restored (%TEMP%/kplex-stable-gates-final-foreground/report.json). Final inventory107 original files; controllers removed. Foreground access was explicitly released back to the maintainer for video editing: coordinate before any additional foreground operation. No CPU claim from this shared-host interval.
 
-All native work/audits finish20:27:16UTC; user told Macfree again. NO furtherfocus/restart needed
-for unchanged823code. Do notstealfocus afterrelease; reestablishavailability ifsourceadvances.
-Brain K-Plex/community/Sync/Publish off; no controllers/hooks/debugger/processes, IDB methodsnative,
-no new crashreports. Copied20190contentfiles/10,956,614,603B unchanged; fresh223config/workspace
-bytes restored except intentionally retained DISABLED main991. Small CLOSED/all19originalfiles
-identical, including original Sync/enabledplugins: PREPAREOFFLINE before futureopening.
-Original Zsolt's Brain (2025) neverwritten/enabled/staged/restored/databaseopened. Its223config
-hashes matchedbefore19:37:52UTCfirstrelease; no fulloriginalcontentbaseline/claim. Later steps
-onlytargetguarded testvaults. Testcopy DB `k-plex-index-v1-6b706c65782d746573742d627261696e2d6d6163`.
+Qualification: older adaptiveFit Markdown-save lane still fails its unchanged zero-broad-semantic-notification assertion (3 callbacks/3 saves), with0 animations, mounted DOM retained and editor focus preserved. Focused canonical commits are semanticChanged:false/unchangedSource:true. Retained accepted-baseline two-note traces also contain callbacks, but an extra baseline adaptiveFit attempt failed a rendered-body-parent prerequisite, so there is no complete matched legacy-lane comparison. Do not label it passed/waived. Keep this separate failed qualification visible for review; no speculative notification redesign.
 
-Detailed phased record: docs/validation/startup-source-convergence-206-2026-10-23.md.
-Retain five206followups: broadtag; joinedtype-nameorder notuniversallycosmetic; unexplainedfirst-
-baseline+2nodes; veryearlyrecenttabfailureboth; isolatedunattributedhistoricalrenderercrash.
-Fewerpairs/power/censored/controlled-versus-naturalcandidate qualifications remain, as do207's
-maintainer-accepted reopen/storagecost, unresolvedbackendcause and no production-scalingbound.
-No newissue/PR. New private evidence kplex-206-integration-yoggyf26/dedicated restricted durable
-integrationarchive, separatefrom historical203/206seeds/archives; preserveall; NEVERarchiveHANDOFF.
-
-FINAL: commit/push documentaryacceptance, verifyactualremotehead +finalheadCIpass; fetchcurrent
-main andinspect/revalidateanyinterveningacceptedchange. Thenmarkready/normalmerge WITHOUTanother
-approval, verifyGHmerged/mergecommitreachablemain, preservebranches. No release/prod deployment/
-forcepush/historyrewrite/207modification. Ifgatefails keepdraft andreportpreciseblocker. Use
-Zsolt's Codex Agent in GitHubcomments. No extraheavytestsneededfordocs-onlychanges.
+Runtime checkpoint15c6fdef144d329fba2d14ea1e4298850686bf09 is pushed and read back. Next: publish this documentation-only final local evidence, verify remote head, update PR211/checklist/comment and independently inspect implementation CI439 and final documentation CI. No further local runtime tests or foreground checks are needed absent a new finding. Keep raw traces private and sign GitHub comments Zsolt's Codex Agent. No benchmark campaign, Mac work, production vault or unrelated refactor.

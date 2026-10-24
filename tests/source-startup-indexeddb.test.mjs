@@ -350,7 +350,7 @@ test("trusted warm evidence exception retains navigable graph for source recover
   } finally {await browser.cleanup();}
 });
 
-/** Real source/storage work consumes a queued debounce while a genuinely newer event retains its own pass. */
+/** Real source/storage work consumes a queued debounce and drains a scoped event before readiness. */
 for(const lateEvent of [false,true]){
   test(`explicit source reconciliation consumes its scheduled request${lateEvent?' and preserves an event during the pass':''}`,async()=>{
     const browser=await chromiumHarness(bundle);
@@ -374,14 +374,13 @@ for(const lateEvent of [false,true]){
             await reached;ok(f.acquisition.inventory,'A real captured pass is active');
             const joined=f.acquisition.reconcile();file.stat.mtime++;f.texts.set(file.path,'Field:: Changed');
             f.app.vault.trigger('modify',file);ok(f.acquisition.requested,'New event retains follow-up ownership');
-            release();equal(await first,false,'New source event supersedes the earlier captured pass');equal(await joined,false,'Active joins retain the same superseded outcome');
-            // The actual event fan-out has its own completion request. Let that existing owner
-            // finish before firing its shared debounce, matching an ordinary quiet event burst.
+            release();ok(await first,'The same scoped sweep drains the newer source event before completion');ok(await joined,'Active joins retain the same current completed outcome');
+            // The original event and its fan-out are both covered by this pass's final dependency
+            // proof; a completed pass must not leave an empty second debounce/readiness signal.
             await f.acquisition.knownFanoutTasks.get(file);
-            equal(notifications,0,'A stale pass cannot emit readiness');equal(queued.size,1,'Exactly one new event pass scheduled');
-            const next=f.acquisition.timer;ok(next!==scheduled&&queued.has(next),'New request is independently owned');
-            f.repository.headPage=headPage;const callback=queued.get(next);queued.delete(next);callback();
-            ok(await f.acquisition.flush(),'The existing follow-up repairs and closes real source authority');
+            equal(notifications,1,'Only current completed work emits readiness');equal(queued.size,0,'Drained source work schedules no duplicate pass');
+            equal(f.acquisition.requested,false,'The exact final event fence consumed this request');
+            f.repository.headPage=headPage;
             const current=await f.repository.inspect(file.path);equal(current.head.physical.mtime,file.stat.mtime,'Actual changed physical revision acquired');
             ok(current.head.sourceRevision!==before.sourceRevision,'New event produces a genuine canonical head');
             const values=[];equal(await f.repository.visit(file.path,'values',rows=>{values.push(...rows);return true;}),'ready','Current canonical family authenticated');
