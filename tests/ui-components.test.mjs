@@ -1,6 +1,7 @@
 /**
  * Bundles K-Plex UI components into real browser fixtures for interaction, portal and cleanup
- * assertions. Canonical CSS selectors are shared with production; fixtures are removed after each run.
+ * assertions. Fixtures supply current scene/editor/viewport capabilities and navigation contracts;
+ * canonical CSS selectors are shared with production and fixtures are removed after each run.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -36,6 +37,7 @@ try {
   document.body.append(form);
 
   let activations = 0;
+  let actionTarget = null;
   let submissions = 0;
   form.addEventListener("submit", (event) => {
     submissions += 1;
@@ -45,8 +47,9 @@ try {
   const root = createRoot(container);
   flushSync(() => root.render(React.createElement(ActionButton, {
     label: "Navigate back",
+    "aria-pressed": true,
     icon: React.createElement("span", { "data-testid": "action-icon" }, "←"),
-    onClick: () => { activations += 1; },
+    onClick: (event) => { activations += 1; actionTarget = event.currentTarget; },
   })));
 
   let button = container.querySelector("button");
@@ -55,22 +58,26 @@ try {
   check(button.getAttribute("aria-label") === "Navigate back", "accessible label was not rendered");
   check(button.classList.contains("kplex-icon-button"), "canonical K-Plex button CSS hook is missing");
   check(button.classList.contains("kplex-action-button"), "action token hook missing");
+  check(button.getAttribute("aria-pressed") === "true", "toggle state must reach the native button");
   check(!button.hasAttribute("title"), "ActionButton must not add a second/title tooltip");
   check(button.querySelector('[data-testid="action-icon"]')?.textContent === "←", "icon slot did not render");
 
   button.click();
   check(activations === 1, "enabled click must fire exactly once");
+  check(actionTarget === button, "clipboard actions must receive their owning native button");
   check(submissions === 0, "type=button must prevent accidental form submission");
 
   flushSync(() => root.render(React.createElement(ActionButton, {
     label: "Navigate back",
     icon: React.createElement("span", { "data-testid": "action-icon" }, "←"),
     disabled: true,
+    "aria-pressed": false,
     onClick: () => { activations += 1; },
   })));
 
   button = container.querySelector("button");
   check(button.disabled === true, "disabled prop did not reach the native button");
+  check(button.getAttribute("aria-pressed") === "false", "toggle state must update without retaining a stale value");
   button.click();
   check(activations === 1, "disabled click must not activate");
   check(submissions === 0, "disabled action must not submit the form");
@@ -1116,7 +1123,8 @@ import { createRoot } from "react-dom/client";
 import { FuzzySuggester } from ${JSON.stringify(join(root, "src/ui/components/FuzzySuggester.tsx"))};
 import { SavedRelationshipPendingError } from ${JSON.stringify(join(root, "src/adapters/obsidian/relationshipMetadataWrite.ts"))};
 import { PartialRelatedFileError } from ${JSON.stringify(join(root, "src/adapters/obsidian/relatedFileOutcome.ts"))};
-import { CreationCompletionSelect, creationCompletionValue } from ${JSON.stringify(join(root, "src/ui/features/CreationCompletionSelect.tsx"))};
+import { CreationCompletionSelect } from ${JSON.stringify(join(root, "src/ui/features/CreationCompletionSelect.tsx"))};
+import {resolveCreationAfterSaving,creationAfterSavingActions,effectiveCreationAfterSaving,sanitizeCreationAfterSaving} from ${JSON.stringify(join(root,"src/core/plex/createdNoteDestination.ts"))};
 import {ontologyConfiguration} from ${JSON.stringify(join(root,"src/core/contracts/ontologyConfiguration.ts"))};
 import {normalizeFieldName} from ${JSON.stringify(join(root,"src/core/contracts/fieldName.ts"))};
 import {ontologyFieldViews,ontologyFieldDetail,ontologyFuzzyMatches,ontologySelectionFields} from ${JSON.stringify(join(root,"src/ui/features/ontologyPresentation.ts"))};
@@ -1143,7 +1151,9 @@ ${production}
    app: { vault: { on: () => ({}), offref: () => {}, getFileByPath: path => [origin, target].find(page => page.path === path)?.file,
     getAllFolders: includeRoot => { check(includeRoot === true, "folder inventory must include the vault root"); folderEnumerations++; return [{ path: "/" }, { path: "Projects" }, { path: "Projects/Ideas" }]; } } },
    settings: { editNewNodeAfterCreate: false, newNodeDefaultType: "markdown",ontologyPairingVersion:1,hierarchy:{hidden:[],parents:["parent"],children:["children","review","example"],leftFriends:[],rightFriends:[],previous:[],next:[],exclusions:[]} },
-   translator: (key) => key, isExcalidrawAvailable: () => false, defaultOntologyField: () => "children",
+   createdNoteCompletionControl(_host,options={}){const context={desktop:true,sidepanel:false,another:options.another!==false,editable:options.editable!==false,follow:options.follow!==false},key=options.operation==='link'?'linkAfterSaving':'newNodeAfterSaving';return{choices:creationAfterSavingActions(context),value:effectiveCreationAfterSaving(sanitizeCreationAfterSaving(this.settings[key]??this.settings.newNodeAfterSaving,this.settings.editNewNodeAfterCreate),context),onChange:value=>{this.settings[key]=value}}},
+   finishNewRelatedNode:async()=>{},
+   translator: (key) => key, drawingTemplateOptions: () => null, isExcalidrawAvailable: () => false, defaultOntologyField: () => "children",
    ontologyFieldsForRole: () => ["children", "review", "example"],
    allOntologyFields: () => ["children", "review", "example", "parent"],
    ontologyRoleForField: field => field === "parent" ? "parent" : ["children", "review", "example"].includes(field) ? "child" : null,
@@ -1210,7 +1220,7 @@ ${production}
   plugin.saveSettings = async () => {};
   flushSync(() => root.render(createElement(RelatedNoteComposer, { key: "all-directions", plugin, origin, session, initialRole: "child", fixedTarget: target })));
   const changeSelect = (selector, value) => flushSync(() => { const element=host.querySelector(selector); element.value=value; element.dispatchEvent(new Event("change", {bubbles:true})); });
-  check(host.querySelector('.kplex-add-related-completion select').value === "return", "configured existing-note action must show Return");
+  check(host.querySelector('.kplex-add-related-completion select').value === "sidecar", "configured action must retain the migrated Sidecar preference");
   check(![...host.querySelector('.kplex-add-related-completion select').options].some(option=>option.value==="configured"), "ambiguous configured choice remains visible");
   const direction=host.querySelector('.kplex-add-related-role-select');
   check(direction.parentElement===host.querySelector('.kplex-add-related-ontology-search').parentElement, "direction is not beside the ontology field");
@@ -1224,9 +1234,30 @@ ${production}
   flushSync(() => host.querySelector('.kplex-add-related-link-button').click()); await new Promise(resolve=>setTimeout(resolve,0));
   check(intents.length===1 && intents[0][1]==='parent' && intents[0][3]==='parent', "All reclassified a known ontology field");
   flushSync(() => root.render(createElement(RelatedNoteComposer, { key: "effective-default", plugin, origin, session, initialRole: "child" })));
-  check(host.querySelector('.kplex-add-related-completion select').value==='edit', "configured create action must show Edit note");
+  check(host.querySelector('.kplex-add-related-completion select').value==='sidecar', "configured create action must retain Sidecar");
   const footer=host.querySelector('.kplex-add-related-footer');
-  check(footer.contains(host.querySelector('.kplex-create-edit-toggle')) && footer===host.querySelector('.kplex-add-related-form').lastElementChild, "completion controls are not together at the bottom");
+  check(footer.querySelectorAll('select').length===1&&!footer.querySelector('input[type=checkbox]')&&footer===host.querySelector('.kplex-add-related-form').lastElementChild, "After saving must be one control at the bottom");
+  check([...footer.querySelector('select').options].map(option=>option.value).join(',')==='return,another,follow,sidecar,editor,editor-maximized,tab,window',"Unified choices were omitted or reordered");
+  changeSelect('.kplex-add-related-completion select','editor-maximized');
+  check(plugin.settings.newNodeAfterSaving==='editor-maximized',"Explicit completion preference was not remembered");
+  // Switching operation must restore its own choice within this dialog and after a fresh mount.
+  const completionValue=()=>host.querySelector('.kplex-add-related-completion select').value;
+  const enter=value=>flushSync(()=>type(host.querySelector('.kplex-add-related-note-search input'),value));
+  const chooseTarget=()=>{const field=host.querySelector('.kplex-add-related-note-search input');flushSync(()=>field.focus());enter('Target');const row=document.body.querySelector('.kplex-fuzzy-floating-results button');check(row,'Target result absent');flushSync(()=>row.click());};
+  chooseTarget();changeSelect('.kplex-add-related-completion select','return');
+  check(plugin.settings.linkAfterSaving==='return'&&plugin.settings.newNodeAfterSaving==='editor-maximized','Link selection overwrote creation');
+  enter('New note');check(completionValue()==='editor-maximized','Clearing an existing target lost creation choice');
+  enter('https://example.org/');check(completionValue()==='return','Web links did not use the link preference');
+  changeSelect('.kplex-add-related-completion select','follow');enter('New note');
+  check(completionValue()==='editor-maximized'&&plugin.settings.linkAfterSaving==='follow','Web-link selection changed creation choice');
+  chooseTarget();check(completionValue()==='follow','Existing notes did not share the link preference');
+  changeSelect('.kplex-add-related-completion select','another');
+  flushSync(()=>host.querySelector('.kplex-add-related-link-button').click());await new Promise(resolve=>setTimeout(resolve,0));flushSync(()=>{});
+  check(host.querySelector('.kplex-add-related-note-search input').value===''&&completionValue()==='editor-maximized','Link another did not return to the creation preference');
+  flushSync(()=>root.render(createElement(RelatedNoteComposer,{key:'reopened-link',plugin,origin,session,initialRole:'child',fixedTarget:target})));
+  check(completionValue()==='another','Reopening a selected existing note lost its saved link choice');
+  flushSync(()=>root.render(createElement(RelatedNoteComposer,{key:'reopened-create',plugin,origin,session,initialRole:'child'})));
+  check(completionValue()==='editor-maximized','Reopening creation lost its separate saved choice');
   plugin.settings.editNewNodeAfterCreate=false; session.continuation='return';
   // Hold an actual drawing submission after durability: ordinary progress must never offer recovery.
   const style = document.createElement("style"); style.textContent = ${JSON.stringify(readFileSync(join(root, "styles.css"), "utf8"))}; document.head.append(style);
@@ -1321,9 +1352,19 @@ test("ActionButton rendered browser behavior", () => {
   runBrowserDom(browserEntry(), "ActionButton browser behavior passed");
 });
 
-/** Exercise production reconciliation keys and thought DOM across a mutable rename/placeholder handover. */
+/** Exercise production reconciliation keys and thought DOM across a mutable rename/placeholder
+ * handover, supplying the current extracted renderer's native editor-eligibility capabilities. */
 function attachmentRenameBrowserEntry() {
   return `
+import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
+import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
+import * as classicLayout from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
+import {classicEditorKey,classicEditorIdentity} from ${JSON.stringify(join(root,'src/ui/plexViews/classic/occurrenceEditor.ts'))};
+const viewDefinition=classicViewDefinition,viewFailed=false,viewLifetime=0,viewSession=undefined,badgeColorRevision=0;
+const classicFixturePolicy=(layout=classicLayout.buildScene)=>({policyKey:classicLayout.sceneLayoutPolicyKey,geometryKey:classicLayout.neighborhoodSceneKey,
+  layout,sections:classicLayout.buildSectionExpandedScene,bind:classicLayout.bindSceneNeighborhood,dropRole:classicAreaDropRole,editorKey:classicEditorKey,editorIdentity:classicEditorIdentity});
+const classic=classicFixturePolicy();
+
 import {canDragNodeLink,startNodeLinkDrag,finishNodeLinkDrag} from ${JSON.stringify(join(root,"src/adapters/obsidian/nodeLinkDrag.ts"))};
 import React, { useId, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
@@ -1339,6 +1380,7 @@ const warnings = [], originalError = console.error;
 console.error = (...args) => { warnings.push(args.map(String).join(" ")); originalError(...args); };
 // Native icons are the only thought-rendering host boundary; this scenario has no icon effects.
 const ObsidianIcon = () => null;
+import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions("src/ui/ThoughtNode.tsx", ["GATES", "ThoughtNode"])}
 
@@ -1348,38 +1390,45 @@ const interaction = { gates: new Set(), nodePaths: new Set() }, connectDrag = nu
 const hoverPreview = {current:new HoverPreview()};
 // The production unfiltered projection is absent; rename reconciliation must not invent a filtered read.
 const globalFiltering = false, filteredGateCounts = null, nodeVisuals = new Map();
+const visibleEdgeProjection = {limited:false};
 const predicate = null, lenses = { lenses: [] }, paintLenses = lenses, predicateEngine = {}, predicateRevision = 0, layoutRevision = 0;
 let styleReads=0;const measuredStyle=()=>new Proxy({textColor:"#abcdef"},{ownKeys(target){styleReads++;return Reflect.ownKeys(target)}});
 settings.baseNodeStyle=measuredStyle();let paintSettings=settings;
 const graphLensNodeStyle = () => ({});
+const occurrenceEditorPolicy = false, editorSwitching = false;
+${uiDefinitions("src/ui/PlexGraph.tsx", ["CENTRAL_EDITOR_IMAGE_EXTENSIONS", "CENTRAL_EDITOR_MEDIA_EXTENSIONS", "supportsCentralEditorFile", "supportsBoundEditor"])}
+const hasClickModifier=event=>event.altKey||event.ctrlKey||event.metaKey||event.shiftKey;
 const centralEditorCapable = true, finding = false, hover = null, crossLinkPeek = null, activeNodeFlair = null, findNodePaths = new Set(), keyboardSelection = null;
-const connectionStateFor = () => "normal", onCentralNodeEditorChange = () => {}, gateKey = (path, gate) => path + ":" + gate;
+const connectionStateFor = () => "normal", onCentralNodeEditorChange = () => {}, centralEditorCanMaximize = true, gateKey = (path, gate) => path + ":" + gate;
 const persistentPageFor = (page) => page;
 const activePath = "Editor.md", centralEditorAvailable = true, sectionExpanded = false;
+// Match the production Classic section-source context used by the extracted renderer.
+const sectionDocument = activePath, sectionEditorAvailable = centralEditorAvailable;
 const page = (path, materialized = true) => ({ path, name: path, file: materialized ? { extension: "png", path } : null });
 const centerPage = page(activePath), attachmentPage = page("Before.png"), placeholderPage = page("After.png", false), sentinelPage = page("Other.png");
 const neighborhood = { center: centerPage }, miniPage = page("Descendant.png");
+const predicateCenter = centerPage;
 const nativeNodeDrag={current:null},viewport={current:null},suppressActivateUntil={current:0},suppressSyntheticClickUntil={current:0},miniOpened=[],activated=[],materialized=[],actionSurfaceId="gesture-fixture";
-const actionNodeRef=page=>({identity:page.path,path:page.path,kind:"ghost"});
+import {actionNodeRef,resolveActionPage} from ${JSON.stringify(join(root,'src/adapters/obsidian/actionNode.ts'))};
+import {captureSurfaceContinuation} from ${JSON.stringify(join(root,'src/ui/surfaceContinuation.ts'))};
 const Keymap={isModEvent:event=>event.ctrlKey||event.metaKey},openNode=(...args)=>miniOpened.push(args),clearHoverIntent=()=>{},setExternalDropZone=()=>{};
-const runNodeAction=(...args)=>activated.push(args);
-${uiDefinitions("src/ui/PlexGraph.tsx", ["isPlaceholderFolderGesture", "activateNode"])}
+const runNodeAction=(...args)=>activated.push(args),setPropertyDropArea=()=>{};
+${uiDefinitions("src/ui/PlexGraph.tsx", ["isPlaceholderFolderGesture", "isCenterNodeGesture", "activateOccurrence", "activateNode"])}
 const manager={draggable:null,dragLink:(event,linktext,sourcePath,title,source)=>({type:"link",linktext,sourcePath,title,source}),onDragStart(event,value){this.draggable=value},onDragEnd(){this.draggable=null}};
 const previewed=[];
-const plugin={triggerHoverPreview:(page,target,event)=>previewed.push({page,target,ctrl:event.ctrlKey}),actionManager:{dispatch:request=>materialized.push(request)},app:{dragManager:manager,vault:{getFileByPath:path=>[centerPage,attachmentPage,placeholderPage,sentinelPage,miniPage].find(page=>page.file?.path===path)?.file??null}}};
-// The production center renderer publishes already-rendered local gate coverage for readiness.
-const renderedCenterGates = { current: null };
+const plugin={triggerHoverPreview:(page,target,event)=>previewed.push({page,target,ctrl:event.ctrlKey}),actionManager:{dispatch:request=>materialized.push(request),readSnapshot:()=>({mounted:true,viewRevision:0,interactionRevision:0,center:{identity:activePath}})},app:{dragManager:manager,vault:{getFileByPath:path=>[centerPage,attachmentPage,placeholderPage,sentinelPage,miniPage].find(page=>page.file?.path===path)?.file??null}}};
 const gates = Object.fromEntries(["top", "bottom", "left", "right"].map((gate) => [gate, { visibleCount: 0, hasAny: false, complete: true }]));
-const index = { gateStats: () => gates, neighbours: () => [{ page: miniPage, role: "child", relationType: 1 }], titleFor: (page) => page.name };
+const index = {get:path=>[centerPage,attachmentPage,placeholderPage,sentinelPage,miniPage].find(page=>page.path===path), gateStats: () => gates, neighbours: () => [{ page: miniPage, role: "child", relationType: 1 }], titleFor: (page) => page.name };
 const node = (page, role, x, y, height = 26) => ({ page, role, x, y, width: 180, height, style: { fontSize: 18 }, label: page.name, neighbourCount: 0, gateStats: gates });
 /** Render actual base nodes with separate zone-local/count-hydrated display copies. */
 function Scene({ scene: sourceScene, expanded }) {
-  const scene = useMemo(() => ({ ...sourceScene, zoneViewports: {}, zoneAreas: {} }), [sourceScene]);
+  const miniNamePrefix = useId();
+  const scene = useMemo(() => ({ ...sourceScene, edges:sourceScene.edges??[], zoneViewports: {}, zoneAreas: {} }), [sourceScene]);
   const centralEditorPage = expanded ? centerPage : null;
   const sectionExpansion = null, expandedScrollTop = useMemo(() => ({}), []);
   const visibleNodePaths = useMemo(() => new Set(scene.nodes.map((item) => item.page.path)), [scene.nodes]);
   const renderedNodeMap = useMemo(() => new Map(scene.nodes.map((item) => [item.page.path, { ...item }])), [scene.nodes]);
-  ${uiDefinitions("src/ui/PlexGraph.tsx", ["paintedNodeStyles", "sceneNodeKeys", "expandedClusters", "beginNativeNodeDrag", "endNativeNodeDrag", "renderNode", "renderExpandedCluster"])}
+  ${uiDefinitions("src/ui/PlexGraph.tsx", ["areaForNode", "isEditorOccurrence", "navigationNode", "isDraggedNode", "paintedNodeStyles", "classicEditorCounts", "sceneNodeKeys", "expandedClusters", "nativeDragRelationship", "beginNativeNodeDrag", "endNativeNodeDrag", "renderNode", "renderExpandedCluster"])}
   const miniKeys = expandedClusters.flatMap((cluster) => cluster.children.map((child) => child.key));
   check(new Set(miniKeys).size === miniKeys.length, "expanded connector keys collide during rename");
   return <><div className="kplex-nodes">{scene.nodes.map((item) => renderNode(item, { ...item }))}</div><div>{expandedClusters.map(renderExpandedCluster)}</div></>;
@@ -1389,14 +1438,14 @@ try {
  for (const rebuildDuringRename of [false, true]) {
   attachmentPage.path = "Before.png"; attachmentPage.name = "Before.png"; attachmentPage.file.path = "Before.png";
   const container = document.createElement("div"); document.body.append(container);
-  const root = createRoot(container);
+  viewport.current=container;const root = createRoot(container);
   const initial = { nodes: [node(centerPage, "center", 0, 0, 380), node(attachmentPage, "child", -100, 300), node(placeholderPage, "child", 100, 300), node(sentinelPage, "child", 0, 350)] };
   const render = (scene, expanded) => flushSync(() => root.render(<Scene scene={scene} expanded={expanded} />));
   const attachments = () => [...container.querySelectorAll(".kplex-thought")].filter((element) => element.dataset.kplexPath === "After.png");
   const clusters = () => container.querySelectorAll(".kplex-expanded-cluster").length;
   render(initial, true);
   const firstStyleReads=styleReads;render(initial,true);render(initial,true);
-  check(styleReads===firstStyleReads,"Stable scene rerenders repeated style-dictionary work");
+  check(styleReads===firstStyleReads,"Stable scene rerenders repeated style-dictionary work: "+JSON.stringify({before:firstStyleReads,after:styleReads}));
   paintSettings={...settings,baseNodeStyle:measuredStyle()};render(initial,true);
   check(styleReads>firstStyleReads,"New paint settings failed to re-resolve colors");
   const recoloredReads=styleReads;render(initial,true);check(styleReads===recoloredReads,"New paint cache did not settle");
@@ -1412,7 +1461,18 @@ try {
   const real=[...container.querySelectorAll('.kplex-thought')].find(element=>element.dataset.kplexPath===attachmentPage.path);
   flushSync(()=>real.dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true})));
   check(activated.length===beforeActivations+2,'Modified real-file click was incorrectly reserved for placeholder creation');
+  const beforeCenterWrites=materialized.length;
+  flushSync(()=>ghost.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,altKey:true,detail:1})));
+  check(activated.at(-1)?.[0]==='node.activate'&&activated.at(-1)?.[1]===placeholderPage&&activated.at(-1)?.[3]==='destination','Alt/Option placeholder click did not use shared explicit centering');
+  check(materialized.length===beforeCenterWrites,'Alt/Option centering materialized a placeholder');
   const mini=container.querySelector(".kplex-expanded-mini-thought"),transfer=new DataTransfer();
+  check(!mini.hasAttribute("aria-label")&&mini.hasAttribute("title"),"Expanded rows retained competing native tooltip sources");
+  check(document.getElementById(mini.getAttribute("aria-labelledby"))?.textContent===miniPage.name,"Expanded row lost its full accessible name");
+  const beforeCenterDoubleOpen=miniOpened.length;
+  flushSync(()=>mini.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,altKey:true,detail:1})));
+  check(activated.at(-1)?.[0]==='node.activate'&&activated.at(-1)?.[1]===miniPage&&activated.at(-1)?.[3]==='destination','Expanded Alt/Option click lost explicit center intent');
+  flushSync(()=>mini.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,altKey:true,detail:2})));
+  check(miniOpened.length===beforeCenterDoubleOpen,'Expanded Alt/Option double-click also opened the file');
   const releasePreview=bindHoverPreview(container,hoverPreview.current),beforePreviews=previewed.length;
   flushSync(()=>mini.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'})));
   window.dispatchEvent(new KeyboardEvent('keydown',{key:'Control',ctrlKey:true}));
@@ -1422,9 +1482,10 @@ try {
   check(previewed.length===beforePreviews+1,'Expanded row retained preview after leave');releasePreview();
   check(mini.draggable,"Expanded descendants do not expose native dragging");
   flushSync(()=>mini.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:transfer})));
-  check(manager.draggable?.linktext===miniPage.path&&manager.draggable?.source.owner===mini,"Expanded drag did not retain its endpoint and distinct occurrence authority");
+  check(manager.draggable?.linktext===miniPage.path&&manager.draggable?.source.owner===viewport.current&&manager.draggable.source.occurrence?.id===mini.dataset.kplexKeyboardId&&!manager.draggable.source.occurrence.relationship,"Expanded drag did not retain its exact copy-only occurrence");
   flushSync(()=>mini.dispatchEvent(new DragEvent("dragend",{bubbles:true,dataTransfer:transfer})));check(manager.draggable===null,"Expanded native drag did not retire");
   flushSync(()=>mini.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,ctrlKey:true})));check(miniOpened.at(-1)?.[0]===miniPage&&miniOpened.at(-1)?.[1]===undefined,"Real expanded node double-click gained placeholder-only creation behavior");
+
   // GraphIndex.renameTreeEndpoint intentionally retains canonical page identity and mutates its
   // path; an unrelated React update may reuse the existing scene before its publication commits.
   attachmentPage.path = "After.png"; attachmentPage.name = "After.png"; attachmentPage.file.path = "After.png";
@@ -1510,9 +1571,18 @@ function editorHistoryBrowserEntry(){
   const history=uiDefinitions("src/ui/structuralConnectionActions.ts",["tagMembershipPair"])+uiDefinitions("src/ui/StructuralNodeDropActions.ts",["structuralDropKind"])+uiDefinitions("src/ui/PlexGraph.tsx",["normalizedRole","startNodeDrag","relationshipDropRoles","historyRelationshipTarget","clearHistoryDragHover","updateHistoryDragHover","cancel","lostPointerCapture"]);
   const editor=uiDefinitions("src/ui/CentralNodeEditor.tsx",["CentralNodeEditor"]);
   return `
+import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
+import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
+import * as classicLayout from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
+const viewDefinition=classicViewDefinition,viewFailed=false,viewLifetime=0;
+const classicFixturePolicy=(layout=classicLayout.buildScene)=>({policyKey:classicLayout.sceneLayoutPolicyKey,geometryKey:classicLayout.neighborhoodSceneKey,
+  layout,sections:classicLayout.buildSectionExpandedScene,bind:classicLayout.bindSceneNeighborhood,dropRole:classicAreaDropRole});
+const classic=classicFixturePolicy();
+
 import {canDragNodeLink} from ${JSON.stringify(join(root,"src/adapters/obsidian/nodeLinkDrag.ts"))};
 import {markdownZoomMode,withMarkdownZoomMode} from ${JSON.stringify(join(root,"src/core/plex/markdownZoomPreferences.ts"))};
-import React,{useEffect,useLayoutEffect,useRef,useState} from "react";
+import React,{useEffect,useId,useLayoutEffect,useRef,useState} from "react";
+import {TooltipButton} from ${JSON.stringify(join(root,"src/ui/components/TooltipButton.tsx"))};
 import {flushSync} from "react-dom";
 import {createRoot} from "react-dom/client";
 const check=(ok,message)=>{if(!ok)throw new Error(message)},result=document.querySelector("#result");
@@ -1573,11 +1643,12 @@ try{
  viewportElement.dispatchEvent(new PointerEvent("lostpointercapture",{bubbles:true,pointerId:10,pointerType:"mouse"}));
  check(resizeFinishes===1&&areaClears===1,"viewport-owned resize lost its capture completion");
  const container=document.body.appendChild(document.createElement("div")),root=createRoot(container),opened=[],page={path:"https://example.com",url:"https://example.com",name:"Example"};
- const props={plugin:{settings:{centralNodeMarkdownZoomModes:{}}},hostLeaf:{},page,defaultMode:"preview",allowMaximize:true,activateHostLeafOnInteraction:false,onModeChange(){},onMaximizedChange(){},onCollapse(){},onNavigate(){},translate:key=>key,onOpenMenu:button=>opened.push(button)};
+ const props={plugin:{settings:{centralNodeMarkdownZoomModes:{}},index:{titleFor:page=>page.name}},hostLeaf:{},page,defaultMode:"preview",allowMaximize:true,activateHostLeafOnInteraction:false,onModeChange(){},onMaximizedChange(){},onCollapse(){},onNavigate(){},translate:key=>key,onOpenMenu:button=>opened.push(button)};
  for(const maximized of [false,true]){
   flushSync(()=>root.render(React.createElement(CentralNodeEditor,{...props,maximized})));
-  const menu=container.querySelector('[aria-label="graph.openMenu"]');check(menu instanceof HTMLButtonElement&&menu.type==="button","editor menu button missing or nonsemantic");
-  check(menu.textContent==="ellipsis-vertical"&&!menu.hasAttribute("title"),"shared menu icon/accessibility changed");
+  check(container.querySelector(".kplex-central-editor-title").textContent==="Example","Editor title missing");
+  const menu=[...container.querySelectorAll("button")].find(button=>document.getElementById(button.getAttribute("aria-labelledby"))?.textContent==="graph.openMenu");check(menu instanceof HTMLButtonElement&&menu.type==="button","editor menu button missing or nonsemantic");
+  check(menu.lastElementChild.textContent==="ellipsis-vertical"&&!menu.hasAttribute("title")&&!menu.hasAttribute("aria-label"),"shared menu icon/accessibility changed");
   check(menu.parentElement.querySelector("button:last-child")===menu,"shared menu must be the final button in both editor sizes");
   flushSync(()=>menu.click());check(opened[opened.length-1]===menu&&menu.ownerDocument===document,"editor menu did not retain actual owning button/document");
  }
@@ -1591,40 +1662,51 @@ try{
 function externalAndPinnedDropBrowserEntry() {
   const callbacks = uiDefinitions("src/ui/structuralConnectionActions.ts",["tagMembershipPair"])+uiDefinitions("src/ui/StructuralNodeDropActions.ts",["structuralDropKind", "structuralAreaDrop"])+uiDefinitions("src/ui/PlexGraph.tsx", ["normalizedRole", "semanticRoleForGate", "toWorld", "isAreaControlTarget", "isEmptyAreaTarget", "areaHoverAt",
     "relationshipDropRoles", "historyRelationshipTarget", "clearHistoryDragHover", "updateHistoryDragHover", "openHistoryRelationshipMenu",
-    "externalFileDropTarget", "dragExternalFileOver", "leaveExternalFile", "dropExternalFile", "semanticRoleForPosition", "nodeDropRole", "commitNodeAreaDrop", "relationshipDropArea", "up"]);
+    "beginNativeNodeDrag", "endNativeNodeDrag", "nativeDragRelationship", "navigationNode", "isDraggedNode", "dropOriginAt", "externalFileDropTarget", "propertyAssignmentAt", "dragExternalFileOver", "leaveExternalFile", "dropExternalFile", "semanticRoleForPosition", "nodeDropRole", "commitNodeAreaDrop", "relationshipDropArea", "up"]);
   return `
+import {areaContains} from ${JSON.stringify(join(root,'src/core/contracts/areaGeometry.ts'))};
+import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
+import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
+import * as classicLayout from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
+const viewDefinition=classicViewDefinition,viewFailed=false,viewLifetime=0;
+const classicFixturePolicy=(layout=classicLayout.buildScene)=>({policyKey:classicLayout.sceneLayoutPolicyKey,geometryKey:classicLayout.neighborhoodSceneKey,
+  layout,sections:classicLayout.buildSectionExpandedScene,bind:classicLayout.bindSceneNeighborhood,dropRole:classicAreaDropRole});
+let classic=classicFixturePolicy(),occurrenceEditorPolicy=false;
+
 import {getDraggedFile} from ${JSON.stringify(join(root,"src/adapters/obsidian/fileExplorerDrag.ts"))};
-import {draggedGraphPage,nodeLinkDragSource} from ${JSON.stringify(join(root,"src/adapters/obsidian/nodeLinkDrag.ts"))};
+import {draggedGraphPage,nodeLinkDragSource,startNodeLinkDrag,finishNodeLinkDrag,isNodeLinkDragCurrent} from ${JSON.stringify(join(root,"src/adapters/obsidian/nodeLinkDrag.ts"))};
+import {actionNodeRef,resolveActionPage} from ${JSON.stringify(join(root,'src/adapters/obsidian/actionNode.ts'))};
 import {captureSurfaceContinuation} from ${JSON.stringify(join(root,"src/ui/surfaceContinuation.ts"))};
+import {plexAreaDropMeaning} from ${JSON.stringify(join(root,"src/core/plex/views/dropTargets.ts"))};
 const check=(ok,message)=>{if(!ok)throw new Error(message)},result=document.querySelector("#result");
 try {
- const origin={path:"Origin.md",file:{extension:"md"}},target={path:"Dropped.md",file:{extension:"md"}};
+ const origin={path:"Origin.md",file:{path:"Origin.md",extension:"md"}},target={path:"Dropped.md",file:{path:"Dropped.md",extension:"md"}};
  const pages=new Map([[origin.path,origin],[target.path,target]]),filePaths=new Set([origin.path,target.path]),blocked=new Map();
- const index={get:path=>pages.get(path),gateNeighbourPaths:(page,gate)=>blocked.get(gate)||new Set()};
- const calls=[],navigated=[],hostLeaf={id:"owning-leaf"},actionSurfaceId="drop-fixture";
+ const index={get:path=>pages.get(path),isSemanticWriteReady:()=>true,neighbours:(page,role)=>(scene.edges??[]).filter(edge=>edge.sourcePath===page.path&&edge.role===role).map(edge=>({page:pages.get(edge.targetPath),role:edge.role,relationType:edge.relationType,typeDefinition:edge.typeDefinition,linkDirection:edge.direction})),gateNeighbourPaths:(page,gate)=>blocked.get(gate)||new Set()};
+ const calls=[],navigated=[],destinationIntents=[],hostLeaf={id:"owning-leaf"},actionSurfaceId="drop-fixture";
  const snapshot={mounted:true,interactionRevision:1,center:{identity:origin.path}};let shown=null,hoverCleared=0;
- const plugin={app:{dragManager:{draggable:{type:"file",file:{path:target.path}}},vault:{getFileByPath:path=>filePaths.has(path)?{path}:null}},
+ const plugin={app:{dragManager:{draggable:{type:"file",file:{path:target.path}}},vault:{getFileByPath:path=>filePaths.has(path)?pages.get(path)?.file??{path}:null}},
   actionManager:{readSnapshot:()=>({...snapshot,center:{...snapshot.center}})},
   openStructuralNodeDrop:()=>false,openRelationModal:options=>calls.push(options),showKplexMenuAtPosition:(menu,point,doc)=>{shown={menu,point,doc}}};
- const translate=key=>key,clearHoverIntent=()=>hoverCleared++,onActivate=page=>navigated.push(page);
+ const translate=key=>key,clearHoverIntent=()=>hoverCleared++,onActivate=(page,intent)=>{navigated.push(page);destinationIntents.push(intent)};
  class Menu {items=[];addItem(build){const item={setTitle(value){this.title=value;return this},setIcon(){return this},onClick(value){this.run=value;return this}};build(item);this.items.push(item)}}
  const surface=document.body.appendChild(document.createElement("div"));surface.style.cssText="position:absolute;left:0;top:0;width:900px;height:650px";
- const viewport={current:surface},camera={current:{x:0,y:0,scale:1}},neighborhood={center:origin},historyDragHover={current:null};
+ const nativeNodeDrag={current:null},viewSession=undefined;const viewport={current:surface},camera={current:{x:0,y:0,scale:1}},neighborhood={center:origin},historyDragHover={current:null};
  const settings={lateralArrangement:"split"};
- let connectDrag=null,nodeDrag=null,externalDropZone=null;const setExternalDropZone=value=>{externalDropZone=value};const areaResizeDrag={current:null},pendingGateLongPress={current:null},touchLongPress={current:null},suppressActivateUntil={current:0};
+ const externalDropPoint={current:null};let connectDrag=null,nodeDrag=null,externalDropZone=null,propertyDropArea=null;const setExternalDropZone=value=>{externalDropZone=value},setPropertyDropArea=value=>{propertyDropArea=value};const areaResizeDrag={current:null},pendingGateLongPress={current:null},touchLongPress={current:null},suppressActivateUntil={current:0};
  const finishAreaSettingsDismiss=()=>{},setConnectDrag=value=>{connectDrag=value},setNodeDrag=value=>{nodeDrag=value},renderedNodeMap=new Map();
  const optimisticCommitToken={current:0};let optimistic=null,updating=false;
  const setOptimisticRelink=value=>{optimistic=value},setRelationshipUpdating=value=>{updating=value};
- const scene={zoneAreas:{parent:{left:300,top:60,width:110,height:100,resizeEdge:"top"},child:{left:450,top:60,width:110,height:100,resizeEdge:"bottom"},left:{left:300,top:230,width:110,height:100,resizeEdge:"top"},right:{left:450,top:230,width:110,height:100,resizeEdge:"top"}}};
- const ZONES=["parent","child","left","right","sibling"],AREA_RESIZE_EDGE_PX=10;
+ const sceneNodeKeys=new Map();const centerNode={page:origin,role:"center"};const scene={nodes:[centerNode],zoneAreas:{parent:{left:300,top:60,width:110,height:100,resizeEdge:"top"},child:{left:450,top:60,width:110,height:100,resizeEdge:"bottom"},left:{left:300,top:230,width:110,height:100,resizeEdge:"top"},right:{left:450,top:230,width:110,height:100,resizeEdge:"top"}}};
+ const ZONES=["parent","child","left","right","sibling"],AREA_RESIZE_EDGE_PX=10,AREA_HEIGHT_CONFIG={parent:{},child:{},left:{},right:{}},AREA_WIDTH_CONFIG={};
  ${callbacks}
- const center=surface.appendChild(document.createElement("div"));center.className="kplex-thought kplex-role-center";center.dataset.kplexPath=origin.path;center.style.cssText="position:absolute;left:60px;top:60px;width:100px;height:100px";
+ const center=surface.appendChild(document.createElement("div"));center.className="kplex-thought kplex-role-center";center.dataset.kplexPath=origin.path;center.dataset.kplexKeyboardId=origin.path;center.style.cssText="position:absolute;left:60px;top:60px;width:100px;height:100px";
  const other=surface.appendChild(document.createElement("div"));other.className="kplex-thought";other.dataset.kplexPath="Other.md";other.style.cssText="position:absolute;left:320px;top:100px;width:40px;height:30px";
  const control=surface.appendChild(document.createElement("button"));control.style.cssText="position:absolute;left:460px;top:100px;width:40px;height:30px";
  const editor=surface.appendChild(document.createElement("div"));editor.className="kplex-central-editor-overlay";editor.style.cssText="position:absolute;left:60px;top:200px;width:100px;height:100px";
- const event=(x,y)=>({clientX:x,clientY:y,currentTarget:surface,prevented:false,stopped:false,dataTransfer:{dropEffect:"move"},preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}});
+ const event=(x,y)=>({clientX:x,clientY:y,currentTarget:surface,target:document.elementFromPoint(x,y),prevented:false,stopped:false,dataTransfer:{dropEffect:"move"},preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}});
  let e=event(90,90);dropExternalFile(e);check(e.stopped&&navigated[0]===target&&calls.length===0,"actual center did not navigate the resolved dropped file");
- e=event(90,240);dropExternalFile(e);check(navigated.length===2,"center editor overlay did not navigate");
+ e=event(90,240);dropExternalFile(e);check(navigated.length===1&&!e.prevented&&!e.stopped,"attention-following native editor did not retain its own drop ownership");
  for(const [role,area] of Object.entries(scene.zoneAreas)) {
   const x=area.left+10,y=area.top+10; e=event(x,y);dragExternalFileOver(e);check(e.dataTransfer.dropEffect==="copy"&&e.stopped&&externalDropZone===role,"eligible area did not accept/highlight drag: "+role);
   leaveExternalFile(event(x+1,y+1));check(externalDropZone===role,"child-to-child leave blinked preview");
@@ -1648,12 +1730,12 @@ try {
  for(const role of ["parent","child","left","right"]) {updateHistoryDragHover(origin,40,365,document,role);check(pinned.classList.contains("is-relationship-drop-target"),"pinned role highlight missing");check(openHistoryRelationshipMenu(origin,40,365,document,role),"pinned fixed gate role rejected");check(calls.at(-1).semanticRole===role&&calls.at(-1).fixedTarget===target,"pinned fixed target/role lost");}
  blocked.set("left",new Set([target.path]));updateHistoryDragHover(origin,40,365,document,"left");check(!pinned.classList.contains("is-relationship-drop-target"),"blocked pinned gate retained highlight");
  check(openHistoryRelationshipMenu(origin,40,365,document),"pinned body chooser rejected");check(shown.doc===document&&shown.menu.items.length===3&&!shown.menu.items.some(item=>item.title==="role.friend"),"body chooser did not filter canonical duplicate role");shown.menu.items[0].run();check(calls.at(-1).fixedTarget===target,"body chooser lost fixed endpoint");
- target.file={extension:"png"};check(relationshipDropRoles(origin,target).length===3,"Markdown origin cannot link attachment endpoint");origin.file={extension:"png"};check(relationshipDropRoles(origin,target).length===0,"two non-Markdown endpoints incorrectly writable");origin.file={extension:"md"};target.file={extension:"md"};
+ target.file={path:target.path,extension:"png"};check(relationshipDropRoles(origin,target).length===3,"Markdown origin cannot link attachment endpoint");origin.file={path:origin.path,extension:"png"};check(relationshipDropRoles(origin,target).length===0,"two non-Markdown endpoints incorrectly writable");origin.file={path:origin.path,extension:"md"};target.file={path:target.path,extension:"md"};
  for(const flag of ["isFolder","isTag"]) {target[flag]=true;check(historyRelationshipTarget(origin,40,365,document),"structural saved target rejected");delete target[flag];}
  check(!historyRelationshipTarget(target,40,365,document),"pinned self endpoint accepted");
- const rejectCount=calls.length;origin.file={extension:"png"};target.isTag=true;connectDrag={pointerId:21,originPath:origin.path,gate:"top",moved:true};up({...event(40,365),pointerId:21,pointerType:"mouse"});
- check(connectDrag===null&&calls.length===rejectCount,"rejected pinned gate fell through into empty composer");delete target.isTag;origin.file={extension:"md"};
- scene.nodes=[{page:target,role:"parent"}];nodeDrag={pointerId:22,path:target.path,startClientX:0,startClientY:0,moved:true};
+ const rejectCount=calls.length;origin.file={path:origin.path,extension:"png"};target.isTag=true;connectDrag={pointerId:21,originPath:origin.path,gate:"top",moved:true};up({...event(40,365),pointerId:21,pointerType:"mouse"});
+ check(connectDrag===null&&calls.length===rejectCount,"rejected pinned gate fell through into empty composer");delete target.isTag;origin.file={path:origin.path,extension:"md"};
+ scene.nodes=[centerNode,{page:target,role:"parent"}];nodeDrag={pointerId:22,path:target.path,startClientX:0,startClientY:0,moved:true};
  const touchDoubleTap={current:{reset(){}}},NODE_RELINK_MIN_DRAG_PX=36,NODE_RELINK_HYSTERESIS_PX=48;up({...event(40,365),pointerId:22,pointerType:"mouse"});
  check(nodeDrag===null&&calls.length===rejectCount,"rejected pinned body fell through into spatial relink");
  updateHistoryDragHover(origin,40,365,document);updateHistoryDragHover(origin,800,600,document);check(!pinned.classList.contains("is-relationship-drop-target"),"leaving pinned endpoint retained highlight");
@@ -1661,7 +1743,7 @@ try {
  const doc=frame.contentDocument,foreign=doc.body.appendChild(doc.createElement("button"));foreign.dataset.kplexPinnedPath=target.path;foreign.textContent="Other document";
  const rect=foreign.getBoundingClientRect();check(openHistoryRelationshipMenu(origin,rect.left+2,rect.top+2,doc),"owning document pinned hit rejected");check(shown.doc===doc,"chooser escaped owning document");updateHistoryDragHover(origin,rect.left+2,rect.top+2,doc);clearHistoryDragHover();check(!foreign.classList.contains("is-relationship-drop-target"),"owning document highlight leaked");
  // Preview uses the production relink hysteresis and exact fixed/inverse gate semantics.
- scene.nodes=[{page:target,role:"left"}];camera.current={x:450,y:200,scale:1};
+ scene.nodes=[centerNode,{page:target,role:"left"}];camera.current={x:450,y:200,scale:1};
  nodeDrag={path:target.path,x:0,y:-100,offsetX:0,offsetY:0,startClientX:100,startClientY:300,moved:true};
  check(relationshipDropArea()==="parent","body parent action did not preview its area");
  nodeDrag.y=100;check(relationshipDropArea()==="child","body child action did not preview its area");
@@ -1683,7 +1765,7 @@ try {
 
  // The same real area geometry owns sibling preview and submitted composer intent. Only the
  // center/sibling pair is handed to the additive create flow; shared-parent evidence stays intact.
- const sibling={page:target,role:"sibling",linkDirection:"shared-parent"};scene.nodes=[sibling];
+ const sibling={page:target,role:"sibling",linkDirection:"shared-parent"};scene.nodes=[centerNode,sibling];
  blocked.clear();
  for(const [role,x,y]of [["parent",350,80],["child",510,80],["left",350,280],["right",510,280]]){
   nodeDrag={path:target.path,pointerId:31,x,y,offsetX:0,offsetY:0,startClientX:800,startClientY:550,moved:true};
@@ -1699,6 +1781,47 @@ try {
  nodeDrag={path:target.path,pointerId:32,x:700,y:500,offsetX:0,offsetY:0,startClientX:800,startClientY:550,moved:true};
  check(relationshipDropArea()===null,"sibling accepted empty canvas outside real areas");nodeDrag=null;
  pages.delete(target.path);e=event(90,90);dragExternalFileOver(e);check(externalDropZone==="center","unindexed center did not preview queued navigation");e=event(90,90);dropExternalFile(e);check(!e.stopped,"unindexed center drop lost App readiness fallback");
+ // Non-Classic targets are declared geometry/ports, never screen-quadrant relationship evidence.
+ pages.set(target.path,target);classic=null;occurrenceEditorPolicy=true;camera.current={x:0,y:0,scale:1};scene.entryOccurrence="map-root";scene.projection={root:"map-root"};center.dataset.kplexKeyboardId="map-root";
+ const rootOccurrence={...centerNode,occurrenceId:"map-root",physicalPorts:{top:"parent",bottom:"child",left:"left"}},nested={page:target,role:"child",occurrenceId:"copy-one",semanticSourceId:"Some-other-parent",linkDirection:1};
+ scene.nodes=[rootOccurrence,nested,{...nested,occurrenceId:"copy-two"}];scene.areas=[{id:"parent",dropRole:"parent"},{id:"child",dropRole:"child"},{id:"left",dropRole:"left"},{id:"right"}];
+ const previousNav=navigated.length;dropExternalFile(event(90,90));check(navigated.length===previousNav+1&&destinationIntents.at(-1)==="destination","rooted center drop lost explicit destination intent");
+ const editorNavigation=navigated.length;const editorDrop=event(90,240);dropExternalFile(editorDrop);check(navigated.length===editorNavigation&&!editorDrop.prevented&&!editorDrop.stopped,"occurrence editor drop retargeted map instead of retaining native edit ownership");
+ externalDropZone="parent";const editorOver=event(90,240);dragExternalFileOver(editorOver);check(!editorOver.prevented&&!editorOver.stopped&&editorOver.dataTransfer.dropEffect==="move"&&externalDropZone===null,"occurrence editor drag-over suppressed native drop delivery or retained old canvas feedback");
+ const beforeNested=calls.length;commitNodeAreaDrop(nested,"parent");check(calls.length===beforeNested+1&&calls.at(-1).origin===origin&&calls.at(-1).mode==="create"&&calls.at(-1).existingDirection===undefined,"nested copy borrowed unrelated parent-to-child move authority");
+ nodeDrag={path:target.path,occurrenceId:"copy-one"};check(isDraggedNode(nested)&&!isDraggedNode(scene.nodes[2]),"dragging one canonical copy hid another occurrence");nodeDrag=null;
+ const neutralCount=calls.length;dropExternalFile(event(510,280));check(calls.length===neutralCount,"classification-only area became a relationship writer");
+ scene.areas[0].dropOrigin="copy-one";check(dropOriginAt(310,70,surface)===target,"explicit area origin lost exact admitted occurrence");scene.areas[0].dropOrigin="retired-copy";check(dropOriginAt(310,70,surface)===undefined,"removed area origin borrowed root authority");
+ scene.areas[0].dropOrigin=undefined;pages.delete(origin.path);check(dropOriginAt(310,70,surface)===undefined,"stale canonical area origin was accepted");
+ // Actual desktop HTML start must carry the second displayed copy through the shared adapter.
+ const cPage={path:"C.md",file:{path:"C.md",extension:"md"}};pages.set(cPage.path,cPage);
+ origin.file={path:origin.path,extension:"md"};target.file={path:target.path,extension:"md"};
+ plugin.app.vault.getFileByPath=path=>pages.get(path)?.file??null;
+ plugin.app.dragManager={draggable:null,dragLink(event,linktext,sourcePath,title,source){event.dataTransfer.setData("text/plain",linktext);return{type:"link",linktext,sourcePath,title,source}},onDragStart(event,value){this.draggable=value},onDragEnd(){this.draggable=null}};
+ const first={...nested,occurrenceId:"copy-one",semanticSourceId:origin.path},second={...nested,occurrenceId:"copy-two",semanticSourceId:cPage.path};
+ const cOccurrence={page:cPage,role:"child",occurrenceId:"c"};scene.nodes=[rootOccurrence,first,second,cOccurrence];sceneNodeKeys.clear();for(const row of scene.nodes)sceneNodeKeys.set(row,row.occurrenceId);
+ scene.areas[0].dropOrigin=undefined;pages.set(origin.path,origin);
+ scene.edges=[{kind:"semantic",sourcePath:origin.path,targetPath:target.path,sourceOccurrence:"map-root",targetOccurrence:"copy-one",role:"child",direction:1,relationType:1,typeDefinition:"Child"},{kind:"semantic",sourcePath:cPage.path,targetPath:target.path,sourceOccurrence:"c",targetOccurrence:"copy-two",role:"child",direction:1,relationType:1,typeDefinition:"Child"}];
+ other.removeAttribute("data-kplex-gate");other.dataset.kplexKeyboardId="copy-two";other.dataset.kplexPath=target.path;other.draggable=true;
+ let displayedDragRole="child";const startHandler=event=>beginNativeNodeDrag(target,displayedDragRole,"B",{nativeEvent:event,currentTarget:other,preventDefault:()=>event.preventDefault()});other.addEventListener("dragstart",startHandler);
+ const transfer=new DataTransfer();other.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:transfer}));
+ const captured=plugin.app.dragManager.draggable?.source;check(captured,"Actual drag-start failed to capture source");
+ const prior=calls.length;dropExternalFile(event(310,70));
+ check(calls.length===prior+1&&calls.at(-1).mode==="create"&&calls.at(-1).origin===origin&&calls.at(-1).fixedTarget===target&&calls.at(-1).existingDirection===undefined,"Desktop second C→B copy borrowed first R→B relink authority: "+JSON.stringify({mode:calls.at(-1)?.mode,origin:calls.at(-1)?.origin.path}));
+ endNativeNodeDrag();scene.areas[0].dropOrigin="c";other.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:new DataTransfer()}));dropExternalFile(event(310,70));
+ check(calls.at(-1).mode==="relink"&&calls.at(-1).origin===cPage&&calls.at(-1).fixedTarget===target,"Explicit C area failed to retain the second occurrence's legitimate relationship");
+ endNativeNodeDrag();scene.areas[0].dropOrigin=undefined;
+ // Compass combines sequential roles into physical left/right placement; capture their real role.
+ classic=classicFixturePolicy();occurrenceEditorPolicy=false;
+ for(const [displayRole,semanticRole]of [["left","previous"],["right","next"]]){
+  const id="sequential-"+semanticRole,row={...first,role:displayRole,occurrenceId:id};scene.nodes=[rootOccurrence,row];sceneNodeKeys.clear();sceneNodeKeys.set(rootOccurrence,"map-root");sceneNodeKeys.set(row,id);
+  scene.edges=[{kind:"semantic",sourcePath:origin.path,targetPath:target.path,sourceOccurrence:"map-root",targetOccurrence:id,role:displayRole,direction:1,relationType:1,typeDefinition:"Sequential"}];
+  index.neighbours=(page,role)=>page===origin&&role===semanticRole?[{page:target,role:semanticRole,linkDirection:1,relationType:1,typeDefinition:"Sequential"}]:[];
+  other.dataset.kplexKeyboardId=id;displayedDragRole=displayRole;other.dispatchEvent(new DragEvent("dragstart",{bubbles:true,cancelable:true,dataTransfer:new DataTransfer()}));
+  check(plugin.app.dragManager.draggable?.source.occurrence.relationship?.role===semanticRole,"Compass sequential canonical role was replaced by physical placement");dropExternalFile(event(310,70));
+  check(calls.at(-1).mode==="relink"&&calls.at(-1).origin===origin,"Compass sequential primary move lost its existing authority");endNativeNodeDrag();
+ }
+ other.removeEventListener("dragstart",startHandler);
  result.dataset.status="passed";result.textContent="External and pinned drop behavior passed";
 }catch(error){result.dataset.status="failed";result.textContent=String(error.stack||error)}
 `;
@@ -2027,7 +2150,8 @@ test("Toolbar consumes spare space and search width before wrapping; labels use 
  runBrowserDom(responsiveToolbarBrowserEntry(),"Toolbar shrink and two-line label browser behavior passed");
 });
 
-/** Exercise the selection-only owner in two realms; shared Scope/DOM delivery is covered by action-surface-ui. */
+/** Exercise the selection-only owner in two realms, including ordinary boundary crossing.
+ * Shared Scope/DOM delivery is covered by action-surface-ui. */
 function plexKeyboardBrowserEntry() {
   return `
 import React from "react";
@@ -2042,17 +2166,17 @@ try {
  const frames=[document,(()=>{const f=document.createElement("iframe");document.body.append(f);return f.contentDocument})()];
  for(const doc of frames){
   const container=doc.createElement("div");doc.body.append(container);
-  let normalMode=true,crossSections=false,activePath="center",projection=nodes,reveals=[],selection;
-  function Surface(){selection=usePlexKeyboardNavigation({normalMode,activePath,crossSections,nodes:projection,reveal:n=>reveals.push(n.id)});
+  let normalMode=true,activePath="center",projection=nodes,reveals=[],selection;
+  function Surface(){selection=usePlexKeyboardNavigation({normalMode,activePath,nodes:projection,reveal:n=>reveals.push(n.id)});
    return React.createElement("div",{className:"kplex-app",tabIndex:0,"data-selection":selection.selectedId??""})}
   const app=createRoot(container),render=()=>flushSync(()=>app.render(React.createElement(Surface)));render();
   const el=container.firstElementChild;
   const move=(direction,section=false)=>flushSync(()=>selection.move(direction,section));
-  move("up");check(el.dataset.selection==="center","plain movement left the center section");
-  move("up",true);check(el.dataset.selection==="p1","section jump did not enter parent area");
+  move("up");check(el.dataset.selection==="p1","plain movement did not cross the exhausted center area");
+  move("down",true);move("up",true);check(el.dataset.selection==="p1","section jump did not enter parent area");
   move("right");check(el.dataset.selection==="p2","grid movement did not select adjacent column");
   move("down",true);check(el.dataset.selection==="center","section jump did not return to center");
-  crossSections=true;render();move("up");check(el.dataset.selection==="p1","opted-in boundary movement did not enter parent area");
+  render();move("up");check(el.dataset.selection==="p1","ordinary boundary movement did not enter parent area");
   normalMode=false;render();check(selection.readSelected()===null&&el.dataset.selection==="","inactive graph retained selection");
   normalMode=true;render();check(selection.readSelected()===null,"mode restore resurrected retired selection");
   move("up",true);move("right");check(el.dataset.selection==="p2","selection after mode restoration failed");
@@ -2145,6 +2269,7 @@ import {canDisplayNodeImage} from ${JSON.stringify(join(root,'src/core/plex/node
 import {createTranslator} from ${JSON.stringify(join(root,'src/lang/index.ts'))};
 import {HoverPreview,bindHoverPreview} from ${JSON.stringify(join(root,'src/ui/components/hoverPreview.ts'))};
 const ObsidianIcon=()=>null;
+import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions('src/ui/ThoughtNode.tsx',['GATES','ThoughtNode'])}
 const result=document.querySelector('#result'),container=document.body.appendChild(document.createElement('div')),root=createRoot(container);
@@ -2210,6 +2335,7 @@ import {effectiveLabelLimit,nodeLabelFontSize,gateDiameter} from ${JSON.stringif
 import {physicalPositionLabel} from ${JSON.stringify(join(root,'src/ui/features/positionPresentation.ts'))};
 import {canDisplayNodeImage} from ${JSON.stringify(join(root,'src/core/plex/nodeImagePolicy.ts'))};
 const ObsidianIcon=()=>null;
+import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions('src/ui/ThoughtNode.tsx',['GATES','ThoughtNode'])}
 const result=document.querySelector('#result'),container=document.body.appendChild(document.createElement('div')),root=createRoot(container),noop=()=>{};
@@ -2266,9 +2392,10 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { alphaHexToCss, nodePaint, nodePaintFallbacks } from ${JSON.stringify(join(root, "src/index/style.ts"))};
 import { effectiveLabelLimit, nodeLabelFontSize, gateDiameter } from ${JSON.stringify(join(root, "src/ui/layout.ts"))};
-${uiDefinitions("src/ui/layout.ts", ["clamp", "nodeSize"])}
+${uiDefinitions("src/ui/plexViews/measurement.ts", ["clamp", "nodeSize"])}
 import { physicalPositionLabel } from ${JSON.stringify(join(root, "src/ui/features/positionPresentation.ts"))};
 const ObsidianIcon=({className,size})=><span className={"kplex-icon "+className} style={{width:size,height:size}}/>;
+import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
 ${uiDefinitions("src/ui/ThoughtNode.tsx", ["GATES", "ThoughtNode"])}
 const result=document.querySelector("#result"),container=document.createElement("div");document.body.append(container);
@@ -2348,6 +2475,14 @@ test("long node titles and aliases retain exact rendered truncation and measured
 /** Execute the production App/scene memo owners and layout with real React reconciliation. */
 function colorPaintBrowserEntry() {
  return `
+import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
+import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
+import * as classicLayout from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
+const viewDefinition=classicViewDefinition,viewFailed=false,viewLifetime=0;
+const classicFixturePolicy=(layout=classicLayout.buildScene)=>({policyKey:classicLayout.sceneLayoutPolicyKey,geometryKey:classicLayout.neighborhoodSceneKey,
+  layout,sections:classicLayout.buildSectionExpandedScene,bind:classicLayout.bindSceneNeighborhood,dropRole:classicAreaDropRole});
+const classic=classicFixturePolicy();
+
 import React, {useMemo,useEffect,useState} from 'react';
 import {flushSync} from 'react-dom';import {createRoot} from 'react-dom/client';
 import {buildScene as realBuildScene,sceneLayoutPolicyKey,neighborhoodSceneKey,bindSceneNeighborhood} from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
@@ -2359,14 +2494,15 @@ const page=path=>({path,name:path,file:{extension:'md'},aliases:[],tags:[],style
 const index={titleFor:p=>p.name,neighbourCount:()=>0,gateStats:()=>({}),neighbours:()=>[],visibleRelationshipsWithin:()=>[]};
 let layoutNeighborhood={center:page('Center.md'),parents:[],children:[{page:page('Child.md'),role:'child',relationType:1}],leftFriends:[],rightFriends:[],siblings:[]};
 let semanticRevision=0;
-const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,showCrossLinks=false,globalFiltering=false,centralEditorSize=undefined,sectionContentOptions=null,sectionSizes={};
+const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,showCrossLinks=false,globalFiltering=false,centralEditorSize=undefined,sectionContentOptions=null,sectionSizes={},boundEditorBinding=undefined,boundEditorPage=null;
 const profileSurface='tab',compiledGraphLenses={lenses:[],errors:[],usesFrontmatter:false},centerMode={embedCentralNode:false,centralNodeMarkdownMode:'source'};
 const plugin={settings:{baseNodeStyle:{fontSize:18,textColor:'#abcdef'},centralNodeStyle:{fontSize:30},baseLinkStyle:{},noteTypeStyles:{},tagNodeStyles:{},tagStyleList:[],hierarchyLinkStyles:{},graphLenses:[],
  compactingFactor:2,horizontalCompactingFactor:2,graphDepth:1,baseFontSize:12.4,compactView:false,maxItemCount:100,parentColumns:2,childColumns:5,parentMaxHeight:300,childMaxHeight:400,friendMaxHeight:350,siblingMaxHeight:250,siblingRelativeSize:50,minLinkLength:18,wrapNodeLabels:false},getViewSettings(){return {...this.settings}}};
 let sceneBefore,nodeBefore,inputBefore,cameraBefore;
 function NativeEditor(){useEffect(()=>{counters.mounts++},[]);return <input defaultValue='unsaved text'/>}
 function Scene({settings,paintSettings}){
- ${uiDefinitions('src/ui/PlexGraph.tsx',['scenePolicyKey','sceneGeometryKey','sceneGeometry','scene'])}
+ const activePath='Center.md';const preparedDefinitionScene=null,classic=useMemo(()=>classicFixturePolicy(buildScene),[]);
+ ${uiDefinitions('src/ui/PlexGraph.tsx',['classicRead','scenePolicyKey','sceneGeometryKey','sceneGeometry','scene'])}
  window.lastColorScene=scene;
  const visualPages=useMemo(()=>scene.nodes.map(node=>node.page),[scene.nodes]);useEffect(()=>{counters.images++},[visualPages]);
  return <div className='camera' style={{transform:'translate(17px, 23px) scale(1.25)'}}>{scene.nodes.map(node=>{const paint=nodePaint(currentNodeColorStyle(node,paintSettings),nodePaintFallbacks(node));return <div key={node.page.path} data-path={node.page.path} style={{color:paint.foreground,left:node.x,top:node.y}}>{node.role==='center'?<NativeEditor/>:node.label}</div>})}</div>;
@@ -2396,7 +2532,8 @@ try{const container=document.createElement('div');document.body.append(container
 }
 test('color publication reuses actual scene layout, images, native editor, focus and camera',()=>runBrowserDom(colorPaintBrowserEntry(),'Color paint preserves layout and editor passed'));
 
-/** Mount the actual hover effect, edge projection/highlight memos and SVG renderer around finite host inputs. */
+/** Mount the actual hover effect, edge projection/highlight memos and viewport-aware SVG
+ * renderer around finite host inputs; these flat fixture nodes have no scroll continuation area. */
 function crosslinkPeekBrowserEntry(){
  const source=ts.createSourceFile('PlexGraph.tsx',readFileSync('src/ui/PlexGraph.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),effects=[],edgeHighlights=[];
  /** Keep production lifetime/visibility callbacks intact without constructing the native plugin shell. */
@@ -2406,11 +2543,20 @@ function crosslinkPeekBrowserEntry(){
    ts.forEachChild(node,visit)};visit(source);assert.equal(effects.length,2);assert.equal(edgeHighlights.length,1);
  const effectCode=ts.transpileModule(effects.join('\n'),{compilerOptions:{target:ts.ScriptTarget.ES2021}}).outputText;
  return `
+import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
+import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
+import * as classicLayout from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
+const viewDefinition=classicViewDefinition,viewFailed=false,viewLifetime=0;
+const classicFixturePolicy=(layout=classicLayout.buildScene)=>({policyKey:classicLayout.sceneLayoutPolicyKey,geometryKey:classicLayout.neighborhoodSceneKey,
+  layout,sections:classicLayout.buildSectionExpandedScene,bind:classicLayout.bindSceneNeighborhood,dropRole:classicAreaDropRole});
+const classic=classicFixturePolicy();
+
 import React,{useCallback,useState,useMemo,useRef,useEffect} from 'react';import{flushSync}from'react-dom';import{createRoot}from'react-dom/client';
 import{ontologyConfiguration}from ${JSON.stringify(join(root,"src/core/contracts/ontologyConfiguration.ts"))};
 import{hasDirectionalCaption,directionalRelationCaption}from ${JSON.stringify(join(root,"src/core/plex/directionalRelationCaption.ts"))};
 import{HoverHighlight,bindHoverHighlight}from ${JSON.stringify(join(root,'src/ui/components/hoverHighlight.ts'))};
 import{LinkDirection}from ${JSON.stringify(join(root,'src/types.ts'))};
+import{edgeViewportEndpoints,edgeViewportClip}from ${JSON.stringify(join(root,'src/ui/plexViews/areaVisibility.ts'))};
 import{buildScene as realBuildScene,sceneLayoutPolicyKey,neighborhoodSceneKey,bindSceneNeighborhood,appendVisibleCrossLinks,gateDiameter}from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
 import{alphaHexToCss,resolveLinkStyle,DEFAULT_RENDERED_LINK_WIDTH,NATIVE_LINK_STROKE,NATIVE_LINK_TEXT,NATIVE_LINK_LABEL_FILL}from ${JSON.stringify(join(root,'src/index/style.ts'))};
 const result=document.querySelector('#result'),check=(value,message)=>{if(!value)throw Error(message)};
@@ -2422,24 +2568,27 @@ const pairs={A:[['B','child','ab'],['C','parent','ac'],['D','left','ad'],['E','r
 const counters={layout:0,adjacency:0},buildScene=(...args)=>{counters.layout++;return realBuildScene(...args)};
 const index={titleFor:p=>p.name,neighbourCount:()=>0,gateStats:()=>({}),neighbours:()=>[],visibleRelationshipsWithin(source,targets){counters.adjacency++;return(pairs[source.path]??[]).filter(([path])=>targets.has(path)).map(([path,role,typeDefinition])=>({page:pages.get(path),role,typeDefinition,relationType:1,linkDirection:1}))}};
 const renderRevision=0,sectionExpansion=null,sectionContentOptions=null,sectionSizes={};
-const settings={ontologyPairingVersion:1,hierarchy:{hidden:[],parents:[],children:[],leftFriends:[],rightFriends:[],previous:[],next:[],exclusions:[]},baseNodeStyle:{fontSize:18},centralNodeStyle:{fontSize:30},baseLinkStyle:{},hierarchyLinkStyles:{ab:{showLabel:true,fontSize:12,strokeWidth:3}},noteTypeStyles:{},tagNodeStyles:{},tagStyleList:[],compactingFactor:2,horizontalCompactingFactor:2,graphDepth:1,baseFontSize:12.4,maxItemCount:100,parentColumns:2,childColumns:5,parentMaxHeight:300,childMaxHeight:400,friendMaxHeight:350,siblingMaxHeight:250,siblingRelativeSize:50,minLinkLength:18};
+const settings={compactView:false,ontologyPairingVersion:1,hierarchy:{hidden:[],parents:[],children:[],leftFriends:[],rightFriends:[],previous:[],next:[],exclusions:[]},baseNodeStyle:{fontSize:18},centralNodeStyle:{fontSize:30},baseLinkStyle:{},hierarchyLinkStyles:{ab:{showLabel:true,fontSize:12,strokeWidth:3}},noteTypeStyles:{},tagNodeStyles:{},tagStyleList:[],compactingFactor:2,horizontalCompactingFactor:2,graphDepth:1,baseFontSize:12.4,maxItemCount:100,parentColumns:2,childColumns:5,parentMaxHeight:300,childMaxHeight:400,friendMaxHeight:350,siblingMaxHeight:250,siblingRelativeSize:50,minLinkLength:18};
 const layoutNeighborhood={center:pages.get('Center'),parents:[],children:['A','B','C','D','E'].map(path=>({page:pages.get(path),role:'child',relationType:1})),leftFriends:[],rightFriends:[],siblings:[]};
-const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,globalFiltering=false,centralEditorSize=undefined,neighborhood=layoutNeighborhood,activePath='Center',hostLeaf={};let semanticRevision=0;
+const layoutSectionExpansion=null,expandedSectionIds=new Set(),layoutRevision=0,globalFiltering=false,centralEditorSize=undefined,boundEditorBinding=undefined,boundEditorPage=null,neighborhood=layoutNeighborhood,activePath='Center',hostLeaf={};let semanticRevision=0;
+const predicateCenter=neighborhood.center;
 const predicateEngine={},lenses={},paintLenses=lenses,paintSettings=settings,predicateRevision=0,graphLensEdgeStyle=()=>({}),connectDrag=null,nodeDrag=null,resizingArea=false,areaSettingsMode=false;
 const finding=true,findQuery='no search hit',matchesOntologyFind=()=>false;
 const listeners=new Set(),plugin={visible:true,subscribeKplexVisibility(fn){listeners.add(fn);return()=>listeners.delete(fn)},isKplexLeafVisible(){return this.visible}};
 let fixture;
 class PeekBoundary extends React.Component{state={error:null};static getDerivedStateFromError(error){return{error:String(error.stack||error)}}render(){return this.state.error?<pre data-peek-error>{this.state.error}</pre>:this.props.children}}
 function Graph(){
+ const preparedDefinitionScene=null;
  const viewport=useRef(null),hoverHighlight=useRef(null),hoverPreview=useRef(null),[hover,setHover]=useState(null),[crossLinkPeek,setCrossLinkPeek]=useState(null),[required,setRequired]=useState(true),[showCrossLinks,setShown]=useState(false),[hidden,setHidden]=useState([]);
  const viewSettings={hoverHighlightRequiresAlt:required},clearEdgeTooltip=()=>{};
- ${uiDefinitions('src/ui/PlexGraph.tsx',['scenePolicyKey','sceneGeometryKey','sceneGeometry','scene','clearHoverIntent','scheduleHoverIntent'])}
+ ${uiDefinitions('src/ui/PlexGraph.tsx',['classicRead','scenePolicyKey','sceneGeometryKey','sceneGeometry','scene','clearHoverIntent','scheduleHoverIntent'])}
  const visibleNodePaths=useMemo(()=>new Set(scene.nodes.filter(node=>!hidden.includes(node.page.path)).map(node=>node.page.path)),[scene.nodes,hidden]);
  const renderedNodeMap=useMemo(()=>new Map(scene.nodes.map(node=>[node.page.path,node])),[scene.nodes]);
- ${uiDefinitions('src/ui/PlexGraph.tsx',['connectionCaption','visibleEdges','paintedEdges','interaction'])}
+ const visibleOccurrenceIds=visibleNodePaths,admittedEdgeOccurrences=visibleNodePaths;
+ ${uiDefinitions('src/ui/PlexGraph.tsx',['connectionCaption','visibleEdgeProjection','visibleEdges','paintedEdges','interaction'])}
  ${effectCode}
  fixture={enter(path,gate,alt=false){scheduleHoverIntent(gate?{kind:'gate',path,gate}:{kind:'node',path},{pointerType:'mouse',isTrusted:true,altKey:alt})},key:alt=>hoverHighlight.current.modifier(alt,true),leave:()=>clearHoverIntent(true),setRequired,setShown,setHidden,scene,interaction};
- return <div ref={viewport} className='kplex-plex' style={{width:1000,height:800}}><input defaultValue='unsaved editor'/><svg width='1000' height='800'>{paintedEdges.map(edge=><Edge key={edge.id} edge={edge} nodes={renderedNodeMap} inverseArrowDirection={true} connectorStyle='bezier' labelBackground={NATIVE_LINK_LABEL_FILL} crossLinkOpacity={0} highlighted={${edgeHighlights[0]}} dimmed={false} passive={Boolean(crossLinkPeek&&!showCrossLinks&&edge.isCrossLink)} onHover={()=>{}} onMove={()=>{}} onLeave={()=>{}} onContextMenu={()=>{}}/>)}</svg>{scene.nodes.map(node=><div key={node.page.path} data-node={node.page.path}>{node.label}</div>)}</div>;
+ return <div ref={viewport} className='kplex-plex' style={{width:1000,height:800}}><input defaultValue='unsaved editor'/><svg width='1000' height='800'>{paintedEdges.map(edge=><Edge viewportForNode={()=>undefined} key={edge.id} edge={edge} nodes={renderedNodeMap} inverseArrowDirection={true} connectorStyle='bezier' labelBackground={NATIVE_LINK_LABEL_FILL} crossLinkOpacity={0} highlighted={${edgeHighlights[0]}} dimmed={false} passive={Boolean(crossLinkPeek&&!showCrossLinks&&edge.isCrossLink)} onHover={()=>{}} onMove={()=>{}} onLeave={()=>{}} onContextMenu={()=>{}}/>)}</svg>{scene.nodes.map(node=><div key={node.page.path} data-node={node.page.path}>{node.label}</div>)}</div>;
 }
 try{
  const element=document.createElement('div');document.body.append(element);const root=createRoot(element);flushSync(()=>root.render(<PeekBoundary><Graph/></PeekBoundary>));const initial=counters.layout,nodes=[...element.querySelectorAll('[data-node]')],input=element.querySelector('input');check(input,element.querySelector('[data-peek-error]')?.textContent||'Mounted graph input absent');input.focus();input.setSelectionRange(2,2);
@@ -2463,26 +2612,30 @@ try{
 
 test('transient crosslink paint uses mounted projection/highlight/SVG owners without scene, focus or visibility changes',()=>runBrowserDom(crosslinkPeekBrowserEntry(),'Transient crosslink paint passed'));
 
-/** Render the actual caption callback and shared SVG labels for ordinary and transient endpoints. */
+/** Render the actual caption callback and viewport-aware SVG labels for ordinary and transient
+ * endpoints; the fixture supplies the renderer's explicit no-scroll viewport capability. */
 function directionalCaptionBrowserEntry(){return `
 import React,{useCallback}from'react';import{flushSync}from'react-dom';import{createRoot}from'react-dom/client';
+import{edgePhysicalOccurrence}from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
 import{ontologyConfiguration}from ${JSON.stringify(join(root,'src/core/contracts/ontologyConfiguration.ts'))};
 import{hasDirectionalCaption,directionalRelationCaption}from ${JSON.stringify(join(root,'src/core/plex/directionalRelationCaption.ts'))};
+import{classicPorts}from ${JSON.stringify(join(root,"src/core/plex/views/classic/definition.ts"))};
 import{gateDiameter}from ${JSON.stringify(join(root,"src/ui/layout.ts"))};
 import{LinkDirection}from ${JSON.stringify(join(root,'src/types.ts'))};
+import{edgeViewportEndpoints,edgeViewportClip}from ${JSON.stringify(join(root,'src/ui/plexViews/areaVisibility.ts'))};
 import{alphaHexToCss,DEFAULT_RENDERED_LINK_WIDTH,NATIVE_LINK_STROKE,NATIVE_LINK_TEXT}from ${JSON.stringify(join(root,'src/index/style.ts'))};
 ${uiDefinitions('src/ui/PlexGraph.tsx',['GATE_GAP','GENERIC_RELATION_LABELS','gateKey','gatesForEdge','gatePoint','gateVector','cubicPoint','edgeGeometry','relationLabel','markerFor','Edge','EdgeLabel'])}
 const result=document.querySelector('#result'),check=(value,message)=>{if(!value)throw Error(message)},page=path=>({path,style:{},x:path==='A'?0:200,y:0,width:100,height:40,page:{path}});
 let reads=0;const decisions=[{active:true,evidence:{fieldName:'replies to',definition:'replies to',declaredByPath:'B',declaredTargetPath:'A'}}],index={explainRelationship(){reads++;return{decisions}}};
 function App({reverse=false,show=true,paired=true,transient=false,folded=false,definition='replies to',mini=false}){
- const settings={ontologyPairingVersion:1,hierarchy:{hidden:[],parents:[],children:[],leftFriends:[],rightFriends:[],previous:paired?['replies to/replied by']:['replies to'],next:paired?[]:['replied by'],exclusions:[]}};
+ const settings={compactView:false,ontologyPairingVersion:1,hierarchy:{hidden:[],parents:[],children:[],leftFriends:[],rightFriends:[],previous:paired?['replies to/replied by']:['replies to'],next:paired?[]:['replied by'],exclusions:[]}};
  const sourcePath=transient?'section A':reverse?'B':'A',targetPath=transient?'target B':reverse?'A':'B';
  const sectionPage={path:'section A',transient:{kind:'section',sourcePath:'A'}},targetPage={path:'target B',transient:{kind:'section-target',sourcePath:'A',actualPath:'B'}};
  const sectionExpansion=transient?{sections:[{page:sectionPage}],explanations:new Map([[sourcePath+'\\u0000'+targetPath,{decisions}]])}:null;
  ${uiDefinitions('src/ui/PlexGraph.tsx',['connectionCaption'])}
  const style={showLabel:show,fontSize:12,strokeWidth:3},caption=connectionCaption(definition,show,sourcePath,targetPath,transient?(folded?undefined:sectionPage):{path:sourcePath},transient?targetPage:{path:targetPath});
  const nodes=new Map([[sourcePath,{...page('A'),page:{path:sourcePath}}],[targetPath,{...page('B'),page:{path:targetPath}}]]),edge={id:'pair',sourcePath,targetPath,role:'previous',relationType:1,typeDefinition:definition,caption,direction:1,style};
- return <svg>{mini?<EdgeLabel label={show?relationLabel(caption):null} midpoint={{x:100,y:50}} style={style} background='none'/>:<Edge edge={edge} nodes={nodes} inverseArrowDirection={true} connectorStyle='bezier' labelBackground='none' crossLinkOpacity={1} highlighted={false} dimmed={false}/>}</svg>;
+ return <svg>{mini?<EdgeLabel label={show?relationLabel(caption):null} midpoint={{x:100,y:50}} style={style} background='none'/>:<Edge viewportForNode={()=>undefined} edge={edge} nodes={nodes} inverseArrowDirection={true} connectorStyle='bezier' labelBackground='none' crossLinkOpacity={1} highlighted={false} dimmed={false}/>}</svg>;
 }
 try{const container=document.createElement('div');document.body.append(container);const root=createRoot(container),label=()=>container.querySelector('.kplex-edge-label')?.textContent;
  flushSync(()=>root.render(<App paired={false}/>));check(label()==='replies to'&&reads===0,'Unpaired caption requested evidence or changed wording');

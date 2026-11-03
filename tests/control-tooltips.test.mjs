@@ -8,7 +8,10 @@ import {build} from 'esbuild';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {chromiumHarness} from './support/browserTypeScript.mjs';
-const result=await build({stdin:{resolveDir:process.cwd(),contents:`export {installKplexLongPressTooltips} from './src/ui/LongPressTooltip';`},write:false,bundle:true,format:'iife',globalName:'sourceModules',platform:'browser'});
+const result=await build({stdin:{resolveDir:process.cwd(),contents:`export {installKplexLongPressTooltips} from './src/ui/LongPressTooltip';
+import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TooltipButton} from './src/ui/components/TooltipButton';
+let root;export function renderOwnedButton(label){root??=createRoot(document.querySelector('main').appendChild(document.createElement('div')));flushSync(()=>root.render(React.createElement(TooltipButton,{id:'owned',label,style:{position:'fixed',top:100,left:300}},React.createElement('span',{'aria-hidden':true},'Icon'))));}
+`},write:false,bundle:true,format:'iife',globalName:'sourceModules',platform:'browser'});
 const css=readFileSync('styles.css','utf8');
 /** Mount real nodes with only the host DOM-helper names bridged and an intentionally translated theme. */
 async function fixture(host){
@@ -32,6 +35,15 @@ test('every hover waits even after a warm hint; top fits below and bottom flips 
   assert(observations.below.top>=observations.topBottom+8);assert.equal(observations.below.above,false);
   assert(observations.above.bottom<=observations.bottomTop-8);assert.equal(observations.above.above,true);
   assert(observations.above.right<=observations.width-8);assert.equal(observations.above.pointer,'none');
+ }finally{await host.cleanup()}
+});
+
+test('referenced-label editor controls expose one accessible name and one shared tooltip without native aria/title candidates',async()=>{
+ const host=await chromiumHarness(result.outputFiles[0].text);
+ try{await fixture(host);
+  const data=await host.evaluate(`(async()=>{sourceModules.renderOwnedButton('Expand editor');const button=document.querySelector('#owned');const id=button.getAttribute('aria-labelledby');fire('#owned','pointerover');await pause(720);const first=read(),count=document.querySelectorAll('.tooltip').length;const nativeCandidate=button.closest('[aria-label]'),title=button.hasAttribute('title');fire('#owned','pointerout');sourceModules.renderOwnedButton('Restore editor');fire('#owned','pointerover');await pause(720);return{first,count,nativeCandidate:!!nativeCandidate,title,updated:read(),sameLabel:document.querySelector('#owned').getAttribute('aria-labelledby')===id}})()`);
+  assert.equal(data.first.text,'Expand editor');assert.equal(data.count,1);assert.equal(data.nativeCandidate,false);assert.equal(data.title,false);assert.equal(data.updated.text,'Restore editor');assert.equal(data.sameLabel,true);
+  const {root}=await host.command('DOM.getDocument',{});const{nodeId}=await host.command('DOM.querySelector',{nodeId:root.nodeId,selector:'#owned'});const{nodes}=await host.command('Accessibility.getPartialAXTree',{nodeId,fetchRelatives:false});assert(nodes.some(node=>node.role?.value==='button'&&node.name?.value==='Restore editor'));
  }finally{await host.cleanup()}
 });
 

@@ -131,3 +131,27 @@ test("folder prompting is a finite optional node-open argument, never an executa
   for (const args of [{ chooseFolder: "yes" }, { chooseFolder: () => true }, { chooseFolder: true, run: "other" }, {preserveCenter: "yes"}]) assert.equal(api.validActionArguments("node.open", args), false);
   assert.equal(api.validActionArguments("node.activate", { chooseFolder: true }), false);
 });
+
+/** Native/plain single URLs use the existing canonical URL owner and never create a missing endpoint or reinterpret arbitrary Markdown. */
+test('native external URLs and cold physical files resolve through existing bounded readers',()=>{
+ const f=fixture(),url=page({path:'https://example.com/a',url:'https://example.com/a'}),file={path:'Cold.md',extension:'md'},cold=page({path:file.path,file});
+ const reads=[],read={get:id=>{reads.push(id);return id===url.path?url:undefined},getVaultSearchPage:id=>id===file.path?cold:null};
+ f.manager.draggable={type:'link',linktext:'https://EXAMPLE.COM/a',sourcePath:'Origin.md',file:null};assert.equal(api.draggedGraphPage(f.app,read),url);
+ f.manager.draggable=null;assert.equal(api.draggedGraphPage(f.app,read,{dataTransfer:{getData:()=>url.path}}),url);
+ for(const text of ['https://unknown.example/a','https://example.com/a extra','[label](https://example.com/a)','javascript:alert(1)'])assert.equal(api.draggedGraphPage(f.app,read,{dataTransfer:{getData:()=>text}}),null);
+ f.files.set(file.path,file);f.manager.draggable={type:'file',file};assert.equal(api.draggedGraphPage(f.app,read),cold);assert.equal(reads.at(-1),'Cold.md');
+ assert.equal(f.calls.length,0,'Reading a destination cannot start native actions or source work');
+});
+
+/** Optional occurrence proof extends the existing native payload; old callers remain usable exports without removal authority. */
+test('native occurrence payload retains exact context and fences retired or failing owners',()=>{
+ const f=fixture(),file={path:'B.md',extension:'md'},p=page({path:file.path,file}),owner={};f.files.set(file.path,file);
+ let current=true;
+ const occurrence={id:'second-B',current:()=>current,relationship:{origin:{identity:'C.md',path:'C.md',kind:'file',fileIdentity:'captured-C'},role:'child',direction:1,relationType:1,typeDefinition:'Child'}};
+ const source=api.startNodeLinkDrag(f.app,p,f.event,owner,'child','B','R.md',occurrence);
+ assert.equal(api.nodeLinkDragSource(f.app),source);assert.equal(source.occurrence,occurrence);assert.equal(api.isNodeLinkDragCurrent(source),true);
+ current=false;assert.equal(api.isNodeLinkDragCurrent(source),false);assert.equal(api.draggedGraphPage(f.app,{get:id=>id===p.path?p:undefined}),p,'A retired owner can still supply an exact canonical copy, never removal authority');
+ api.finishNodeLinkDrag(f.app,source);assert.equal(f.manager.draggable,null);
+ const legacy=api.startNodeLinkDrag(f.app,p,f.event,owner,'child','B','R.md');assert(legacy);assert.equal(api.isNodeLinkDragCurrent(legacy),false);api.finishNodeLinkDrag(f.app,legacy);
+ const throwing=api.startNodeLinkDrag(f.app,p,f.event,owner,'child','B','R.md',{id:'second-B',current:()=>{throw Error('Retired native window')}});assert.equal(api.isNodeLinkDragCurrent(throwing),false);api.finishNodeLinkDrag(f.app,throwing);
+});

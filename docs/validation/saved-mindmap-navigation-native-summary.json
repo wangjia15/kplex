@@ -1,0 +1,111 @@
+{
+  "name": "rooted-saved-navigation",
+  "status": "passed",
+  "node": "v22.22.2",
+  "startedAt": "2026-10-27T19:01:18.271Z",
+  "maximumMs": 180000,
+  "driver": {
+    "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+    "scenario": "91d171dbab27ec25f1c91d0614e6ddb138815b3003466377fceca2afdcb74800",
+    "definitions": "6512016750db8041d6edf72c89eb2a3308618549043ac69a90286b463b7ac8ab"
+  },
+  "artifacts": {
+    "main.js": "f5a5301296cfa1155fee72ed6d95131670c57e15cf06ac5832bb3b633bba727b",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+    "styles.css": "f205d6e8b16494817de3abe8a07f15cfd1b96dec83fac6a772f5092d739d9857"
+  },
+  "source": {
+    "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+    "src/index/GraphIndex.ts": "c0a921ab4f65185400da1536432cee257a97d21574b764273a56f0dd991c68fa",
+    "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+    "src/ui/PlexGraph.tsx": "2cd97babc45ffe9a9632c602509268048ecb63b08f93d59c126be299b52c0de6",
+    "src/ui/App.tsx": "8ae467febb0f69cf088657f08bf2f4505233ea1a46bbe5b9503d2e5c36be75d3",
+    "src/application/ActionManager.ts": "14cae1683b6af0ce4ada8ca56d6e8ae6fd28b3790567f42444e95dfe71515a02"
+  },
+  "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+  "obsidian": "1.14.5 (installer 1.14.0)",
+  "result": {
+    "cases": [
+      {
+        "id": "native-saved-button-reroot",
+        "kind": "history"
+      },
+      {
+        "id": "native-saved-button-reroot",
+        "kind": "pin"
+      },
+      {
+        "id": "native-saved-picker-reroot",
+        "action": "history.open"
+      },
+      {
+        "id": "native-saved-picker-reroot",
+        "action": "pins.open"
+      }
+    ],
+    "notesEdited": false,
+    "host": {
+      "electron": "43.3.0",
+      "chrome": "150.0.7871.212"
+    }
+  },
+  "cleanup": "passed",
+  "completedAt": "2026-10-27T19:01:20.859Z",
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-27T19:01:26.423Z"
+  },
+  "implementationCheckpoint": "d2137ab19cf6d39145cd85c3bdf4395877b6d961",
+  "focused": {
+    "tests": 53,
+    "pass": 53,
+    "fail": 0
+  },
+  "helpDeployment": {
+    "before": {
+      "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+      "version": "0.3.0",
+      "leafId": "f96c6c66434b3021",
+      "center": "00 Start Here/K-Plex Help.md",
+      "liveRoot": "00 Start Here/K-Plex Help.md",
+      "view": "wuxing",
+      "preset": "help-workbench",
+      "cards": 37,
+      "visibleCards": 1,
+      "camera": "translate(1032.5px, 476.5px) scale(1)",
+      "viewport": {
+        "width": 2065.3515625,
+        "height": 952.5650634765625
+      }
+    },
+    "passes": [
+      {
+        "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+        "version": "0.3.0",
+        "leafId": "f96c6c66434b3021",
+        "center": "00 Start Here/K-Plex Help.md",
+        "liveRoot": "00 Start Here/K-Plex Help.md",
+        "view": "wuxing",
+        "preset": "help-workbench",
+        "cards": 37,
+        "visibleCards": 1,
+        "camera": "translate(1032.5px, 476.5px) scale(1)",
+        "viewport": {
+          "width": 2065.3515625,
+          "height": 952.5650634765625
+        }
+      }
+    ],
+    "artifacts": {
+      "main.js": "f5a5301296cfa1155fee72ed6d95131670c57e15cf06ac5832bb3b633bba727b",
+      "styles.css": "f205d6e8b16494817de3abe8a07f15cfd1b96dec83fac6a772f5092d739d9857",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350"
+    },
+    "completedAt": "2026-10-27T19:02:36.950Z",
+    "notesEdited": false,
+    "navigationPerformed": false
+  }
+}

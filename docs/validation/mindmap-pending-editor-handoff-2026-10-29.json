@@ -1,0 +1,152 @@
+{
+  "base": "7a88af087b9ab439b95772b7ba7d70dbe66ebd1d",
+  "branch": "2026-10-29-fix-startup-and-center-editor",
+  "scope": "Mind Map pending center-editor handoff only",
+  "sourceHashes": {
+    "src/ui/App.tsx": "ceb0376d567cee66e3067cb4dd9dc9b8e186d3759aa2fcfa41eddacf913261c1",
+    "src/ui/PlexGraph.tsx": "0b77b0752c49ea80fbd20bdd2d2bb4dc7cbf1249227a1993cbd49fa2ac14cb21",
+    "src/ui/usePlexActions.ts": "9b1883684dc3d0a0964b0adb16f0316282e81c74976e01081a0bfc53e3484e6d",
+    "tests/editor-switch.test.mjs": "51e43b6662cf4b5b62673c24695cf5fee74e864a76ad4d6b2b6ba10163ba2b73",
+    "scripts/testing/obsidian/mindMap.mjs": "62e1503db0340146fd79dd920d7c62d6c3d53bc1b0e39f398beb2f105bad031c"
+  },
+  "beforeAfter": [
+    {
+      "label": "before",
+      "root": "C.md",
+      "editors": 0,
+      "mode": null,
+      "saves": 1
+    },
+    {
+      "label": "after",
+      "root": "C.md",
+      "editors": 1,
+      "mode": "preview",
+      "saves": 1
+    }
+  ],
+  "focusedTests": {
+    "passed": 97,
+    "failed": 0
+  },
+  "native": {
+    "status": "passed",
+    "node": "v22.22.3",
+    "obsidian": "1.15.0 (installer 1.14.0)",
+    "driver": {
+      "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+      "scenario": "a4c258707781d39a513fbc443a31d9e44aa4571dffd8ad8494fca4c20e6b0f56",
+      "definitions": "b196d4180483d2dbca3ee25c861be1791cb7cc3c9b848170f9bc2ecc196de651"
+    },
+    "artifacts": {
+      "main.js": "7c58e4760c4d7c7f7c77cbf75ed69f4a91eff169e6a573b223c7793c7e2ebe11",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+      "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+    },
+    "result": {
+      "lane": "center-navigation",
+      "cases": [
+        {
+          "id": "center-navigation-save-failure-preserves-native-buffer-root-and-attention"
+        },
+        {
+          "id": "trusted-node-click-saves-source-and-transfers-root-editor-mode-and-size"
+        },
+        {
+          "id": "fold-controls-preserve-root-editor-and-next-center-preserves-preview-mode"
+        },
+        {
+          "id": "delayed-root-onward-search-retains-native-editor-mode-size-and-save-ownership"
+        }
+      ],
+      "capacity": 1
+    },
+    "cleanup": "passed",
+    "postCheck": {
+      "loaded": true,
+      "controller": false,
+      "ownedFixtureFiles": 0,
+      "status": {
+        "upToDate": true,
+        "phase": "ready",
+        "indexedFiles": 74,
+        "totalFiles": 74,
+        "label": "Status: index ready"
+      },
+      "scheduler": {
+        "active": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "waiting": 0,
+        "pauses": 187,
+        "pausesByLane": [
+          0,
+          0,
+          175,
+          1,
+          11
+        ],
+        "idleWindows": 65,
+        "pacing": false,
+        "throttle": "responsive"
+      }
+    }
+  },
+  "verification": {
+    "status": "passed",
+    "architecture": 9,
+    "core": 130,
+    "main": 1692,
+    "uiBrowser": 419,
+    "portableSources": 357,
+    "sourceBrowser": 855,
+    "totalTests": 3462,
+    "sourceBrowserDurationMs": 1023966.972125,
+    "command": "npm run verify:obsidian",
+    "standardNative": {
+      "status": "passed",
+      "source": {
+        "revision": "7a88af087b9ab439b95772b7ba7d70dbe66ebd1d",
+        "dirty": true,
+        "node": "v22.22.3",
+        "os": "darwin 23.5.0"
+      },
+      "startedAt": "2026-10-29T18:50:38.102Z",
+      "completedAt": "2026-10-29T19:17:58.797Z",
+      "artifacts": {
+        "sourceHashes": {
+          "main.js": "7c58e4760c4d7c7f7c77cbf75ed69f4a91eff169e6a573b223c7793c7e2ebe11",
+          "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+          "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+        },
+        "pluginVersion": "0.3.0",
+        "stagedHashes": {
+          "main.js": "7c58e4760c4d7c7f7c77cbf75ed69f4a91eff169e6a573b223c7793c7e2ebe11",
+          "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+          "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+        }
+      },
+      "scenarios": [
+        {
+          "id": "open-kplex",
+          "status": "passed",
+          "assertions": [
+            "plugin command registered",
+            "rendered .kplex-app contains K-Plex",
+            "no captured JavaScript errors"
+          ],
+          "elapsedMs": 94
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Disposable Small on macOS; no production vault access or deployment.",
+    "Controlled current-read proof rejection delays the intermediate root; no semantic data or authority is changed.",
+    "Native input and host readiness checks do not establish physical mobile/Windows acceptance or actual paint performance."
+  ]
+}

@@ -43,7 +43,7 @@ function fixture(options = {}) {
   cache.get(centerPath).frontmatter = Object.fromEntries(["Parent", "Child", "Left", "Right", "Previous", "Next", "Hidden"].map(name => [name, `[[${name}]]`]));
   cache.get(centerPath).tags = [{ tag: "#project/nested" }];
   const app = { vault: { getRoot: () => root, getFolderByPath: path => path === folder.path ? folder : path === root.path ? root : null,
-    getFileByPath: path => files.get(path) ?? null, read: () => { throw new Error("body reads forbidden"); }, cachedRead: () => { throw new Error("body reads forbidden"); } }, metadataCache: { resolvedLinks, unresolvedLinks: {}, getFileCache: file => cache.get(file.path) ?? null, getFirstLinkpathDest: path => files.get(path) ?? files.get(`Notes/${path}`) ?? files.get(`Notes/${path}.md`) ?? null } };
+    getFileByPath: path => files.get(path) ?? null, read: () => { throw new Error("body reads forbidden"); }, cachedRead: () => { throw new Error("body reads forbidden"); } }, metadataCache: { resolvedLinks, unresolvedLinks: {}, getFileCache: file => file.extension === "md" ? cache.get(file.path) ?? null : {}, getFirstLinkpathDest: path => files.get(path) ?? files.get(`Notes/${path}`) ?? files.get(`Notes/${path}.md`) ?? null } };
   let yields = 0;
   const preview = new HostMetadataPreview(app, () => options.settings ?? settings, { now: () => 0, yield: async () => { yields++; await options.onYield?.(); }, isCurrent: () => options.isCurrent?.() ?? true, sliceBudgetMs: 7, resolverBatchSize: 96 });
   return { preview, app, files, cache, centerPath, yields: () => yields };
@@ -1026,3 +1026,195 @@ for(const operation of ["build","folderGates"]){
     }finally{release();f.preview.dispose();owner.close();}
   });
 }
+
+/** Folder selection keeps only a capped prefix plus one compiler chunk and needs no Markdown metadata. */
+test('native folder ordering considers late members in bounded windows without metadata or recursive reads', async () => {
+  const f=folderFixture();let largest=0;
+  for(let n=129;n>=0;n--)f.addFile(`Notes/N${String(n).padStart(3,'0')}.md`);
+  try {
+    const result=await f.preview.build('folder:Notes',{
+      /** A deterministic external display policy proves selection happens before retention. */
+      selectFolderChildren: (paths,limit)=>{largest=Math.max(largest,paths.length);return [...paths].sort().slice(0,limit);},
+    });
+    assert(result);assert(largest<=74,'The cover retains at most ten candidates plus one 64-member chunk');
+    assert.deepEqual([...result.state.pages.get('folder:Notes').neighbours.keys()].filter(path=>path.endsWith('.md')).sort(),
+      Array.from({length:10},(_,n)=>`Notes/N${String(n).padStart(3,'0')}.md`));
+    assert.equal(result.structuralGates.get('folder:Notes').bottom.visibleCount,130,'Counts still cover every native child');
+  } finally {f.preview.dispose();}
+});
+
+/** A display-policy replacement cancels a private sorted cover at the same cooperative boundary as native changes. */
+test('native sorted folder cover closes its caller policy fence after a yield', async () => {
+  let current=true;
+  const f=folderFixture({onYield:async()=>{current=false;}});
+  for(let n=0;n<130;n++)f.addFile(`Notes/N${n}.md`);
+  try {assert.equal(await f.preview.build('folder:Notes',{isCurrent:()=>current,selectFolderChildren:(paths,limit)=>paths.slice(0,limit)}),null);}
+  finally {f.preview.dispose();}
+});
+
+/** Final native validation closes earlier owners after later source awaits without scanning on each record. */
+for (const mutation of ['stat', 'replacement', 'rename', 'metadata']) test('host cover rejects an earlier owner changed during a later body await (' + mutation + ')', async () => {
+  const f = fixture();
+  let changed = false;
+  try {
+    const result = await f.preview.build(f.centerPath, { completeHostCover: true,
+      bodyForPath: async path => {
+        if (path !== 'Notes/Ordinary.md') return undefined;
+        await Promise.resolve();
+        const center = f.files.get(f.centerPath);
+        if (mutation === 'metadata') f.cache.set(f.centerPath, {frontmatter: {Right: '[[Ordinary]]'}, tags: []});
+        if (mutation === 'stat') center.stat.mtime++;
+        if (mutation === 'replacement') f.files.set(f.centerPath, new TFile(f.centerPath, center.parent));
+        if (mutation === 'rename') { f.files.delete(f.centerPath); center.path = 'Notes/Moved.md'; f.files.set(center.path, center); }
+        changed = true;
+        return undefined;
+      },
+    });
+    assert(changed, 'A real earlier native owner changes after its own source collection');
+    assert.equal(result, null, 'A private compilation cannot publish stale native identity/stat facts');
+  } finally { f.preview.dispose(); }
+});
+
+/** Partial recovery may omit an unavailable peer, but ordinary covers and selected owners remain strict. */
+for (const unavailable of ['missing', 'oversized']) test('partial host recovery omits uncertified peer incidence (' + unavailable + ')', async () => {
+  const f = fixture();
+  try {
+    const peer = 'Notes/Parent.md';
+    if (unavailable === 'missing') f.cache.delete(peer);
+    else f.cache.set(peer, {frontmatter: {Huge: 'x'.repeat(2 * 1024 * 1024)}, tags: []});
+    assert.equal(await f.preview.build(f.centerPath, {completeHostCover: true}), null, 'Ordinary count covers cannot become partial');
+    assert.equal(await f.preview.build(f.centerPath, {completeHostCover: true, requiredMetadataPaths: new Set([f.centerPath, peer])}), null, 'Selected unavailable metadata is terminal for that surface');
+    const partial = await f.preview.build(f.centerPath, {completeHostCover: true, requiredMetadataPaths: new Set([f.centerPath, 'Notes/Ordinary.md'])});
+    assert(partial);
+    assert(!partial.state.pages.has(peer), 'The omitted physical peer is not a certified endpoint');
+    assert(!partial.state.pages.get(f.centerPath).neighbours.has(peer), 'Unknown explicit overrides cannot become inferred links');
+    assert.deepEqual(partial.state.evidence.between(f.centerPath, peer), [], 'No provenance from an uncertified pair escapes');
+    assert(partial.state.pages.get(f.centerPath).neighbours.has('Notes/Ordinary.md'), 'Healthy selected incidence survives');
+  } finally {f.preview.dispose();}
+});
+
+/** Both visible-row limits and candidate limits participate in private native publication finality. */
+test('native candidate overscan rejects a visible limit decrease while a chunk is yielded', async () => {
+  let changed = false;
+  const f = folderFixture({settings: {maxItemCount: 20}, onYield: async () => {
+    if (!changed) {changed = true; f.setSettings({...f.settings(), maxItemCount: 10});}
+  }});
+  for (let n = 0; n < 130; n++) f.addFile('Notes/N' + n + '.md');
+  try {
+    assert.equal(await f.preview.build('folder:Notes', {folderCandidateLimit: 101}), null);
+    assert(changed, 'A real cooperative chunk observes the setting change');
+  } finally {f.preview.dispose();}
+});
+
+
+/** Mirror Obsidian’s fresh empty non-Markdown cache objects without reading binary bodies. */
+function attachmentFixture(extension = 'pdf') {
+  const f = fixture(), folder = f.files.get(f.centerPath).parent;
+  const attachment = new TFile('Notes/Manual.' + extension, folder);f.files.set(attachment.path, attachment);
+  const owners = Array.from({length:18},(_,i)=>{
+    const file = new TFile('Notes/Reader-' + i + '.md',folder);f.files.set(file.path,file);
+    f.cache.set(file.path,{frontmatter:{},tags:[],embeds:i===0?[{link:attachment.name}]:[]});
+    f.app.metadataCache.resolvedLinks[file.path] = {[attachment.path]:i===0?2:1};return file;
+  });
+  return {...f,attachment,owners};
+}
+
+for (const extension of ['pdf','png']) for (const completeHostCover of [false,true]) test('native fresh attachment metadata preserves inbound links ('+extension+', complete '+completeHostCover+')',async()=>{
+  const f = attachmentFixture(extension), bodyRequests=[];
+  try {
+    assert.notEqual(f.app.metadataCache.getFileCache(f.attachment),f.app.metadataCache.getFileCache(f.attachment),'Fixture reproduces Obsidian’s unstable attachment cache identity');
+    const result=await f.preview.build(f.attachment.path,{completeHostCover,bodyForPath:async path=>{
+      assert.notEqual(path,f.attachment.path,'Binary attachments never request Markdown parsing');bodyRequests.push(path);return undefined;
+    }});
+    assert(result,'Attachment preview publishes before global source authority');
+    const page=result.state.pages.get(f.attachment.path);assert.equal(page.file,f.attachment);
+    assert.deepEqual([...page.neighbours.keys()].filter(path=>path.endsWith('.md')).sort(),f.owners.map(file=>file.path).sort());
+    for(const owner of f.owners)assert.equal(classifyRelation(page.neighbours.get(owner.path),'parent',false),2,'Inbound body/embed link uses canonical parent inference');
+    assert.equal(bodyRequests.length,18,'Only Markdown contributors enter the optional body provider');
+  } finally {f.preview.dispose();}
+});
+
+for (const completeHostCover of [false,true]) test('Markdown centers retain relations to fresh-cache PDF and image attachments (complete '+completeHostCover+')',async()=>{
+  const f=attachmentFixture(),center=f.owners[0],image=new TFile('Notes/Image.png',f.attachment.parent),bodyRequests=[];
+  f.files.set(image.path,image);
+  f.app.metadataCache.resolvedLinks[center.path][image.path]=1;
+  try {
+    const result=await f.preview.build(center.path,{completeHostCover,bodyForPath:async path=>{bodyRequests.push(path);return undefined;}});
+    assert(result,'Markdown preview survives attachment metadata lookups');
+    const page=result.state.pages.get(center.path);
+    for(const file of [f.attachment,image]){
+      assert.equal(page.neighbours.get(file.path)?.target.file,file);
+      assert.equal(classifyRelation(page.neighbours.get(file.path),'child',false),2);
+      assert(!bodyRequests.includes(file.path),'No binary body reaches the Markdown provider');
+    }
+  } finally {f.preview.dispose();}
+});
+
+/** Exercise the real numerical publisher and repeat its revalidation, not merely the adapter. */
+for(const indexingMode of ['eager','on-demand']) for(const centerKind of ['attachment','markdown']) test('numeric gates survive attachment metadata revalidation ('+indexingMode+', '+centerKind+')',async()=>{
+  const f=attachmentFixture(),previousWindow=globalThis.window,centerPath=centerKind==='attachment'?f.attachment.path:f.owners[0].path;
+  globalThis.window={performance,setTimeout,clearTimeout,setInterval,clearInterval};
+  Object.assign(f.app.vault,{getName:()=> 'attachment-count-regression',getFiles:()=>[...f.files.values()]});
+  f.app.saveLocalStorage=()=>{};
+  const index=new GraphIndex({app:f.app,settings:{...settings,indexingMode,lastActivePath:centerPath,pinnedNodes:[],excludeFilepaths:[],
+    nameFields:'aliases',renderAlias:false,showInferredNodes:true,showAttachments:true,showPageNodes:true,showFolderNodes:false,showTagNodes:false,showVirtualNodes:true},getIndexSourceRevision:()=>0},f.app);
+  const forbidden=()=>{throw Error('Count-only work must not read bodies, sources or rebuild');};
+  index.indexedDb.open=index.sourceAcquisition.acquire=index.sourceAcquisition.flush=index.rebuild=forbidden;
+  try {
+    for(let pass=0;pass<3;pass++){
+      const scope=await index.publishOnDemandHostScope(centerPath,()=>true);
+      assert(scope,'Shared local count scope publishes');
+      const gates=index.gateStats(scope.pages.get(centerPath));
+      assert.equal(gates[centerKind==='attachment'?'top':'bottom'].visibleCount,centerKind==='attachment'?18:1);
+      for(const gate of Object.values(gates))assert.notEqual(gate.countUnavailable,true);
+      assert.equal(index.onDemandUnavailableCounts.has(centerPath),false);
+      assert.equal(index.isSemanticWriteReady(centerPath,centerKind==='attachment'?f.owners[0].path:f.attachment.path),false,'Numerical recovery grants no edit authority');
+      // An observed native event retires proof; the same contributors must recertify normally.
+      index.hostPreview.refreshSource(f.owners[0].path);
+    }
+  } finally {index.destroy();f.preview.dispose();globalThis.window=previousWindow;}
+});
+
+for (const mutation of ['stat','replacement','rename','delete','markdown-metadata']) test('attachment covers retain native and Markdown freshness fences ('+mutation+')',async()=>{
+  const f=attachmentFixture();let changed=false;
+  try {
+    const result=await f.preview.build(f.attachment.path,{completeHostCover:true,bodyForPath:async path=>{
+      if(path!==f.owners[1].path)return undefined;
+      await Promise.resolve();changed=true;
+      if(mutation==='stat')f.attachment.stat.mtime++;
+      if(mutation==='replacement')f.files.set(f.attachment.path,new TFile(f.attachment.path,f.attachment.parent));
+      if(mutation==='rename'){f.files.delete(f.attachment.path);f.attachment.path='Notes/Renamed.pdf';f.files.set(f.attachment.path,f.attachment);}
+      if(mutation==='delete')f.files.delete(f.attachment.path);
+      if(mutation==='markdown-metadata')f.cache.set(f.owners[0].path,{frontmatter:{Hidden:'[[Manual.pdf]]'},tags:[]});
+      return undefined;
+    }});
+    assert(changed,'Mutation overlaps a real later Markdown await');assert.equal(result,null,'Retired file or real Markdown metadata cannot publish');
+  } finally {f.preview.dispose();}
+});
+
+/** Switching to an unresolved neighbour must not wait for global source authority. */
+test('bounded placeholder preview survives release of its original native center',async()=>{
+ const f=fixture(),originalWindow=globalThis.window;
+ globalThis.window={performance,setTimeout,clearTimeout,setInterval,clearInterval};
+ const placeholder='Notes/Unwritten';
+ f.app.vault.getName=()=> 'placeholder-handover';
+ f.app.metadataCache.unresolvedLinks[f.centerPath]={[placeholder]:1};
+ f.cache.get(f.centerPath).frontmatter.Left='[['+placeholder+']]';
+ const plugin={settings:{...settings,excludeFilepaths:[],showVirtualNodes:true},getIndexSourceRevision:()=>0};
+ const index=new GraphIndex(plugin,f.app);
+ index.startSemanticDemand=()=>{};
+ try{
+  const releaseOld=index.acquireSemanticDemand(f.centerPath);
+  await index.publishHostMetadataPreview(f.centerPath);
+  assert(index.get(placeholder),'The early neighbour is visible');
+  const releaseNew=index.acquireSemanticDemand(placeholder);releaseOld();
+  await index.publishHostMetadataPreview(placeholder);
+  const page=index.get(placeholder);
+  assert(page,'The new placeholder owns a readable preview before global indexing');
+  assert.equal(page.file,null);
+  assert(page.neighbours.has(f.centerPath),'Its existing contributor remains connected');
+  assert.equal(index.state.pages.size,0,'A provisional preview does not publish global authority');
+  assert.equal(await f.preview.build('Unknown'),null,'An arbitrary missing identity is not fabricated');
+  releaseNew();assert.equal(index.get(placeholder),undefined,'Releasing the last owner retires the preview');
+ }finally{index.destroy();f.preview.dispose();globalThis.window=originalWindow}
+});

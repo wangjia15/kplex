@@ -10,10 +10,10 @@ import ts from "typescript";
 /** Preserve original method bodies, including queue/await fences, while callers supply explicit host facts. */
 export function styleSettingsHostSource(root) {
   const source = ts.createSourceFile("main.ts", readFileSync(new URL("src/main.ts", root), "utf8"), ts.ScriptTarget.Latest, true);
-  const names = new Set(["updateStyleSettings", "saveSettings", "enqueueSettingsWrite", "settingsSnapshotForPersistence", "persistSettingsSnapshot", "setGraphLenses",
+  const names = new Set(["setContentVisibility", "updateStyleSettings", "saveSettings", "enqueueSettingsWrite", "settingsSnapshotForPersistence", "persistSettingsSnapshot", "setGraphLenses", "readPortableSharingState", "previewPortableSharing", "importPortableSharing",
     "captureAppearanceOwner", "isAppearanceOwnerCurrent", "subscribeAppearanceThemes", "bindAppearanceEditor", "appearanceThemeNames", "updateAppearanceThemes", "showAppearanceMigrationNotification",
     "createAppearanceTheme", "resetAppearanceThemeColors", "importLegacyAppearance", "settingsForWrite", "writeSettingsSnapshot", "updateOntologyField", "updateOntologyConfiguration", "editOntologyConfiguration", "assignFieldToOntology", "ontologyFieldsForRole", "ontologyRoleForField", "inverseOntologyField", "inverseRelationshipRole", "defaultOntologyField", "refreshSavedSettings",
-    "initializeSettingsReconciliation", "onExternalSettingsChange", "queueExternalSettingsAdoption", "reportExternalSettingsFailure", "installExternalSettings", "updateActionPreferences", "receivedSettingsOwner", "receivedSettingsRevision"]);
+    "initializeSettingsReconciliation", "onExternalSettingsChange", "queueExternalSettingsAdoption", "reportExternalSettingsFailure", "installExternalSettings", "updateActionPreferences", "receivedSettingsOwner", "receivedSettingsRevision", "updateCanvasViewSetting", "readCanvasViewConfiguration", "updateCanvasViewConfiguration", "resetCanvasViewConfiguration", "migrateCanvasViewConfiguration", "commitCanvasViewConfiguration"]);
   const methods = [];
   /** The owning class keeps one definition for every requested method; a missing seam is an explicit failure. */
   const visit = node => {
@@ -24,6 +24,7 @@ export function styleSettingsHostSource(root) {
   return `export {TextSettingDraft} from "./src/ui/components/textSettingDraft";
     export {OntologyFieldControl} from "./src/ui/OntologyFieldControl";
     import {SavedSettingsRefresh} from "./src/adapters/obsidian/savedSettingsRefresh";
+    import {contentVisibilityPatch} from "./src/core/plex/contentVisibility";
     import * as appearanceThemes from "./src/core/plex/appearanceThemes";
     import {DEFAULT_SETTINGS,importExcaliBrainGraphSettings,migrateAndMergeSettings} from "./src/settings";
     import {SettingsReconciliation} from "./src/adapters/obsidian/settingsReconciliation";
@@ -31,6 +32,12 @@ export function styleSettingsHostSource(root) {
     import {readObsidianPresentationEnvironment} from "./src/adapters/obsidian/presentationEnvironment";
     import {migrateActionPreferences,sanitizeActionPreferences,compileActionBindings} from "./src/core/plex/actionPreferences";
     import {Notice} from "obsidian";
+    import {builtInCanvasViewSettings} from './src/ui/plexViews/settingsContributions';
+    import {editViewConfigurationAt,migrateViewConfiguration,readViewConfiguration,readViewConfigurationAt,resetViewConfiguration,viewConfigurationOwnerDomains,viewConfigurationUpdateDomain} from './src/core/plex/views/configuration';
+    import {facetLibrary} from './src/core/plex/views/facets/configuration';
+    import {applyPortableImport,PortableSharingCapacityError} from './src/core/plex/sharing/transfer';
+    import {configurationJson} from './src/core/plex/views/configurationValues';
+    import {editOntologyDescriptions} from './src/core/contracts/ontologyReadModel';
     import {ontologyConfiguration,assignOntologyField,applyOntologyEdit,ontologyEndpointState,editOntologyEntries,ONTOLOGY_GROUPS} from './src/core/contracts/ontologyConfiguration';
     export * from './src/core/contracts/ontologyConfiguration';
     export {OntologyUsageModal} from './src/ui/OntologyUsageModal';

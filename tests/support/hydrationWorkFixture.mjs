@@ -6,9 +6,9 @@
 import { contributorBrowserBundle, contributorBrowserInitialize } from './contributorBrowserFixture.mjs';
 
 /** Include the signature probe; optional committed sources preserve the exact baseline implementations. */
-export function hydrationWorkBundle(sourceOverrides = {}) {
+export function hydrationWorkBundle(sourceOverrides = {}, extraEntries = []) {
   return contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/GraphBuilder.ts', 'src/index/IndexSnapshot.ts',
-    'src/index/GraphState.ts', 'src/index/RelationResolver.ts', 'src/core/graph/relations.ts', 'tests/support/hydrationWorkProbe.ts'], sourceOverrides);
+    'src/index/GraphState.ts', 'src/index/RelationResolver.ts', 'src/core/graph/relations.ts', 'tests/support/hydrationWorkProbe.ts', ...extraEntries], sourceOverrides);
 }
 
 export { contributorBrowserInitialize };

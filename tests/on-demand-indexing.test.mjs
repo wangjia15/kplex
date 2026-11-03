@@ -1917,3 +1917,785 @@ for (const mode of ['on-demand','eager']) test('retiring demand stops a supersed
     equal(f.reads.length,0,'Canceled host-only preparation reads no note body');equal(o.inventoryStarts,0,'No global inventory');return true;
   }finally{unblock?.();release?.();o.close();}
 })()`));
+
+for(const inline of [false,true]) test('warm eager visible ontology refresh bypasses global dependency closure (inline='+inline+')',async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('eager-visible-recovery-'+${inline},{indexingMode:'eager'}),{f,index,settings}=o;
+  let release,visible,later;
+  try{
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    f.add('A.md','[[B]]');f.add('B.md',${inline}?'Parent:: [[A]]':'',${inline}?{}:{Parent:'[[A]]'});
+    f.add('C.md','Parent:: [[A]]');for(let i=0;i<32;i++)f.add('Unrelated'+i+'.md','');
+    f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1},'B.md':{'A.md':1}};
+    ok(await index.rebuild(),'Real warm full baseline');index.acknowledgeHostPresentation();
+    const baseline=index.state;release=index.acquireSemanticDemand('A.md');
+    visible=index.acquirePresentationDemand([index.get('A.md'),index.get('B.md')]);
+    // An unscoped resolver close deliberately withholds closed-world source authority.
+    f.app.metadataCache.trigger('resolved');ok(!index.sourceAcquisition.hasSemanticDependencies(),'Global source dependency really pending');
+    settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Friend','Parent'];index.invalidateSemanticPolicy();
+    const before=f.reads.length;f.work.reset();await index.refreshSemanticSettings();
+    while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    equal(index.state===baseline,true,'Foreground publication preserves full graph identity');
+    ok(!index.usesLocalForeground(),'Warm eager view did not switch to a new baseline');
+    equal(index.getNeighborhood('A.md').leftFriends.map(x=>x.page.path),['B.md'],'Inverse visible ontology uses current policy without global discovery');
+    equal(index.getNeighborhood('A.md').children.map(x=>x.page.path),[],'Stale ontology role is removed');
+    const explanation=index.explainRelationship('A.md','B.md');ok(explanation,'Local compiled provenance remains available');
+    equal(index.viewScopeCoverage('A.md').complete,false,'Local cover grants no complete-neighborhood authority');
+    equal(index.viewScopeCoverage('A.md').prepared,true,'Current selected cover is readable');
+    equal(f.work.markdownEnumerations,0,'No whole-vault enumeration for visible recovery');
+    ok(f.reads.slice(before).every(path=>['A.md','B.md'].includes(path)),'No unrelated body reads');
+    // A newly visible owner is admitted independently of the original center demand.
+    later=index.acquirePresentationDemand([index.state.pages.get('C.md')]);
+    while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    equal(index.getNeighborhood('A.md').leftFriends.map(x=>x.page.path).sort(),['B.md','C.md'],'Newly materialized body-only owner joins local cover');
+    ok(!index.sourceAcquisition.hasSemanticDependencies(),'Foreground work does not promote global readiness');
+    index.sourceAcquisition.enableInventory();ok(await index.sourceAcquisition.reconcile(),'Actual global authority eventually closes');
+    await index.ensureSemanticScope('A.md');
+    ok(index.hasCurrentCanonicalCenter('A.md'),'Complete canonical publication takes over');
+    ok(!index.visibleRecoveryScope('A.md'),'No recovery overlay survives canonical handover');return true;
+  }finally{later?.();visible?.();release?.();o.close();}
+})()`));
+
+for(const variant of ['released','policy','same-stat','replaced','renamed','unavailable','guard']) test('warm eager finite recovery fences selected input ('+variant+')',async()=>scenario(`(async()=>{
+  const variant=${JSON.stringify(variant)},o=await onDemandFixture('eager-recovery-fence-'+variant,{indexingMode:'eager'}),{f,index,settings}=o;
+  let release,visible,unblock;const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);
+  try{
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    f.add('A.md','[[B]]');const b=f.add('B.md','Parent:: [[A]]');
+    f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1},'B.md':{'A.md':1}};
+    ok(await index.rebuild(),'Warm full graph');index.acknowledgeHostPresentation();const baseline=index.state;
+    release=index.acquireSemanticDemand('A.md');visible=index.acquirePresentationDemand([index.get('B.md')]);
+    f.app.metadataCache.trigger('resolved');settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+    let entered;const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);let held=false;
+    index.sourceAcquisition.readRequestedBody=async(file,current)=>{
+      if(!held){held=true;entered();await hold;}
+      if(variant==='unavailable'&&file===b)return null;
+      return read(file,current);
+    };
+    if(variant==='guard')b.stat.size=65*1024*1024;
+    const refreshing=index.refreshSemanticSettings();await reached;
+    if(variant==='released'){release();release=null;}
+    if(variant==='policy'){settings.hierarchy.leftFriends=[];settings.hierarchy.previous=['Parent'];index.invalidateSemanticPolicy();}
+    if(variant==='same-stat'){f.texts.set('B.md','Right:: [[A]]');f.app.vault.trigger('modify',b);f.app.metadataCache.trigger('changed',b);index.refreshVisibleHostMetadataPreviews('B.md');}
+    if(variant==='replaced')f.add('B.md','Right:: [[A]]');
+    if(variant==='renamed'){f.files.delete(b.path);b.path='Moved.md';f.files.set(b.path,b);}
+    unblock();await refreshing;while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    ok(index.state===baseline,'Finite recovery never replaces the full graph');
+    if(variant==='policy'){
+      equal(index.neighbours(index.get('A.md'),'next').map(x=>x.page.path),['B.md'],'Superseded policy retries with current semantic owner');
+      equal(index.neighbours(index.get('A.md'),'left').length,0,'No stale policy overlay');
+    }else if(variant==='same-stat'){
+      equal(index.getNeighborhood('A.md').rightFriends.map(x=>x.page.path),['B.md'],'Same-stat source is reparsed');
+      const evidence=index.semanticEvidence('A.md','B.md').evidence;
+      ok(evidence.some(item=>item.fieldName==='Right'),'Only new inline field contributes current evidence');
+      ok(!evidence.some(item=>item.fieldName==='Parent'),'Old inline evidence is absent');
+    }else ok(!index.visibleRecoveryScope('A.md'),'Retired, unavailable or guarded input grants no local certificate');
+    return true;
+  }finally{unblock?.();visible?.();release?.();o.close();}
+})()`));
+
+for(const mode of ['eager','on-demand']) test('two visible folders retain unaffected children across native moves and metadata repair ('+mode+')',async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('two-folder-move-'+${JSON.stringify(mode)},{indexingMode:${JSON.stringify(mode)},showFolderNodes:true}),{f,index}=o;
+  const releases=[],observations=[];let stop,stopPresentation;
+  try{
+    const root=f.app.vault.getRoot(),source=new ContributorFolder(),dest=new ContributorFolder();
+    source.path='Source';source.name='Source';source.parent=root;dest.path='Destination';dest.name='Destination';dest.parent=root;
+    const a=f.add('Source/A.md',''),b=f.add('Source/B.md',''),c=f.add('Destination/C.md',''),d=f.add('Destination/D.md','');
+    a.parent=b.parent=source;c.parent=d.parent=dest;source.children=[a,b];dest.children=[c,d];root.children=[source,dest];
+    const folders=new Map([['Source',source],['Destination',dest]]);
+    f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:folders.get(path)??null;
+    f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??folders.get(path)??(path==='/'||path===''?root:null);
+    if(${JSON.stringify(mode)}==='eager'){delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};ok(await index.rebuild(),'Full graph');index.acknowledgeHostPresentation();}
+    else ok(await index.initializeOnDemandBaseline(),'Local baseline');
+    releases.push(index.acquireSemanticDemand('folder:Source'),index.acquireSemanticDemand('folder:Destination'));await settleDemand(index);
+    await index.publishHostMetadataPreview('folder:Source');await index.publishHostMetadataPreview('folder:Destination');
+    const children=()=>index.getNeighborhood('folder:Destination')?.children.map(row=>row.page.path)??[];
+    equal(children().sort(),['Destination/C.md','Destination/D.md'],'Initial destination siblings');
+    const observe=()=>observations.push(children());stop=index.subscribe(observe);stopPresentation=index.subscribePresentation(observe);
+    const reads=f.reads.length;f.work.reset();
+    for(const file of [a,b]){
+      const old=file.path,text=f.texts.get(old),cache=f.metadata.get(old);f.files.delete(old);f.texts.delete(old);f.metadata.delete(old);
+      source.children=source.children.filter(item=>item!==file);dest.children.push(file);file.parent=dest;file.path='Destination/'+file.name;f.files.set(file.path,file);f.texts.set(file.path,text);f.metadata.set(file.path,cache);
+      o.bump();index.invalidateHostStructure();f.app.vault.trigger('rename',file,old);index.renameFile(old,file);
+      f.app.metadataCache.trigger('changed',file);index.refreshVisibleHostMetadataPreviews(file.path);
+      f.app.metadataCache.trigger('resolve',file);index.refreshVisibleHostMetadataPreviews(file.path);f.app.metadataCache.trigger('resolved');
+      await index.publishHostMetadataPreview('folder:Destination');await index.publishHostMetadataPreview('folder:Source');
+      await settleDemand(index);while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+      observe();
+    }
+    ok(observations.length>2,'Observe real graph and presentation publications');
+    ok(observations.every(paths=>paths.includes(c.path)&&paths.includes(d.path)),'Unchanged destination members never disappear: '+JSON.stringify(observations));
+    equal(children().sort(),[a.path,b.path,c.path,d.path].sort(),'Destination uses native direct membership');
+    equal(index.getNeighborhood('folder:Source').children.length,0,'Source reflects native removals');
+    equal(f.reads.length,reads,'Folder membership refresh reads no Markdown');equal(f.work.markdownEnumerations,0,'Folder view acquires no whole-vault inventory');return true;
+  }finally{stop?.();stopPresentation?.();for(const release of releases)release();o.close();}
+})()`));
+
+test('finite warm recovery stays selected-owner bounded with 11847 unrelated native notes',async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('large-native-visible-recovery',{indexingMode:'eager'}),{f,index,settings}=o;let release,visible;
+  try{
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    f.add('A.md','[[B]]');f.add('B.md','Parent:: [[A]]');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1},'B.md':{'A.md':1}};
+    ok(await index.rebuild(),'Warm baseline for selected owners');index.acknowledgeHostPresentation();
+    for(let i=0;i<11847;i++)f.add('Unrelated'+i+'.md','');
+    release=index.acquireSemanticDemand('A.md');visible=index.acquirePresentationDemand([index.get('A.md'),index.get('B.md')]);
+    f.app.metadataCache.trigger('resolved');settings.hierarchy.parents=[];settings.hierarchy.rightFriends=['Parent'];index.invalidateSemanticPolicy();
+    const before=index.sourceAcquisition.getCounters(),reads=f.reads.length;f.work.reset();await index.refreshSemanticSettings();
+    while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    equal(index.getNeighborhood('A.md').rightFriends.map(row=>row.page.path),['B.md'],'Selected inline owner is current despite large native inventory');
+    equal(f.work.markdownEnumerations,0,'No native Markdown inventory');equal(f.work.fileEnumerations,0,'No native file inventory');
+    equal(index.sourceAcquisition.getCounters().checked,before.checked,'No global source checks');
+    ok(f.reads.slice(reads).every(path=>path==='A.md'||path==='B.md'),'No unrelated source body read');
+    ok(!index.sourceAcquisition.hasSemanticDependencies(),'Large pending source inventory remains independent');return true;
+  }finally{visible?.();release?.();o.close();}
+})()`));
+
+/** Regressions found in the recovery review: independent centers and finite native folder covers. */
+for(const change of ['sort','limit','visibility'])test('native folder cover respects '+change,async()=>scenario(`(async()=>{
+ const change=${JSON.stringify(change)},o=await onDemandFixture('review-folder-'+change,{indexingMode:'eager',showFolderNodes:true,nodeSortOrder:'name-asc',maxItemCount:10}),{f,index,settings}=o;let release;
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  const names=change==='visibility'?Array.from({length:10},(_,i)=>'Z'+i+'.png').concat(['A.md','B.md']):Array.from({length:10},(_,i)=>'Z'+i+'.md').concat(['A.md','B.md']);
+  folder.children=names.map(name=>{const file=f.add('Notes/'+name,'');file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  settings.showAttachments=true;delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Complete folder baseline');index.acknowledgeHostPresentation();
+  const expected=index.getNeighborhood('folder:Notes').children.map(row=>row.page.path);
+  release=index.acquireSemanticDemand('folder:Notes');await index.publishHostMetadataPreview('folder:Notes');
+  if(change==='sort')equal(index.getNeighborhood('folder:Notes').children.map(row=>row.page.path),expected,'Native cover must preserve complete sorted selection');
+  if(change==='limit'){settings.maxItemCount=20;await index.refreshPresentationSettings();equal(index.getNeighborhood('folder:Notes').children.length,12,'Increasing limit must reveal existing native members without another topology event');}
+  if(change==='visibility'){settings.showAttachments=false;await index.refreshPresentationSettings();equal(index.getNeighborhood('folder:Notes').children.map(row=>row.page.path),['Notes/A.md','Notes/B.md'],'Hidden attachment prefix must not suppress remaining Markdown members');}
+  return true;
+ }finally{release?.();o.close();}
+})()`));
+
+test('each demanded Markdown center owns its own recovery contributor cover',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('review-two-centers',{indexingMode:'eager'}),{f,index,settings}=o;let a,x,visible;
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]]');f.add('B.md','');f.add('X.md','');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();a=index.acquireSemanticDemand('A.md');x=index.acquireSemanticDemand('X.md');visible=index.acquirePresentationDemand([index.get('A.md'),index.get('B.md'),index.get('X.md')]);
+  // A newly discovered incoming owner has not yet appeared on X's old scene.
+  f.add('Y.md','', {Parent:'[[X]]'});f.app.metadataCache.resolvedLinks['Y.md']={'X.md':1};index.hostPreview.refreshSource('Y.md');
+  f.app.metadataCache.trigger('resolved');settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  await index.refreshSemanticSettings();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(index.getNeighborhood('X.md').leftFriends.map(row=>row.page.path),['Y.md'],'Second center must discover its own current incoming native owner');
+  return true;
+ }finally{visible?.();x?.();a?.();o.close();}
+})()`));
+
+test('partial folder cover preserves canonical file-parent provenance',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('review-folder-provenance',{indexingMode:'eager',showFolderNodes:true,maxItemCount:10}),{f,index}=o;let release;
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:12},(_,i)=>{const file=f.add('Notes/N'+i+'.md','');file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};ok(await index.rebuild(),'Canonical membership');index.acknowledgeHostPresentation();
+  const before=index.explainRelationship('Notes/N11.md','folder:Notes');ok(before.decisions.some(d=>d.evidence.sourceKind==='file-tree'),'Canonical provenance exists');
+  release=index.acquireSemanticDemand('folder:Notes');await index.publishHostMetadataPreview('folder:Notes');
+  ok(index.neighbours(index.get('Notes/N11.md'),'parent').some(row=>row.page.path==='folder:Notes'),'Source note still displays its actual parent');
+  const after=index.explainRelationship('Notes/N11.md','folder:Notes');equal(after.decisions.length,before.decisions.length,'Partial destination cover must not erase source-owned provenance');return true;
+ }finally{release?.();o.close();}
+})()`));
+
+/** A folder larger than a compiler chunk must retain the same sorted prefix as its complete oracle. */
+for (const mode of ['eager','on-demand']) test('native folder bounded selection follows every configured sort order ('+mode+')',async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('native-folder-order-'+${JSON.stringify(mode)},{indexingMode:${JSON.stringify(mode)},showFolderNodes:true,maxItemCount:10}),{f,index,settings}=o;let release;
+  try{
+    const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+    folder.children=Array.from({length:130},(_,i)=>{
+      const file=f.add('Notes/N'+String(i).padStart(3,'0')+'.md','',{aliases:['Label '+String(130-i).padStart(3,'0')]});
+      file.stat.mtime=(i*37)%131+1;file.stat.ctime=(i*17)%131+1;file.parent=folder;return file;
+    });
+    for(let i=119;i<130;i++)f.metadata.get(folder.children[i].path).frontmatter.Child=folder.children.slice(0,i-118).map(file=>'[['+file.path+']]');
+    root.children=[folder];f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+    f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    ok(await index.rebuild(),'Complete native folder oracle');index.acknowledgeHostPresentation();const canonical=index.state.pages.get('folder:Notes');
+    release=index.acquireSemanticDemand('folder:Notes');
+    // Native preview and initial semantic demand are separate owners. Sort-only assertions need
+    // a settled baseline; otherwise a late initial scope can replace the just-sorted native cover.
+    await settleDemand(index);await index.publishHostMetadataPreview('folder:Notes');
+    equal(index.onDemandTasks.size,0,'Initial semantic demand settled before sort-only controls');
+    const reads=f.reads.length;f.work.reset();
+    for(const order of ['name-asc','name-desc','modified-asc','modified-desc','created-asc','created-desc','connections-asc','connections-desc']){
+      settings.nodeSortOrder=order;await index.refreshPresentationSettings();
+      const expected=index.relationView(canonical,{page:canonical,settings:index.fullSemanticSettings}).roles.child.slice(0,10).map(row=>row.page.path);
+      equal(index.getNeighborhood('folder:Notes').children.map(row=>row.page.path),expected,'Complete-order prefix '+order);
+      ok(index.hostPreviewScopes.get('folder:Notes').pages.size<=53,'Only the bounded sibling candidate pool plus center/parent is retained');
+    }
+    equal(f.reads.length,reads,'Sorting acquires no body');equal(f.work.markdownEnumerations,0,'Sorting acquires no inventory');return true;
+  }finally{release?.();o.close();}
+})()`));
+
+/** Another open folder's capped scene must not become its total degree when sorting the parent. */
+test('native folder connection order uses direct membership while a child folder is also open',async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('native-folder-degree',{indexingMode:'eager',showFolderNodes:true,maxItemCount:10,nodeSortOrder:'connections-desc'}),{f,index}=o;const releases=[];
+  try{
+    const root=f.app.vault.getRoot(),parent=new ContributorFolder();parent.path='Notes';parent.name='Notes';parent.parent=root;
+    const folders=new Map([['Notes',parent]]);parent.children=[];
+    for(let i=0;i<12;i++){
+      const folder=new ContributorFolder();folder.path='Notes/F'+i;folder.name='F'+i;folder.parent=parent;folders.set(folder.path,folder);parent.children.push(folder);
+      folder.children=Array.from({length:i+1},(_,n)=>{const file=f.add(folder.path+'/N'+n+'.md','');file.parent=folder;return file});
+    }
+    root.children=[parent];f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:folders.get(path)??null;
+    f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};ok(await index.rebuild(),'Complete physical baseline');index.acknowledgeHostPresentation();
+    const expected=index.getNeighborhood('folder:Notes').children.map(row=>row.page.path);
+    releases.push(index.acquireSemanticDemand('folder:Notes/F11'));await index.publishHostMetadataPreview('folder:Notes/F11');
+    releases.push(index.acquireSemanticDemand('folder:Notes'));await index.publishHostMetadataPreview('folder:Notes');
+    equal(index.getNeighborhood('folder:Notes').children.map(row=>row.page.path),expected,'A child cover does not change parent ordering');return true;
+  }finally{releases.forEach(release=>release());o.close();}
+})()`));
+
+test('warm PDF center recovers selected Markdown ontology with native fresh attachment metadata',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('warm-attachment-metadata',{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('Manual.pdf','');f.add('B.md','Parent:: [[Manual.pdf]]');
+  const nativeCache=f.app.metadataCache.getFileCache.bind(f.app.metadataCache);
+  f.app.metadataCache.getFileCache=file=>file.extension==='md'?nativeCache(file):{};
+  f.app.metadataCache.resolvedLinks={'B.md':{'Manual.pdf':1}};
+  ok(await index.rebuild(),'Warm complete graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('Manual.pdf'),index.acquirePresentationDemand(['Manual.pdf','B.md'].map(path=>index.get(path)),['Manual.pdf']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  await index.refreshSemanticSettings();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(index.getNeighborhood('Manual.pdf').leftFriends.map(row=>row.page.path),['B.md'],'PDF native ownership does not reject current selected Markdown semantics');
+  ok(!index.sourceAcquisition.hasSemanticDependencies(),'Local recovery grants no global authority');
+  ok(!index.isSemanticWriteReady('Manual.pdf','B.md'),'Local recovery grants no pair write authority');
+  ok(!f.reads.includes('Manual.pdf'),'Binary body is never read');return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+for(const variant of ['unrelated-edit','unrelated-body-failure','unrelated-metadata-pending'])test('warm recovery isolates stationary canvases: '+variant,async()=>scenario(`(async()=>{
+ const variant=${JSON.stringify(variant)},o=await onDemandFixture('review-second-'+variant,{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]]');const b=f.add('B.md','Parent:: [[A]]');f.add('X.md','[[Y]]');f.add('Y.md','Parent:: [[X]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1},'B.md':{'A.md':1},'X.md':{'Y.md':1},'Y.md':{'X.md':1}};
+  ok(await index.rebuild(),'Warm complete graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquireSemanticDemand('X.md'),
+    index.acquirePresentationDemand(['A.md','B.md'].map(path=>index.get(path)),['A.md']),
+    index.acquirePresentationDemand(['X.md','Y.md'].map(path=>index.get(path)),['X.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  if(variant==='unrelated-metadata-pending')f.metadata.delete('X.md');
+  if(variant==='unrelated-body-failure'){
+    const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);index.sourceAcquisition.readRequestedBody=async(file,current)=>file.path==='X.md'?null:read(file,current);
+  }
+  await index.refreshSemanticSettings();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(index.getNeighborhood('A.md').leftFriends.map(row=>row.page.path),['B.md'],'Independent A recovers from its own readable inputs');
+  if(variant==='unrelated-edit'){
+    equal(index.getNeighborhood('X.md').leftFriends.map(row=>row.page.path),['Y.md'],'X initially owns current-policy recovery');
+    const before=index.plugin.getIndexSourceRevision();b.stat.mtime++;f.texts.set(b.path,'Right:: [[A]]');o.bump();f.app.vault.trigger('modify',b);f.app.metadataCache.trigger('changed',b);
+    index.refreshVisibleHostMetadataPreviews(b.path,before);while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    equal(index.getNeighborhood('A.md').rightFriends.map(row=>row.page.path),['B.md'],'Changed center is refreshed');
+    equal(index.getNeighborhood('X.md').leftFriends.map(row=>row.page.path),['Y.md'],'Unrelated edit must not revert stationary X to its old ontology');
+  }
+  return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+test('native folder name selection follows an ordinary alias patch after its early host preview',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('review-second-alias',{indexingMode:'eager',showFolderNodes:true,maxItemCount:10,nodeSortOrder:'name-asc'}),{f,index}=o;let release;
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:12},(_,i)=>{const file=f.add('Notes/N'+i+'.md','',{aliases:['Z'+i]});file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};ok(await index.rebuild(),'Full folder graph');index.acknowledgeHostPresentation();
+  release=index.acquireSemanticDemand('folder:Notes');await index.publishHostMetadataPreview('folder:Notes');const file=folder.children[11];
+  const before=index.plugin.getIndexSourceRevision();file.stat.mtime++;f.metadata.set(file.path,{frontmatter:{aliases:['AAA']},links:[]});o.bump();f.app.vault.trigger('modify',file);f.app.metadataCache.trigger('changed',file);index.refreshVisibleHostMetadataPreviews(file.path,before);
+  await index.publishHostMetadataPreview('folder:Notes');
+  equal((await index.patchMarkdownPaths([file.path],{forceRecompile:true})).outcome,'patched','Normal incremental source patch completes');index.acknowledgeHostPresentation();await index.folderPresentationRefreshTask;
+  equal(index.get(file.path).aliases,['AAA'],'Canonical alias is current');
+  equal(index.getNeighborhood('folder:Notes').children[0]?.page.path,file.path,'New alphabetical first member must enter the native cover after source publication');
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  equal(index.get(file.path).aliases,['AAA'],'Sparse native membership must retain the actual note alias during global recovery');
+  equal(index.getNeighborhood('folder:Notes').children[0]?.page.path,file.path,'Recovery preserves the sorted alias prefix');
+  const replacement=f.add(file.path,'');replacement.parent=folder;folder.children[11]=replacement;
+  index.invalidateHostStructure();await index.publishHostMetadataPreview('folder:Notes');
+  equal(index.get(file.path).file===replacement,true,'Alias preservation must not revive a retired canonical native identity');return true;
+ }finally{release?.();o.close();}
+})()`));
+
+test('warm recovered neighborhood reads scale with the displayed set',async()=>{
+ const browser=await chromiumHarness(bundle);
+ try{
+  assert.equal(await browser.evaluate(contributorBrowserInitialize),true);assert.equal(await browser.evaluate(initialize),true);
+  const result=await browser.evaluate(`(async()=>{
+    const rows=[];
+    for(const mode of ['eager','on-demand'])for(const n of [40,160]){
+      const o=await onDemandFixture('review-read-cost-'+mode+'-'+n,{indexingMode:mode,maxItemCount:300}),{f,index,settings}=o;let release,visible;
+      try{
+        delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+        const targets=Array.from({length:n},(_,i)=>'B'+i+'.md');f.add('A.md','',{Parent:targets.map(path=>'[['+path+']]')});targets.forEach(path=>f.add(path,''));f.app.metadataCache.resolvedLinks={'A.md':Object.fromEntries(targets.map(path=>[path,1]))};
+        ok(await index.rebuild(),'Real graph');index.acknowledgeHostPresentation();release=index.acquireSemanticDemand('A.md');visible=index.acquirePresentationDemand(['A.md',...targets].map(path=>index.get(path)));
+        index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();await index.refreshSemanticSettings();
+        while(index.onDemandTasks.size||index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandTasks.values(),...index.onDemandPreviewTasks.values()]);
+        let lookups=0;const lookup=f.app.vault.getFileByPath;f.app.vault.getFileByPath=path=>{lookups++;return lookup(path)};index.relationViewCache=new WeakMap();
+        const actual=index.getNeighborhood('A.md').leftFriends.length;f.app.vault.getFileByPath=lookup;equal(actual,n,'Current relation set retained');rows.push({mode,n,lookups});
+      }finally{visible?.();release?.();o.close();}
+    }
+    return rows;
+  })()`);
+  console.log(JSON.stringify(result));
+  const eager=result.filter(row=>row.mode==='eager');assert(eager[1].lookups<eager[0].lookups*8,'Four times the visible set must not require quadratic certificate validation');
+ }finally{await browser.cleanup();}
+});
+
+/** Shared-center isolation, preparation complexity and On-demand folder ordering regressions. */
+for(const failure of ['none','unavailable','guard','separate-budgets','metadata'])for(const reverse of [false,true])test('shared-center recovery isolates canvas inputs ('+failure+', reverse='+reverse+')',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('review-same-center-'+${JSON.stringify(failure)},{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]] [[C]]');f.add('B.md','Parent:: [[A]]');f.add('C.md','Parent:: [[A]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1,'C.md':1},'B.md':{'A.md':1},'C.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquireSemanticDemand('A.md'));
+  for(const endpoint of ${JSON.stringify(reverse)}?['C.md','B.md']:['B.md','C.md'])
+   releases.push(index.acquirePresentationDemand(['A.md',endpoint].map(path=>index.get(path)),['A.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  const originalPeerMetadata=f.metadata.get('B.md');if(${JSON.stringify(failure)}==='metadata')f.metadata.delete('B.md');
+  if(${JSON.stringify(failure)}==='guard')f.files.get('B.md').stat.size=65*1024*1024;
+  if(${JSON.stringify(failure)}==='separate-budgets')for(const path of ['B.md','C.md'])f.files.get(path).stat.size=40*1024*1024;
+  if(${JSON.stringify(failure)}==='unavailable'){const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);index.sourceAcquisition.readRequestedBody=async(file,current)=>file.path==='B.md'?null:read(file,current);}
+  await index.refreshSemanticSettings();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  const actual=index.getNeighborhood('A.md').leftFriends.filter(row=>row.page.path==='C.md').map(row=>row.page.path);
+  equal(actual,['C.md'],'The healthy canvas keeps its current-policy visible C relation');
+  if(['none','separate-budgets'].includes(${JSON.stringify(failure)}))equal(index.getNeighborhood('A.md').leftFriends.map(row=>row.page.path).sort(),['B.md','C.md'],'Successful surface extensions retain both sets of body semantics');
+  ok(!index.sourceAcquisition.hasSemanticDependencies(),'Local availability cannot grant global authority');
+  // React can replace page incarnations and leases after a partial publication. Equal path groups
+  // must reuse the certified successful scope, without rereading the unchanged unavailable peer.
+  const published=index.onDemandHostScopes.get('A.md'),reader=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);let rereads=0;
+  index.sourceAcquisition.readRequestedBody=async(...args)=>{rereads++;return reader(...args)};
+  for(let n=0;n<3;n++){
+    releases[3]();releases[2]();
+    const endpoints=${JSON.stringify(reverse)}?['C.md','B.md']:['B.md','C.md'];
+    endpoints.forEach((endpoint,i)=>{releases[2+i]=index.acquirePresentationDemand(['A.md',endpoint].map(path=>index.get(path)),['A.md']);});
+    while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    ok(index.onDemandHostScopes.get('A.md')===published,'Unchanged presentation groups retain the successful page incarnation');
+  }
+  equal(rereads,0,'Unchanged failed surface input is not polled by re-renders');
+  if(${JSON.stringify(failure)}==='metadata'){
+    f.metadata.set('B.md',originalPeerMetadata);await index.ensureVisibleSemanticRecovery('A.md');
+    while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+    equal(index.getNeighborhood('A.md').leftFriends.map(row=>row.page.path).sort(),['B.md','C.md'],'Newly available metadata retires only the unchanged-attempt suppression and re-admits the peer');
+  }
+
+
+  return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+test('native folder On-demand alias patch refreshes its sorted cover',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('review-ondemand-folder-alias',{indexingMode:'on-demand',showFolderNodes:true,maxItemCount:10,nodeSortOrder:'name-asc'}),{f,index}=o;let release;
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:12},(_,i)=>{const file=f.add('Notes/N'+i+'.md','',{aliases:['Z'+String(i).padStart(2,'0')]});file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};ok(await index.rebuild(),'Warm folder graph');index.acknowledgeHostPresentation();
+  release=index.acquireSemanticDemand('folder:Notes');await index.publishHostMetadataPreview('folder:Notes');await settleDemand(index);
+  const file=folder.children[11],before=index.plugin.getIndexSourceRevision();
+  ok(!index.getNeighborhood('folder:Notes').children.some(row=>row.page.file===file),'Alias target starts outside the finite cover');file.stat.mtime++;f.metadata.set(file.path,{frontmatter:{aliases:['AAA']},links:[]});o.bump();f.app.vault.trigger('modify',file);f.app.metadataCache.trigger('changed',file);index.refreshVisibleHostMetadataPreviews(file.path,before);
+  // A displayed source can independently finish its ordinary atomic publication. The On-demand
+  // coordinator refreshes current scopes; it never calls the Eager batch-acknowledgement hook.
+  equal((await index.patchMarkdownPaths([file.path],{forceRecompile:true})).outcome,'patched','Actual ordinary source commit');
+  ok(await index.refreshOnDemandGraph(['folder:Notes']),'Production On-demand refresh finishes');await settleDemand(index);await index.folderPresentationRefreshTask;
+  equal(index.state.pages.get(file.path).aliases,['AAA'],'Actual canonical alias publication');
+  equal(index.getNeighborhood('folder:Notes').children[0]?.page.path,file.path,'Refreshed alias must enter the native sorted cover');return true;
+ }finally{release?.();o.close();}
+})()`));
+
+test('selected recovery preparation validates owners without quadratic lookups',async()=>{
+ const browser=await chromiumHarness(bundle);
+ try{
+  assert.equal(await browser.evaluate(contributorBrowserInitialize),true);assert.equal(await browser.evaluate(initialize),true);
+  const rows=await browser.evaluate(`(async()=>{
+   const rows=[];
+   for(const n of [40,160]){
+    const o=await onDemandFixture('review-prepare-cost-'+n,{indexingMode:'eager',maxItemCount:300}),{f,index,settings}=o;let a,visible;
+    try{
+      delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+      const targets=Array.from({length:n},(_,i)=>'B'+i+'.md');f.add('A.md','',{Parent:targets.map(path=>'[['+path+']]')});targets.forEach(path=>f.add(path,''));
+      f.app.metadataCache.resolvedLinks={'A.md':Object.fromEntries(targets.map(path=>[path,1]))};
+      ok(await index.rebuild(),'Warm real graph');index.acknowledgeHostPresentation();a=index.acquireSemanticDemand('A.md');visible=index.acquirePresentationDemand(['A.md',...targets].map(path=>index.get(path)),['A.md']);
+      index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+      let lookups=0;const lookup=f.app.vault.getFileByPath;f.app.vault.getFileByPath=path=>{lookups++;return lookup(path)};
+      const began=performance.now();settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();await index.refreshSemanticSettings();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+      const elapsedMs=performance.now()-began;f.app.vault.getFileByPath=lookup;
+      equal(index.getNeighborhood('A.md').leftFriends.length,n,'Every current role is actually recovered');rows.push({n,lookups,elapsedMs});
+    }finally{visible?.();a?.();o.close();}
+   }
+   return rows;
+  })()`);
+  console.log('PREPARATION_COST='+JSON.stringify(rows));assert(rows[1].lookups<rows[0].lookups*8,'Fourfold selected input should not quadruple whole-cover validation per compiler step');
+ }finally{await browser.cleanup()}
+});
+
+/** Equal unions do not imply equal availability: a new surface may select a healthy subset of a failed group. */
+test('a newly independent shared-center input group retries its previously blocked selected owner',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('recovery-new-independent-group',{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]] [[C]] [[D]]');for(const path of ['B.md','C.md','D.md'])f.add(path,'Parent:: [[A]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1,'C.md':1,'D.md':1},'B.md':{'A.md':1},'C.md':{'A.md':1},'D.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm full graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('A.md'),
+    index.acquirePresentationDemand(['A.md','B.md','C.md'].map(path=>index.get(path)),['A.md']),
+    index.acquirePresentationDemand(['A.md','D.md'].map(path=>index.get(path)),['A.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);
+  index.sourceAcquisition.readRequestedBody=async(file,current)=>file.path==='B.md'?null:read(file,current);
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();await index.refreshSemanticSettings();
+  while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  const previous=index.visibleRecoveryScope('A.md');ok(previous,'D owns a successful current cover');
+  ok(!index.visibleRecoveryCertificates.get(previous).paths.has('C.md'),'C was blocked in its original selected input group');
+  releases.push(index.acquirePresentationDemand(['A.md','C.md'].map(path=>index.get(path)),['A.md']));
+  while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  const recovered=index.visibleRecoveryScope('A.md');
+  ok(index.visibleRecoveryCertificates.get(recovered).paths.has('C.md'),'A new healthy subset is acquired despite an unchanged union of all visible paths');
+  equal(index.getNeighborhood('A.md').leftFriends.filter(row=>['C.md','D.md'].includes(row.page.path)).map(row=>row.page.path).sort(),['C.md','D.md'],'Successful peer body semantics survive the extension');
+  return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+/** Fourth-review regressions: parent candidate caps and independently available metadata. */
+for(const missing of [false,true])test('same-center recovery remains independent when peer metadata is missing '+missing,async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('fourth-review-shared-metadata-'+${JSON.stringify(missing)},{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]] [[C]]');f.add('B.md','Parent:: [[A]]');f.add('C.md','Parent:: [[A]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1,'C.md':1},'B.md':{'A.md':1},'C.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquireSemanticDemand('A.md'),index.acquirePresentationDemand(['A.md','B.md'].map(path=>index.get(path)),['A.md']),index.acquirePresentationDemand(['A.md','C.md'].map(path=>index.get(path)),['A.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  if(${JSON.stringify(missing)})f.metadata.delete('B.md');
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();await index.refreshSemanticSettings();
+  while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(index.getNeighborhood('A.md').leftFriends.filter(row=>row.page.path==='C.md').map(row=>row.page.path),['C.md'],'Unavailable metadata in one surface must not block the healthy peer');return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+
+test('folder candidate pools preserve another note sibling projection',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('fourth-review-folder-siblings',{indexingMode:'eager',showFolderNodes:true,renderSiblings:true,maxItemCount:10,nodeSortOrder:'name-asc'}),{f,index}=o;const releases=[];
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:12},(_,i)=>{const file=f.add('Notes/N'+String(i).padStart(2,'0')+'.md','');file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Warm complete graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('Notes/N00.md'));
+  const before=index.getNeighborhood('Notes/N00.md').siblings.map(row=>row.page.path);equal(before.length,10,'Full graph admits ten eligible siblings');
+  releases.push(index.acquireSemanticDemand('folder:Notes'));await index.publishHostMetadataPreview('folder:Notes');
+  const after=index.getNeighborhood('Notes/N00.md').siblings.map(row=>row.page.path);
+  equal(after,before,'Opening a capped folder center must not change an unrelated note sibling projection');return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+test('folder candidate pools preserve eligible siblings beyond occupied direct zones',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('fourth-review-folder-siblings',{indexingMode:'eager',showFolderNodes:true,renderSiblings:true,maxItemCount:10,nodeSortOrder:'name-asc'}),{f,index}=o;const releases=[];
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:12},(_,i)=>{const file=f.add('Notes/N'+String(i).padStart(2,'0')+'.md','');file.parent=folder;return file});root.children=[folder];
+  f.metadata.get('Notes/N00.md').frontmatter.Child=folder.children.slice(1,10).map(file=>'[['+file.path+']]');
+  f.app.metadataCache.resolvedLinks={'Notes/N00.md':Object.fromEntries(folder.children.slice(1,10).map(file=>[file.path,1]))};
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Warm complete graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('Notes/N00.md'));
+  const before=index.getNeighborhood('Notes/N00.md').siblings.map(row=>row.page.path);equal(before,['Notes/N10.md','Notes/N11.md'],'Canonical siblings exclude the center and its already occupied direct children');
+  releases.push(index.acquireSemanticDemand('folder:Notes'));await index.publishHostMetadataPreview('folder:Notes');
+  const after=index.getNeighborhood('Notes/N00.md').siblings.map(row=>row.page.path);
+  equal(after,before,'Opening a capped folder center must not change an unrelated note sibling projection');return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+/** The shared parent pool must cover all four occupied zones while remaining independent of a prior folder view's settings. */
+test('native sibling candidate overscan preserves the full eligible display after navigation and sibling toggles',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('sibling-pool-occupied-bound',{indexingMode:'eager',showFolderNodes:true,renderSiblings:false,maxItemCount:10,nodeSortOrder:'name-asc'}),{f,index,settings}=o;const releases=[];
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:90},(_,i)=>{const file=f.add('Notes/N'+String(i).padStart(3,'0')+'.md','');file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  const names={Parent:[1,10],Child:[10,20],Friend:[20,30],Right:[30,40]};
+  const frontmatter=f.metadata.get('Notes/N000.md').frontmatter;
+  for(const [field,[start,end]] of Object.entries(names))frontmatter[field]=folder.children.slice(start,end).map(file=>'[['+file.path+']]');
+  f.app.metadataCache.resolvedLinks={'Notes/N000.md':Object.fromEntries(folder.children.slice(1,40).map(file=>[file.path,1]))};
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Warm full graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('folder:Notes'),index.acquireSemanticDemand('folder:Notes'));await index.publishHostMetadataPreview('folder:Notes');
+  const pool=index.hostPreviewScopes.get('folder:Notes');ok(pool.pages.size<=53,'Only 5 * limit + 1 candidates plus center/parent are retained');
+  equal(index.getNeighborhood('folder:Notes').children.length,10,'Candidate overscan never expands displayed folder rows');
+  equal(index.neighbourCount(index.get('folder:Notes')),91,'A capped candidate pool cannot replace the exact native visible connection count');
+  releases.pop()();settings.renderSiblings=true;await index.refreshPresentationSettings();
+  ok(index.hostPreviewScopes.get('folder:Notes')===pool,'Another live folder surface retains the same prepared candidate pool');
+  releases.push(index.acquireSemanticDemand('Notes/N000.md'));
+  equal(index.getNeighborhood('Notes/N000.md').siblings.map(row=>row.page.path),folder.children.slice(40,50).map(file=>file.path),'The four occupied zones cannot consume the eligible sibling display');
+  return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+/** A requested body can reveal an endpoint absent from host links; its opposite property still owns pair precedence. */
+test('warm recovery acquires body-discovered endpoint metadata before exposing its relation',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('recovery-body-discovered-metadata',{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','Special:: [[B]]');f.add('B.md','',{Parent:'[[A]]'});
+  // A valid body/metadata observation may precede Obsidian's aggregate resolver publication.
+  f.app.metadataCache.resolvedLinks={};ok(await index.rebuild(),'Warm baseline');index.acknowledgeHostPresentation();
+  equal(index.getNeighborhood('A.md').children.filter(row=>row.page.path==='B.md').map(row=>row.page.path),['B.md'],'Frontmatter-only baseline establishes the inverse role');
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquirePresentationDemand([index.get('A.md')],['A.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  settings.hierarchy.parents.push('Special');index.invalidateSemanticPolicy();await index.refreshSemanticSettings();
+  while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  ok(index.visibleRecoveryScope('A.md'),'Finite recovery publishes its actual selected owner');
+  equal(index.getNeighborhood('A.md').parents.filter(row=>row.page.path==='B.md').map(row=>row.page.path),[],'A body-discovered target cannot lose its opposite frontmatter role');
+  equal(index.getNeighborhood('A.md').children.filter(row=>row.page.path==='B.md').map(row=>row.page.path),['B.md'],'The opposite Parent property supplies the canonical inverse role');
+  const evidence=index.semanticEvidence('A.md','B.md').evidence;
+  ok(evidence.some(item=>item.fieldName==='Parent'),'The same canonical compiler receives the newly discovered endpoint metadata');
+  ok(f.reads.every(path=>path==='A.md'||path==='B.md'),'No unrelated source work');
+  return true;
+ }finally{releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+/** Pending native reads and superseded chunked work must not delay independent visible results. */
+for(const reverse of [false,true])test('shared-center recovery progresses while a peer body remains pending, reverse='+reverse,async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('fifth-review-held-body-'+${JSON.stringify(reverse)},{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];let unblock,stop,refreshing;
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]] [[C]]');f.add('B.md','Parent:: [[A]]');f.add('C.md','Parent:: [[A]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1,'C.md':1},'B.md':{'A.md':1},'C.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquireSemanticDemand('A.md'));
+  for(const endpoint of ${JSON.stringify(reverse)}?['C.md','B.md']:['B.md','C.md'])releases.push(index.acquirePresentationDemand(['A.md',endpoint].map(path=>index.get(path)),['A.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  index.fieldCache.delete('B.md'); // Model ordinary warm-vault LRU eviction of this peer's parsed body.
+  const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);let entered;
+  const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);let held=false;
+  index.sourceAcquisition.readRequestedBody=async(file,current)=>{if(file.path==='B.md'&&!held){held=true;entered();await hold;}return read(file,current)};
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  let ready;const healthy=new Promise(resolve=>ready=resolve);
+  const check=()=>{if(index.getNeighborhood('A.md').leftFriends.some(row=>row.page.path==='C.md'))ready(true)};
+  stop=index.subscribePresentation(check);refreshing=index.refreshSemanticSettings();await reached;check();
+  // The peer is kept pending, not failed. A healthy surface must publish before that unrelated read settles.
+  const progress=await Promise.race([healthy,new Promise(resolve=>setTimeout(()=>resolve(false),1500))]);
+  unblock();await refreshing;while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(index.getNeighborhood('A.md').leftFriends.map(row=>row.page.path).sort(),['B.md','C.md'],'Both surfaces finish correctly after the held read is released');
+  equal(progress,true,'Healthy C must recover without waiting for the other surface selected B body');return true;
+ }finally{unblock?.();await refreshing;stop?.();releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+for(const invalidation of ['request','structure','waiter','priority'])test('superseded native folder build cancels at its next cooperative boundary: '+invalidation,async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('fifth-review-native-cancellation',{indexingMode:'eager',showFolderNodes:true,maxItemCount:10,nodeSortOrder:'name-asc'}),{f,index}=o;let unblock,unblockNew;
+ try{
+  const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;
+  folder.children=Array.from({length:130},(_,i)=>{const file=f.add('Notes/N'+String(i).padStart(3,'0')+'.md','');file.parent=folder;return file});root.children=[folder];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();
+  const build=index.hostPreview.build.bind(index.hostPreview);let captured=false,entered,windows=0;
+  const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);let enteredNew;const reachedNew=new Promise(resolve=>enteredNew=resolve),holdNew=new Promise(resolve=>unblockNew=resolve);let clock=0;index.hostPreview.runtime.now=()=>clock+=20;
+  index.hostPreview.build=async(path,options)=>{
+    if(path==='folder:Notes'&&!captured){captured=true;let held=false;const checkpoint=options.checkpoint,select=options.selectFolderChildren;
+      return build(path,{...options,checkpoint:async()=>{if(!held){held=true;entered();await hold;}await checkpoint?.();},selectFolderChildren:(...args)=>{windows++;return select(...args)}});
+    }if(path==='folder:Notes'&&${JSON.stringify(invalidation)}==='waiter'){let held=false;const checkpoint=options.checkpoint;return build(path,{...options,checkpoint:async()=>{if(!held){held=true;enteredNew();await holdNew;}await checkpoint?.();}});}return build(path,options);
+  };
+  const older=index.withForegroundPriority(()=>index.publishHostMetadataPreview('folder:Notes',1),1);
+  await Promise.race([reached,older]);
+  if(captured){
+    if(${JSON.stringify(invalidation)}==='structure')index.hostStructuralRevision++;
+    const newer=${JSON.stringify(invalidation)}==='priority'?index.withForegroundPriority(()=>index.publishHostMetadataPreview('folder:Notes',2),2):index.publishHostMetadataPreview('folder:Notes');
+    if(${JSON.stringify(invalidation)}==='waiter'){
+      await reachedNew;let finished=false;older.then(()=>finished=true);unblock();await new Promise(resolve=>setTimeout(resolve,40));
+      equal(finished,false,'A cancelled waiter must still await its actual replacement readiness');unblockNew();
+    }
+    if(${JSON.stringify(invalidation)}==='priority'){
+      unblock();const progress=await Promise.race([newer.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),1500))]);
+      equal(progress,true,'A retired P1 lease must not deadlock its P2 replacement');
+    }
+    await newer;unblock();await older;
+  }
+  equal(index.getNeighborhood('folder:Notes').children.length,10,'Latest native cover is correct');
+  equal(windows,0,'An obsolete folder request must not scan candidate windows after its replacement has published');return true;
+ }finally{unblock?.();unblockNew?.();o.close();}
+})()`));
+
+/** New or released surface groups retire pending observations without waiting for native I/O. */
+for(const variant of ['added','released','policy'])test('pending shared-center recovery follows a changed surface observation: '+variant,async()=>scenario(`(async()=>{
+ const variant=${JSON.stringify(variant)},o=await onDemandFixture('pending-recovery-observation-'+variant,{indexingMode:'eager'}),{f,index,settings}=o;
+ const releases=[];let unblock,stop,refreshing,second;
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]] [[C]]');f.add('B.md','Parent:: [[A]]');f.add('C.md','Parent:: [[A]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1,'C.md':1},'B.md':{'A.md':1},'C.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();const baseline=index.state;
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquireSemanticDemand('A.md'));
+  const visibleB=index.acquirePresentationDemand(['A.md','B.md'].map(path=>index.get(path)),['A.md']);releases.push(visibleB);
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');index.fieldCache.delete('B.md');
+  const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);let entered;
+  const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);
+  index.sourceAcquisition.readRequestedBody=async(file,current)=>{if(file.path==='B.md'){entered();await hold;}return read(file,current)};
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  refreshing=index.refreshSemanticSettings();await reached;
+  if(variant==='released')visibleB();
+  if(variant==='policy'){settings.hierarchy.leftFriends=[];settings.hierarchy.previous=['Parent'];index.invalidateSemanticPolicy();second=index.refreshSemanticSettings();}
+  let ready;const healthy=new Promise(resolve=>ready=resolve);
+  const check=()=>{const view=index.getNeighborhood('A.md'),rows=variant==='policy'?index.neighbours(index.get('A.md'),'next'):view.leftFriends;if(rows.some(row=>row.page.path==='C.md'))ready(true)};
+  stop=index.subscribePresentation(check);
+  releases.push(index.acquirePresentationDemand(['A.md','C.md'].map(path=>index.get(path)),['A.md']));check();
+  const progress=await Promise.race([healthy,new Promise(resolve=>setTimeout(()=>resolve(false),1500))]);
+  unblock();await refreshing;await second;while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(progress,true,'New healthy inputs publish before the retired pending owner settles');
+  const view=index.getNeighborhood('A.md'),rows=variant==='policy'?index.neighbours(index.get('A.md'),'next'):view.leftFriends;
+  if(variant==='released'){
+    ok(rows.some(row=>row.page.path==='C.md'),'Releasing a surface retains the healthy peer');
+    ok(!index.visibleRecoveryCertificates.get(index.visibleRecoveryScope('A.md')).paths.has('B.md'),'Retired body completion cannot certify a released selected input');
+  }else equal(rows.map(row=>row.page.path).sort(),['B.md','C.md'],'Late retired continuations cannot erase a successful peer');
+  if(variant==='policy')equal(view.leftFriends.length,0,'Retired policy cannot publish after its read completes');
+  ok(index.state===baseline&&!index.sourceAcquisition.hasSemanticDependencies(),'Read-only recovery grants no canonical/global authority');return true;
+ }finally{unblock?.();await refreshing;await second;stop?.();releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+/** Extending a current successful cover must reuse its exact parsed owners rather than await them again. */
+test('shared-center recovery extension reuses certified bodies while acquiring a new peer',async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('pending-recovery-retained-body',{indexingMode:'eager'}),{f,index,settings}=o;const releases=[];let unblock,stop;
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]] [[C]]');f.add('B.md','Parent:: [[A]]');f.add('C.md','Parent:: [[A]]');
+  f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1,'C.md':1},'B.md':{'A.md':1},'C.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();
+  releases.push(index.acquireSemanticDemand('A.md'),index.acquirePresentationDemand(['A.md','B.md'].map(path=>index.get(path)),['A.md']));
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();
+  await index.refreshSemanticSettings();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  ok(index.visibleRecoveryCertificates.get(index.visibleRecoveryScope('A.md')).paths.has('B.md'),'B initially owns a successful selected-body certificate');
+  const hold=new Promise(resolve=>unblock=resolve),read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);let redundant=0;
+  index.sourceAcquisition.readRequestedBody=async(file,current)=>{if(file.path==='B.md'){redundant++;await hold;}return read(file,current)};
+  let ready;const healthy=new Promise(resolve=>ready=resolve);
+  const check=()=>{const proof=index.visibleRecoveryCertificates.get(index.visibleRecoveryScope('A.md'));if(proof?.paths.has('C.md'))ready(true)};
+  stop=index.subscribePresentation(check);releases.push(index.acquirePresentationDemand(['A.md','C.md'].map(path=>index.get(path)),['A.md']));check();
+  const progress=await Promise.race([healthy,new Promise(resolve=>setTimeout(()=>resolve(false),1500))]);
+  unblock();while(index.onDemandPreviewTasks.size)await Promise.all([...index.onDemandPreviewTasks.values()]);
+  equal(progress,true,'A new selected peer extends the proof before any redundant B cache read could settle');equal(redundant,0,'Certified selected bodies are not reacquired');
+  equal(index.getNeighborhood('A.md').leftFriends.map(row=>row.page.path).sort(),['B.md','C.md'],'Extension preserves both successful body roles');return true;
+ }finally{unblock?.();stop?.();releases.reverse().forEach(release=>release());o.close();}
+})()`));
+
+/** Terminating demand/cache/plugin lifetimes releases foreground ownership before a pending native read settles. */
+for(const retirement of ['released','purged','destroyed'])test('pending warm recovery releases its task on '+retirement,async()=>scenario(`(async()=>{
+ const retirement=${JSON.stringify(retirement)},o=await onDemandFixture('pending-recovery-retire-'+retirement,{indexingMode:'eager'}),{f,index,settings}=o;
+ let semantic,visible,unblock,refreshing;
+ try{
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  f.add('A.md','[[B]]');f.add('B.md','Parent:: [[A]]');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1},'B.md':{'A.md':1}};
+  ok(await index.rebuild(),'Warm graph');index.acknowledgeHostPresentation();semantic=index.acquireSemanticDemand('A.md');visible=index.acquirePresentationDemand(['A.md','B.md'].map(path=>index.get(path)),['A.md']);
+  index.sourceAcquisition.pauseInventory();f.app.metadataCache.trigger('resolved');f.app.metadataCache.trigger('resolved');
+  const read=index.sourceAcquisition.readRequestedBody.bind(index.sourceAcquisition);let entered;
+  const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);
+  index.sourceAcquisition.readRequestedBody=async(file,current)=>{if(file.path==='B.md'){entered();await hold;}return read(file,current)};
+  settings.hierarchy.parents=[];settings.hierarchy.leftFriends=['Parent'];index.invalidateSemanticPolicy();refreshing=index.refreshSemanticSettings();await reached;
+  if(retirement==='released')semantic();else if(retirement==='purged')ok(await index.purgePersistentIndexCache(),'Disposable cache purge');else index.destroy();
+  const retired=await Promise.race([refreshing.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),1500))]);
+  equal(retired,true,'Retired demand cannot retain a P1 task behind pending native I/O');
+  equal(index.recoveryObservationWakeups.size,0,'No retained observation callback after retirement');
+  equal(index.workScheduler.diagnostics().active[1],0,'Foreground lease is released before the held native read');
+  unblock();await refreshing;return true;
+ }finally{unblock?.();await refreshing;visible?.();semantic?.();o.close();}
+})()`));
+
+/** Native gate counts survive disposable page replacement and stop with their actual scope. */
+for(const change of ['unchanged','body','presentation','visibility','topology','replacement','children-array'])test('native folder count proof survives page replacement: '+change,async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('sixth-native-gate-reuse',{indexingMode:'eager',showFolderNodes:true,maxItemCount:10}),{f,index}=o;const jobs=[];
+ try{
+  const change=${JSON.stringify(change)},root=f.app.vault.getRoot(),folder=new ContributorFolder();let sub=new ContributorFolder();
+  folder.path='Notes';folder.name='Notes';folder.parent=root;sub.path='Notes/Sub';sub.name='Sub';sub.parent=folder;folder.children=[sub];root.children=[folder];
+  sub.children=Array.from({length:130},(_,i)=>{const file=f.add('Notes/Sub/N'+i+'.md','');file.parent=sub;return file});
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:path==='Notes/Sub'?sub:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Warm complete native graph');index.acknowledgeHostPresentation();
+  const gates=index.hostPreview.folderGates.bind(index.hostPreview);let scans=0;
+  index.hostPreview.folderGates=(path,checkpoint,current)=>{if(path==='folder:Notes/Sub')scans++;const job=gates(path,checkpoint,current);jobs.push(job);return job};
+  const drain=async()=>{const deadline=Date.now()+5000;while(index.workScheduler.diagnostics().active[2]){if(Date.now()>deadline)throw Error('Gate work did not settle');await new Promise(resolve=>setTimeout(resolve,5));}await Promise.all(jobs)};
+  const reads=f.reads.length;f.work.reset();
+  await index.publishHostMetadataPreview('folder:Notes');await drain();const first=scans;
+  equal(first,1,'The initial child proof is computed by the real count compiler');
+  if(change==='body'){sub.children[0].stat.mtime++;sub.children[0].stat.size++;}
+  if(change==='presentation'){o.settings.nodeSortOrder='name-desc';o.settings.maxItemCount=20;}
+  if(change==='visibility')o.settings.showPageNodes=false;
+  if(change==='topology'){const file=f.add('Notes/Sub/New.md','');file.parent=sub;sub.children.push(file);index.invalidateHostStructure();}
+  if(change==='replacement'){
+    const replacement=new ContributorFolder();replacement.path=sub.path;replacement.name=sub.name;replacement.parent=folder;replacement.children=sub.children;
+    for(const file of replacement.children)file.parent=replacement;folder.children=[replacement];sub=replacement;
+  }
+  if(change==='children-array')sub.children=[...sub.children];
+  await index.publishHostMetadataPreview('folder:Notes');await drain();
+  equal(index.getNeighborhood('folder:Notes').children.map(row=>row.page.path),['folder:Notes/Sub'],'Membership remains correct');
+  const invalidated=['visibility','topology','replacement','children-array'].includes(change);
+  equal(scans,first+Number(invalidated),'Only actual proof dependencies may require another native count');
+  equal(index.nativeFolderGateProofs.get(sub).proof.gates.bottom.visibleCount,change==='visibility'?0:change==='topology'?131:130,'Reused and refreshed proof totals are exact');
+  equal(f.reads.length,reads,'Native count proofs acquire no Markdown bodies');equal(f.work.markdownEnumerations,0,'Native count refresh acquires no Markdown inventory');return true;
+ }finally{o.close();}
+})()`));
+
+
+for(const retirement of ['scope','visibility','topology','purged','destroyed','native-replaced'])test('abandoned native gate count stops at its next checkpoint: '+retirement,async()=>scenario(`(async()=>{
+ const o=await onDemandFixture('sixth-native-gate-cancellation',{indexingMode:'eager',showFolderNodes:true,maxItemCount:10}),{f,index}=o;let unblock;
+ try{
+  const retirement=${JSON.stringify(retirement)},root=f.app.vault.getRoot();let folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;root.children=[folder];
+  folder.children=Array.from({length:130},(_,i)=>{const file=f.add('Notes/N'+i+'.md','');file.parent=folder;return file});
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+  ok(await index.rebuild(),'Warm complete native graph');index.acknowledgeHostPresentation();
+  const page=index.state.pages.get('folder:Notes'),gates=index.hostPreview.folderGates.bind(index.hostPreview);let live=true,retired=false,held=false,entered,clock=0,obsoleteLookups=0;
+  const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);
+  index.hostPreview.runtime.now=()=>clock+=20;
+  index.hostPreview.folderGates=(path,checkpoint,current)=>gates(path,async()=>{if(!held){held=true;entered();await hold;}await checkpoint?.();},current);
+  const lookup=f.app.vault.getFileByPath;f.app.vault.getFileByPath=path=>{if(retired&&path.startsWith('Notes/'))obsoleteLookups++;return lookup(path)};
+  const counting=index.prepareVisibleFolderGates([page],()=>live);await reached;retired=true;
+  if(retirement==='scope')live=false;
+  if(retirement==='visibility')o.settings.showPageNodes=false;
+  if(retirement==='topology')index.invalidateHostStructure();
+  if(retirement==='purged')ok(await index.purgePersistentIndexCache(),'Disposable cache purge');
+  if(retirement==='destroyed')index.destroy();
+  if(retirement==='native-replaced'){
+    const replacement=new ContributorFolder();replacement.path=folder.path;replacement.name=folder.name;replacement.parent=root;replacement.children=folder.children;
+    for(const file of replacement.children)file.parent=replacement;root.children=[replacement];folder=replacement;
+  }
+  unblock();await counting;
+  equal(index.folderGateInfo.has(page),false,'Retired count is not published');
+  equal(obsoleteLookups,0,'An abandoned gate count must not finish all native child validation after its owner retires');return true;
+ }finally{unblock?.();o.close();}
+})()`));
+
+/** A compiled native preview must close its final lifetime before retaining reusable count proof. */
+for(const retirement of ['purged','native-replaced'])test('completed native preview cannot repopulate count proofs after '+retirement,async()=>scenario(`(async()=>{
+ const retirement=${JSON.stringify(retirement)},o=await onDemandFixture('native-proof-finality-'+retirement,{indexingMode:'eager',showFolderNodes:true}),{f,index}=o;let unblock,publishing;
+ try{
+  const root=f.app.vault.getRoot();let folder=new ContributorFolder();folder.path='Notes';folder.name='Notes';folder.parent=root;root.children=[folder];
+  const file=f.add('Notes/N.md','');file.parent=folder;folder.children=[file];
+  f.app.vault.getRoot=()=>root;f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:path==='Notes'?folder:null;
+  f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??f.app.vault.getFolderByPath(path);
+  delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};ok(await index.rebuild(),'Warm complete graph');index.acknowledgeHostPresentation();
+  const original=folder,build=index.hostPreview.build.bind(index.hostPreview);let entered;
+  const reached=new Promise(resolve=>entered=resolve),hold=new Promise(resolve=>unblock=resolve);
+  index.hostPreview.build=async(...args)=>{const ready=await build(...args);ok(ready,'Native compilation succeeds before retirement');entered();await hold;return ready};
+  publishing=index.publishHostMetadataPreview('folder:Notes');await reached;
+  if(retirement==='purged')ok(await index.purgePersistentIndexCache(),'Disposable cache purge');else{
+    const replacement=new ContributorFolder();replacement.path=folder.path;replacement.name=folder.name;replacement.parent=root;replacement.children=[file];file.parent=replacement;root.children=[replacement];folder=replacement;
+  }
+  unblock();await publishing;
+  equal(index.nativeFolderGateProofs.has(original),false,'The old native lifetime owns no retained proof');
+  equal(index.nativeFolderGateProofs.has(folder),false,'Retirement cannot attach old results to a new native identity');
+  equal(index.hostPreviewScopes.has('folder:Notes'),false,'No retired preview is published');return true;
+ }finally{unblock?.();await publishing;o.close();}
+})()`));

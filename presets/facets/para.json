@@ -1,0 +1,81 @@
+{
+  "format": "kplex-preset",
+  "version": 1,
+  "kind": "facets",
+  "id": "para",
+  "aiContext": "K-Plex portable Facets authoring, format kplex-preset version 1.\nGenerate a JSON object with format, version, kind=\"facets\", id, preset, aiContext. Optional palette and explicitly requested lenses are data dependencies. No enabled state, canvas/session state, navigation, ontology, index policy, scripts, secrets, personal note contents or remote permissions.\nUse the canonical validator in src/core/plex/sharing/validation.ts. Documentation:\nhttps://github.com/zsviczian/kplex/blob/main/docs/FACETS.md\nhttps://github.com/zsviczian/kplex/blob/main/docs/CANVAS_VIEW_API.md\nhttps://github.com/zsviczian/kplex/blob/main/docs/FACETS_AUTHORING.md\nhttps://github.com/zsviczian/kplex/blob/main/docs/PORTABLE_PRESETS.md\nThe GUI and future CLI use the same validator. Do not invent fields or claim CLI commands exist.\n\nPreset required fields: version=1; name (1-100 chars); source=property|type|tag|rules; field (1-128 chars); categories keyed by stable IDs; order of 3-7 unique category IDs; start naming an ordered category; spacing24-200; regionWidth200-640; regionHeight160-600; guides/tints booleans; conflictingColor/unassignedColor; helpMarkdown. IDs use letters/digits/dot/underscore/hyphen, start alphanumeric, max48; never prototype names. Labels max80. Category: label,color,values (string aliases), optional assignment (explicit canonical write value), optional rule (max2048). No translation keys. Property matching is case-sensitive after trimming; multiple category matches conflict. Assignment is separately authorized by explicit safe values and the native preview; rules/type/tag categories are read-only for assignment. Missing metadata is unknown, not false or empty.\n\nRules reuse K-Plex's predicate parser. Examples: note.phase == \"wood\"; note.state == \"draft\" && note.priority >= 3; this.phase == \"wood\" && note.phase == \"metal\"; edge.role == \"parent\". Namespaces: note(candidate Markdown properties), this(current focus, built-ins reserved), node,file,edge,evidence. Strict == preserves type/case; .equals() ignores text case; .contains() tests collection/text; &&, ||, ! and parentheses combine predicates. No eval, JavaScript, arithmetic, AI/prose scores, queries or external fetch. Edge role: parent,child,left,right,previous,next,sibling; kind: defined,inferred; direction: from,to,both. Actual canonical evidence is mandatory for recorded edges. No fabricated focus self-edge. Unavailable data stays unknown under negation. Avoid path/name/private selectors in public packages; exports require explicit privacy acknowledgement if detected.\n\nOptional presentation: layout=circular|concentric|vertical|horizontal|quadrants; quadrants requires4 categories (otherwise explicit circular fallback). focusAnchor=top|bottom|left|right applies to linear layouts. reverse boolean changes geometry, not logical category sequence. Circular/concentric keep one centered focus/editor. Width-driven automatic measured columns are intrinsic, not a configurable columns field. areaSizes may contain categories keyed by category ID and diagnostics keyed combined|unassigned|conflicting|checking|unresolved, each optional width200-2400/height160-1200. Concentric widths/heights mean band thickness with genuine inner holes; cards use the top strip. Canvas handle overrides do not travel in packages.\n\ndiagnostics optional: combined(default true),side=top|right|bottom|left,orientation=horizontal|vertical,showEmpty boolean,order containing all4 diagnostic statuses exactly once. Combined Diagnostics keeps per-note chips/reasons and never means clearing a property on drop. Unknown/conflicting/unassigned meanings stay distinct. Per-canvas choices never overwrite preset defaults.\n\nflow optional: direction=forward|backward|both,style=arrow|line|none,caption(max80),captionPosition=start|middle|end. flowOverrides(max21) add stable source/target category IDs for unordered unique pairs. Linear guides use the logical sequence despite reverse geometry; rails run outside regions, away from the focused editor. Blank caption suppresses inherited caption. These are decorative: no semantic endpoints, graph evidence or editing authority. Concentric/quadrants have no workflow rails. Optional interpretation=\"wuxing\",relativeLabels/regulatingGuides preserve Wood->Fire->Earth->Metal->Water and the independent generating/regulating model; phase-derived roles never rewrite stored phase or canonical relationships.\n\nEvery generated preset MUST include useful, preset-specific helpMarkdown (max4096 characters) explaining purpose, exact categories/rules, actual YAML examples for the chosen properties/values, how to use it, and limits/unknown metadata. Do not invent features or write generic promotional copy. Help is end-user documentation, separate from this inert aiContext. Optional helpSourceLocale identifies literal language. Markdown supports headings/lists/code and HTTPS links; no raw HTML, embeds, images, executable code, unsafe links or remote content. Code fences display as plain examples. Keep authored source intact.\n\nColors: hex/RGB(A)/transparent literal, {kind:\"theme\",variable:\"--color-blue\"}, or {kind:\"palette\",id:\"stable-id\"}. Optional palette(max32) contains referenced pairs only: id,name,light,dark literals. No arbitrary CSS. Do not sample a device theme into permanent colors. Lens dependencies are opt-in only and imported disabled. Package max65536 characters/8192 JSON nodes/depth12; stored view configuration retains its separate16384-character/depth8/4096-node limit and max16 presets. Keep Help and rules concise enough for the installed library. No unknown/prototype/executable fields. Preview exact collisions/dependencies; Cancel or failed writes must preserve old state. Import never edits notes or activates a lens/view. Return JSON only when requested, with this documentation in aiContext as inert text.\n",
+  "preset": {
+    "version": 1,
+    "name": "PARA",
+    "source": "property",
+    "field": "para",
+    "order": [
+      "projects",
+      "areas",
+      "resources",
+      "archives"
+    ],
+    "start": "projects",
+    "spacing": 56,
+    "regionWidth": 320,
+    "regionHeight": 280,
+    "guides": false,
+    "tints": true,
+    "conflictingColor": {
+      "kind": "theme",
+      "variable": "--color-orange"
+    },
+    "unassignedColor": {
+      "kind": "theme",
+      "variable": "--background-secondary"
+    },
+    "categories": {
+      "projects": {
+        "label": "Projects",
+        "color": {
+          "kind": "theme",
+          "variable": "--color-blue"
+        },
+        "values": [
+          "projects"
+        ],
+        "assignment": "projects"
+      },
+      "areas": {
+        "label": "Areas",
+        "color": {
+          "kind": "theme",
+          "variable": "--color-green"
+        },
+        "values": [
+          "areas"
+        ],
+        "assignment": "areas"
+      },
+      "resources": {
+        "label": "Resources",
+        "color": {
+          "kind": "theme",
+          "variable": "--color-red"
+        },
+        "values": [
+          "resources"
+        ],
+        "assignment": "resources"
+      },
+      "archives": {
+        "label": "Archives",
+        "color": {
+          "kind": "theme",
+          "variable": "--color-orange"
+        },
+        "values": [
+          "archives"
+        ],
+        "assignment": "archives"
+      }
+    },
+    "helpMarkdown": "# PARA: organize by practical use\n\nPARA helps you inspect nearby notes according to their role in your current work. This editable local example uses Projects, Areas, Resources and Archives; it does not move files into folders or implement a vault-wide organization system.\n\n## Categories and data\n\n- **Projects**: work with a specific outcome.\n- **Areas**: ongoing responsibilities you want to maintain.\n- **Resources**: material that may support future work.\n- **Archives**: material you deliberately classify as inactive.\n\nThe default property is `para`:\n\n```yaml\npara: projects\n```\n\nExact recognized values are `projects`, `areas`, `resources` and `archives`. A list matching more than one category is Conflicting; it is not automatically resolved in favor of the first category.\n\n## Use it\n\nFocus a project or question and inspect the roles of its recorded neighbors. Assign a category through the existing preview when the property is writable, or edit your own property convention in preset settings. Changing a canvas layout, dock or filter only changes presentation. It never archives, renames or relocates a note.\n\n## Limits\n\nThe focused note appears once in the center with its own badge. Empty categories remain visible, and unavailable metadata is Cannot classify rather than a definite missing value. Diagnostics and canonical connection details explain different things: classification is your organization choice; connectors require actual recorded relationship evidence. Adapt the categories and this Help to your practice.",
+    "helpSourceLocale": "en"
+  }
+}

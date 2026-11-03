@@ -100,6 +100,8 @@ async function scenario(app,c) {
 
     c.progress={phase:'popout',cases};popout=app.workspace.getLeaf('window');leaves.push(popout);
     await popout.setViewState({type:'k-plex-react-view',active:true});await popout.view.waitUntilReady();
+    // Independent native sessions do not inherit another Plex's current attention.
+    p.notifyNavigation(path('CenterA'),popout);await until(()=>center(popout)===path('CenterA'),'Owned popout center pending');
     await until(()=>root(popout)&&group(popout,book),'Native popout grouping pending');
     check(root(main).ownerDocument!==root(popout).ownerDocument,'Expected separate native documents');
     group(popout,book).click();await until(()=>!group(popout,book),'Popout unfold pending');check(group(main,book),'Popout changed main unfolded state');

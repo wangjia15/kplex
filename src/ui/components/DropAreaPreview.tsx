@@ -5,10 +5,14 @@
  */
 
 /** Keep a target visible inside its viewport, retaining a small edge cue when it lies offscreen. */
-export function DropAreaPreview({ left, top, width, height, viewportWidth, viewportHeight, className }: {
+export function DropAreaPreview({ left, top, width, height, viewportWidth, viewportHeight, className, shapePath }: {
   left: number; top: number; width: number; height: number;
   viewportWidth: number; viewportHeight: number; className: string;
+  shapePath?: string;
 }) {
+  if (shapePath) return <svg aria-hidden="true" focusable="false" className={`kplex-drop-area-shape ${className}`} width={viewportWidth} height={viewportHeight}>
+    <path d={shapePath} fillRule="evenodd" />
+  </svg>;
   const minimumWidth = Math.min(16, viewportWidth);
   const minimumHeight = Math.min(16, viewportHeight);
   const visibleLeft = Math.max(0, Math.min(left, viewportWidth - minimumWidth));

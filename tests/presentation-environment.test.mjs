@@ -71,6 +71,9 @@ process.on("exit", () => rmSync(excalidrawVersionCompiled.temp, { recursive: tru
 const externalUrlCompiled = compilePureModule("src/adapters/obsidian/externalUrl.ts");
 const externalUrl = externalUrlCompiled.exports;
 process.on("exit", () => rmSync(externalUrlCompiled.temp, { recursive: true, force: true }));
+const fileRevealCompiled = compilePureModule("src/adapters/obsidian/fileReveal.ts");
+const fileReveal = fileRevealCompiled.exports;
+process.on("exit", /** Retire this suite's compiled host boundary. */ () => rmSync(fileRevealCompiled.temp, { recursive: true, force: true }));
 const doubleTapCompiled = compilePureModule("src/ui/components/DoubleTapGesture.ts");
 const { DoubleTapGesture } = doubleTapCompiled.exports;
 process.on("exit", () => rmSync(doubleTapCompiled.temp, { recursive: true, force: true }));
@@ -444,6 +447,8 @@ test("persisted layout keys and node-open leaf modes remain stable with canonica
   assert(plexSource.includes('translate("graph.openMenu")'), "node context menu must expose the localized Open submenu");
   assert(plexSource.includes('addNativeSubmenu(menu, translate("graph.openMenu")'));
   const nodeModule = compilePureModule("src/adapters/obsidian/actionNode.ts");
+  const continuationModule = compilePureModule("src/ui/surfaceContinuation.ts");
+  process.on("exit", () => rmSync(continuationModule.temp, {recursive: true, force: true}));
   try {
     const items = new Map(), requests = [], originalFile = {path: "Original.md", extension: "md"};
     const page = {path: originalFile.path, file: originalFile, isFolder: false, isTag: false, url: null};
@@ -456,21 +461,25 @@ test("persisted layout keys and node-open leaf modes remain stable with canonica
       addSeparator() {return this;}
     }
     const showMenu = productionArrow("src/ui/PlexGraph.tsx", "showNodeContextMenuAt", {
+      viewDefinition: {hierarchy: undefined, capabilities: {}},
       touchDoubleTap: {current: {reset() {}}}, persistentPageFor: () => page,
       neighborhood: null, activePath: "Other.md", canExpandCentralSections: () => false,
-      Menu: MenuDouble, actionNodeRef: nodeModule.exports.actionNodeRef, actionSurfaceId: "owning-surface", sceneNodeKeys: new Map(),
-      plugin: {getFileOpenMenuState: () => ({focusOpenTab: true, adjacentPane: true, popoutWindow: false}), isPinned: () => false,
-        actionManager: {dispatch: request => {requests.push(request); return Promise.resolve({status: "completed"});}}, showKplexMenuAtPosition() {},
+      Menu: MenuDouble, captureSurfaceContinuation: continuationModule.exports.captureSurfaceContinuation, actionNodeRef: nodeModule.exports.actionNodeRef, actionSurfaceId: "owning-surface", sceneNodeKeys: new Map(),
+      plugin: {app: {}, getFileOpenMenuState: () => ({focusOpenTab: true, adjacentPane: true, popoutWindow: false}), isPinned: () => false,
+        actionManager: {readSnapshot: () => null, dispatch: request => {requests.push(request); return Promise.resolve({status: "completed"});}}, showKplexMenuAtPosition() {},
         paperReading: {isPaperPage: () => false}},
       addNativeSubmenu: (menu, _title, _icon, populate) => populate(menu), translate: key => key,
+      nativeRevealTarget: fileReveal.nativeRevealTarget, fileRevealMenuState: () => ({systemLabel: "graph.openInFinder", navigation: true}), readObsidianPresentationEnvironment: () => ({}),
       viewport: {current: {ownerDocument: {}}}, hostLeaf: {},
     });
     showMenu({page, role: "child"}, 10, 20, "captured-occurrence");
     assert(items.has("graph.focusOpenTab")); assert(items.has("graph.openNewTab")); assert(items.has("graph.openAdjacentPane"));
     assert(!items.has("graph.openPopoutWindow"), "Unavailable popout destination remains absent");
+    assert(items.has("graph.openInFinder")); assert(items.has("actions.node.open.navigation"));
     page.path = "Changed.md"; page.file = {path: "Changed.md", extension: "md"};
     items.get("graph.openAdjacentPane")();
-    assert.deepEqual(requests, [{id: "node.open.split", source: "context-menu", surfaceId: "owning-surface", target: {kind: "explicit", node: captured, occurrenceId: "captured-occurrence"}}],
+    items.get("graph.openInFinder")(); items.get("actions.node.open.navigation")();
+    assert.deepEqual(requests, ["node.open.split", "node.open.system", "node.open.navigation"].map(id => ({id, source: "context-menu", surfaceId: "owning-surface", target: {kind: "explicit", node: captured, occurrenceId: "captured-occurrence"}})),
       "Choosing the native menu must retain launch-time file identity and occurrence through shared dispatch");
   } finally { rmSync(nodeModule.temp, {recursive: true, force: true}); }
   assert(plexSource.includes('if (destination === "split") return plugin.openFileInAdjacentPane(page.file, hostLeaf)'), "Shared split implementation must retain the exact owning native pane operation");
@@ -478,6 +487,38 @@ test("persisted layout keys and node-open leaf modes remain stable with canonica
   assert(plexSource.includes("openState.adjacentPane"), "adjacent-pane action must follow presentation availability");
   assert(plexSource.includes("openState.popoutWindow"), "pop-out action must follow presentation availability");
   assert(mainSource.includes("type !== KPLEX_VIEW_TYPE && type !== KPLEX_SIDEPANEL_VIEW_TYPE"), "Focus open tab excludes graph surfaces but includes actual file tabs such as Sidecars");
+});
+
+test("native file-location availability follows OS, mobile and live Files enablement", /** Check supported and absent host capabilities without opening native panes. */ () => {
+  const app = {showInFolder() {}, internalPlugins: {getEnabledPluginById: () => ({revealInFolder() {}})}};
+  for (const [keyConvention, systemLabel] of [["macos", "graph.openInFinder"], ["windows", "graph.openInExplorer"], ["unknown", "graph.showInSystemExplorer"]]) {
+    assert.deepEqual(fileReveal.fileRevealMenuState(app, {device: "desktop", keyConvention}), {systemLabel, navigation: true});
+  }
+  for (const device of ["phone", "tablet"]) assert.deepEqual(fileReveal.fileRevealMenuState(app, {device, keyConvention: "macos"}), {systemLabel: null, navigation: true});
+  app.internalPlugins.getEnabledPluginById = () => null;
+  assert.equal(fileReveal.fileRevealMenuState(app, {device: "desktop", keyConvention: "macos"}).navigation, false);
+  assert.deepEqual(fileReveal.fileRevealMenuState({}, {device: "desktop", keyConvention: "windows"}), {systemLabel: null, navigation: false});
+});
+
+test("file-location actions delegate exact targets with native receivers and reject retired capabilities/files", async () => {
+  const file = {path: "Attachments/Example image.png"}, calls = [];
+  let current = file, enabled = true;
+  const explorer = {async revealInFolder(value) {assert.equal(this, explorer); calls.push(["navigation", value]);}};
+  const app = {vault: {getFileByPath: () => current}, showInFolder(path) {assert.equal(this, app); calls.push(["system", path]);},
+    internalPlugins: {getEnabledPluginById(id) {assert.equal(id, "file-explorer"); return enabled ? explorer : null;}}};
+  const desktop = {device: "desktop", keyConvention: "macos"};
+  await fileReveal.revealFile(app, file, "system", desktop);
+  await fileReveal.revealFile(app, file, "navigation", desktop);
+  assert.deepEqual(calls, [["system", file.path], ["navigation", file]]);
+  enabled = false;
+  await fileReveal.revealFile(app, file, "navigation", desktop);
+  await fileReveal.revealFile(app, file, "system", {device: "tablet", keyConvention: "ios"});
+  current = {...file};
+  await fileReveal.revealFile(app, file, "system", desktop);
+  await fileReveal.revealFile(app, file, "navigation", desktop);
+  current = null;
+  await fileReveal.revealFile(app, file, "system", desktop);
+  assert.equal(calls.length, 2, "Disabled Files, mobile system reveal, replacement and deletion stay inert");
 });
 
 test("portable presentation code has no Obsidian or window dependency", () => {
@@ -726,4 +767,46 @@ test("an earlier presentation batch remains fenced while a later cache batch is 
     assert.equal(checkpoints, 2); assert.equal(result, null);
     assert(pages.every(page => page.noteType === "Card"), "All staged facets remain private on cross-batch cancellation");
   });
+});
+
+/** Folder reveals share the native file path, including exact incarnation and device fences. */
+test('folder-location actions reveal exact native folders and refuse replaced or deleted targets',async()=>{
+ const folder={path:'Projects',children:[]},rootFolder={path:'/',children:[]},calls=[];
+ let current=folder,enabled=true;
+ const explorer={async revealInFolder(value){assert.equal(this,explorer);calls.push(['navigation',value])}};
+ const app={vault:{getFileByPath:()=>null,getFolderByPath:path=>path===folder.path?current:null,getRoot:()=>rootFolder},
+  showInFolder(path){assert.equal(this,app);calls.push(['system',path])},internalPlugins:{getEnabledPluginById:()=>enabled?explorer:null}};
+ const desktop={device:'desktop',keyConvention:'macos'};
+ await fileReveal.revealFile(app,folder,'system',desktop);await fileReveal.revealFile(app,folder,'navigation',desktop);
+ await fileReveal.revealFile(app,rootFolder,'navigation',desktop);
+ assert.deepEqual(calls,[['system','Projects'],['navigation',folder],['navigation',rootFolder]]);
+ current={...folder};await fileReveal.revealFile(app,folder,'system',desktop);
+ current=null;await fileReveal.revealFile(app,folder,'navigation',desktop);
+ current=folder;enabled=false;await fileReveal.revealFile(app,folder,'navigation',desktop);
+ await fileReveal.revealFile(app,folder,'system',{device:'tablet',keyConvention:'ios'});
+ assert.equal(calls.length,3);
+});
+
+/** A folder menu must expose only native location destinations and retain the launched folder. */
+test('actual folder context menu offers Files/Finder and refuses a same-path replacement',()=>{
+ const continuation=compilePureModule('src/ui/surfaceContinuation.ts');
+ process.on('exit',()=>rmSync(continuation.temp,{recursive:true,force:true}));
+ const items=new Map(),requests=[],folder={path:'Projects',children:[]};let live=folder;
+ const page={path:'folder:Projects',name:'Projects',file:null,isFolder:true,isTag:false,url:null};
+ class MenuDouble{addItem(build){const item={setTitle(value){this.title=value;return this},setIcon(){return this},onClick(run){items.set(this.title,run);return this}};build(item);return this}addSeparator(){return this}}
+ const show=productionArrow('src/ui/PlexGraph.tsx','showNodeContextMenuAt',{
+  viewDefinition:{capabilities:{}},touchDoubleTap:{current:{reset(){}}},persistentPageFor:()=>page,neighborhood:null,activePath:'Other.md',
+  Menu:MenuDouble,captureSurfaceContinuation:continuation.exports.captureSurfaceContinuation,actionNodeRef:value=>({identity:value.path,path:value.path,kind:'folder'}),actionSurfaceId:'own',sceneNodeKeys:new Map(),
+  plugin:{app:{vault:{getFolderByPath:path=>path==='Projects'?live:null}},getFileOpenMenuState:assert.fail,isPinned:()=>false,
+   actionManager:{readSnapshot:()=>({mounted:true}),dispatch:request=>{requests.push(request);return Promise.resolve({status:'completed'})}},showKplexMenuAtPosition(){},
+   paperReading:{isPaperPage:()=>false}},
+  addNativeSubmenu:(menu,_title,_icon,populate)=>populate(menu),translate:key=>key,nativeRevealTarget:fileReveal.nativeRevealTarget,
+  fileRevealMenuState:()=>({systemLabel:'graph.openInFinder',navigation:true}),readObsidianPresentationEnvironment:()=>({}),viewport:{current:{ownerDocument:{}}},hostLeaf:{},
+ });
+ show({page,role:'child'},10,20,'folder-occurrence');
+ assert(items.has('graph.openInFinder'));assert(items.has('actions.node.open.navigation'));
+ assert(!items.has('graph.openNewTab'));assert(!items.has('graph.openAdjacentPane'));
+ items.get('actions.node.open.navigation')();assert.equal(requests[0].id,'node.open.navigation');
+ assert.equal(requests[0].target.node.identity,'folder:Projects');
+ live={...folder};items.get('graph.openInFinder')();assert.equal(requests.length,1,'A new native folder cannot inherit the earlier menu action');
 });

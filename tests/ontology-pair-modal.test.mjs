@@ -1,6 +1,82 @@
 /** Actual native-shaped pairing controls and queued production saves in isolated Chromium documents. */
 import assert from 'node:assert/strict';import test from 'node:test';import {colorEditorScenario as scenario} from './support/colorEditorBrowser.mjs';
+import {readFileSync} from 'node:fs';
 const setup=`const p=await createAppearanceHost({ontologyPairingVersion:1,hierarchy:{parents:['Parent'],children:['Child'],leftFriends:['Friend','Ally'],rightFriends:['Challenger'],previous:['replies to','precedes'],next:['replied by','succeeds'],hidden:['Hidden'],exclusions:[]}}),t=p.translator,check=(value,message)=>{if(!value)throw Error(message)},open=field=>{const modal=new sourceModules.AddToOntologyModal(p,field);modal.open();return modal},button=(modal,key)=>[...modal.contentEl.querySelectorAll('button')].find(b=>b.textContent===t(key)),save=modal=>button(modal,'common.save').click(),partner=modal=>modal.contentEl.querySelector('input[aria-label="'+t('ontology.pairWith')+'"]'),role=modal=>modal.roleControl.selectEl;`;
+
+/** Production CSS must keep both labels above their editors across desktop and narrow dialogs. */
+test('both description editors span the modal content below their labels and help',async()=>{
+ const css=readFileSync('styles.css','utf8');
+ assert.equal(await scenario(`(async()=>{${setup}await p.assignFieldToOntology('replies to','previous','replied by');const modal=open('replies to');
+ const style=document.createElement('style');style.textContent=${JSON.stringify('.setting-item{display:flex;align-items:center}.setting-item-info{flex:1;margin-right:16px}.setting-item-control{display:flex;justify-content:flex-end}*{box-sizing:border-box}:root{--size-4-2:8px}'+css)};document.head.append(style);
+ const rows=[...modal.contentEl.querySelectorAll('.kplex-ontology-description-setting')];check(rows.length===2,'Both description rows must use the stacked layout');
+ for(const row of rows){const info=row.createDiv({cls:'setting-item-info'});info.append(row.querySelector('.setting-item-name'),row.querySelector('.setting-item-description'));row.prepend(info);}
+ for(const width of [660,290]){modal.contentEl.style.width=width+'px';for(const row of rows){const bounds=row.getBoundingClientRect(),area=row.querySelector('textarea').getBoundingClientRect(),name=row.querySelector('.setting-item-name').getBoundingClientRect(),help=row.querySelector('.setting-item-description').getBoundingClientRect();check(Math.abs(area.width-bounds.width)<1,'Editor does not fill the available width');check(name.bottom<=area.top&&help.bottom<=area.top,'Label/help is not above the editor');}}
+ modal.close();return true;})()`),true);
+});
+
+/** Factory wording covers physical defaults without becoming a fallback for saved or cleared data. */
+test('fresh ontology has editable descriptions while existing and cleared dictionaries stay untouched',async()=>{
+ assert.equal(await scenario(`(()=>{const check=(value,message)=>{if(!value)throw Error(message)},fresh=sourceModules.migrateAndMergeSettings({}),config=sourceModules.ontologyConfiguration(fresh),fields=Object.values(config.hierarchy).flat();
+ check(fields.length>40&&fields.every(field=>fresh.ontologyDescriptions[field]?.trim()&&fresh.ontologyDescriptions[field].length<=1000),'Factory field lacks a bounded description');check(!Object.keys(fresh.ontologyDescriptions).some(field=>field.includes('/')),'Pair declaration became a physical key');check(fresh.ontologyDescriptions.Parent!==fresh.ontologyDescriptions.Child&&fresh.ontologyDescriptions.Previous!==fresh.ontologyDescriptions.Next,'Inverse meaning was copied');
+ fresh.ontologyDescriptions.Parent='Custom wording';check(sourceModules.DEFAULT_SETTINGS.ontologyDescriptions.Parent!=='Custom wording','Fresh dictionaries share mutable defaults');
+ const existing=sourceModules.migrateAndMergeSettings({ontologyDescriptions:{Parent:'Authored wording',source:'My source meaning'}});check(Object.keys(existing.ontologyDescriptions).length===2&&existing.ontologyDescriptions.Parent==='Authored wording','Saved dictionary gained or lost wording');
+ check(Object.keys(sourceModules.migrateAndMergeSettings({ontologyDescriptions:{}}).ontologyDescriptions).length===0,'Cleared dictionary was repopulated');check(Object.keys(sourceModules.migrateAndMergeSettings({standardStyleDefaults:'native'}).ontologyDescriptions).length===0,'Older settings were silently populated');return true;})()`),true);
+});
+
+/** Exact native endpoints and rename resources are supplied by the host; real dialogs and the
+ * production queued settings writer own vocabulary. Connection calls are observed separately. */
+const connectionSetup=`${setup}
+const pages=['Origin.md','Target.md'].map(path=>({path,name:path,file:{path,extension:'md'}})),connectionWrites=[];let released=0;
+p.app={vault:{getFileByPath:path=>pages.find(page=>page.path===path)?.file??null,on:()=>({}),offref:()=>released++}};
+p.index.get=path=>pages.find(page=>page.path===path);p.index.titleFor=page=>page.path;
+p.index.relationshipStorageCandidates=()=>pages.map(page=>page.path);p.index.evidenceBetween=()=>[];
+p.index.invalidateSemanticPolicy=()=>{};p.index.refreshSemanticSettings=async()=>{};
+p.addOntologyToConnection=async(...args)=>{connectionWrites.push(args);return {state:'saved-published',page:pages[1]}};
+const openConnection=(purpose='ontology-add',storage=pages[0].path)=>{const modal=new sourceModules.RelationModal(p,{mode:'relink',purpose,origin:pages[0],fixedTarget:pages[1],semanticRole:'child',initialField:'Child',initialStoragePath:storage});modal.open();return modal};
+const fieldPicker=modal=>modal.contentEl.querySelector('#kplex-relation-modal-field'),createField=modal=>{input(fieldPicker(modal),'','change');return modal.ontologyDialog},fieldName=modal=>modal.contentEl.querySelector('input[aria-label="'+t('ontology.manager.fieldName')+'"]');`;
+
+test('paired-field suggestions explicitly create a reciprocal property in one Save and Cancel writes nothing',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}p.index.invalidateSemanticPolicy=()=>{};p.index.refreshSemanticSettings=async()=>{};
+ const before=p.writes.length;let modal=open('replies to');input(partner(modal),'answered by');
+ const choice=modal.suggestions.getSuggestions('answered by').find(item=>typeof item!=='string');check(choice?.create==='answered by','Creation choice absent');
+ const row=createDiv();modal.suggestions.renderSuggestion(choice,row);check(row.textContent===t('ontology.manager.createPartnerChoice',{field:'answered by'}),'Creation label is not localized');
+ modal.suggestions.selectSuggestion(choice);check(modal.createPartner&&partner(modal).value==='answered by'&&p.writes.length===before,'Choosing creation saved early');
+ button(modal,'common.cancel').click();check(p.writes.length===before,'Cancel saved vocabulary');
+ modal=open('replies to');input(partner(modal),'answered by');modal.suggestions.selectSuggestion(modal.suggestions.getSuggestions('answered by').find(item=>typeof item!=='string'));save(modal);await waitFor(()=>!modal.modalEl.isConnected);
+ const config=sourceModules.ontologyConfiguration(p.settings);check(p.writes.length===before+1&&config.pairs.get('replies-to')?.partner==='answered by'&&config.roles.get('answered-by')==='next','Reciprocal creation was not atomic');return true;})()`),true);
+});
+
+test('creation suggestions reject existing, self and nonreciprocal names and revalidate stale choices',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}const modal=open('replies to'),hasCreate=query=>modal.suggestions.getSuggestions(query).some(item=>typeof item!=='string');
+ for(const name of ['','  ','REPLIES TO','replied by','Child','Hidden'])check(!hasCreate(name),'Invalid creation offered: '+name);
+ input(role(modal),'hidden','change');check(!hasCreate('new field'),'Nonreciprocal role offered creation');input(role(modal),'previous','change');
+ const stale=modal.suggestions.getSuggestions('late field').find(item=>typeof item!=='string');check(stale,'Valid creation unavailable');
+ await p.assignFieldToOntology('late field','next');modal.suggestions.selectSuggestion(stale);check(!modal.createPartner&&partner(modal).value==='','Stale creation was accepted');
+ modal.suggestions.selectSuggestion('replied by');check(!modal.createPartner&&partner(modal).value==='replied by','Existing selection lost ordinary pairing');modal.close();return true;})()`),true);
+});
+
+for(const purpose of ['ontology-add','ontology-specify'])test(purpose+' creates vocabulary through the shared editor before separately confirming the connection',async()=>{
+ assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=openConnection('${purpose}',pages[1].path),before=p.writes.length;
+ check([...fieldPicker(modal).options].some(option=>option.value===''&&option.textContent===t('ontology.createField')),'Creation option absent');
+ const editor=createField(modal);check(editor&&modal.saveButton.disabled&&fieldPicker(modal).disabled,'Child does not own parent controls');check(role(editor).value==='child'&&role(editor).disabled,'Captured role not retained');
+ input(fieldName(editor),'contributes to');input(partner(editor),'supported by');const choice=editor.suggestions.getSuggestions('supported by').find(item=>typeof item!=='string');editor.suggestions.selectSuggestion(choice);save(editor);await waitFor(()=>!editor.modalEl.isConnected);
+ check(p.writes.length===before+1&&connectionWrites.length===0,'Vocabulary save wrote a connection');check(fieldPicker(modal).value==='contributes to'&&!modal.saveButton.disabled&&!fieldPicker(modal).disabled,'New field not selected');
+ check(modal.contentEl.textContent.includes('supported by'),'Inverse storage hint ignored new pair');await modal.confirm();
+ check(connectionWrites.length===1&&connectionWrites[0][2]==='child'&&connectionWrites[0][3]==='contributes to'&&connectionWrites[0][4]===pages[1].path,'Connection lost field, role or storage');
+ check(!modal.modalEl.isConnected&&released===1,'Parent resource leaked');return true;})()`),true);
+});
+
+test('connection creation cancellation, failed saves and parent dismissal preserve the old selection and retire children',async()=>{
+ assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=openConnection(),before=p.writes.length;let editor=createField(modal);input(fieldName(editor),'draft field');button(editor,'common.cancel').click();
+ check(fieldPicker(modal).value==='Child'&&!modal.saveButton.disabled&&document.activeElement===fieldPicker(modal)&&p.writes.length===before,'Cancel changed field or lost focus');
+ editor=createField(modal);input(fieldName(editor),'retry field');const store=p.saveData;p.saveData=async()=>{throw Error('Expected storage failure')};save(editor);await waitFor(()=>!editor.busy);
+ check(editor.modalEl.isConnected&&fieldName(editor).value==='retry field'&&role(editor).disabled&&fieldPicker(modal).value==='Child'&&p.writes.length===before,'Failed Save lost draft, role or selection');
+ p.saveData=store;modal.close();check(!editor.modalEl.isConnected&&!modal.modalEl.isConnected&&released===1&&connectionWrites.length===0,'Parent dismissal leaked or wrote');return true;})()`),true);
+});
+
+test('moving a connection retains the existing-only picker',async()=>{
+ assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=openConnection('move');check(![...fieldPicker(modal).options].some(option=>option.value===''),'Relink picker changed scope');modal.close();return true;})()`),true);
+});
 test('optional pairing only offers eligible reciprocal fields and unchanged or cancelled editors write nothing',async()=>{
  assert.equal(await scenario(`(async()=>{${setup}const before=p.writes.length;let modal=open('replies to');check(partner(modal).value==='','Unpaired field had partner');check(JSON.stringify(modal.suggestions.getSuggestions(''))===JSON.stringify(['replied by','succeeds']),'Wrong reciprocal candidates');check(modal.suggestions.getSuggestions('r by')[0]==='replied by','Existing fuzzy matching not reused');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.writes.length===before,'Unchanged Save rewrote config');modal=open('replies to');input(partner(modal),'replied by');button(modal,'common.cancel').click();await p.settingsWriteQueue;check(p.writes.length===before,'Cancel saved a pair');return true;})()`),true);
 });
@@ -60,4 +136,37 @@ test('count refresh failure and stale completions never remove unassigned fields
 
 test('a stale catalog restored on reopening loses partial-zero unassigned rows while named assignments stay',async()=>{
  assert.equal(await scenario(`(async()=>{${setup}const catalog=[{normalized:'stale-typo',name:'Stale typo',count:1}],before=p.writes.length;p.index.unassignedOntologyFields=()=>catalog;p.index.ontologyUsage=async()=>({documents:[],partial:true});for(let restart=0;restart<2;restart++){const modal=new sourceModules.OntologyManagerModal(p,'unassigned');modal.open();check(modal.manager.list.textContent.includes('Stale typo'),'Restored discovery entry absent');button(modal,'ontology.manager.refreshCounts').click();await waitFor(()=>!modal.refreshing);check(!modal.manager.list.textContent.includes('Stale typo'),'Partial zero survived recount');modal.close();}const assigned=new sourceModules.OntologyManagerModal(p,'parent');assigned.open();button(assigned,'ontology.manager.refreshCounts').click();await waitFor(()=>!assigned.refreshing);check(assigned.manager.list.textContent.includes('Parent')&&assigned.manager.list.textContent.includes(t('ontology.manager.documentsPartial',{count:0})),'Named zero assignment removed');assigned.close();check(catalog.length===1&&catalog[0].count===1&&p.writes.length===before,'Presentation cleanup changed stored discovery or assignments');return true;})()`),true);
+});
+
+
+/** Exercise literal drafts and the production durable writer without granting any source capability. */
+test('independent paired descriptions save atomically, cancel and clear without semantic or refresh work',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}await p.assignFieldToOntology('replies to','previous','replied by');let semantic=0,presentation=0;const notifications=new Set();p.index.invalidateSemanticPolicy=()=>{semantic++};p.index.refreshSemanticSettings=async()=>{semantic++};p.index.refreshPresentationSettings=async()=>{throw Error('Description entered graph refresh')};p.index.notifyPresentation=()=>{presentation++;for(const notify of notifications)notify()};p.index.subscribePresentation=notify=>{notifications.add(notify);return()=>notifications.delete(notify)};
+ const description=(modal,key='ontology.description')=>modal.contentEl.querySelector('textarea[aria-label="'+t(key)+'"]'),before=p.writes.length;let modal=open('replies to');input(description(modal),'Authored literal <b>meaning</b>.');input(description(modal,'ontology.partnerDescription'),'Independent inverse meaning.');check(p.settings.ontologyDescriptions['replies to']===undefined,'Draft leaked');button(modal,'common.cancel').click();check(p.writes.length===before,'Cancel saved wording');
+ modal=open('replies to');input(description(modal),'Authored literal <b>meaning</b>.');input(description(modal,'ontology.partnerDescription'),'Independent inverse meaning.');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.writes.length===before+1&&p.settings.ontologyDescriptions['replies to']==='Authored literal <b>meaning</b>.'&&p.settings.ontologyDescriptions['replied by']==='Independent inverse meaning.','Pair descriptions were not one exact-name save');check(semantic===0&&presentation===1,'Description caused semantic work');
+ const manager=new sourceModules.OntologyManagerModal(p);manager.open();check(manager.contentEl.textContent.includes('Authored literal <b>meaning</b>.')&&!manager.contentEl.querySelector('b'),'Manager did not preserve literal text');
+ modal=open('replied by');check(description(modal).value==='Independent inverse meaning.'&&description(modal,'ontology.partnerDescription').value==='Authored literal <b>meaning</b>.','Inverse editor conflated descriptions');input(description(modal),'');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(!Object.hasOwn(p.settings.ontologyDescriptions,'replied by')&&p.settings.ontologyDescriptions['replies to']==='Authored literal <b>meaning</b>.','Clear changed wrong endpoint');check(semantic===0&&presentation===2,'Clear caused graph work');manager.close();return true;})()`),true);
+});
+
+test('description writer retains failed drafts and rejects stale same-endpoint saves',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}const description=modal=>modal.contentEl.querySelector('textarea[aria-label="'+t('ontology.description')+'"]');let first=open('replies to'),second=open('replies to');input(description(first),'First accepted wording');input(description(second),'Stale wording');save(first);await waitFor(()=>!first.modalEl.isConnected);save(second);await waitFor(()=>!second.busy);check(second.modalEl.isConnected&&p.settings.ontologyDescriptions['replies to']==='First accepted wording'&&second.feedback.textContent===t('settings.ontology.conflict'),'Stale wording overwrote accepted text');second.close();
+ const modal=open('replies to'),store=p.saveData;input(description(modal),'Retry wording');p.saveData=async()=>{throw Error('Expected storage failure')};save(modal);await waitFor(()=>!modal.busy);check(modal.modalEl.isConnected&&description(modal).value==='Retry wording'&&p.settings.ontologyDescriptions['replies to']==='First accepted wording','Failed storage lost or published draft');p.saveData=store;save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.settings.ontologyDescriptions['replies to']==='Retry wording','Retry lost draft');return true;})()`),true);
+});
+
+
+/** Locate the mounted accessible controls without retaining unused private implementation fields. */
+test('paired description editing preserves caret and independent drafts across partner choices',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}await p.assignFieldToOntology('replies to','previous','replied by');const modal=open('replies to'),primary=modal.contentEl.querySelector('textarea[aria-label="'+t('ontology.description')+'"]'),inverse=modal.contentEl.querySelector('textarea[aria-label="'+t('ontology.partnerDescription')+'"]');input(primary,'Meaning in the middle');primary.focus();primary.setSelectionRange(7,7);primary.dispatchEvent(new Event('input',{bubbles:true}));check(document.activeElement===primary&&primary.selectionStart===7&&modal.endpointControl.selectEl.disabled,'Primary caret or dirty endpoint guard lost');input(inverse,'Inverse middle text');inverse.focus();inverse.setSelectionRange(8,8);inverse.dispatchEvent(new Event('input',{bubbles:true}));check(document.activeElement===inverse&&inverse.selectionStart===8,'Inverse caret moved');input(partner(modal),'succeeds');check(inverse.value==='','New partner inherited former wording');input(inverse,'Other partner meaning');input(partner(modal),'replied by');check(inverse.value==='Inverse middle text','Returning partner lost its independent draft');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.settings.ontologyDescriptions['replied by']==='Inverse middle text'&&!Object.hasOwn(p.settings.ontologyDescriptions,'succeeds'),'Unselected partner draft was written');return true;})()`),true);
+});
+
+
+/** Editor context spelling resolves through the configured identity before an exact-key wording save. */
+test('context-case field spelling saves descriptions under the canonical physical name only',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}const hierarchy=JSON.stringify(p.settings.hierarchy),policy=JSON.stringify(sourceModules.captureSettingsPolicy(p.settings)),modal=open('PARENT'),name=modal.contentEl.querySelector('input[aria-label="'+t('ontology.manager.fieldName')+'"]'),description=modal.contentEl.querySelector('textarea[aria-label="'+t('ontology.description')+'"]');check(name.value==='Parent'&&name.readOnly,'Context spelling did not resolve canonical physical name');input(description,'Canonical parent wording');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.settings.ontologyDescriptions.Parent==='Canonical parent wording'&&!Object.hasOwn(p.settings.ontologyDescriptions,'PARENT'),'Description saved under contextual alias');check(JSON.stringify(p.settings.hierarchy)===hierarchy&&JSON.stringify(sourceModules.captureSettingsPolicy(p.settings))===policy,'Contextual description changed ontology or semantic policy');const manager=new sourceModules.OntologyManagerModal(p);manager.open();check(manager.contentEl.textContent.includes('Canonical parent wording'),'Canonical description absent from manager');manager.close();return true;})()`),true);
+});
+
+
+/** Typed partner aliases use the same exact physical identity as canonical suggestion choices. */
+test('typed partner case aliases display and save the existing physical description without orphan keys',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}await p.assignFieldToOntology('replies to','previous','replied by');const seed=open('replies to');input(seed.partnerDescriptionControl.inputEl,'Existing inverse wording');save(seed);await waitFor(()=>!seed.modalEl.isConnected);const hierarchy=JSON.stringify(p.settings.hierarchy),policy=JSON.stringify(sourceModules.captureSettingsPolicy(p.settings)),modal=open('replies to');input(partner(modal),'REPLIED BY');check(modal.partnerDescriptionControl.inputEl.value==='Existing inverse wording','Typed case alias hid saved canonical wording');input(modal.partnerDescriptionControl.inputEl,'Updated canonical inverse');input(partner(modal),'Replied By');check(modal.partnerDescriptionControl.inputEl.value==='Updated canonical inverse','Changing alias case lost wording draft');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.settings.ontologyDescriptions['replied by']==='Updated canonical inverse'&&!Object.hasOwn(p.settings.ontologyDescriptions,'REPLIED BY')&&!Object.hasOwn(p.settings.ontologyDescriptions,'Replied By'),'Typed partner wording saved under alias key');check(JSON.stringify(p.settings.hierarchy)===hierarchy&&JSON.stringify(sourceModules.captureSettingsPolicy(p.settings))===policy,'Typed partner wording changed hierarchy or semantic policy');return true;})()`),true);
 });

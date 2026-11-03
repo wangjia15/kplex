@@ -19,7 +19,7 @@ export function normalizePath(value){return value.replace(/\\\\/g,'/').replace(/
 export function parseFrontMatterTags(fm){return (Array.isArray(fm.tags)?fm.tags:typeof fm.tags==='string'?fm.tags.split(/[ ,]+/):[]).filter(Boolean).map(t=>t.startsWith('#')?t:'#'+t)};
 `;
 writeFileSync(join(temp,'host.mjs'),stub);
-await build({stdin:{contents:`export * from './src/adapters/obsidian/physicalNodeMove';export * from './src/adapters/obsidian/tagMembership';export * from './src/adapters/obsidian/tagNoteType';export * from './src/core/graph/presentation';export * from './src/index/style';export * from './src/ui/StructuralNodeDropActions';export * from './src/ui/structuralConnectionActions';export * from './src/ui/MoveToFolderModal';export * from './src/ui/nodeListPresentation';export * from '${join(temp,'host.mjs').replaceAll('\\','/')}';`,resolveDir:root},outfile:join(temp,'test.mjs'),bundle:true,format:'esm',platform:'node',plugins:[{name:'finite-host',setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:join(temp,'host.mjs')}))}}]});
+await build({stdin:{contents:`export * from './src/adapters/obsidian/physicalNodeMove';export * from './src/adapters/obsidian/tagMembership';export * from './src/adapters/obsidian/tagNoteType';export * from './src/core/graph/presentation';export * from './src/index/style';export * from './src/ui/StructuralNodeDropActions';export * from './src/ui/structuralConnectionActions';export * from './src/ui/plexViews/scene';export * from './src/ui/MoveToFolderModal';export * from './src/ui/nodeListPresentation';export * from '${join(temp,'host.mjs').replaceAll('\\','/')}';`,resolveDir:root},outfile:join(temp,'test.mjs'),bundle:true,format:'esm',platform:'node',plugins:[{name:'finite-host',setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:join(temp,'host.mjs')}))}}]});
 const api=await import(pathToFileURL(join(temp,'test.mjs')));
 /** Native incarnations and parent ownership are independent of the graph's facade identities. */
 function fixture(){
@@ -39,9 +39,11 @@ const acceptTag=owner=>[...owner.dialogs].at(-1).options.save('tag',api.noteType
 
 /** Execute the actual JSX composition callback with finite native ports, preserving async behavior. */
 function graphCallback(name,dependencies,filename='src/ui/PlexGraph.tsx'){
+ dependencies={viewDefinition:{hierarchy:undefined},...dependencies};
  const source=ts.createSourceFile(filename,readFileSync(new URL('../'+filename,import.meta.url),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let body;
  const visit=node=>{if(ts.isVariableDeclaration(node)&&node.name.getText(source)===name)body=node.initializer.getText(source);if(ts.isMethodDeclaration(node)&&node.name.getText(source)===name)body=(node.modifiers?.some(m=>m.kind===ts.SyntaxKind.AsyncKeyword)?'async ':'')+'function '+name+node.getText(source).slice(node.getText(source).indexOf('('));ts.forEachChild(node,visit)};visit(source);assert(body,name);
  const compiled=ts.transpileModule('const selected = '+body+';',{compilerOptions:{target:ts.ScriptTarget.ES2021}}).outputText;
+ dependencies={semanticSceneEdge:api.semanticSceneEdge,viewSession:undefined,viewLifetime:0,...dependencies};
  return Function(...Object.keys(dependencies),compiled+';return selected')(...Object.values(dependencies));
 }
 
@@ -236,4 +238,18 @@ test('modifier moves use the same native validation, reverse a central folder/fi
  const changed=fixture();changed.file('B/Note.md',changed.b);let moved=0;changed.app.fileManager.renameFile=async()=>moved++;
  const plan={source:changed.source,sourcePath:changed.source.path,folder:changed.b,folderPath:changed.b.path,destination:'B/Note.md'};
  assert.deepEqual(await api.commitPhysicalMove(changed.app,plan),{ok:false,reason:'conflict'});assert.equal(moved,0);
+});
+
+
+test('retiring a view before a held tag write reports cancellation without a false commit or late details',async()=>{
+ const note=page({path:'N.md',file:{path:'N.md',extension:'md'}}),tag=page({path:'tag:Parent/Child',isTag:true}),nodes=[{page:note},{page:tag}];
+ let epoch=0,release,writes=0;const held=new Promise(resolve=>{release=resolve});
+ const callback=graphCallback('performEdgeAction',{connectionActionAllowed:api.connectionActionAllowed,tagMembershipPair:api.tagMembershipPair,graphTagValue:api.graphTagValue,
+  viewSession:{getLifetime:()=>epoch,capture(){const captured=epoch;return()=>epoch===captured}},
+  index:{get:path=>nodes.find(n=>n.page.path===path)?.page,explainRelationship:()=>({decisions:[]})},scene:{nodes},sectionExpansion:null,actionSurfaceId:'surface',
+  graphDialogSerial:{current:0},graphDialogs:{current:new Set()},RelationshipExplanationModal:class{constructor(){assert.fail('Retired view opened details')}},
+  neighborhood:{center:note},hostLeaf:{},actionNodeRef:page=>page.path,clearHoverIntent(){assert.fail('Retired view changed hover')},SavedRelationshipPendingError:class extends Error{},
+  plugin:{isActionSurfaceCurrent:()=>true,async unlinkTagMembership(_note,_tag,current){await held;if(!current())return false;writes++;return true}}});
+ const task=callback({generation:1},{sourcePath:note.path,targetPath:tag.path},'relationship.unlink');epoch++;release();
+ assert.equal((await task).status,'cancelled');assert.equal(writes,0);
 });

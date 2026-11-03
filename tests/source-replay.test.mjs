@@ -637,7 +637,8 @@ test("SI4 production settings route owns revisioned cached preparation without a
   const save = main.slice(main.indexOf("  async saveSettings("), main.indexOf("  private isDocumentLeafCandidate("));
   const completion = main.slice(main.indexOf("  private refreshSavedSettings("), main.indexOf("  private enqueueSettingsWrite("));
   assert.match(save, /const needsSemantic = effects.semanticInvalidation \|\|/);
-  assert.match(save, /await this.refreshSavedSettings\(needsSemantic\)/);
+  // This void save owns actual-failure feedback; dialogs keep their separate saved/pending result.
+  assert.match(save, /await this.refreshSavedSettings\(needsSemantic, true\)/);
   assert.match(completion, /await this.index.refreshPresentationSettings\(\)/);
   assert.match(completion, /if \(needsSemantic && !this.unloading && current\(\)\) await this.index.refreshSemanticSettings\(\)/);
   assert(!/scheduleRebuild\("settings"\)/.test(main));

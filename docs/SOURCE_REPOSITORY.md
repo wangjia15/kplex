@@ -33,6 +33,8 @@ writer cannot overwrite the body required by a newer token. Batched persistence 
 
 `KplexIndexedDbCache` remains the single connection owner. It also owns narrowly scoped, temporary existing-database handles used only to retire an ended contributor reader after normal-handle failure; they cannot make the normal writer available. Incremental `GraphBuilder` calls acquisition **before semantic no-op suppression**. A complete semantic rebuild uses neutral facts for body reuse but leaves source activation to the independent inventory after authoritative publication; it does not wait for a source write per note. `GraphIndex` also starts inventory after complete snapshot hydration. Preview/checkpoint hydration does not claim source completeness. The C14 publication callback remains synchronous; private source staging and graph preparation are asynchronous and separately fenced. Staging can add private-path latency; no latency improvement is claimed.
 
+The current body grammar is parser **4**: escaped and balanced Markdown link-label brackets retain their rendered URL labels. Parser-3 URL-bearing heads and optional body/URL caches require canonical reacquisition; parser-3 URL-free heads retain authenticated reuse because their grammar is unchanged. Known parser-2 primary candidates keep their existing guarded migration route. Known parser-2/3 tombstones preserve retirement identity. This changes neither the database schema nor user files, and never restamps an old URL head as current without parsing.
+
 ## SI4a selected-head read capability — Accepted
 
 [Cached-source replay](CACHED_SOURCE_REPLAY.md) documents the fact inventory, missing host inputs, bounded owner scope and later GraphIndex read consumers. `readSelected()` holds one selected head and its family leases across serialized family visits, preserving the existing hash/frame/posting validation. It returns a finite ready/pending/stale/cancelled/invalid-family/storage-unavailable result. Expected durable sequence, source incarnation and host observations are independent of semantic policy. Final multi-owner validation reads at most 256 selected heads in one transaction and rechecks local masks and caller fences after the await.
@@ -219,6 +221,16 @@ For a single-chunk disk family, the chunk and first byte/record-bounded posting 
 An ordinary `visit(metadata)` can instead prepare that same chunk/page inside its atomic head/all-selected-family-lease transaction. Eligibility is current primary grammar, exactly one metadata chunk, at most `SOURCE_MAX_BATCH_RECORDS` records and at most `SOURCE_CHUNK_TARGET_BYTES` encoded bytes. Actual suspicious oversized rows skip speculative parsing. The existing aggregate decode budget remains authoritative. No crypto, caller consumption or host-task yield runs inside the native transaction. All authentication and ordinary freshness checks still follow; no proof survives this selected reader lifetime. `readSelected`, head-only inspection and other family visitors retain their existing contracts.
 
 The registered source view owns an unconsumed preview, including during close before the pin promise resumes. Family consumption takes and clears that ownership; release clears any remaining reservation before its existing idempotent lease-retirement promise. Failed native deletion still leaves conservative durable protection. Dense/legacy/oversized cases issue no speculative chunk request, although their metadata pin's write-transaction scope includes chunk/posting stores. This is a bounded coordination reduction, not fewer leases/hashes or a new reclamation policy. See the [PR205 validation record](validation/cached-source-read-batching-205-2026-10-23.md) for measured scope and limits.
+
+`inspectWithLocalDependencies()` returns a clean readonly dependency-owner/head selection to the
+restart host caller without a preceding head-only transaction. This call-local observation grants
+no family protection. Exceptional owners retain the original inspect-then-ensure fallback, including
+legacy primary authentication before derivative repair. An optional expected head on `visit()`
+requires a saved matching revision/sequence before consumption, then matches it again while deleting
+that reader's leases in the existing original-connection transaction. Abort, failed final read,
+cancellation or a newer local memory/deletion overlay cannot return ready. Facts consumed before the
+final result remain private. Normal visits keep their original release scope; no receipt is cached
+and no lease is transferred between calls.
 
 One short transaction rechecks the expected head and family counts, increments `source-sequence` and selects the complete head. Same-source work has one active and one replaceable pending producer; an obsolete independent writer loses the compare-and-swap. A canceled or unloaded writer cannot select a head after its fence fails. Intentionally canceled transactions are distinguished from unexpected aborts, which enter storage-degraded recovery.
 

@@ -13,6 +13,31 @@ obsidian vault=kplex-test eval 'code=JSON.stringify({loaded:!!app.plugins?.plugi
 
 The community-plugin registry is an internal Obsidian API used here for maintenance tests. Keep this access in CLI/test code: portable core/UI code must not discover the plugin through `app.plugins`, `window` or another global escape hatch. No permanent debug global is needed. Prefer existing diagnostic/query methods. Private fields can be reached in the current bundle for narrowly scoped fault injection, but are not a supported API.
 
+## Combined ontology completion consumer
+
+The Excalidraw integration is maintained in the sibling plugin repository's
+`npm run test:kplex-ontology` lane. It builds both selected workspace revisions,
+freezes and hash-verifies the real plugins, then stages them only in the plugin's
+marker-owned `.test-work/vaults/excalidraw-auto-test/`. This is the explicitly
+authorized combined-test target; do not redirect it to a personal vault.
+The runner supplies/checks `KPLEX_TEST_VAULT_NAME`, `KPLEX_TEST_VAULT_PATH` and
+`KPLEX_TEST_CONFIG_DIR` against the same CLI-reported target and shared host lock.
+Use `EXCALIDRAW_KPLEX_ROOT` for a non-sibling K-Plex checkout.
+
+The executable cases exercise the actual Excalidraw element-link editor and native
+Markdown suggester, passive completion with acquisition/I/O/write capabilities
+guarded, custom/live configuration, disable/re-enable, retired handles, popout
+publication, saving/reopening and fixture cleanup. The full plugin native profiles
+also execute these cases in responsive phone/tablet layouts. Desktop emulation
+and scripted composition do not establish physical touch, OS IME or mobile WebView
+acceptance. The companion has no fork source change or package/version publication.
+
+Focused portable checks use `npm run test:ontology-completion`; the existing
+architecture, restricted-core, installed types, scanner/build and affected settings
+checks remain separate evidence. This read-only capability adds no indexing,
+source repository, persistence schema or graph-semantic behavior and does not
+justify running the indexing aggregates solely to validate completion.
+
 ## Hydration and readiness probes
 
 ```bash
@@ -76,6 +101,38 @@ The native driver samples actual visibility and document/window focus throughout
 whether a run is comparable. Restart-only runs hash selected heads through a bounded cursor and
 require them to stay unchanged. A ready graph label alone does not establish source convergence.
 
-The accepted fallback covers requested neighborhoods and complete body-only virtual/URL search vocabulary through the existing canonical compiler’s node projection. [Final SI5 acceptance](validation/settings-independent-indexing-si5-acceptance-2026-10-04.md) records current automated/native coverage, maintainer-reported physical iPad/Android passes and numerical measurement limits. The [historical SI5 report](validation/settings-independent-indexing-si5-progress-2026-10-03.md) retains earlier source-adoption, watchdog/SIGTRAP and CLI failures alongside subsequent successful exact-build restarts; a crash signal alone does not establish an out-of-memory cause. Synthetic dense-hub/high-node redesign and further cold optimization remain outside accepted SI5 scope.
+The SI5 fallback covers requested neighborhoods and complete body-only virtual/URL search vocabulary through the existing canonical compiler’s node projection. [Final SI5 acceptance](validation/settings-independent-indexing-si5-acceptance-2026-10-04.md) records its automated/native coverage, maintainer-reported physical iPad/Android passes and numerical measurement limits. Eager startup now additionally completes global relationships with the existing batched full compiler before reporting initial indexing complete; on-demand keeps the local contract. The [eager recovery record](validation/eager-navigation-fix-2026-11-01.md) distinguishes this later behavior from historical SI5 evidence. The [historical SI5 report](validation/settings-independent-indexing-si5-progress-2026-10-03.md) retains earlier source-adoption, watchdog/SIGTRAP and CLI failures alongside subsequent successful exact-build restarts; a crash signal alone does not establish an out-of-memory cause. Synthetic dense-hub/high-node redesign and further cold optimization remain outside accepted SI5 scope.
 
-Run restart/fault drivers serially. Defer asynchronous native probe work until after returning the CLI's initial response, then poll the completion token; long work must remain cancellable when that exact probe/controller is retired. Keep visible K-Plex demand during fixture maintenance. A source-backed partial baseline correctly refuses to persist complete acceleration: a disposable small-fixture setup may seed it explicitly, but never count that build as a zero-build restart result or add it to the production startup path.
+Run restart/fault drivers serially. Defer asynchronous native probe work until after returning the CLI's initial response, then poll the completion token; long work must remain cancellable when that exact probe/controller is retired. Keep visible K-Plex demand during fixture maintenance. A source-backed partial baseline correctly refuses to persist complete acceleration. A harness-created full baseline cannot count as zero-build recovery. For eager missing-chunk acceptance use `eagerStartupRecovery.mjs`: it must observe normal startup reaching global coverage without a harness-triggered build, and must restore the backed-up derived cache/configuration/workspace afterward.
+
+## Provisional-center navigation regressions
+
+A startup-race fixture must prove that global indexing did not silently make the
+target available. Initialize the ordinary test instance before swapping in a
+separate disposable index; a still-running cache restore can otherwise publish
+through the plugin's current index reference. Capture and restore the original
+index, view/layout state and settings independently of scenario success.
+
+For a bounded host-preview test, hold the disposable index's existing P1
+scheduler lease while allowing P1 previews to run. Assert that startup readiness
+is false and the target is absent from global state at the decisive click; a
+zero-page global state is stronger evidence. Release the lease during owned
+cleanup and destroy the disposable index. Do not change production scheduling.
+Avoid `focusInKplex()` inside the measured startup transition: it intentionally
+calls `ensureIndexReady()`. Use the normal already-mounted surface's navigation
+notification after fixture setup, then exercise the actual node/history control.
+
+Check the connected note, toolbar, pins, exact accepted center, preview ownership
+and recovery through available history. Also assert that selecting a placeholder
+did not create a file. Record synthetic scheduling and programmatic input limits.
+The [2026-11-01 placeholder record](validation/placeholder-startup-navigation-2026-11-01.md)
+contains before/after regression and exact-build native evidence.
+
+A lost CLI response does not authorize replaying an operation. Preserve the
+controller, inspect its completion and cleanup receipt, and retire only the
+confirmed-settled owned collector. Pure task-state reads can be retried directly;
+keep acknowledgements for operations that can change state. Never force-close
+Obsidian to recover a collector while another vault is open. For explicitly
+read-only production investigations, make only observational probes. Artifact
+copying requires its own authorization; reloading/navigation can persist state
+and is not implied by artifact-only authorization.

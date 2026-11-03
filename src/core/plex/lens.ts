@@ -1,7 +1,8 @@
 /** Portable lens matching and appearance layers; color references retain identity until host paint. */
 import type { GraphNodeView } from "../graph/model";
 import type { ColorValue } from "../contracts/colorValue";
-import { GraphPredicateEngine, type CompiledGraphPredicate, type GraphPredicateEdgeContext, type GraphPredicateEvidence } from "./predicate";
+import { GraphPredicateEngine, type CompiledGraphPredicate, type GraphPredicateEdgeContext, type GraphPredicateEvidence,
+  type GraphPredicateContext, type GraphPredicateRead, type GraphPredicateResult, type GraphPredicateValue } from "./predicate";
 
 export type PortableLensScope = "node" | "edge" | "evidence";
 export type PortableLensMode = "include" | "exclude" | "style";
@@ -25,6 +26,19 @@ export type PortableCompiledLens = Readonly<{ scope: PortableLensScope; mode: Po
 export type PortableLensCandidate = Readonly<{ node: GraphNodeView; label: string; center?: GraphNodeView; edge?: GraphPredicateEdgeContext }>;
 export type PortableEvidenceDecision = Readonly<{ evidence: GraphPredicateEvidence; active: boolean; suppressionReason?: string }>;
 export interface GraphEvidenceProvider { decisions(sourcePath: string, targetPath: string): readonly PortableEvidenceDecision[]; }
+
+/** Opt-in any-match over explicitly supplied canonical contexts. Shared availability semantics
+ * retain uncertainty until a positive context proves membership; legacy lens matching is unchanged. */
+export function evaluatePortablePredicateContexts(engine: GraphPredicateEngine, predicate: CompiledGraphPredicate,
+  contexts: Iterable<GraphPredicateContext>, read?: (value: GraphPredicateValue, context: GraphPredicateContext) => GraphPredicateRead): GraphPredicateResult {
+  let unknown: Exclude<GraphPredicateResult, {status: "available"}> | undefined;
+  for (const context of contexts) {
+    const result = engine.evaluateAvailable(predicate, context, read);
+    if (result.status === "available" && result.value) return result;
+    if (result.status !== "available") unknown ??= result;
+  }
+  return unknown ?? {status: "available", value: false};
+}
 
 function matchesLens(engine: GraphPredicateEngine, evidenceProvider: GraphEvidenceProvider, lens: PortableCompiledLens, candidate: PortableLensCandidate): boolean {
   if (lens.scope !== "evidence") return engine.matches(lens.predicate, { node: { node: candidate.node, label: candidate.label }, center: candidate.center, edge: candidate.edge });

@@ -1,5 +1,5 @@
 /**
- * Read-only PR205 demonstration of the actual production durable-host-inventory caller in an
+ * Read-only PR205/212 demonstration of the actual production durable-host-inventory caller in an
  * exact-build, guarded disposable vault. Native operation totals are diagnostic, not CPU shares.
  * The shared controlled-probe owner verifies artifact/source identity and configuration cleanup.
  */
@@ -22,11 +22,19 @@ async function scenario(app, controller) {
   const current = () => !controller.closed;
   const db = await repository.open();
   assert(db, 'Open durable cache');
+  /** Read only selected derivative coordinates; this diagnostic confers no source authority. */
+  const ownerFor = sourceId => new Promise(/** Await native terminal completion before exposing derivative coordinates. */(resolve, reject) => {
+    const tx = db.transaction(['sourceLocalDependencyOwners'], 'readonly');
+    const request = tx.objectStore('sourceLocalDependencyOwners').get(sourceId);
+    tx.oncomplete = /** Expose only a committed diagnostic owner. */() => resolve(request.result);
+    tx.onabort = tx.onerror = /** Preserve the failed native transaction. */() => reject(tx.error);
+  });
   for (const file of app.vault.getMarkdownFiles()) {
     const cache = app.metadataCache.getFileCache(file), inspection = await repository.inspect(file.path, [], current);
     const head = inspection.head, metadata = head?.families.metadata;
     if (cache && inspection.saved && inspection.reason === 'ready' && head.sequence > 0 && head.bodyParserVersion !== 2 && metadata?.chunks === 1 && metadata.records <= 16 && metadata.bytes <= 8192)
-      selected.push({ file, cache, head, expected: acquisition.currentHostInventory(file, cache) });
+      selected.push({ file, cache, head, owner: controller.selection ? await ownerFor(file.path) : null,
+        expected: acquisition.currentHostInventory(file, cache) });
     if (selected.length === 16) break;
   }
   assert(selected.length === 16, 'Sixteen existing bounded cached metadata sources');
@@ -49,7 +57,21 @@ async function scenario(app, controller) {
       });
     patch(repository.runtime, 'digest', /** Keep every cryptographic authentication call. */original => /** Retain normal runtime digest implementation. */function(...args) { totals.hashes++; return original.apply(this, args); });
     for (const item of selected) {
-      const result = await acquisition.durableHostInventory(item.file.path, current);
+      const capture = acquisition.capture(item.file);
+      /** Retain the exact native incarnation/stat, cache identity and controller lifetime. */
+      const ownerCurrent = () => current() && acquisition.current(capture, current)
+        && app.metadataCache.getFileCache(item.file) === item.cache;
+      let expected;
+      if (controller.selection) {
+        assert(item.owner?.state === 'complete', 'Existing complete local dependency owner');
+        const selection = await repository.inspectWithLocalDependencies(item.file.path,
+          item.owner.order, item.owner.markdownOrder, ownerCurrent);
+        assert(selection.dependencyReason === 'ready' && selection.inspection.saved, 'Shared saved selection ready');
+        assert(JSON.stringify(selection.inspection.head) === JSON.stringify(item.head), 'Exact original selected head');
+        expected = selection.inspection.expected;
+      }
+      const result = await acquisition.durableHostInventory(item.file.path, ownerCurrent, expected);
+      assert(ownerCurrent(), 'Native identity/cache remains current after protected read');
       assert(result.reason === 'ready', 'Actual durable host inventory ready');
       assert(JSON.stringify(result.facts) === JSON.stringify(item.expected), 'Exact current host inventory facts');
       if (controller.failAfterFirst) throw Error('Deliberate cached-read cleanup validation');
@@ -78,7 +100,7 @@ async function scenario(app, controller) {
   }
   assert(repository.readers.size === 0 && repository.decodeBytes === 0, 'Reader and decode closure');
   const remote = require('@electron/remote'), win = remote.getCurrentWindow();
-  return { owners: selected.length, totals, readers: repository.readers.size, decodeBytes: repository.decodeBytes,
+  return { owners: selected.length, selection: controller.selection, totals, readers: repository.readers.size, decodeBytes: repository.decodeBytes,
     durableLeasesRemaining: controller.progress.durableLeasesRemaining,
     host: { electron: process.versions.electron, chrome: process.versions.chrome, rendererPid: process.pid,
       nativeWindow: win.id, hidden: document.hidden, focused: document.hasFocus(),
@@ -87,4 +109,5 @@ async function scenario(app, controller) {
 }
 
 await runControlledProbe('cached-source-reads', scenario,
-  `c.failAfterFirst=${process.env.KPLEX_CACHED_READ_FAIL_AFTER_FIRST === '1'};`, ['src/index/SourceRepository.ts']);
+  `c.failAfterFirst=${process.env.KPLEX_CACHED_READ_FAIL_AFTER_FIRST === '1'};c.selection=${process.env.KPLEX_CACHED_READ_SELECTION === '1'};`,
+  ['src/index/SourceRepository.ts', 'src/adapters/obsidian/sourceAcquisition.ts']);

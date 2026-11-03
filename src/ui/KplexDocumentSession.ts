@@ -5,7 +5,11 @@
  */
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import type { KplexSettings } from "../settings";
+import {PlexViewSession} from "../application/PlexViewSession";
+import {builtInPlexViews} from "./plexViews/builtins";
+import type {PlexViewRegistry} from "../core/plex/views/registry";
 import { PlexFootprints } from "../application/PlexFootprints";
+import {nodeId} from "../core/graph/model";
 
 export type DocumentPreferences = Pick<KplexSettings, "documentSyncMode" | "sidecarOpen" | "sidecarPosition" | "sidecarLastFilePath" | "sidecarLastUrl" | "sidecarMarkdownMode">;
 export type DocumentFollowIntent = Readonly<{file: TFile; leaf: WorkspaceLeaf; revision: number}>;
@@ -19,6 +23,7 @@ export function nativeLeafId(workspace: {getLeafById(id: string): WorkspaceLeaf 
 
 export class KplexDocumentSession {
   readonly footprints = new PlexFootprints();
+  readonly plexView: PlexViewSession;
   linkedDocumentLeaf: WorkspaceLeaf | null = null;
   lastDocumentLeaf: WorkspaceLeaf | null = null;
   centerPath: string | null = null;
@@ -36,7 +41,8 @@ export class KplexDocumentSession {
   readonly preferences: DocumentPreferences;
 
   /** New views inherit defaults, never another view's managed association or pinned target. */
-  constructor(defaults: DocumentPreferences, readonly ownerId: string | null, private readonly changed: () => void) {
+  constructor(defaults: DocumentPreferences, readonly ownerId: string | null, private readonly changed: () => void, registry: PlexViewRegistry = builtInPlexViews) {
+    this.plexView = new PlexViewSession(registry, () => this.persist(), () => this.centerPath ? nodeId(this.centerPath) : null);
     this.preferences = {documentSyncMode: defaults.documentSyncMode === "pinned" ? "off" : defaults.documentSyncMode,
       sidecarOpen: false, sidecarPosition: defaults.sidecarPosition, sidecarLastFilePath: "", sidecarLastUrl: "",
       sidecarMarkdownMode: defaults.sidecarMarkdownMode};
@@ -50,14 +56,19 @@ export class KplexDocumentSession {
 
   /** Native serialization is an allowlist; ephemeral operations and trail values are excluded. */
   getState(): Record<string, unknown> {
-    return {version: 1, ownerId: this.ownerId, centerPath: this.centerPath, targetId: this.targetId, ...this.preferences};
+    return {version: 1, ownerId: this.ownerId, centerPath: this.centerPath, targetId: this.targetId, plexView: this.plexView.getState(), ...this.preferences};
   }
 
   /** Restore validated scalar intent. A duplicated native leaf may copy its center, never its claim. */
   restore(value: unknown): void {
     if (this.initialized || this.disposed) return;
     this.initialized = true;
-    try {this.restoreInitialState(value);} finally {for (const listener of this.restoreListeners) listener();}
+    try {
+      this.restoreInitialState(value);
+      // Initial setState may arrive after React mounts. Publish view selection only after native
+      // document intent is coherent; duplicated leaves still copy view state without a Sidecar claim.
+      if (value && typeof value === "object" && Reflect.get(value, "version") === 1) this.plexView.restore(Reflect.get(value, "plexView"));
+    } finally {for (const listener of this.restoreListeners) listener();}
   }
 
   /** Decode only the first native state for this incarnation, never replay another surface's live ownership. */
@@ -84,5 +95,5 @@ export class KplexDocumentSession {
   retire(): void { this.revision++; this.pendingFollow = null; this.pendingUrl = null; }
 
   /** Actual view close ends this incarnation; same-view React/window remounts do not call this. */
-  dispose(): void { this.disposed = true; this.retire(); this.linkedDocumentLeaf = null; this.lastDocumentLeaf = null; this.footprints.dispose(); this.restoreListeners.clear(); }
+  dispose(): void { this.disposed = true; this.retire(); this.linkedDocumentLeaf = null; this.lastDocumentLeaf = null; this.footprints.dispose(); this.plexView.dispose(); this.restoreListeners.clear(); }
 }

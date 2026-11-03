@@ -1,0 +1,864 @@
+{
+  "status": "passed",
+  "runtimeCommit": "c107681d97009ea1740bd5e0aeb5da38a0135c1a",
+  "totalReportedChecks": 127,
+  "lanes": [
+    {
+      "lane": "ux",
+      "sample": 13,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:03:05.534Z",
+      "completedAt": "2026-10-26T08:03:18.171Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "native-preset-controls-travel-together",
+          "windowWidth": 1280,
+          "controlWidths": [
+            222,
+            40,
+            40
+          ]
+        },
+        {
+          "id": "native-preset-controls-travel-together",
+          "windowWidth": 640,
+          "controlWidths": [
+            222,
+            40,
+            40
+          ]
+        },
+        {
+          "id": "native-wide-preset-editor-single-icon-row",
+          "width": 1120,
+          "buttons": 7
+        },
+        {
+          "id": "native-draft-json-actions-present"
+        },
+        {
+          "id": "native-preset-draft-reset-save-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-import-format-help-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-import-paste-file-guidance-single-footer-and-readonly-help"
+        },
+        {
+          "id": "native-arrow-selected-enter-fold-unfold-no-navigation"
+        },
+        {
+          "id": "native-parent-columns-1-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 1
+        },
+        {
+          "id": "native-parent-columns-2-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 2
+        },
+        {
+          "id": "native-parent-columns-3-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 3
+        },
+        {
+          "id": "native-depth-configuration-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-mindmap-depth-nine-admission",
+          "configuredMaximumDepth": 20
+        },
+        {
+          "id": "native-mindmap-eight-scope-limit-retains-visible-frontier"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 96,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:03:23.722Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "layouts",
+      "sample": 4,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:07:29.935Z",
+      "completedAt": "2026-10-26T08:07:40.079Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "native-layout-circular-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-band-svg-holes-and-disjoint-physical-fill"
+        },
+        {
+          "id": "native-layout-concentric-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-vertical-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-horizontal-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-quadrants-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-five-layouts-fit-editor-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-combine-split-diagnostic-chips-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-shared-combine-toggle-three-status-chips-and-separate-size-restoration"
+        },
+        {
+          "id": "native-concentric-outward-width-thickness-resize"
+        },
+        {
+          "id": "native-concentric-outward-height-thickness-resize"
+        },
+        {
+          "id": "native-band-width-height-reflow-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-inner-band-shared-drop-target-excludes-outer-band-cancel-no-write"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 44,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:07:45.624Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "pairs",
+      "sample": 4,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:07:51.494Z",
+      "completedAt": "2026-10-26T08:07:58.428Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment"
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment"
+        },
+        {
+          "id": "main-popout-per-canvas-selection-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-compass-wuxing-main-popout-independent-canvas-and-sidecar-state"
+        },
+        {
+          "id": "opening-canvas-selector-owner-survives-window-focus-change"
+        },
+        {
+          "id": "native-shared-preset-layout-and-independent-preset-selection"
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor"
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor"
+        },
+        {
+          "id": "independent-owned-native-workspace-view-restoration"
+        },
+        {
+          "id": "windows-native-view-select-keyboard"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 31,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:08:03.994Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "sharing",
+      "sample": 3,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:08:09.940Z",
+      "completedAt": "2026-10-26T08:08:13.617Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "native-export-prompt-cancel-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-eight-presets-export-effective-help-inert-ai-explicit-dependencies"
+        },
+        {
+          "id": "native-preset-import-preview-help-save-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-json-help-preview-atomic-save-no-activation"
+        },
+        {
+          "id": "native-disabled-lens-import-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-existing-lens-manager-import-disabled-preserves-preset-camera-attention"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 43,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:08:19.119Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "help",
+      "sample": 3,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:08:24.936Z",
+      "completedAt": "2026-10-26T08:08:29.838Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "native-info-cog-order-real-markdown-headings-code"
+        },
+        {
+          "id": "native-unsaved-preview-safe-links-plain-fences-no-activation"
+        },
+        {
+          "id": "native-info-edit-preview-cancel-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-help-save-existing-queued-preset-writer"
+        },
+        {
+          "id": "native-help-save-reopen-escape-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-help-saved-source-and-escape-cleanup"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 37,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:08:35.330Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "features",
+      "sample": 3,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:08:41.298Z",
+      "completedAt": "2026-10-26T08:09:06.650Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "native-area-resize-water"
+        },
+        {
+          "id": "native-area-resize-water"
+        },
+        {
+          "id": "native-area-width-resize-water"
+        },
+        {
+          "id": "native-area-width-resize-water"
+        },
+        {
+          "id": "native-area-resize-unassigned"
+        },
+        {
+          "id": "native-area-resize-unassigned"
+        },
+        {
+          "id": "native-area-width-resize-unassigned"
+        },
+        {
+          "id": "native-area-width-resize-unassigned"
+        },
+        {
+          "id": "native-area-resize-conflicting"
+        },
+        {
+          "id": "native-area-resize-conflicting"
+        },
+        {
+          "id": "native-area-width-resize-conflicting"
+        },
+        {
+          "id": "native-area-width-resize-conflicting"
+        },
+        {
+          "id": "native-area-resize-unresolved"
+        },
+        {
+          "id": "native-area-resize-unresolved"
+        },
+        {
+          "id": "native-area-width-resize-unresolved"
+        },
+        {
+          "id": "native-area-width-resize-unresolved"
+        },
+        {
+          "id": "native-area-resize-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-zero-source-work-classic",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-classic"
+        },
+        {
+          "id": "native-view-settings-cog-zero-source-work-mindmap",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-mindmap"
+        },
+        {
+          "id": "native-view-settings-cog-zero-source-work-wuxing",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-wuxing"
+        },
+        {
+          "id": "native-preset-settings-cog-zero-source-work-para",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-settings-cog-para"
+        },
+        {
+          "id": "native-preset-settings-cog-zero-source-work-state",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-settings-cog-state"
+        },
+        {
+          "id": "native-preset-settings-cog-zero-source-work-para",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-settings-cog-para"
+        },
+        {
+          "id": "native-preset-arc"
+        },
+        {
+          "id": "native-preset-para"
+        },
+        {
+          "id": "native-preset-wuxing"
+        },
+        {
+          "id": "native-preset-gtd"
+        },
+        {
+          "id": "native-preset-eaccess"
+        },
+        {
+          "id": "native-preset-sensemaking"
+        },
+        {
+          "id": "native-preset-publishing"
+        },
+        {
+          "id": "native-preset-map-roles"
+        },
+        {
+          "id": "native-preset-state"
+        },
+        {
+          "id": "all-preset-switches-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "wood-metal-relative-labels-preserve-stored-phases-and-canonical-evidence"
+        },
+        {
+          "id": "conflicting-unassigned-focus-no-assumed-relative-phase"
+        },
+        {
+          "id": "native-property-preview-confirm-save-guarded-undo-preserves-body-and-source-relationships"
+        },
+        {
+          "id": "trusted-native-property-area-drop-preserves-source-relationship-and-undo"
+        },
+        {
+          "id": "native-shared-rules-editor-focus-invalid-save-guard-and-correction"
+        },
+        {
+          "id": "native-wander-prepared-fixture-after-real-note-edits"
+        },
+        {
+          "id": "native-wander-start-navigate-stop-classic"
+        },
+        {
+          "id": "native-wander-start-navigate-stop-mindmap"
+        },
+        {
+          "id": "native-wander-start-navigate-stop-wuxing"
+        },
+        {
+          "id": "native-alt-click-explicit-center-classic"
+        },
+        {
+          "id": "native-alt-click-explicit-center-mindmap"
+        },
+        {
+          "id": "native-alt-click-explicit-center-wuxing"
+        },
+        {
+          "id": "native-control-placeholder-creation-choice-retains-root-and-cancels-without-write"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 74,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:09:12.141Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "editor-lifecycle",
+      "sample": 3,
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T08:09:18.126Z",
+      "completedAt": "2026-10-26T08:09:25.070Z",
+      "artifacts": {
+        "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+      },
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "type-configuration-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-settings-preset-manager-durable-multilingual-label"
+        },
+        {
+          "id": "native-attention-editor-expanded-reclassified-resized-and-restored-at-phase-anchor"
+        },
+        {
+          "id": "attention-native-editor-phase-reclassification-resize-compatible-switch"
+        },
+        {
+          "id": "selection-and-phase-mapping-preserve-editor-and-owned-sidecar"
+        },
+        {
+          "id": "windows-native-editor-typed-input-without-clipboard"
+        },
+        {
+          "id": "explicit-attention-navigation-saves-content-and-retires-old-native-document"
+        },
+        {
+          "id": "attention-editor-popout-main-remount-correct-document-and-session"
+        },
+        {
+          "id": "native-editor-explicit-collapse-cleanup"
+        }
+      ],
+      "cleanup": {
+        "allPassed": true,
+        "actions": 30,
+        "outerRestoration": {
+          "restored": true,
+          "configurationFiles": 9,
+          "contentFiles": 117,
+          "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+          "completedAt": "2026-10-26T08:09:30.625Z"
+        }
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Clipboard excluded: this lane uses native typed text; the separate guarded clipboard lane declined rich/custom formats.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    }
+  ],
+  "completedNativeFileExport": true,
+  "nativeFileExport": {
+    "status": "passed",
+    "runtimeCommit": "16b8e82a99316551ba3035913151be3275a393bd",
+    "mainSha256": "fec13b74980caebc0f1c3d7bbabe13b7b986865983cc516207e8adf2f4cd5b56",
+    "completedAt": "2026-10-26T07:00:57.202Z",
+    "transport": "Real Windows Save dialog; maintainer completed destination and Save after assistant opened native draft/export.",
+    "fileBytes": 9668,
+    "fileSha256": "4cbf66986b921b9d5eac2b4480160a021118885fb0591acc051471467dadf23d",
+    "canonicalValidator": "valid",
+    "unsavedDraftNameExported": true,
+    "effectiveLayout": "circular",
+    "storedLayoutOmitted": true,
+    "savedPresetNameUnchanged": true,
+    "lensDependenciesIncluded": 0,
+    "osClipboardAccessed": false,
+    "probeCorrections": [
+      "Existing preset omits optional layout; verify production effective default.",
+      "facetLayout returns a result object; compare its effective field."
+    ],
+    "restoration": {
+      "restored": true,
+      "configurationFiles": 9,
+      "contentFiles": 117,
+      "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+      "completedAt": "2026-10-26T07:02:20.372Z"
+    },
+    "testDownloadRemoved": true,
+    "draftDiscarded": true,
+    "attribution": "Assisted OS file check on16b8e82; transfer and canonical validator files unchanged throughc107681.",
+    "sourceUnchangedVerified": true,
+    "files": [
+      "src/ui/sharing/portableTransfer.ts",
+      "src/ui/plexViews/facets/FacetPresetEditor.ts",
+      "src/ui/plexViews/facets/facetSharing.ts",
+      "src/core/plex/sharing/transfer.ts",
+      "src/core/plex/sharing/validation.ts"
+    ]
+  },
+  "previousNativeReceipt": "https://github.com/zsviczian/kplex/blob/a6e08f5879f0b3372fdd14a6a078f7d8eb7378ef/docs/validation/facets-222-ux-native-summary.json",
+  "osClipboard": "guarded/unverified",
+  "productionVault": "untouched",
+  "limits": [
+    "Native Electron trusted input is distinct from OS input, macOS and physical-mobile acceptance.",
+    "Known215 fresh-popout Sidecar creation/two simultaneous editor-Sidecar pairs/whole-app restart are not certified.",
+    "View recreation/restoration is not a whole-application restart."
+  ]
+}

@@ -2,7 +2,8 @@
  * Owns document-scoped control hints for the Obsidian UI shell: delayed mouse hover and consumed
  * long presses share one measured, theme-styled tooltip. Native aria-label hints are suppressed by
  * scoped CSS because Obsidian's warm-tooltip shortcut bypasses delay and its bottom clamp overlaps
- * controls. Each document has one reference-counted owner; the last release removes all resources.
+ * controls. Explicitly marked controls can use referenced accessible names to avoid the native
+ * aria-label tooltip path entirely. Each document has one reference-counted owner; the last release removes all resources.
  */
 const HOVER_MS = 650;
 const LONG_PRESS_MS = 450;
@@ -42,9 +43,12 @@ function scopedTooltipTarget(target: EventTarget | null): HTMLElement | null {
   return element.closest("[data-kplex-tooltip-scope]") ? element : null;
 }
 
-/** Prefer the accessible localized name; legacy title/text fallback is retained for long presses. */
+/** Resolve referenced accessible names in this control's document; retain legacy aria/title/text fallbacks. */
 function tooltipText(element: HTMLElement): string {
-  return element.getAttribute("aria-label")?.trim()
+  const referenced = element.getAttribute("aria-labelledby")?.trim().split(/\s+/)
+    .map(/** Label IDs belong to the actual control document, including popouts. */ id => element.ownerDocument.getElementById(id)?.textContent?.trim() ?? "")
+    .filter(Boolean).join(" ");
+  return referenced || element.getAttribute("aria-label")?.trim()
     || element.getAttribute("title")?.trim()
     || element.textContent?.trim()
     || "";

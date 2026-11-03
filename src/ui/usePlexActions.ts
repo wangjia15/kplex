@@ -1,6 +1,6 @@
 /**
  * Host-bound surface registration and focused-region keyboard delivery. App and graph provide
- * fresh implementation/snapshot ports; one dispatcher accepts native events before asynchronous
+ * fresh implementation/snapshot ports, including exact displayed-center occurrence identity; one dispatcher accepts native events before asynchronous
  * work and serves both the focus-leased Obsidian Scope and root-local DOM fallback. Migration,
  * Wander Escape has session priority; accepted user actions pause through a caller-owned capability.
  * Unmount and preference changes release precisely their own leases, listeners and registrations.
@@ -25,15 +25,28 @@ import { registerActionHotkeys } from "./internalHotkeyScope";
 export type SurfaceActionImplementations = Partial<Record<ActionId, ActionImplementation>>;
 export interface GraphActionPorts {
   implementations: SurfaceActionImplementations;
+  /** Inspect this exact admitted scene; empty/decorative-only views expose no area-edit command. */
+  canEditAreas?: () => boolean;
+  /** Save/close the one native host before an explicit attention transition removes its occurrence. */
+  prepareEditorTransition?: () => Promise<boolean>;
+  /** A saved center editor can still be waiting for its current root occurrence to appear. */
+  hasPendingEditorTransition?: () => boolean;
+  /** Restore a saved center-editor presentation only after the latest exact navigation succeeds. */
+  completeEditorTransition?: (target: GraphPage | null) => void;
   prepareNavigation?: (identity: string, origin: "user" | "wander" | "follow") => void;
   readWanderScene?: () => WanderScene;
   highlightWander?: (destination: WanderDestination) => boolean;
   clearWander?: () => void;
   navigateWander?: (destination: WanderDestination) => boolean;
+  readEditorBindingId?: () => string | undefined;
+  /** Expose only a unique displayed attention occurrence; a pending/ambiguous scene grants none. */
+  readCenterOccurrence?: () => {node: NodeRef; occurrenceId: string} | null;
   readSelected: () => { node: NodeRef; occurrenceId: string } | null;
   normalMode: boolean;
   clearSelection?: () => void;
   prepareDisplayResize?: () => void;
+  /** Existing camera owner prepares presentation-only view-state/configuration changes. */
+  preparePresentationChange?: () => void;
   handleSessionKey?: (event: KeyboardEvent, matchedAction: ActionId | null) => boolean;
 }
 let surfaceCounter = 0;
@@ -43,6 +56,7 @@ export function usePlexActions(options: {
   plugin: KplexPlugin; hostLeaf: WorkspaceLeaf; root: RefObject<HTMLDivElement | null>;
   convention: KeyConvention; center: GraphPage | undefined; graph: RefObject<GraphActionPorts | null>;
   implementations: SurfaceActionImplementations; historyBack: boolean; historyForward: boolean;
+  readViewRevision?: () => number;
   mounted: boolean; onReady?: () => void; readEscapeAction?: () => ActionId | null; onUserInteraction?: () => void;
 }): { surfaceId: string; dispatch: (request: ActionRequest) => void; readSnapshot: () => SurfaceSnapshot } {
   const [surfaceId] = useState(/** IDs are opaque and do not depend on undocumented workspace leaf IDs. */ () => `kplex-surface-${++surfaceCounter}`);
@@ -61,10 +75,12 @@ export function usePlexActions(options: {
       mounted: Boolean(root?.isConnected), visible: latest.plugin.isKplexLeafVisible(latest.hostLeaf),
       windowId: latest.plugin.actionWindowId(root?.ownerDocument.defaultView),
       center: latest.center ? actionNodeRef(latest.center) : null,
+      centerOccurrence: latest.graph.current?.readCenterOccurrence?.() ?? null,
       selected: latest.graph.current?.readSelected() ?? null,
       focusRegion: root ? plexFocusRegion(root, root.ownerDocument.activeElement) : "external",
       commandFocusRegion: commandFocusRegion.current,
-      interactionRevision: interactionRevision.current, historyBack: latest.historyBack, historyForward: latest.historyForward,
+      interactionRevision: interactionRevision.current, viewRevision: latest.readViewRevision?.(), historyBack: latest.historyBack, historyForward: latest.historyForward,
+      editorBindingId: latest.graph.current?.readEditorBindingId?.(),
       editorAvailable: Boolean(root?.querySelector(".kplex-central-editor-content")) || latest.plugin.hasAssociatedEditor(latest.hostLeaf),
     };
   };

@@ -1,4 +1,4 @@
-# Standing instructions ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â preserve this header
+﻿# Standing instructions ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â preserve this header
 
 This is a temporary handoff document between agents. The development of the solution involves agents with access to Obsidian CLI and a full development environment with all node packages installed, but also agents with more limited access. Development is done in "ping-pong" between these two types of agents. Agents should use this document to pass instructions and status from one another, such as instructions for testing/validation, or instructions for development work that can only be done in a full environment.
 
@@ -19,20 +19,37 @@ Obsidian is the production host; preserve the established portable semantic, ide
 
 ---
 
-# Assignment: stable gate counts - final runtime verification
+# Sync hydration fix returned for review
 
-Prepared by Zsolt's Codex Agent. Branch: 2026-10-24-stable-gate-counts; PR211 remains draft. Base894437d97bd0e21733e9072fcbecafa7e5d46e0e. No merge/release/production deployment authorized.
+**Inactive implementation handoff:** the fix was implemented and validated on `fix/sync-hydration-backlog`, based on main `e757239ce41a29934bc8a2b74d598146b2bd7e10`. On 2026-11-03, after reviewing the stated residual risks and validation gaps, the maintainer authorized publishing and merging this work, switching to main and fetching. Release and further production runtime changes are outside this integration request.
 
-The requested two improvements are implemented. Read docs/validation/stable-gate-counts-2026-10-24.md for the exact source/freshness/display contracts, prior successful checks and retained failures. Existing read protection, repository/count maintenance, source authority and actual relationship edits remain intact.
+## Outcome
 
-Foreground validation found and corrected two additional causes of genuine count changes: a retained deleted virtual note was counted as a physical folder/tag member, and first-order host previews omitted already captured neighbors' native folder parents. GraphIndex now filters only nonphysical note members from structural reads without changing ordinary unresolved Markdown links or mutating cached incidence. HostMetadataPreview includes native folder facts for already captured owners, preserving center-scoped tags and existing read/record/byte/finality guards. No extra owner read or folder scan.
+- Compatible changed-vault Eager caches hydrate as cached/read-only presentation before the all-owner source audit. Current relationship/write authority still requires genuine source closure and authoritative compilation. Exact-fresh warm behavior is unchanged.
+- The existing single bounded retry covers that active cached generation. Before retrying, it joins already-running local center tasks that may release scheduler leases between structural and file publication. All fingerprint, policy, physical identity/stat/membership and publication accounting guards remain.
+- Known selected-owner revisions are reacquired without repeating validated unrelated owners. Equal-stat raw-body edits, unknown/global/topology changes and unobserved native drift retain their rejecting fences.
+- Successful full builds retire only their captured creation reason. Newer metadata stays per-file; newer creation stays structural. No persistence debounce, schema, setting, release version or background pacing was changed.
 
-Focused real-IndexedDB controls13/13 pass, zero skips; actual-dependency production build and official scanner pass. Final runtime full verification PASSED via runPortableVerification (Node and shell exit0, suite totals7/130/1417/228/357/739, zero failures/cancellations/skips), with an explicit Node outcome receipt: %TEMP%/kplex-stable-gates-final-runtime-verification.json and final-runtime-verify.log. Earlier09b84be complete-suite results/CI436 do not silently validate the new corrections. Documentation-only CI438 on identical09b84be runtime failed the existing URL-heavy timer bound55.6ms/50ms. Preserve it as failed, unchanged assertion. No thresholds/deadlines weakened.
+## Evidence
 
-Current native-tested production main.js SHA-256 b808dd5f1bf3db150c66efe352b73fd0fb64b2f1528d58cad60547441d66cb32, version0.2.3. Manifest843d327e4a634a6e28cd645be8c533adc873a1ac1c6498502b5ca44e70120109; styles88b61aa508ede97b10fbd30c957d14ba19b257aa26f5ee9f547f13faa0f43974. Production build identity depends only on manifest version, not Git HEAD/dirty state; renewed full build reproduced all three exact native-tested hashes.
+Detailed results and limits: [validation report](docs/validation/sync-hydration-2026-11-02.md), [exact-build native receipt](docs/validation/sync-hydration-2026-11-02.json).
 
-Guarded Small exact build passed three actual native-editor autosaves with zero observed badge/scene DOM mutations, retained editor focus, structural lateral0, real link removal/addition and exact cleanup (%TEMP%/kplex-stable-gates-editor-preview-fixed/stable-gate-counts.json). Foreground inventory lane passed all6 cases, zero manual flushes, background resumed and config restored (%TEMP%/kplex-stable-gates-final-foreground/report.json). Final inventory107 original files; controllers removed. Foreground access was explicitly released back to the maintainer for video editing: coordinate before any additional foreground operation. No CPU claim from this shared-host interval.
+- Failing-before evidence for audit-before-cache, covered creation, repeated inventory prefix, foreground supersession, and split center publication. Original rejecting same-stat assertion retained after the complete suite caught an over-broad retry.
+- Aggregate verify passed release/architecture/core/lint/indexing and 1,906 main tests. Browser aggregate: 462/463, one pre-bundle Chromium load timeout; unchanged five-test file passed rerun (earlier separate 23-test file also passed rerun). Do not describe this as one uninterrupted green verify.
+- Portable source lane: 357 passed. Complete real-IDB lane: 888/889, one same-stat fence failure corrected and rechecked. Final affected foreground/startup/source/lifetime/hydration run: 153 passed. Expanded hydration file: 48 passed, including a changed-source rejection. Final lint and production build passed.
+- Existing 20,015-owner case passed exact semantics, zero acquisition/full-build work, linear owner checks and cancellation bounds. No accepted oracle or timing/work bound weakened.
+- Final Windows native: cache hydration 633 ms, current graph including newer edit 9,084 ms, healthy warm reload and three semantic destinations 7,525 ms; warm zero full builds/reads/parses/additional requests. Normal throttling; no foreground recovery; cleanup and configuration-byte restoration passed.
 
-Qualification: older adaptiveFit Markdown-save lane still fails its unchanged zero-broad-semantic-notification assertion (3 callbacks/3 saves), with0 animations, mounted DOM retained and editor focus preserved. Focused canonical commits are semanticChanged:false/unchangedSource:true. Retained accepted-baseline two-note traces also contain callbacks, but an extra baseline adaptiveFit attempt failed a rendered-body-parent prerequisite, so there is no complete matched legacy-lane comparison. Do not label it passed/waived. Keep this separate failed qualification visible for review; no speculative notification redesign.
+## Production boundary and deployment
 
-Runtime checkpoint15c6fdef144d329fba2d14ea1e4298850686bf09 is pushed and read back. Next: publish this documentation-only final local evidence, verify remote head, update PR211/checklist/comment and independently inspect implementation CI439 and final documentation CI. No further local runtime tests or foreground checks are needed absent a new finding. Keep raw traces private and sign GitHub comments Zsolt's Codex Agent. No benchmark campaign, Mac work, production vault or unrelated refactor.
+Zsolt's Brain remained read-only except the explicitly authorized `main.js`/`styles.css` deployment. Only those two files were deployed after final native success; manifest, data and enablement hashes were preserved. No production reload/restart/navigation/notes/cache/config changes were performed.
+
+Passive production sample at 2026-11-02T22:33:48.709Z: old process still incomplete, 4,458/11,821 files, 4,496 pending owners/graph sources, all Markdown paths dirty; hydration timed out in source authority before any full-cache attempt/page. Renderer hidden/unfocused; two body reads/parses, zero source failures. The deployed fix needs a normal plugin/Obsidian reload to become active; production timing against it is not established.
+
+Final main SHA-256: `4f7f67b2af446859ac5c2e625cd09d6c4873670637103b3c6fc01b657bdecca2`. Styles: `d89188385a224f257da98ca48b41ea1e0fe9dd14f67f45012a51b144fb492ab1`. Private production evidence and pre-deployment backups: `%TEMP%/kplex-sync-deployment-0p7zT8/`. Final private native receipt: `%TEMP%/kplex-sync-hydration-native-8puusr/`.
+
+## Review and remaining acceptance
+
+The source/tests/native probe/report are the reviewed integration scope. The indexing and menu/action extraction fixture changes include actual dependencies omitted by previous PR261 fixtures; no behavior assertion was weakened. Temporary staging/diagnostic helpers were removed; the maintained scenario remains `scripts/testing/obsidian/syncHydration.mjs` and requires exact-build disposable staging under the shared application lock.
+
+Highest-risk manual check: after a normal reload, save and rename notes across two real synced devices with an open Plex; confirm final links match notes and progress advances. Physical two-device Sync, macOS, mobile, popouts, actual paint and final 11,821-note production startup timing are not established by the Windows Small lane. Do not infer those passes from synthetic events or this receipt.

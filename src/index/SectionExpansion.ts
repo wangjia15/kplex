@@ -18,6 +18,7 @@ import type { PdfCropRequest } from "./PdfCropRenderer";
 import { applyEvidenceDecisionsToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
 import { canonicalWebUrl } from "../adapters/obsidian/urlIdentity";
+import { projectSectionPreview, type SectionPreviewPlacement } from "./SectionPreview";
 
 export type SectionFigure = {
   /** Browser-loadable source: a vault resource URL or the external image URL. Empty for a PDF crop. */
@@ -64,7 +65,7 @@ type LinkPlacement = {
   file?: TFile | null;
 };
 
-type SectionProjectionSource = {
+export type SectionProjectionSource = {
   centerPage: GraphPage;
   centerEvidence: EvidenceTargetMap;
   sections: Array<{
@@ -79,6 +80,8 @@ type SectionProjectionSource = {
     line: number;
   }>;
   linkPlacements: LinkPlacement[];
+  /** One-file native frontmatter declarations keep their note-header occurrence during preview. */
+  headerTargets: ReadonlySet<string>;
 };
 
 export type CentralSectionExpansion = {
@@ -87,6 +90,10 @@ export type CentralSectionExpansion = {
   sections: ExpandedSection[];
   explanations: Map<string, RelationshipExplanation>;
   projectionSource: SectionProjectionSource;
+  /** Captured source identity for optional revision-scoped view anchors. No content is retained. */
+  sourceRevision?: Readonly<{file: TFile; path: string; mtime: number; size: number; cache?: CachedMetadata | null}>;
+  /** Physical placements of existing saved relationships, never editable evidence declarations. */
+  previewPlacements?: readonly SectionPreviewPlacement[];
 };
 
 type HeadingRange = { id: string; heading: string; level: number; line: number; start: number; end: number; subpath: string; parentId: string | null };
@@ -330,6 +337,7 @@ export async function buildCentralSectionExpansion(
 ): Promise<CentralSectionExpansion | null> {
   const file = centerPage.file;
   if (!file || file.extension !== "md") return null;
+  const sourceRevision = file.stat ? {file, path: file.path, mtime: file.stat.mtime, size: file.stat.size} : undefined;
   const content = await plugin.app.vault.cachedRead(file);
   if (!shouldContinue()) return null;
   const headings = scanHeadings(content);
@@ -338,6 +346,10 @@ export async function buildCentralSectionExpansion(
   const footnotes = collectFootnotes(content);
   const sectionKeys = stableSectionKeys(headings);
   const cache = plugin.app.metadataCache.getFileCache(file);
+  const headerTargets = new Set<string>();
+  for (const [name, value] of Object.entries(cache?.frontmatter ?? {})) {
+    if (ontologyRole(plugin, name)) for (const path of extractLinksFromValue(plugin.app, value, file)) headerTargets.add(path);
+  }
   const links = sourceLinks(cache);
   const preambleTargets = new Set<string>();
   const linksBySection = new Map<string, CacheLink[]>();
@@ -540,10 +552,11 @@ export async function buildCentralSectionExpansion(
   }
 
   return {
-    centerPath: centerPage.path, centerNeighborhood, sections, explanations,
+    centerPath: centerPage.path, centerNeighborhood, sections, explanations, sourceRevision: sourceRevision && {...sourceRevision, cache},
     projectionSource: {
       centerPage, centerEvidence, sections: projectionSections,
       linkPlacements,
+      headerTargets,
     },
   };
 }
@@ -587,7 +600,7 @@ function currentSectionEvidence(
   index: GraphIndex,
   source: SectionProjectionSource,
 ): Readonly<{
-  center: EvidenceTargetMap; sections: ReadonlyMap<string, EvidenceTargetMap>;
+  center: EvidenceTargetMap; sections: ReadonlyMap<string, EvidenceTargetMap>; indexedTargets: ReadonlySet<string>;
 }> {
   const center: EvidenceTargetMap = new Map();
   const sections = new Map<string, EvidenceTargetMap>(source.sections.map(/** Allocate one current evidence bucket per cached physical heading. */
@@ -600,6 +613,7 @@ function currentSectionEvidence(
   const placementsByFile = new Map<TFile, LinkPlacement[]>();
   const placementsByPath = new Map<string, LinkPlacement[]>();
   const currentPaths = new Map<string, string>();
+  const indexedTargets = new Set<string>();
 
   for (const placement of source.linkPlacements) {
     if (placement.file) {
@@ -622,6 +636,7 @@ function currentSectionEvidence(
   }
 
   for (const entry of index.evidenceFrom(source.centerPage.path)) {
+    if (entry.evidence.length) indexedTargets.add(entry.targetPath);
     const actual = index.get(entry.targetPath);
     if (!actual) continue;
 
@@ -698,7 +713,7 @@ function currentSectionEvidence(
     }
   }
 
-  return { center, sections };
+  return { center, sections, indexedTargets };
 }
 
 /** Recompute only the visible section projection from cached evidence. No Markdown is read or parsed. */
@@ -737,6 +752,8 @@ export function projectCentralSectionExpansion(
     };
   });
 
+  const previewPlacements = projectSectionPreview(plugin, index, expansion, centerNeighborhood, sections, currentEvidence.indexedTargets);
+
   for (const section of sections) {
     centerNeighborhood.children.push({
       page: section.page, role: "child", relationType: RelationType.DEFINED,
@@ -750,5 +767,5 @@ export function projectCentralSectionExpansion(
     });
   }
 
-  return { centerPath: expansion.centerPath, centerNeighborhood, sections, explanations, projectionSource: source };
+  return { centerPath: expansion.centerPath, centerNeighborhood, sections, explanations, projectionSource: source, sourceRevision: expansion.sourceRevision, previewPlacements };
 }

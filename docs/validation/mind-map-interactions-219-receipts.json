@@ -1,0 +1,1189 @@
+{
+  "recordedAt": "2026-10-25",
+  "baseline": "11da553e5a093c88c311fcab9d2cbcfa9302046b",
+  "baselineFull": {
+    "verifyObsidian": "passed",
+    "tests": 3007,
+    "CI487": "success",
+    "run": 40167016881
+  },
+  "newScopeFinalValidation": "Pending clean complete verification and final-head CI after source feedback-owner assertion correction.",
+  "nativeSamples": [
+    {
+      "sample": "native-interactions-1",
+      "status": "failed",
+      "error": "Error: Error: Area drop lost canonical root/target/role",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "9b29831ea7fd53cea211dd5152789d2ea41cfdc28210c00d12475871dee8d7f0",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "c4c1cb8c7aeb05c83ec1a5a52c88faeafa11c9b0d88e681b8b5c774e7b312037",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "4759a9819bd819a3a10cc507b9f315f820d0fbd971fd56510669720fb348fd3d",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "f8a1fc72142a95cf86f940f9604357025ee53a0eda9bbe714993653169b7b522",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "ac7b2884e33f4e5cff1e52a693169da4106a8699a21429dbcbffa7f7b66c9f12",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "b43a25d6252970102b5147483288230cc08c8e7b2aa52934976ddaaf0a08b643"
+      },
+      "cases": [
+        {
+          "id": "trusted-parent-columns-and-height-scroll",
+          "columns": 3,
+          "height": 140,
+          "parents": 13,
+          "layoutRootRetained": true
+        },
+        {
+          "id": "production-mindmap-canonical-cross-links",
+          "visible": 1
+        },
+        {
+          "id": "trusted-f4-result-reroots-owning-map"
+        },
+        {
+          "id": "trusted-bidirectional-compass-mindmap-center-drops",
+          "outward": {
+            "chromiumInterceptedData": true,
+            "mimeTypes": [
+              "text/plain",
+              "text/uri-list"
+            ],
+            "dragOperationsMask": -1
+          },
+          "inward": {
+            "chromiumInterceptedData": true,
+            "mimeTypes": [
+              "text/plain",
+              "text/uri-list"
+            ],
+            "dragOperationsMask": -1
+          },
+          "physicalCrossWindowGesture": false
+        }
+      ],
+      "areaDrop": null
+    },
+    {
+      "sample": "native-interactions-2",
+      "status": "failed",
+      "error": "Error: Error: Area drop lost canonical root/target/role {\"origin\":\"Kplex-219-Mindmap-1792910226694/Parent3.md\",\"target\":\"Kplex-219-Mindmap-1792910226694/C.md\",\"role\":\"child\",\"mode\":\"create\",\"point\":{\"x\":308,\"y\":474},\"frame\":{\"x\":191.45294189453125,\"y\":427.3642578125,\"width\":232.0941162109375,\"height\":56.4117431640625,\"top\":427.3642578125,\"right\":423.54705810546875,\"bottom\":483.7760009765625,\"left\":191.45294189453125},\"hit\":\"kplex-add-related-create-hint\"}",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "9b29831ea7fd53cea211dd5152789d2ea41cfdc28210c00d12475871dee8d7f0",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "c4c1cb8c7aeb05c83ec1a5a52c88faeafa11c9b0d88e681b8b5c774e7b312037",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "4759a9819bd819a3a10cc507b9f315f820d0fbd971fd56510669720fb348fd3d",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "f8a1fc72142a95cf86f940f9604357025ee53a0eda9bbe714993653169b7b522",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "856597bbd72764b15fe128c5df2f5f7ba266193d7429538678ae254f00e7c42c",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "04430c44751447a9e720f2d68738c2502d2d141839097e2ed1c8c9d2e932c26f"
+      },
+      "cases": [
+        {
+          "id": "trusted-parent-columns-and-height-scroll",
+          "columns": 3,
+          "height": 140,
+          "parents": 13,
+          "layoutRootRetained": true
+        },
+        {
+          "id": "production-mindmap-canonical-cross-links",
+          "visible": 1
+        },
+        {
+          "id": "trusted-f4-result-reroots-owning-map"
+        },
+        {
+          "id": "trusted-bidirectional-compass-mindmap-center-drops",
+          "outward": {
+            "chromiumInterceptedData": true,
+            "mimeTypes": [
+              "text/plain",
+              "text/uri-list"
+            ],
+            "dragOperationsMask": -1
+          },
+          "inward": {
+            "chromiumInterceptedData": true,
+            "mimeTypes": [
+              "text/plain",
+              "text/uri-list"
+            ],
+            "dragOperationsMask": -1
+          },
+          "physicalCrossWindowGesture": false
+        }
+      ],
+      "areaDrop": {
+        "origin": "Kplex-219-Mindmap-1792910226694/Parent3.md",
+        "target": "Kplex-219-Mindmap-1792910226694/C.md",
+        "role": "child",
+        "mode": "create",
+        "point": {
+          "x": 308,
+          "y": 474
+        },
+        "frame": {
+          "x": 191.45294189453125,
+          "y": 427.3642578125,
+          "width": 232.0941162109375,
+          "height": 56.4117431640625,
+          "top": 427.3642578125,
+          "right": 423.54705810546875,
+          "bottom": 483.7760009765625,
+          "left": 191.45294189453125
+        },
+        "hit": "kplex-add-related-create-hint"
+      }
+    },
+    {
+      "sample": "native-interactions-3",
+      "status": "passed",
+      "error": null,
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "e82907a05f184ed84a12ec8ff04301251adb2c4cd0d8d08154d9379e03810a54",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "c4c1cb8c7aeb05c83ec1a5a52c88faeafa11c9b0d88e681b8b5c774e7b312037",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "2325bbda62a662000d26451a94f9136bf5f96796d95f8f262cb9771aacec35dc",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "f8a1fc72142a95cf86f940f9604357025ee53a0eda9bbe714993653169b7b522",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "b4de18b16c1ca9c7f7cb725fda230b1d6176d5045c0abd857f141ee9046b3206",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "fb7fe932de907af0aee8b92d6c18d2e1eb5201e1b38c994dc360a9134d42dc3f"
+      },
+      "cases": [
+        {
+          "id": "trusted-parent-columns-and-height-scroll",
+          "columns": 3,
+          "height": 140,
+          "parents": 13,
+          "layoutRootRetained": true
+        },
+        {
+          "id": "production-mindmap-canonical-cross-links",
+          "visible": 1
+        },
+        {
+          "id": "trusted-f4-result-reroots-owning-map"
+        },
+        {
+          "id": "trusted-bidirectional-compass-mindmap-center-drops",
+          "outward": {
+            "chromiumInterceptedData": true,
+            "mimeTypes": [
+              "text/plain",
+              "text/uri-list"
+            ],
+            "dragOperationsMask": -1
+          },
+          "inward": {
+            "chromiumInterceptedData": true,
+            "mimeTypes": [
+              "text/plain",
+              "text/uri-list"
+            ],
+            "dragOperationsMask": -1
+          },
+          "physicalCrossWindowGesture": false
+        },
+        {
+          "id": "trusted-cross-view-parent-area-shared-composer",
+          "cancelledWithoutWrite": true,
+          "sourceCanvasRetained": true
+        }
+      ],
+      "areaDrop": null
+    }
+  ],
+  "browserSamples": [
+    {
+      "sample": "notice-negative-1",
+      "status": "failed as expected",
+      "finding": "Routine coalesced pending saves emitted two generic recovery notices."
+    },
+    {
+      "sample": "notice-positive-1",
+      "status": "failed",
+      "finding": "Fixture held every refresh, including later coalesced work; it could not settle."
+    },
+    {
+      "sample": "notice-positive-2",
+      "status": "passed",
+      "finding": "Hold first refresh only; normal saves quiet, real rejection actionable."
+    },
+    {
+      "sample": "shared-browser-1",
+      "status": "environment failure",
+      "finding": "Sandbox disallowed loopback listen; repeated with normal Chromium permission."
+    },
+    {
+      "sample": "shared-browser-3/4",
+      "status": "failed",
+      "finding": "Canonical test notes were collapsed into a synthetic group, which correctly supplied no editable extra canonical pair."
+    },
+    {
+      "sample": "shared-browser-5",
+      "status": "passed",
+      "finding": "Expose actual notes; canonical link, toggle/action availability and no acquisition pass."
+    },
+    {
+      "sample": "drop-browser-1",
+      "status": "failed",
+      "finding": "Old direct callback fixture omitted actual event.target; it now supplies the owning-document hit."
+    },
+    {
+      "sample": "drop-browser-2",
+      "status": "passed",
+      "finding": "Shared fixed-target routing passes."
+    },
+    {
+      "sample": "final-focused-browser-1",
+      "status": "passed",
+      "tests": 27,
+      "finding": "Renderer including global-filter pair counts, settings and optional-refresh lifecycle."
+    }
+  ],
+  "focusedContracts": {
+    "tests": 89,
+    "status": "passed"
+  },
+  "timer": "Prior bounded follow-up did not reproduce55ms; production parser and45/50ms guards unchanged.",
+  "productionNoteWrites": "Strictly forbidden. Authorized main.js/styles.css-only test deployment and read-only production visual/native-selector check completed with zero observed Vault create/modify/delete/rename events; no note content/identities published.",
+  "outerDisposableRestoration": "Pending until remaining native checks complete.",
+  "fullSamples": [
+    {
+      "head": "2e2fcbb0c25c4be6755e43ba96c7a6692174392d",
+      "status": "failed",
+      "phase": "portable-verify",
+      "cause": "Isolated indexing transpile inventory omitted newly imported areaLayout. Add the real module; no production/timing/guard/assertion change. Cross-link UI bundler already follows imports."
+    },
+    {
+      "head": "31d6fa10ddac2420c015a97135b441d2ea1f7dc7",
+      "status": "failed",
+      "indexing": "passed including original responsiveness guards",
+      "functional": {
+        "tests": 1498,
+        "pass": 1497,
+        "fail": 1,
+        "skip": 0
+      },
+      "cause": "New generic recovery callback duplicated existing dialog-owned Style saved feedback on actual refresh failure. Preserve single-notice assertion; add optional per-request feedback ownership, default caller result."
+    },
+    {
+      "head": "5ccde10a8d8b205f0bd2698d00f0810d24da710c",
+      "status": "failed",
+      "functional": {
+        "tests": 1498,
+        "pass": 1498,
+        "fail": 0,
+        "skip": 0
+      },
+      "browser": {
+        "tests": 246,
+        "pass": 243,
+        "fail": 3,
+        "skip": 0
+      },
+      "causes": [
+        "Old consent test expected generic pending Notice, now intentionally quiet; all privacy/revocation/zero-work assertions retained.",
+        "Attachment rename callback fixture lacked new projection/navigation/occurrence dependencies; original style/DOM assertions retained.",
+        "Crosslink peek callback fixture omitted visibleEdgeProjection memo dependency; original Alt/geometry/focus/visibility assertions retained."
+      ]
+    },
+    {
+      "head": "dd0883bcd8348cbe5d39da75d7c510baf72fa866",
+      "status": "failed",
+      "artifact": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+      "indexing": "P1-P17 passed;45/50ms guards unchanged",
+      "functional": {
+        "passed": 1498,
+        "failed": 0
+      },
+      "browser": {
+        "passed": 246,
+        "failed": 0
+      },
+      "sources": {
+        "passed": 356,
+        "failed": 1
+      },
+      "cause": "SI4 source assertion required the former one-argument refreshSavedSettings call. Now requires the explicit true feedback-owner argument; all semantic/lifetime/no-parser checks retained. Production unchanged. Failed full/log retained."
+    }
+  ],
+  "feedbackOwnerCorrection": {
+    "styleFailureManagerSettingsExistingCase": "passed unchanged",
+    "genericQueuedLateEpisodeRecoveryUnload": "passed",
+    "fullFinal": "pending"
+  },
+  "editorDragOverControl": {
+    "negative": {
+      "prevented": true,
+      "stopped": true,
+      "zone": null,
+      "dropEffect": "none",
+      "expectation": "Occurrence editor dragover must remain with native editor instead of setting browser dropEffect none."
+    },
+    "correction": "Yield occurrence editor drag-over before setting dropEffect, retain Compass legacy behavior.",
+    "browserAffected": {
+      "tests": 4,
+      "pass": 4,
+      "fail": 0
+    }
+  },
+  "finalNative": [
+    {
+      "sample": "native-settings-final-3",
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "c1b3fc6f81904bea0b19a84a2f8ddcfcee107d9ba6dc0c59284a81c5e070412d"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "deae8bc5495660522c73d6633b3f473387024f210c99bd18f9f9812da87a2803",
+        "definitions": "1532e37c8f425d6407975b2c92740eef6a622464f1fd6c2a4e37df79f2a04842"
+      },
+      "result": {
+        "cases": [
+          {
+            "id": "production-compass-mindmap-only"
+          },
+          {
+            "id": "native-legacy-slider-save",
+            "pendingAtDurableReceipt": 0
+          },
+          {
+            "id": "native-tint-action-start",
+            "pageConnected": true,
+            "scopeConnected": true
+          },
+          {
+            "id": "native-edit-click-delivery",
+            "trusted": false
+          },
+          {
+            "id": "native-tint-action-complete",
+            "ownerCurrent": true,
+            "generationCurrent": true,
+            "pageConnected": true,
+            "scopeConnected": true,
+            "sameDocument": true,
+            "dialogs": 1
+          },
+          {
+            "id": "main-shared-compass-native-controls-and-area-tint",
+            "parentMaxHeight": 800
+          },
+          {
+            "id": "main-test-contribution-to-effective-native-view",
+            "beforeLeft": "-236px",
+            "afterLeft": "-186px",
+            "rootRetained": true,
+            "sessionRetained": true,
+            "focusRetained": true
+          },
+          {
+            "id": "production-mindmap-native-settings-save",
+            "horizontalSpacing": 240
+          },
+          {
+            "id": "native-type-configuration-zero-work",
+            "work": {
+              "reads": 0,
+              "parses": 0,
+              "semantic": 0,
+              "builds": 0,
+              "acquisitions": 0,
+              "saves": 0
+            }
+          },
+          {
+            "id": "native-contributed-save-failure-rolls-back-control",
+            "rejectedSaves": 1
+          },
+          {
+            "id": "native-contributed-control-recovers-after-storage-failure"
+          },
+          {
+            "id": "main-native-search-and-moved-control-focus"
+          },
+          {
+            "id": "main-native-back-navigation"
+          },
+          {
+            "id": "native-tint-action-start",
+            "pageConnected": true,
+            "scopeConnected": true
+          },
+          {
+            "id": "native-edit-click-delivery",
+            "trusted": false
+          },
+          {
+            "id": "native-tint-action-complete",
+            "ownerCurrent": true,
+            "generationCurrent": true,
+            "pageConnected": true,
+            "scopeConnected": true,
+            "sameDocument": true,
+            "dialogs": 1
+          },
+          {
+            "id": "native-settings-popout-control-focus-and-tint",
+            "siblingRelativeSize": 85
+          },
+          {
+            "id": "native-mounted-panel-and-unsaved-lens-draft-retained"
+          },
+          {
+            "id": "native-same-scope-draft-switch-zero-work",
+            "work": {
+              "reads": 0,
+              "parses": 0,
+              "acquisitions": 0,
+              "rebuilds": 0,
+              "settings": 0
+            }
+          },
+          {
+            "id": "native-incompatible-editor-transition-rejected"
+          },
+          {
+            "id": "native-main-popout-independent-selection-focus-and-camera"
+          },
+          {
+            "id": "native-select-key-delivery",
+            "transport": "OS_CUA",
+            "keys": [
+              {
+                "key": " ",
+                "code": "Space",
+                "trusted": true,
+                "targetSelect": true,
+                "target": "SELECT",
+                "meta": false,
+                "alt": false,
+                "control": false,
+                "shift": false,
+                "defaultPrevented": false,
+                "value": "classic",
+                "selected": "classic"
+              }
+            ],
+            "changes": [
+              {
+                "trusted": true,
+                "value": "test.situated"
+              }
+            ]
+          },
+          {
+            "id": "native-owning-document-select-keyboard",
+            "keys": [
+              {
+                "key": " ",
+                "code": "Space",
+                "trusted": true,
+                "targetSelect": true,
+                "target": "SELECT",
+                "meta": false,
+                "alt": false,
+                "control": false,
+                "shift": false,
+                "defaultPrevented": false,
+                "value": "classic",
+                "selected": "classic"
+              }
+            ]
+          },
+          {
+            "id": "native-main-popout-switch-keyboard-zero-work",
+            "work": {
+              "reads": 0,
+              "parses": 0,
+              "acquisitions": 0,
+              "rebuilds": 0,
+              "settings": 0
+            }
+          },
+          {
+            "id": "native-owned-view-reload-independent-workspace-selection",
+            "applicationRestart": false,
+            "expected": [
+              "test.second",
+              "test.situated"
+            ]
+          }
+        ],
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "semantic": 0,
+          "builds": 0,
+          "acquisitions": 0,
+          "saves": 0
+        },
+        "legacyControlWork": {
+          "reads": 0,
+          "parses": 0,
+          "semantic": 1,
+          "builds": 0,
+          "acquisitions": 0,
+          "saves": 1
+        },
+        "mode": "acceptance"
+      }
+    },
+    {
+      "sample": "native-interactions-final-1",
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "dfa8d05f7fb78710ea491d6abd4e94b1f1b7659b9d77d5df6433db1351a8d30c",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "b4de18b16c1ca9c7f7cb725fda230b1d6176d5045c0abd857f141ee9046b3206",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "fb7fe932de907af0aee8b92d6c18d2e1eb5201e1b38c994dc360a9134d42dc3f"
+      },
+      "result": {
+        "lane": "interactions",
+        "cases": [
+          {
+            "id": "trusted-parent-columns-and-height-scroll",
+            "columns": 3,
+            "height": 140,
+            "parents": 13,
+            "layoutRootRetained": true
+          },
+          {
+            "id": "production-mindmap-canonical-cross-links",
+            "visible": 1
+          },
+          {
+            "id": "trusted-f4-result-reroots-owning-map"
+          },
+          {
+            "id": "trusted-bidirectional-compass-mindmap-center-drops",
+            "outward": {
+              "chromiumInterceptedData": true,
+              "mimeTypes": [
+                "text/plain",
+                "text/uri-list"
+              ],
+              "dragOperationsMask": -1
+            },
+            "inward": {
+              "chromiumInterceptedData": true,
+              "mimeTypes": [
+                "text/plain",
+                "text/uri-list"
+              ],
+              "dragOperationsMask": -1
+            },
+            "physicalCrossWindowGesture": false
+          },
+          {
+            "id": "trusted-cross-view-parent-area-shared-composer",
+            "cancelledWithoutWrite": true,
+            "sourceCanvasRetained": true
+          }
+        ],
+        "capacity": 1,
+        "limits": [
+          "Native Electron automation; no physical Windows/mobile proof.",
+          "Owned native-view restoration is not whole-application restart.",
+          "Dedicated M0 FileManager cache-gate limitation remains unproven; no FileManager pass claimed.",
+          "Session acceptance preserves a main-window Sidecar; separate fresh-popout Sidecar creation remained empty and is not a passing workflow."
+        ]
+      }
+    },
+    {
+      "sample": "native-editor-final-1",
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "dfa8d05f7fb78710ea491d6abd4e94b1f1b7659b9d77d5df6433db1351a8d30c",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "b4de18b16c1ca9c7f7cb725fda230b1d6176d5045c0abd857f141ee9046b3206",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "026e585692aa9f4178a93d3918282c29b8be2349c4b70fea3f5c311b860bbd5e"
+      },
+      "result": {
+        "lane": "editor",
+        "cases": [
+          {
+            "id": "production-diamond-and-terminal-cycle-references"
+          },
+          {
+            "id": "find-selects-exact-occurrence-without-activation-or-editor"
+          },
+          {
+            "id": "trusted-explicit-B1-editor-retains-root-through-attention-C",
+            "capacity": 1
+          },
+          {
+            "id": "dirty-native-resize-type-reflow-focus-and-nonoverlap"
+          },
+          {
+            "id": "exact-filter-pin-branch-root-and-selector-save-guards"
+          },
+          {
+            "id": "dirty-popout-main-migration-and-durable-collapse"
+          },
+          {
+            "id": "production-root-fold-restoration",
+            "applicationRestart": false
+          },
+          {
+            "id": "trusted-explicit-root-from-outside-current-map"
+          }
+        ],
+        "capacity": 1,
+        "limits": [
+          "Native Electron automation; no physical Windows/mobile proof.",
+          "Owned native-view restoration is not whole-application restart.",
+          "Dedicated M0 FileManager cache-gate limitation remains unproven; no FileManager pass claimed.",
+          "Session acceptance preserves a main-window Sidecar; separate fresh-popout Sidecar creation remained empty and is not a passing workflow."
+        ]
+      }
+    },
+    {
+      "sample": "native-m0-final-1",
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "2c9f09ea059c66d8fbeac9ae4f13c469932cbd84a16865ff58054ac51f824ec0",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "dfa8d05f7fb78710ea491d6abd4e94b1f1b7659b9d77d5df6433db1351a8d30c",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/occurrenceEditors.ts": "b3464ff254ab8bad6b776d25965fcb49439d7acc69502e15f14febc6033ae363",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "331d3a843b180ff6ef1a8085ea2c4497fd66fe4b9982cb987108bc5d963ccaa8"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "6d24b8e4ac0a6432872354666e05ca882ab4729c6b29c12530b104afabfe354f",
+        "definitions": "f846e8c3ea7bc73228523f5df055de23b0d7500e5ea44df55b1ba05678c08250"
+      },
+      "result": {
+        "cases": [
+          {
+            "id": "R-A-B1-background-native-host",
+            "rootRetained": true,
+            "attentionRetained": true,
+            "sidecarRetained": true,
+            "focusRetained": true
+          },
+          {
+            "id": "attention-C-retains-R-and-native-B1",
+            "capacityReason": "actions.editor-capacity"
+          },
+          {
+            "id": "dirty-resize-reflow-scroll-clip-retains-native-state",
+            "clip": "inset(33.1617px 0px 0px)",
+            "capacity": 1
+          },
+          {
+            "id": "exact-filter-pin-branch-removal-and-selector-guards"
+          },
+          {
+            "id": "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery"
+          },
+          {
+            "id": "native-save-failure-retention-and-explicit-durable-collapse"
+          },
+          {
+            "id": "bounded-editor-intent-restores-after-native-view-recreation",
+            "applicationRestart": false
+          },
+          {
+            "id": "dirty-popout-main-native-migration-and-durable-close"
+          },
+          {
+            "id": "external-rename-flushes-bound-document-without-old-path-resurrection"
+          },
+          {
+            "id": "external-deletion-does-not-resurrect-or-retarget-recreated-document"
+          },
+          {
+            "id": "unchanged-off-centre-attention-definition-and-Compass-native-compatibility"
+          },
+          {
+            "id": "native-teardown-persists-content-and-releases-editor-owners"
+          }
+        ],
+        "cacheGate": {
+          "clean": false,
+          "inProgress": 0,
+          "queued": 6,
+          "running": true
+        },
+        "capacity": 1,
+        "limits": [
+          "One live editor per canvas.",
+          "Native Electron automation; no physical mobile/Windows acceptance.",
+          "Owned view recreation is not a whole-application restart.",
+          "External rename uses Vault.rename; the separate FileManager cache-gate failure remains unpassed."
+        ]
+      }
+    },
+    {
+      "sample": "native-sessions-final-1",
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "dfa8d05f7fb78710ea491d6abd4e94b1f1b7659b9d77d5df6433db1351a8d30c",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "b4de18b16c1ca9c7f7cb725fda230b1d6176d5045c0abd857f141ee9046b3206",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "d0f94a26fb069d84bda15e9abaf715595ffe0e274b0369cc4ffa41423b33464c"
+      },
+      "result": {
+        "lane": "sessions",
+        "cases": [
+          {
+            "id": "production-Compass-Mindmap-independent-main-popout-panels-roots-and-Sidecar",
+            "entryRoot": "own-current-note"
+          },
+          {
+            "id": "production-independent-native-view-restoration",
+            "applicationRestart": false
+          }
+        ],
+        "capacity": 1,
+        "limits": [
+          "Native Electron automation; no physical Windows/mobile proof.",
+          "Owned native-view restoration is not whole-application restart.",
+          "Dedicated M0 FileManager cache-gate limitation remains unproven; no FileManager pass claimed.",
+          "Session acceptance preserves a main-window Sidecar; separate fresh-popout Sidecar creation remained empty and is not a passing workflow."
+        ]
+      }
+    },
+    {
+      "sample": "native-navigation-final-1",
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "dfa8d05f7fb78710ea491d6abd4e94b1f1b7659b9d77d5df6433db1351a8d30c",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "283c2ceafcb52fa3dced88893365bdb04989015ca406d50dc94de8c50394b36a",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "b4de18b16c1ca9c7f7cb725fda230b1d6176d5045c0abd857f141ee9046b3206",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "b21a8881fb4624493db884c530b9e192cd6fc38039522488f864d2d9fe5dbd69",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "edb436972e32a1ed67d7c77037d6c265f75268bbeb898148b73a5eb9b66daafd",
+        "definitions": "e38af473a1c300b8fc9d1736ab6f5c9fa5f7c5d2cae27bfee4c78012209e693e"
+      },
+      "result": {
+        "lane": "navigation",
+        "cases": [
+          {
+            "id": "native-SVG-bottom-child-outward-peer-and-top-parent-origins"
+          },
+          {
+            "id": "trusted-primary-toggles-child-and-peer-context-without-editor-or-reroot"
+          },
+          {
+            "id": "native-selector-current-node-entry-and-pins-history-reroot"
+          },
+          {
+            "id": "trusted-bottom-left-density-rails-share-durable-type-settings"
+          }
+        ],
+        "capacity": 1,
+        "limits": [
+          "Native Electron automation; no physical Windows/mobile proof.",
+          "Owned native-view restoration is not whole-application restart.",
+          "Dedicated M0 FileManager cache-gate limitation remains unproven; no FileManager pass claimed.",
+          "Session acceptance preserves a main-window Sidecar; separate fresh-popout Sidecar creation remained empty and is not a passing workflow."
+        ]
+      }
+    }
+  ],
+  "nativeSetupSamples": [
+    {
+      "sample": "native-settings-final-1",
+      "status": "failed",
+      "error": "Error: Error: Command \"vault\" not found. Did you mean: daily?\n",
+      "cleanup": "passed",
+      "phase": null,
+      "keyDelivery": []
+    },
+    {
+      "sample": "native-settings-final-2",
+      "status": "failed",
+      "error": "Error: Error: Trusted select keyboard did not change the owning view",
+      "cleanup": "passed",
+      "phase": "await-native-select-os-keys",
+      "keyDelivery": [
+        {
+          "id": "native-select-key-delivery",
+          "transport": "OS_CUA",
+          "keys": [
+            {
+              "key": "Meta",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            },
+            {
+              "key": "Meta",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            },
+            {
+              "key": " ",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            },
+            {
+              "key": "ArrowDown",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            },
+            {
+              "key": "ArrowDown",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            },
+            {
+              "key": "Enter",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            },
+            {
+              "key": "Meta",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            }
+          ],
+          "changes": []
+        }
+      ]
+    }
+  ],
+  "finalNativeCount": 56,
+  "remoteSamples": [
+    {
+      "CI": 488,
+      "head": "2e2fcbb0c25c4be6755e43ba96c7a6692174392d",
+      "run": 40170198627,
+      "job": 121099308652,
+      "status": "failed",
+      "cause": "Missing areaLayout in isolated indexing fixture inventory; failed before indexing assertions."
+    },
+    {
+      "CI": 489,
+      "head": "31d6fa10ddac2420c015a97135b441d2ea1f7dc7",
+      "run": 40170332254,
+      "job": 121099692291,
+      "status": "failed",
+      "cause": "Duplicate actual-failure generic/dialog notice:1497/1498 functional. Fixed feedback ownership, original assertion retained."
+    },
+    {
+      "CI": 490,
+      "head": "5ccde10a8d8b205f0bd2698d00f0810d24da710c",
+      "run": 40170706464,
+      "job": 121100775152,
+      "status": "failed",
+      "cause": "Functional1498 pass;browser243/246: old pending notice expectation and two missing callback fixture dependencies. Corrected with privacy/paint/focus/identity assertions retained."
+    },
+    {
+      "CI": 491,
+      "head": "5db6b7c301b2127e4c5f3ea8ed5b8390c216cb97",
+      "run": 40171386730,
+      "job": 121102752378,
+      "status": "failed",
+      "cause": "Chromium startup timeout before native-hotkey-search assertions; functional1497/1498, no responsiveness guard failure. Cause of bootstrap timeout remains unproven; no timeout/guard/assertion was changed."
+    },
+    {
+      "CI": 493,
+      "head": "dd0883bcd8348cbe5d39da75d7c510baf72fa866",
+      "run": 40172263173,
+      "job": 121105417980,
+      "status": "failed",
+      "cause": "Functional1498/browser246 pass;sources356/357: stale one-argument refreshSavedSettings source assertion. Same failure reproduced locally; explicit true feedback-owner assertion now required."
+    }
+  ],
+  "productionReadonly": {
+    "view": "mindmap",
+    "rootMatchesAttention": true,
+    "nodes": 26,
+    "bindings": 0,
+    "panels": 0,
+    "counts": {
+      "create": 0,
+      "modify": 0,
+      "delete": 0,
+      "rename": 0
+    },
+    "observerRemoved": true,
+    "visual": "Native screenshot verified parent grid above root, bottom child gate and left peer gate. Trusted native Compass→Mind Map selection retained current note.",
+    "at": "2026-10-25T07:24:37.335Z",
+    "artifacts": {
+      "main.js": "b55b03fee35a69bb0377c82432428008216b65a3ceb527638cfdada5eae5e774",
+      "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+    },
+    "files": [
+      "main.js",
+      "styles.css"
+    ],
+    "sourceRuntime": "5db6b7c301b2127e4c5f3ea8ed5b8390c216cb97",
+    "publishedHead": "dd0883bcd8348cbe5d39da75d7c510baf72fa866",
+    "notesEdited": false,
+    "privateNoteDataPublished": false,
+    "originalAssetBackupsRetained": true,
+    "limitation": "Visual/selector check during ordinary progressive hydration, not corpus completeness, a performance study or physical cross-window drag acceptance."
+  }
+}

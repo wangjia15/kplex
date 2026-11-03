@@ -11,6 +11,7 @@ const modules = loadPortableModules(["src/adapters/obsidian/embeddedMarkdownLeaf
   obsidian: `
     exports.Platform = { isMobile: false };
     exports.FileView = class FileView {};
+    exports.TextFileView = class TextFileView extends exports.FileView {};
     exports.WorkspaceSplit = class WorkspaceSplit {
       /** Mount a detached owning-document container for the real adapter. */
       constructor(workspace) { this.containerEl = workspace.createContainer(); }
@@ -27,9 +28,10 @@ const modules = loadPortableModules(["src/adapters/obsidian/embeddedMarkdownLeaf
       makeView() {
         const type = this.state.type;
         this.app.canvasState.viewModeEnabled = this.state.state?.mode === "view";
-        return { getViewType: () => type, scope: {},
+        return Object.assign(this.app.textView ? new exports.TextFileView() : {}, { getViewType: () => type, scope: {},
+          ...(this.app.textView ? {file:this.app.nativeFile, navigation:true, save:()=>{this.app.saves++;const pending=this.app.nextSave;this.app.nextSave=null;return pending??Promise.resolve();}} : {}),
           excalidrawAPI: type === "excalidraw" ? {getAppState: () => this.app.canvasState} : undefined,
-          onResize: () => { this.app.resizes++; }, setEphemeralState() {} };
+          onResize: () => { this.app.resizes++; }, setEphemeralState() {} });
       }
       /** Return native request state independently from its awaited completion. */
       getViewState() { return this.state; }
@@ -54,7 +56,7 @@ const modules = loadPortableModules(["src/adapters/obsidian/embeddedMarkdownLeaf
 class NativeElement {
   /** Associate the native host double with its owning document. */
   constructor(document) {
-    this.ownerDocument = document; this.isConnected = true; this.children = []; this.style = {};
+    this.ownerDocument = document; this.isConnected = true; this.children = []; this.style = {}; this.inert = false;
     this.listeners = new Map();
     const classes = new Set();
     this.classList = { add: (...values) => values.forEach(value => classes.add(value)),
@@ -62,6 +64,8 @@ class NativeElement {
   }
   /** Replace child ownership exactly as the synthetic split mount does. */
   replaceChildren(...children) { this.children = children; }
+  /** Match actual subtree containment used to restore focus after rejected native close. */
+  contains(node) { return node === this || this.children.some(child => child === node || child.contains?.(node)); }
   /** Return only the fixture's real overlay boundary used for native fullscreen policy. */
   closest() { return this.overlay ?? null; }
   /** Retain temporary fullscreen geometry in the same element-local shape as the host. */
@@ -78,7 +82,7 @@ class NativeElement {
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 
 /** Mount the actual adapter with explicit current metadata and a view-scoped Excalidraw bridge. */
-function fixture({ frontmatter, path = "Drawing.excalidraw.md", bridgePresent = true, zoomPreference = true, exposeZoomPreference = true, compatibilityOpening = false, embeddedPolicy, manualFrames = false } = {}) {
+function fixture({ frontmatter, path = "Drawing.excalidraw.md", bridgePresent = true, zoomPreference = true, exposeZoomPreference = true, compatibilityOpening = false, embeddedPolicy, manualFrames = false, boundNavigation } = {}) {
   const priorWindow = globalThis.window;
   const listeners = new Map(), observers = new Set(), files = new Map();
   const document = { hasFocus: () => true,
@@ -134,7 +138,7 @@ function fixture({ frontmatter, path = "Drawing.excalidraw.md", bridgePresent = 
   const changes = [], mount = new NativeElement(document), overlay = new NativeElement(document), host = {};
   mount.overlay = overlay;
   const controller = modules.exports.mountEmbeddedMarkdownLeaf(app, host, mount, undefined, undefined, view => changes.push(view), false,
-    embeddedPolicy ? /** Read current normal-node intent without retaining a settings snapshot. */ () => embeddedPolicy.enabled && !embeddedPolicy.maximized : undefined);
+    embeddedPolicy ? /** Read current normal-node intent without retaining a settings snapshot. */ () => embeddedPolicy.enabled && !embeddedPolicy.maximized : undefined, boundNavigation);
   /** Restore global ownership and prove controller teardown removes its document leases. */
   function cleanup() {
     controller.dispose(); assert.equal(listeners.size, 0); assert.equal(observers.size, 0); assert.equal(mount.listeners.size, 0);
@@ -159,6 +163,57 @@ function fixture({ frontmatter, path = "Drawing.excalidraw.md", bridgePresent = 
   }
   return { app, file, controller, changes, observers, bridge, overlay, mount, cleanup, flushFrames, settleOpening };
 }
+
+test('explicit native close saves the exact editor once before detaching and coalesces pending collapse',async()=>{
+ const context=fixture({path:'B.md',bridgePresent:false,boundNavigation:()=>assert.fail('Closing cannot navigate')});
+ try{
+  context.app.textView=true;context.app.nativeFile=context.file;context.app.saves=0;await context.controller.open(context.file,'source');
+  assert.equal(context.app.embeddedLeaf.view.navigation,false,'Bound editor cannot be reused by incidental workspace navigation');
+  const held=deferred();context.app.nextSave=held.promise;
+  const close=context.controller.close();assert.equal(context.controller.close(),close);assert.equal(context.app.saves,1);assert.equal(context.app.detaches,0);assert.equal(context.mount.inert,true);
+  held.resolve();await close;assert.equal(context.app.detaches,1);await context.controller.close();assert.equal(context.app.saves,1);assert.equal(context.app.detaches,1);
+ }finally{context.cleanup()}
+});
+
+test('saved-buffer guard covers ordinary and isolated native Markdown editors without saving or retargeting',async()=>{
+ const context=fixture({path:'B.md',bridgePresent:false});
+ try{
+  context.app.textView=true;context.app.nativeFile=context.file;context.app.saves=0;await context.controller.open(context.file,'source');
+  const embedded=context.app.embeddedLeaf.view,View=embedded.constructor,ordinary=Object.assign(new View(),{file:context.file,getViewType:()=> 'markdown',getViewData:()=> 'saved'});
+  let buffer='saved',ordinaryLeaves=[{view:ordinary}];embedded.getViewData=()=>buffer;
+  context.app.workspace.iterateAllLeaves=callback=>ordinaryLeaves.forEach(callback);
+  assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved'),true);
+  buffer='saved\nbody';ordinary.getViewData=()=> 'saved\nbody';assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved\r\nbody'),true,'Windows CRLF normalization is not an unsaved content edit');
+  buffer='saved';ordinary.getViewData=()=> 'saved';
+  buffer='unsaved embedded';assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved'),false);
+  buffer='saved';ordinary.getViewData=()=> 'unsaved ordinary';assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved'),false);
+  ordinaryLeaves=[];assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved'),true);
+  embedded.getViewData=()=>{throw Error('Retired native buffer')};assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved'),false);
+  assert.equal(context.app.saves,0);assert.equal(context.app.embeddedLeaf.view,embedded);assert.equal(context.app.detaches,0);
+  context.controller.dispose();assert.equal(modules.exports.markdownBuffersMatchSaved(context.app,context.file,'saved'),true,'Disposed isolated leaf is no longer retained or queried');
+ }finally{context.cleanup()}
+});
+
+test('rejected native save retains its view and allows a later explicit close without a custom writer',async()=>{
+ const context=fixture({path:'B.md',bridgePresent:false});
+ try{
+  context.app.textView=true;context.app.nativeFile=context.file;context.app.saves=0;await context.controller.open(context.file,'source');
+  const view=context.app.embeddedLeaf.view;assert.equal(view.navigation,true,'Legacy attention editor navigation remains unchanged');
+  context.app.nextSave=Promise.reject(Error('Owned storage failure'));await assert.rejects(context.controller.close(),/Owned storage failure/);
+  assert.equal(context.app.embeddedLeaf.view,view);assert.equal(context.app.detaches,0);assert.equal(context.mount.inert,false);assert.equal(context.app.saves,1);
+  await context.controller.close();assert.equal(context.app.saves,2);assert.equal(context.app.detaches,1);
+ }finally{context.cleanup()}
+});
+
+test('explicit close never writes a replaced or removed native file',async()=>{
+ for(const replacement of [null,{path:'B.md'}]){
+  const context=fixture({path:'B.md',bridgePresent:false});
+  try{
+   context.app.textView=true;context.app.nativeFile=context.file;context.app.saves=0;await context.controller.open(context.file,'source');
+   context.app.vault.getFileByPath=()=>replacement;await context.controller.close();assert.equal(context.app.saves,0);assert.equal(context.app.detaches,1);
+  }finally{context.cleanup()}
+ }
+});
 
 for (const mode of ["source", "preview"]) {
   test(`marked open-md starts explicitly in Markdown ${mode} and retains drawing capability`, /** Require an explicit native Markdown request while preserving separate drawing eligibility. */ async () => {

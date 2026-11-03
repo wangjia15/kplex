@@ -58,19 +58,22 @@ async function scenario(app, c) {
     p.settings.friendMaxHeight = 120; p.index.notifyPresentation();
     await until(() => root.querySelector('.kplex-zone-left .kplex-role-left') && root.querySelector('.kplex-zone-left .kplex-role-right'), 'Shared list omitted a semantic lateral group');
     check(!root.querySelector('.kplex-zone-right'), 'One-sided mode retained a second lateral panel');
-    const panel = root.querySelector('.kplex-zone-left'), scroll = panel.querySelector('.kplex-zone-scroll');
+    let panel = root.querySelector('.kplex-zone-left'), scroll = panel.querySelector('.kplex-zone-scroll');
     check(panel.querySelector('.kplex-zone-count').textContent === '4', 'Shared list count omitted challengers');
     check(scroll.scrollHeight > scroll.clientHeight, 'Combined native list did not overflow');
-    const camera = root.querySelector('.kplex-camera');
     const wheelChecks = [];
     for (const modifier of [null,'ctrlKey','metaKey']) {
-      const before = camera.style.transform, bounds = scroll.getBoundingClientRect();
+      // Source/presentation publication can replace an area; dispatch only to the current native tree.
+      await until(()=>{panel=root.querySelector('.kplex-zone-left');scroll=panel?.querySelector('.kplex-zone-scroll');return scroll?.isConnected&&scroll.clientWidth>0&&scroll.clientHeight>0},'Current bounded scroll area missing');
+      const camera=root.querySelector('.kplex-camera'),before=camera.style.transform,bounds=scroll.getBoundingClientRect();
       const event = new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-100,clientX:bounds.x+20,clientY:bounds.y+20,ctrlKey:modifier==='ctrlKey',metaKey:modifier==='metaKey'});
       scroll.dispatchEvent(event); await wait(100);
-      const changed = before !== camera.style.transform;
+      const after=root.querySelector('.kplex-camera').style.transform,changed=before!==after;
+      wheelChecks.push({modifier,zoomed:changed,prevented:event.defaultPrevented,before,after,scrollConnected:scroll.isConnected,bounds:bounds.toJSON()});
+      c.progress={phase:'wheel routing',wheelChecks};
       check(changed === !!modifier && event.defaultPrevented === !!modifier, 'Bounded wheel modifier routing failed: '+modifier);
-      wheelChecks.push({modifier,zoomed:changed,prevented:event.defaultPrevented});
     }
+    panel=root.querySelector('.kplex-zone-left');scroll=panel.querySelector('.kplex-zone-scroll');
     panel.querySelector('.kplex-zone-filter-button').click();
     await until(() => panel.querySelector('.kplex-zone-filter-input'), 'Shared filter did not open');
     const filter = panel.querySelector('.kplex-zone-filter-input');
@@ -95,7 +98,7 @@ async function scenario(app, c) {
     const previewEvents = [];
     const previewRef = app.workspace.on('hover-link', event => { if (event.source === 'k-plex-react-view') previewEvents.push(event.linktext); });
     restores.push(() => app.workspace.offref(previewRef));
-    const heading = nodes().find(node => node.dataset.kplexPath.startsWith('kplex-section:'));
+    let heading = nodes().find(node => node.dataset.kplexPath.startsWith('kplex-section:'));
     check(heading, 'Rendered heading absent');
     heading.dispatchEvent(new PointerEvent('pointerover', {bubbles:true,pointerType:'mouse',ctrlKey:true}));
     await until(() => previewEvents.some(link => link === path('Center')+'#First'), 'Modified heading hover omitted the heading anchor');
@@ -112,6 +115,12 @@ async function scenario(app, c) {
       stationaryPreviews.push(key);window.dispatchEvent(new KeyboardEvent('keyup',{key}));
       heading.dispatchEvent(new PointerEvent('pointerout',{bubbles:true,pointerType:'mouse'}));
     }
+    // The prior wheel checks intentionally zoomed. Fit explicitly before real pointer input;
+    // saved autozoom=false must not make this a test of an offscreen heading.
+    const surface=[...p.actionSurfaceHosts].find(([,registration])=>registration.leaf===leaf)?.[0];
+    check(surface,'Owned section action surface missing');
+    await p.actionManager.dispatch({id:'view.fit',source:'internal',surfaceId:surface});
+    await until(()=>{heading=nodes().find(node=>node.dataset.kplexPath.startsWith('kplex-section:'));if(!heading?.isConnected)return false;const r=heading.getBoundingClientRect(),x=Math.round(r.x+r.width/2),y=Math.round(r.y+r.height/2);return r.width>0&&r.height>0&&x>=0&&x<innerWidth&&y>=0&&y<innerHeight&&heading.contains(document.elementFromPoint(x,y))},'Visible native heading pointer target missing');
     // The actual Electron pointer/key path must show a native popover, not only emit hover-link.
     win.webContents.sendInputEvent({type:'mouseMove',x:2,y:2});await wait(150);
     const headingRect=heading.getBoundingClientRect();
@@ -127,8 +136,8 @@ async function scenario(app, c) {
     }
 
     // Large-label layout uses the same actual node and stylesheet, rather than another text model.
-    const priorFont = p.settings.baseFontSize;
-    p.settings.baseFontSize = 28; p.index.notifyPresentation();
+    const priorFont = p.settings.typographyProfiles.desktop?.baseFontSize;
+    await p.updateTypographyOverride('desktop',{baseFontSize:28});
     await until(() => sectionTarget() && parseFloat(getComputedStyle(sectionTarget()).fontSize) > 20, 'Large label setting did not render');
     await wait(100);
     const text = sectionTarget().querySelector('.kplex-thought-text'), label = text?.parentElement;
@@ -138,7 +147,7 @@ async function scenario(app, c) {
     c.progress = {phase:'large label',fontMetrics,wheelChecks,counts,previewEvents};
     check(text && label && text.scrollHeight <= text.clientHeight + 1 && label.scrollHeight <= label.clientHeight + 1, 'Large label line box clipped');
     check(ink && clip && ink.top>=clip.top && ink.bottom<=clip.bottom,'Large glyph crosses its own clipping boundary');
-    p.settings.baseFontSize = priorFont; p.index.notifyPresentation();
+    if(typeof priorFont==='number')await p.updateTypographyOverride('desktop',{baseFontSize:priorFont});else await p.resetTypographyOverride('desktop','baseFontSize');
     const centerMtime = app.vault.getFileByPath(path("Center")).stat.mtime;
     const b = app.vault.getFileByPath(path("B"));
     c.progress = { phase: "inbound-add" };

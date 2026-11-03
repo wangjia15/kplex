@@ -35,7 +35,16 @@ In the Help vault's current ontology, `Guide`/ `Parent` map to Parent; `Explains
 
 When a K-Plex release ships, update the Help vault's plugin assets only under a separately approved step; convert the version draft into a published-history page using the **actual** release and verify no features were cut. Historical release pages remain immutable in meaning: correct mistakes transparently and link to current help, not silently rewrite past shipped facts. Each release can point via `Explains` to feature pages and to the evergreen use cases it enables or improves.
 
-**Acceptance checklist:** accurate source/release status; one clear audience goal; all referenced files exist; correct YAML/ontology/Note type; no stale availability promises in use cases; screenshots genuine and appropriately captioned; no unapproved `.obsidian` or binary changes; GitHub read-back and honest visual-test report.
+### Release sequence navigation
+
+- Use `Previous` for the immediately preceding release page and `Next` for the immediately following release page in version order. Use existing pages, including explicitly labeled drafts; do not invent missing versions or link to nonexistent future pages.
+- Maintain both frontmatter declarations: the newer page's `Previous` points to the older page, and the older page's `Next` points to the newer page. When adding or inserting a release page, update its neighbors in the same edit. Omit `Previous` on the earliest page and `Next` on the latest page.
+- Never classify chronological release-to-release links as `Related` or `Friend`, or leave the same pair under both a sequence field and a friend field. Keep `Related` for genuine companion references and source URLs; keep `Explains` for feature and use-case guides.
+- For example, `K-Plex 0.3.0 release notes` has `Previous: [[11 Release notes/K-Plex 0.2.4 release notes]]`, and `K-Plex 0.2.4 release notes` has `Next: [[11 Release notes/K-Plex 0.3.0 release notes]]`. Store these as quoted wikilinks in YAML lists, as shown in the release template.
+
+Before completing a release-note edit, check the entire release archive in version order: valid YAML, existing targets, correct reciprocal `Previous`/`Next` links, no chronological links under `Related`/`Friend`, and correct endpoints. Preserve historical body text when correcting navigation metadata.
+
+**Acceptance checklist:** accurate source/release status; one clear audience goal; all referenced files exist; correct YAML/ontology/Note type; complete reciprocal release sequence; no stale availability promises in use cases; screenshots genuine and appropriately captioned; no unapproved `.obsidian` or binary changes; GitHub read-back and honest visual-test report.
 
 ## Reader-first review
 

@@ -8,12 +8,18 @@
  * A separately referenced accessible name avoids Obsidian's competing node tooltip; visible labels
  * retain the compact browser title, while gate hints and explicit page previews keep their owners.
  * Optional native body dragging preserves embedded editor input and delegates its host payload.
+ * Corner actions receive the original stopped click event so caller-owned modifier intent survives.
  * Relation groups replace ordinary gates with an external member count and an unfold accessible name.
  * Revalidation retains only this mounted node's unchanged badge text as cached presentation;
  * native incarnation/value changes retire it, independently of index and relationship-write proof.
+ * Branch chevrons and Markdown section plus/minus controls remain separate, with shared gesture
+ * isolation and caller-owned actions. This component owns neither traversal nor source loading.
  */
+import {physicalGateStats} from "./plexViews/measurement";
 import { useId, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { GateSide, NodeVisual, PositionedNode } from "../types";
+import {MeasuredNodeBadge} from "./plexViews/MeasuredNodeBadge";
+import {NodeStatus} from "./features/NodeStatus";
 import { nodePaint, nodePaintFallbacks } from "../index/style";
 import type { KplexSettings } from "../settings";
 import { effectiveLabelLimit, nodeLabelFontSize, gateDiameter } from "./layout";
@@ -23,6 +29,11 @@ import type { Translator } from "../lang";
 import { physicalPositionLabel } from "./features/positionPresentation";
 import { canDisplayNodeImage } from "../core/plex/nodeImagePolicy";
 import { useGateCountPresentation } from "./useGateCountPresentation";
+
+/** One caller-owned disclosure action. Separate branch/section instances share event isolation,
+ * while their appearance and accessible labels preserve the distinction between the two jobs. */
+type ThoughtDisclosure = {kind?: "branch"; hasChildren: boolean; expanded: boolean; hiddenDescendantCount: number;
+  onToggle: () => void; expandedTitle?: string; foldedTitle?: string};
 
 const GATES: GateSide[] = ["top", "bottom", "left", "right"];
 export type ConnectionDragState = "normal" | "candidate" | "blocked" | "origin";
@@ -53,6 +64,10 @@ export function ThoughtNode({
   onNativeDragEnd,
   onContextMenu,
   sectionFold,
+  branchFold,
+  branchStatus,
+  branchStatusHint,
+  badgeColorRevision = 0,
   visual,
   resize,
   content,
@@ -89,20 +104,21 @@ export function ThoughtNode({
   cornerAction?: {
     icon: string;
     label: string;
-    onClick: () => void;
+    disabled?: boolean;
+    onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   };
   translate: Translator;
-  sectionFold?: {
-    hasChildren: boolean;
-    expanded: boolean;
-    hiddenDescendantCount: number;
-    onToggle: () => void;
-    expandedTitle?: string;
-    foldedTitle?: string;
-  };
+  sectionFold?: ThoughtDisclosure;
+  branchFold?: ThoughtDisclosure;
+  /** Optional hierarchy coverage/reference label; canonical note text and editor content are unchanged. */
+  branchStatus?: string;
+  /** Explanation of coverage/cycle status, independent of counts and relationship authority. */
+  branchStatusHint?: string;
+  badgeColorRevision?: number;
 }) {
   const accessibleNameId = useId();
-  const gateLabels = useGateCountPresentation(node.page.path, node.gateStats, !!(node.page.isTag || node.page.isFolder), settings.showNeighborCount, node.page.file);
+  const gateStats = physicalGateStats(node);
+  const gateLabels = useGateCountPresentation(node.page.path, gateStats, !!(node.page.isTag || node.page.isFolder), settings.showNeighborCount, node.page.file);
   // Cached props can outlive resolution. Remove the image before React can assign a denied src.
   if (visual && !canDisplayNodeImage(visual.path, settings.allowRemoteNodeImages)) visual = undefined;
   const style = node.style;
@@ -116,6 +132,17 @@ export function ThoughtNode({
   // Section cards are sized to their heading, so only CSS ellipsis trims a title past the width cap.
   const display = isSection || node.wrapLabel || node.customSize || draftSize || label.length <= max ? label : `${label.slice(0, Math.max(1, max - 1))}…`;
   const click = (e: MouseEvent<HTMLDivElement>) => { e.stopPropagation(); onActivate(node, e); };
+  /** Both controls stop native-body gestures before dispatching their distinct shared action. */
+  const disclosure = (fold: ThoughtDisclosure | undefined, branch = false): ReactNode => !fold?.hasChildren ? null : <button
+    type="button"
+    className={`kplex-section-fold-handle${branch || fold.kind === "branch" ? " is-branch-disclosure" : ""}${branch && node.controlReserve ? " has-expanded-hit-target" : ""}${fold.expanded ? " is-expanded" : " is-folded"}`}
+    aria-expanded={fold.expanded}
+    aria-label={fold.expanded ? fold.expandedTitle ?? translate("node.foldSectionChildren")
+      : `${fold.foldedTitle ?? translate("node.unfoldSectionChildren")}${fold.hiddenDescendantCount ? ` · ${translate("node.hiddenCount", {count: fold.hiddenDescendantCount})}` : ""}`}
+    onPointerDown={/** Disclosure input never starts node dragging. */ (e: ReactPointerEvent<HTMLButtonElement>) => { e.preventDefault();e.stopPropagation(); }}
+    onClick={/** Exactly one caller action; note activation cannot receive this click. */ (e: MouseEvent<HTMLButtonElement>) => { e.preventDefault();e.stopPropagation();fold.onToggle(); }}
+    onDoubleClick={/** A disclosure cannot also open the document. */ (e: MouseEvent<HTMLButtonElement>) => { e.preventDefault();e.stopPropagation(); }}
+  >{(branch || fold.kind === "branch") && <span className="kplex-branch-disclosure-symbol"><ObsidianIcon name={fold.expanded ? "chevron-down" : "chevron-right"} size={12} /></span>}</button>;
   const paint = nodePaint(style, nodePaintFallbacks(node));
   const gateSize = gateDiameter(style);
   const nodeCss = {
@@ -199,7 +226,10 @@ export function ThoughtNode({
     }}
     aria-labelledby={group ? undefined : accessibleNameId}
   >
-    <span id={accessibleNameId} className="kplex-accessible-name">{group ? node.label : translate("node.accessibleLabel", { label: node.label, path: node.page.path })}</span>
+    <span id={accessibleNameId} className="kplex-accessible-name">{group ? node.label : translate("node.accessibleLabel", { label: node.label, path: node.page.path })}
+      {node.viewBadge ? ` ${node.viewBadge.label}. ${node.viewBadge.description ?? node.viewDescription ?? ""}` : node.viewDescription ? ` ${node.viewDescription}` : ""}
+      {branchStatus ? ` ${branchStatus}. ${branchStatusHint ?? ""}` : ""}</span>
+    {node.viewBadge && <MeasuredNodeBadge badge={node.viewBadge} colorRevision={badgeColorRevision} />}
     {content ? <div
       className="kplex-thought-embedded-content"
       onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => e.stopPropagation()}
@@ -228,22 +258,17 @@ export function ThoughtNode({
       type="button"
       className="kplex-thought-corner-action"
       aria-label={cornerAction.label}
+      disabled={cornerAction.disabled}
       onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => { e.stopPropagation(); }}
       onClick={(e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
-        cornerAction.onClick();
+        cornerAction.onClick(e);
       }}
     ><ObsidianIcon name={cornerAction.icon} size={10} /></button>}
-    {sectionFold?.hasChildren && <button
-      type="button"
-      className={`kplex-section-fold-handle${sectionFold.expanded ? " is-expanded" : " is-folded"}`}
-      aria-label={sectionFold.expanded
-        ? (sectionFold.expandedTitle ?? translate("node.foldSectionChildren"))
-        : `${sectionFold.foldedTitle ?? translate("node.unfoldSectionChildren")}${sectionFold.hiddenDescendantCount ? ` · ${translate("node.hiddenCount", { count: sectionFold.hiddenDescendantCount })}` : ""}`}
-      onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); }}
-      onClick={(e: MouseEvent<HTMLButtonElement>) => { e.preventDefault(); e.stopPropagation(); sectionFold.onToggle(); }}
-    />}
+    {disclosure(sectionFold)}
+    {disclosure(branchFold, true)}
+    {branchStatus && node.viewBadge?.presentation !== "status" && <NodeStatus label={branchStatus} description={branchStatusHint} />}
     {resize && <ResizeHandle
       width={draftSize?.width ?? node.width}
       height={draftSize?.height ?? node.height}
@@ -256,16 +281,17 @@ export function ThoughtNode({
       }}
     />}
     {group && <span className="kplex-group-count" aria-hidden="true">{group.groupMembers?.length}</span>}
-    {!group && GATES.map((gate) => {
+    {!group && GATES.filter(gate => !node.physicalPorts || Boolean(node.physicalPorts[gate])).map((gate) => {
       // Structural nodes have no lateral relationship vocabulary, even before other counts close.
-      const structuralLateral = (node.page.isTag || node.page.isFolder) && (gate === "left" || gate === "right");
-      const stat = structuralLateral ? { visibleCount: 0, hasAny: false, complete: true } : node.gateStats[gate];
+      const semanticGate = node.physicalPorts?.[gate];
+      const structuralLateral = (node.page.isTag || node.page.isFolder) && (semanticGate ? semanticGate === "left" || semanticGate === "right" : gate === "left" || gate === "right");
+      const stat = structuralLateral ? { visibleCount: 0, hasAny: false, complete: true } : gateStats[gate];
       const gateDisabled = Boolean(node.page.transient);
       const gateLabel = physicalPositionLabel(gate, translate);
       const gateHint = node.page.isTag
         ? translate("node.gateTagDisabled", { gate: gateLabel })
         : node.page.isFolder
-          ? gate === "bottom"
+          ? (semanticGate ? semanticGate === "child" : gate === "bottom")
             ? translate("node.gateFolderChild")
             : translate("moveNode.gate")
           : stat.hasAny || stat.complete === false

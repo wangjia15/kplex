@@ -12,7 +12,7 @@ process.on("exit", () => rmSync(temp, { recursive: true, force: true }));
 await build({ stdin: { contents: 'export * from "./src/core/plex/typographyPreferences"; export * from "./src/settings"; export * from "./src/core/graph/settingsPolicy"; export * from "./src/ui/viewProfile"; export * from "./src/index/style";', resolveDir: process.cwd() },
   outfile: join(temp, "model.mjs"), bundle: true, platform: "node", format: "esm", plugins: [{ name: "host", setup(b) {
     b.onResolve({ filter: /^obsidian$/ }, () => ({ path: "obsidian", namespace: "host" }));
-    b.onLoad({ filter: /.*/, namespace: "host" }, () => ({ contents: `export class App {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class AbstractInputSuggest {} export class PluginSettingTab {} export class Scope {} export class SecretComponent {} export class Setting {} export class ButtonComponent {} export class ExtraButtonComponent {} export class SearchComponent {} export const setIcon=()=>{}; export const setTooltip=()=>{}; export const getIcon=()=>null; export const getIconIds=()=>[]; export const getLanguage=()=>"en"; export const Platform={};`, loader: "js" }));
+    b.onLoad({ filter: /.*/, namespace: "host" }, () => ({ contents: `export class Component {load(){} unload(){}} export const MarkdownRenderer={render:()=>{throw Error("Native Markdown is outside this finite fixture")}}; export class App {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class AbstractInputSuggest {} export class PluginSettingTab {} export class Scope {} export class SecretComponent {} export class Setting {} export class ButtonComponent {} export class ExtraButtonComponent {} export class SearchComponent {} export const setIcon=()=>{}; export const setTooltip=()=>{}; export const getIcon=()=>null; export const getIconIds=()=>[]; export const getLanguage=()=>"en"; export const Platform={};`, loader: "js" }));
   }}] });
 const m = await import(pathToFileURL(join(temp, "model.mjs")));
 const env = device => ({ device });
@@ -192,9 +192,9 @@ test("actual device host writer retains latest state across interleaved awaits, 
 /** Mount one actual native setting row with host component doubles that do not fire on initial setValue. */
 function mountTypographyRow(definition) {
   const state = { value: undefined, change: undefined, reset: undefined, description: "" };
-  const control = { setValue(value) { state.value = value; return this; }, setLimits() { return this; }, setDynamicTooltip() { return this; }, onChange(callback) { state.change = callback; return this; } };
+  const control = { sliderEl: {setAttribute() {},disabled: false}, setInstant() {return this;}, setDisabled(value) {this.sliderEl.disabled=value;return this;}, setValue(value) { state.value = value; return this; }, setLimits() { return this; }, setDynamicTooltip() { return this; }, onChange(callback) { state.change = callback; return this; } };
   const button = { setIcon() { return this; }, setTooltip() { return this; }, onClick(callback) { state.reset = callback; return this; } };
-  const setting = { setDesc(text) { state.description = text; }, addSlider(callback) { callback(control); }, addToggle(callback) { callback(control); }, addExtraButton(callback) { callback(button); } };
+  const setting = {settingEl: {addClass() {}},controlEl: {createEl() {return {setText(text) {state.readout=text;}};},append() {}}, setDesc(text) { state.description = text; }, addSlider(callback) { callback(control); }, addToggle(callback) { callback(control); }, addExtraButton(callback) { callback(button); } };
   state.release = definition.render(setting); return state;
 }
 
@@ -241,7 +241,8 @@ test("actual quick debounce/unmount persists latest staged device once and canno
   const dependencies = { plugin, typographyDevice: "desktop", typographyDraft: ref(), typographySave: ref(),
     viewport: { current: { ownerDocument: { defaultView: ownerWindow }, classList: { remove() {} } } }, window: ownerWindow,
     suppressLayoutMotionUntil: ref(), suppressAutoFitUntil: ref(), preserveCameraOnNextLayout: ref(), sceneMotion: { cancelAll() {} }, setLayoutRevision() {},
-    layoutSaveTimer: ref(), layoutDraft: ref(), hoverHighlight: ref(), edgeTooltipTimer: ref(), sceneTransitionTimer: ref(), sceneTransitionTimerWindow: ref(), cameraFrame: ref(), cameraFrameWindow: ref() };
+    layoutSaveTimer: ref(), layoutDraft: ref(), hoverHighlight: ref(), edgeTooltipTimer: ref(), sceneTransitionTimer: ref(), sceneTransitionTimerWindow: ref(), cameraFrame: ref(), cameraFrameWindow: ref(),
+    cameraMotion: { current: { /** This typography fixture owns no camera resources; camera disposal has separate browser coverage. */ dispose() {} } } };
   const quick = quickTypographyCallbacks(dependencies);
   quick.change({ baseFontSize: 18 }); quick.change({ maxLabelLength: 60 });
   plugin.stageTypographyOverride("tablet", { maxWidth: 500 });

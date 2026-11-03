@@ -4,8 +4,11 @@
  * Node and relationship menus retain their separate semantic owners.
  */
 import { Menu } from "obsidian";
+import {addNativeSubmenu} from "../adapters/obsidian/nativeSubmenu";
 import type { ActionId } from "../core/plex/actions";
 import type { Translator } from "../lang";
+import type {CapturedCanvasViewMenuItem} from "./plexViews/contributionContracts";
+import {appendCanvasViewMenu} from "./plexViews/contributionMenu";
 
 /** Build the bare-canvas menu with checked display modes and support reporting as the last item. */
 export function createPlexContextMenu(options: {
@@ -17,12 +20,30 @@ export function createPlexContextMenu(options: {
   openSettings: () => void;
   chooseBackground: () => void;
   reportBug: () => void;
+  contributions?: readonly CapturedCanvasViewMenuItem[];
+  views?: readonly CapturedCanvasViewMenuItem[];
+  exportBreadcrumbs?: () => void;
+  breadcrumbsAvailable?: boolean;
 }): Menu {
   const { translate, runAction } = options;
   const menu = new Menu();
+  if (options.views?.length) addNativeSubmenu(menu, translate("view.menu"), "panels-top-left",
+    /** The controller captures this canvas and all registered subview choices before opening. */ submenu => appendCanvasViewMenu(submenu, options.views ?? [], translate));
   menu.addItem(/** Start/resume the same view session as commands and local shortcuts. */ item => item
     .setTitle(translate("actions.view.wander.start")).setIcon("shuffle")
     .onClick(/** Keep the surface captured by the composing caller. */ () => runAction("view.wander.start")));
+  addNativeSubmenu(menu, translate("export.menu"), "download", /** Native menus retain their owning canvas and user activation. */ submenu => {
+    submenu.addItem(/** Markdown uses the same captured scene service as the published command. */ item => item
+      .setTitle(translate("export.canvasMarkdown")).setIcon("file-output")
+      .onClick(/** Dispatch on the composing surface. */ () => runAction("view.export.markdown")));
+    submenu.addItem(/** Image output also retains the same toolbar/palette service. */ item => item
+      .setTitle(translate("export.canvasImage")).setIcon("image")
+      .onClick(/** Dispatch on the composing surface. */ () => runAction("view.export.image")));
+    submenu.addItem(/** The native view owns this trail; an empty trail cannot export. */ item => item
+      .setTitle(translate("export.breadcrumbsMarkdown")).setIcon("footprints")
+      .setDisabled(!options.breadcrumbsAvailable || !options.exportBreadcrumbs)
+      .onClick(/** Copy starts before yielding so the native menu gesture remains valid. */ () => {if (options.breadcrumbsAvailable) options.exportBreadcrumbs?.();}));
+  });
   menu.addSeparator();
   menu.addItem(/** Native settings owns its existing page and lifetime. */ item => item
     .setTitle(translate("actions.canvasSettings")).setIcon("settings").onClick(options.openSettings));
@@ -34,6 +55,7 @@ export function createPlexContextMenu(options: {
     .onClick(/** Fullscreen remains independent of Zen. */ () => runAction("view.fullscreen.toggle")));
   menu.addItem(/** Reuse Obsidian's native color control through the caller's owned dialog. */ item => item
     .setTitle(translate("actions.canvasBackground")).setIcon("palette").onClick(options.chooseBackground));
+  if (options.contributions?.length) {menu.addSeparator(); appendCanvasViewMenu(menu, options.contributions, translate);}
   menu.addSeparator();
   menu.addItem(/** Invoke support synchronously so its clipboard writer retains native user activation. */ item => item
     .setTitle(translate("support.reportTitle")).setIcon("bug").onClick(options.reportBug));

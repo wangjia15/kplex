@@ -17,6 +17,9 @@
  * only storage port can release them after a failed/closed normal connection, without new authority.
  * Clean dependency checks select the owner/journal and durable head in one readonly transaction;
  * overlays and exceptional heads retain ordinary inspection, and repair writes require a reread.
+ * Restart comparison may return that clean head as a call-local observation; its later protected
+ * metadata pin and original-connection retirement match the same revision/sequence. An observation
+ * never replaces family protection, and final matching adds no separate transaction or coordinator.
  * Ordinary replacements may preserve selected dependency counts only after bounded old-row/ledger
  * authentication, recomputed projection equality and a final activation fence. Their inactive
  * rows use the existing durable private reclaim owner; source facts and primary journals still advance.
@@ -163,6 +166,21 @@ export type SourceInspection = Readonly<{
   families: Readonly<Partial<Record<SourceFamily, SourceReason>>>;
 }>;
 
+/** One head observation plus dependency result; an unsaved memory head grants no ready durable proof. */
+export type SourceLocalDependencyInspection = Readonly<{
+  inspection: SourceInspection;
+  dependencyReason: SourceReason;
+}>;
+
+/** Private readonly owner/journal/head selection; it grants no immutable-family protection. */
+type LocalDependencySelection = Readonly<{
+  state: SourceLocalDependencyState;
+  owner: SourceLocalDependencyOwner | null;
+  repair: SourceLocalDependencyRepair | null;
+  head: SourceHead | null;
+  primaryFenceClear: boolean;
+}>;
+
 /** Identity of one selected source; a policy revision deliberately is not a storage revision. */
 export type SelectedSourceStamp = Readonly<{
   head: SourceManifest;
@@ -204,6 +222,7 @@ type SourceView = {
   memory?: MemorySource;
   connection?: IDBDatabase;
   release?: Promise<void>;
+  releaseSelection?: { expected: SourceHeadExpectation; reason: SourceReason };
   prepared?: Readonly<{ family: SourceFamily; chunk: PrefetchedSourceChunk }>;
 };
 type MemorySource = {
@@ -1073,7 +1092,11 @@ export class NeutralSourceRepository {
       return { view: null, expected: { kind: "unavailable" }, reason: this.fail(errorReason(error, preparing ? "invalid-chunk" : "read-error"), preparing ? "metadata" : undefined) };
     }
   }
-  /** Release an unconsumed prepared decode and delete only this reader's original-connection leases. */
+  /**
+   * Release prepared decode and retire only this reader's original-connection leases. A restart
+   * metadata observation additionally checks its exact final head in that same native transaction;
+   * failed retirement cannot return a ready receipt or authorize cleanup of a protected revision.
+   */
   private releaseLeases(view: SourceView): Promise<void> {
     view.prepared?.chunk.release?.();
     view.prepared = undefined;
@@ -1081,16 +1104,29 @@ export class NeutralSourceRepository {
     this.readers.delete(view);
     if (!view.leases.length || !view.connection) return Promise.resolve();
     const leases = view.leases.splice(0);
+    const selection = view.releaseSelection;
     try {
-      const transaction = view.connection.transaction([META_STORE], "readwrite");
+      const transaction = view.connection.transaction(selection ? [META_STORE, SOURCE_HEAD_STORE] : [META_STORE], "readwrite");
+      if (selection) {
+        void unknownValue(transaction.objectStore(SOURCE_HEAD_STORE).get(view.head.sourceId)).then(
+          /** Match the committed head without hashing, yielding or invoking a consumer in the transaction. */
+          (raw) => { selection.reason = expectedHeadMatches(selection.expected, raw) ? "ready" : "superseded"; },
+          /** An unavailable final read never certifies the captured source. */
+          () => { selection.reason = "read-error"; },
+        );
+      }
       for (const key of leases) transaction.objectStore(META_STORE).delete(key);
       view.release = new Promise<void>((resolve) => {
         const timer = this.runtime.schedule(() => {
+          if (selection) selection.reason = "read-error";
           try { transaction.abort(); } catch { /* already terminal */ }
           resolve();
         }, TRANSACTION_TIMEOUT_MS);
         /** Release failures leave conservative leases, never permission to delete a live revision. */
-        const finish = (): void => { this.runtime.cancel(timer); resolve(); };
+        const finish = (event: Event): void => {
+          if (selection && event.type !== "complete") selection.reason = "read-error";
+          this.runtime.cancel(timer); resolve();
+        };
         transaction.oncomplete = finish;
         transaction.onabort = transaction.onerror = finish;
       });
@@ -1552,13 +1588,26 @@ export class NeutralSourceRepository {
    * Replay one family under a reader pin; callers consume privately until the final result is ready.
    * Small current-grammar metadata shares its first protected fetch with selection; all other
    * families, multi-chunk owners, legacy grammar and memory facts retain their ordinary read path.
+   * An optional expected head correlates an earlier observation without reusing its authority;
+   * an initial mismatch delivers no facts. Consumer records stay private until the final matching
+   * retirement and post-await local/caller fences succeed; no new selection transaction is needed.
    */
   async visit(sourceId: string, family: SourceFamily, consume: (records: readonly StoredSourceFact[]) => Promise<boolean> | boolean,
-    current: () => boolean = () => true): Promise<SourceReason> {
+    current: () => boolean = () => true, expected?: SourceHeadExpectation): Promise<SourceReason> {
     const pinned = await this.pin(sourceId, false, undefined, true, current, family === "metadata");
     if (!pinned.view) return pinned.reason;
-    try { return await this.visitFamily(pinned.view, family, consume, current); }
+    let reason: SourceReason;
+    try {
+      if (expected && (!pinned.view.saved || !expectedHeadMatches(expected,
+        { ...pinned.view.head, sequence: pinned.view.sequence }))) return "superseded";
+      if (expected) pinned.view.releaseSelection = { expected, reason: "read-error" };
+      reason = await this.visitFamily(pinned.view, family, consume, current);
+    }
     finally { await this.unpin(pinned.view); }
+    if (!expected || reason !== "ready") return reason;
+    if (this.closed || !current()) return "cancelled";
+    if (this.memory.has(sourceId) || this.unsaved.has(sourceId) || this.pendingDeletes.has(sourceId)) return "superseded";
+    return pinned.view.releaseSelection?.reason ?? "read-error";
   }
   /**
    * Restore immutable parser inputs without reading note text or reparsing Markdown. An optional
@@ -1735,10 +1784,7 @@ export class NeutralSourceRepository {
    * select a valid complete disk head in this same transaction; it grants no family-read lease and
    * the caller must still reject memory/unsaved/deletion overlays after the await.
    */
-  private async localDependencySelection(db: IDBDatabase, sourceId: string, current: () => boolean, includeHead = false): Promise<Readonly<{
-    state: SourceLocalDependencyState; owner: SourceLocalDependencyOwner | null; repair: SourceLocalDependencyRepair | null;
-    head: SourceHead | null; primaryFenceClear: boolean;
-  }>> {
+  private async localDependencySelection(db: IDBDatabase, sourceId: string, current: () => boolean, includeHead = false): Promise<LocalDependencySelection> {
     if (!current() || this.closed) throw new SourceFactError("cancelled");
     return this.transaction(db, [SOURCE_LOCAL_OWNER_STORE, SOURCE_LOCAL_REPAIR_STORE, META_STORE,
       ...(includeHead ? [SOURCE_HEAD_STORE] : [])], "readonly", sourceId, async (transaction) => {
@@ -2751,6 +2797,53 @@ export class NeutralSourceRepository {
   }
 
   /**
+   * Recognize the exact no-write dependency result shared by ordinary checks and restart inspection.
+   * Unknown/legacy/repair cases retain their full original path. Checking overlays after the native
+   * await prevents a durable head from hiding a newer same-repository memory or deletion selection.
+   */
+  private cleanLocalDependencyInspection(sourceId: string, selected: LocalDependencySelection,
+    activationRevision: number, order: number, markdownOrder: number, current: () => boolean): SourceInspection | null {
+    const { head, owner, repair } = selected;
+    if (!head || !owner || repair || legacyPrimaryGrammarCandidate(head)
+      || activationRevision !== this.sourceActivationRevision || this.memory.has(sourceId)
+      || this.unsaved.has(sourceId) || this.pendingDeletes.has(sourceId)
+      || owner.state !== "complete" || owner.version !== SOURCE_LOCAL_DEPENDENCY_VERSION
+      || owner.sourceRevision !== head.sourceRevision || owner.sequence !== head.sequence
+      || owner.order !== order || owner.markdownOrder !== markdownOrder || this.closed || !current()) return null;
+    return { head, sequence: head.sequence, saved: true, expected: expectation(head), reason: "ready", families: {} };
+  }
+
+  /**
+   * Inspect an unchanged restart owner while checking its dependency coordinates in the same read.
+   * The returned head is a copied observation, not a family-read or publication certificate. The
+   * caller must retain native/host fences and correlate its later protected metadata pin exactly.
+   * Legacy authentication precedes normal dependency repair/backfill on the conservative fallback.
+   */
+  async inspectWithLocalDependencies(sourceId: string, order: number, markdownOrder: number,
+    current: () => boolean = () => true): Promise<SourceLocalDependencyInspection> {
+    let probeFailure: SourceReason | undefined;
+    if (sourceCount(order) && sourceCount(markdownOrder) && !this.closed && current()) {
+      try {
+        const db = await this.open();
+        if (db) {
+          const activationRevision = this.sourceActivationRevision;
+          const selected = await this.localDependencySelection(db, sourceId, current, true);
+          const inspection = this.cleanLocalDependencyInspection(sourceId, selected, activationRevision, order, markdownOrder, current);
+          if (inspection) return { inspection, dependencyReason: "ready" };
+        }
+      } catch (error) {
+        // A failed optional selection cannot become a ready dependency proof after fallback IO.
+        probeFailure = !current() || this.closed ? "cancelled" : errorReason(error, "dependency-invalid");
+      }
+    }
+    const inspection = await this.inspect(sourceId, [], current);
+    const dependencyReason = inspection.saved && inspection.head?.state === "complete"
+      ? probeFailure ?? await this.ensureLocalDependencies(sourceId, order, markdownOrder, current)
+      : inspection.reason === "ready" ? "unsaved" : inspection.reason;
+    return { inspection, dependencyReason };
+  }
+
+  /**
    * Backfill or verify a durable dependency owner without changing its source head. Clean checks
    * share a readonly owner/head selection; exceptional heads/overlays use ordinary inspection.
    * Repair and legacy upgrade retain rereads and all revision/sequence/cancellation fences.
@@ -2763,6 +2856,10 @@ export class NeutralSourceRepository {
     try {
       const activationRevision = this.sourceActivationRevision;
       let selected = await this.localDependencySelection(db, sourceId, current, true);
+      if (this.cleanLocalDependencyInspection(sourceId, selected, activationRevision, order, markdownOrder, current)) {
+        this.recordLocalDependencyProjection(projection, markdownOrder);
+        return "ready";
+      }
       // Clean owners already have the selection needed below. Settlement is only necessary when
       // that selection contains repair work; reread after it because repair can replace the owner.
       if (selected.repair && !this.canDeferPrivateRepair(sourceId, selected)) {

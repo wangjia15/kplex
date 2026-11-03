@@ -1,9 +1,11 @@
 /** One ephemeral native tab-group fold. Captured DOM ownership is reversible even after detach;
- * no workspace model, native document, graph or persisted setting is modified by this lease. */
+ * recovery forwards click modifiers to the host's guarded unfold/close owner. No workspace model,
+ * native document, graph or persisted setting is modified by this lease. */
 import { setIcon, type WorkspaceLeaf } from "obsidian";
 import type { SidecarPosition } from "../settings";
 import type { KplexView } from "./KplexView";
 import { installKplexLongPressTooltips } from "./LongPressTooltip";
+import { hasClickModifier } from "./components/modifierClick";
 
 const identities = new WeakMap<object, number>();
 let identitySequence = 0;
@@ -42,7 +44,7 @@ export class PlexFoldSession {
 
   /** Install recovery before hiding. Failed installation rolls back through the same cleanup. */
   constructor(readonly candidate: PlexFoldCandidate, label: string,
-    private readonly current: () => boolean, restore: () => void, unfold: () => void) {
+    private readonly current: () => boolean, restore: () => void, unfold: (maximize: boolean) => void) {
     this.hostGroup = candidate.hostGroup;
     this.sidecarLeaf = candidate.sidecarLeaf;
     this.position = candidate.position;
@@ -58,8 +60,8 @@ export class PlexFoldSession {
         : candidate.position === "above" ? "bottom" : "top";
       button.classList.add(`is-${side}`);
       setIcon(button, `panel-${side}-open`);
-      button.addEventListener("click", /** A detached stale button cannot unfold its successor. */ () => {
-        if (!this.retired) unfold();
+      button.addEventListener("click", /** A detached stale button cannot unfold its successor; capture intent from this activation only. */ event => {
+        if (!this.retired) unfold(hasClickModifier(event));
       });
       this.releaseTooltip = installKplexLongPressTooltips(candidate.hostGroup.ownerDocument);
       candidate.ownerWindow.addEventListener("pagehide", this.pagehide);

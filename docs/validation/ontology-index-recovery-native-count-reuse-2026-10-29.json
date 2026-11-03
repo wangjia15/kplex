@@ -1,0 +1,190 @@
+{
+  "branch": "2026-10-28-investigate-ontology-index-recovery",
+  "head": "17e39bf1dd5c964c84c69e82b1197c9b2ab5971d",
+  "priorPatchSha256": "3840ecdd74322a15f80dc9825db75b20429f5f8b526239adc292a3d4666ce871",
+  "trackedPatchSha256": "7793bdd0759b843965b4c3399fdcb9c3aa53356b6ecb6baa7ba8fbba3a670064",
+  "sourceHashes": {
+    "src/adapters/obsidian/sourceAcquisition.ts": "b85f517282b59b45217aa40ac489d39be1387551ec3e337db4da46c596667391",
+    "src/core/plex/views/classic/projection.ts": "0eff48565682bf73f3875ef1d23a64958b7e5b9781b19429c985624ca9ce95f2",
+    "src/index/GraphIndex.ts": "6ed78a412e59d03cea0c95e66e56e67aefb360050cbf0434a63cdc5f7668b7a9",
+    "src/index/HostMetadataPreview.ts": "637a23efc7aa2b50c8a11ae1410847d82ebed50ea09704a592773964e16dac32",
+    "src/settings.ts": "a8d0db26715c951e5ebf772feb9b4fc10ae58c1a62ef1ca7ad2da1aec2309969",
+    "src/ui/PlexGraph.tsx": "2d1c5f9f8644eeb78ef24ac85c1118035b33c1a9ee303790eb6dbb118a8ee7c9",
+    "src/ui/numberSlider.ts": "a477efd0ffb1b22832917a5a350805b7746722535eb5f3b6c4656764bd8d0a1e",
+    "tests/action-host-integration.test.mjs": "a256a4aaebbe137d3938d8adeb952e2be47139e62495de4ab452c136d0904c05",
+    "tests/host-metadata-preview.test.mjs": "63d0f3cec75deac63fc636535692016a37a1ea4b940c17ff57a87c52d1136310",
+    "tests/mind-map-scene.test.mjs": "dc4010f2a901c2d63137d8bd382304fcfd740557a25982a23cc170a6d7e124ac",
+    "tests/on-demand-indexing.test.mjs": "3deb59e7d7c826b2525f760f99f773f046402a1fc01025f03000f7abbf8bf398",
+    "tests/plex-view-session.test.mjs": "9ecd596b481eebf69acc5c86b05ae5cf8a2db2c3493c58170f31354647d4f623",
+    "tests/predicate-conditions-browser.test.mjs": "a8f47fa7cf23547350be3129081196c232050b90378d699376ee17a183e315de",
+    "tests/source-event-convergence-indexeddb.test.mjs": "961530a797af4f98d4f6d0a82c538a201e9af22d2bf9edea09f91e6799e6552f",
+    "tests/ui-components.test.mjs": "84e5da003e54063e874729dae5d19ff5ea8454acf4c0542740b298193871287b",
+    "tests/view-interactions-browser.test.mjs": "3ffc3c0bf76a47376841fe84d9c758ef94c9b907c6d9078d04b58559fbbcf961",
+    "tests/wander-views.test.mjs": "8c3bced3162fdeb87acf6b9875cf0d3f073ef265924691a239ce5ee83dd4b5bd",
+    "tests/wuxing-browser.test.mjs": "6896d3f43718113dc03bc37da130bd61965b1bbd0d77c1f82d20ada5acd28203"
+  },
+  "status": "passed",
+  "completedAt": "2026-10-29T14:37:25.696769+00:00",
+  "node": "v22.22.3",
+  "newRegressionCases": 15,
+  "focused": {
+    "passed": 22,
+    "failed": 0,
+    "command": "node --test --test-name-pattern='native folder count proof|abandoned native gate count|completed native preview|superseded native|two visible folders|ordinary alias patch' tests/on-demand-indexing.test.mjs"
+  },
+  "affectedPreflight": {
+    "passed": 238,
+    "failed": 0,
+    "scope": "Complete on-demand-indexing and host-metadata-preview suites before the final publication guard and its two additional cases. Final full verification below includes all corrected sources and all 15 added cases."
+  },
+  "portable": {
+    "command": "npm run verify through scripts/testing/obsidian/verify.mjs",
+    "lanes": {
+      "architecture": 9,
+      "core": 130,
+      "main": 1679,
+      "UI browser": 403,
+      "portable sources": 357,
+      "source browser": 854
+    },
+    "total": 3432,
+    "failures": 0,
+    "productionBuild": "passed",
+    "installedTypeCheck": "passed",
+    "scanner": "passed",
+    "sourceBrowserDurationMs": 942450.74025,
+    "scaleCachedIncidence": {
+      "owners": 20015,
+      "passed": true,
+      "durationMs": 250358.951333
+    },
+    "preparationLookups": {
+      "neighbors40": 1559,
+      "neighbors160": 6119
+    }
+  },
+  "nativeVerification": {
+    "schemaVersion": 1,
+    "status": "passed",
+    "startedAt": "2026-10-29T14:09:25.208Z",
+    "source": {
+      "revision": "17e39bf1dd5c964c84c69e82b1197c9b2ab5971d",
+      "dirty": true,
+      "node": "v22.22.3",
+      "os": "darwin 23.5.0"
+    },
+    "target": {
+      "vaultName": "kplex-test-small",
+      "vaultPath": "/Users/zsviczian/Obsidian/kplex-test-small",
+      "configDir": "/Users/zsviczian/Obsidian/kplex-test-small/.obsidian"
+    },
+    "capabilities": {
+      "version": "1.15.0 (installer 1.14.0)",
+      "commands": [
+        "version",
+        "vault",
+        "plugin:disable",
+        "plugin:enable",
+        "commands",
+        "command",
+        "dev:dom",
+        "dev:errors"
+      ]
+    },
+    "artifacts": {
+      "sourceHashes": {
+        "main.js": "577709628b4fcfd30d2f02dc66f71cd8375ca243ea3444096bb2ecb130a04fe4",
+        "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+        "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+      },
+      "pluginVersion": "0.3.0",
+      "stagedHashes": {
+        "main.js": "577709628b4fcfd30d2f02dc66f71cd8375ca243ea3444096bb2ecb130a04fe4",
+        "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+        "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+      }
+    },
+    "scenarios": [
+      {
+        "id": "open-kplex",
+        "status": "passed",
+        "assertions": [
+          "plugin command registered",
+          "rendered .kplex-app contains K-Plex",
+          "no captured JavaScript errors"
+        ],
+        "elapsedMs": 93
+      }
+    ],
+    "completedAt": "2026-10-29T14:34:51.853Z"
+  },
+  "nativeRegressions": {
+    "name": "native-gate-fixes",
+    "status": "passed",
+    "node": "v22.22.3",
+    "startedAt": "2026-10-29T14:34:54.981Z",
+    "maximumMs": 180000,
+    "driver": {
+      "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+      "scenario": "1ec14e4b27d31dd3778bed838c4938530c1f7796227f3fcd0d017197bafda994",
+      "definitions": "675e82fb7608990ee666fff8163094fc6cdd2ab7b95c9cf51ea2a1d93b53a25f"
+    },
+    "artifacts": {
+      "main.js": "577709628b4fcfd30d2f02dc66f71cd8375ca243ea3444096bb2ecb130a04fe4",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+      "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+    },
+    "source": {
+      "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+      "src/index/GraphIndex.ts": "6ed78a412e59d03cea0c95e66e56e67aefb360050cbf0434a63cdc5f7668b7a9",
+      "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+      "src/index/HostMetadataPreview.ts": "637a23efc7aa2b50c8a11ae1410847d82ebed50ea09704a592773964e16dac32",
+      "src/adapters/obsidian/sourceAcquisition.ts": "b85f517282b59b45217aa40ac489d39be1387551ec3e337db4da46c596667391",
+      "src/core/plex/views/classic/projection.ts": "0eff48565682bf73f3875ef1d23a64958b7e5b9781b19429c985624ca9ce95f2"
+    },
+    "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+    "obsidian": "1.15.0 (installer 1.14.0)",
+    "result": {
+      "cases": [
+        "unchanged native folder preview reuses child counts",
+        "native visibility change replaces the count proof",
+        "retired native count stops before child validation",
+        "retired native count cannot populate reusable proof",
+        "pending native peer does not block healthy shared-center recovery",
+        "late native peer retains earlier successful body semantics",
+        "superseded native folder stops before candidate windows without cross-priority deadlock",
+        "same-center native input failure preserves healthy peer",
+        "successful native retry retains both surfaces",
+        "finite recovery retains canonical state and global authority fences",
+        "same-center missing metadata preserves the healthy peer",
+        "metadata availability re-admits the unavailable peer",
+        "native sibling exclusions survive another folder surface",
+        "native folder keeps exact degree and ten displayed rows",
+        "body-discovered native endpoint retains frontmatter precedence",
+        "On-demand alias patch brings an omitted child into sorted folder cover"
+      ],
+      "markdown": 103
+    },
+    "cleanup": "passed",
+    "completedAt": "2026-10-29T14:34:59.077Z"
+  },
+  "independentChecks": {
+    "frozenSourceAndTestHashesMatch": true,
+    "nativeSourceHashesMatch": true,
+    "buildArtifactHashesMatchNative": true,
+    "originalExecutableHashesRestored": true,
+    "controllerAbsent": true,
+    "ownedFixtureFolders": 0,
+    "originalPluginLoaded": true,
+    "diffWhitespace": "passed"
+  },
+  "restoration": "Original disposable-vault executable artifacts, settings bytes, enablement bytes and workspace layout restored by the outer driver. Executable restoration independently hash-checked; controller absence and zero owned folders independently confirmed. Interrupted owned Chromium process and profile removed.",
+  "productionVaultAccess": false,
+  "finalReview": {
+    "question": "Evaluate the regression risk of this PR",
+    "conclusion": "Recommended native count-proof reuse and scope cancellation implemented. Review additionally closed the final preview-publication purge/native-identity boundary. Full frozen verification and exact-build native assertions pass; no further confirmed introduced regression or merge blocker found.",
+    "limits": "Cache misses still count direct members through the existing compiler. Cache hits trust observed Vault topology events for in-place same-length membership changes, supplemented by exact folder/parent identity, path/name, children-array identity/length and visibility checks. Native evidence covers macOS Obsidian, not physical mobile, new Windows-host, actual-paint or production thermal performance."
+  },
+  "manualChecksRequiredForTheseFindings": false,
+  "committed": false
+}

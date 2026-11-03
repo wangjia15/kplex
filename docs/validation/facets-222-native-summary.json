@@ -1,0 +1,1363 @@
+{
+  "scope": "PR #222 implementation checkpoints and final Windows acceptance; trusted Electron/CDP is not physical OS input or Mac/mobile acceptance",
+  "baseline": "30d7a73c6efd9226fab18ba10cc26af9c45b721a",
+  "checkpoints": [
+    {
+      "name": "P1 measured widths",
+      "status": "passed",
+      "startedAt": "2026-10-25T22:07:57.505Z",
+      "completedAt": "2026-10-25T22:08:05.470Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "637ba8930d246a120a1c1e92cd5107814a4774ce07f42f88fae54994d1bb2571",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "d185ac621927bf84f16d0d24296390a08f6ae351731e104ee19feb3fee4ddcf5"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "4a9ef45cfd9e1610a357e2a8eb03afbe6d47b15f2d2d1da2d4978a0a08abe560",
+        "definitions": "405b6347c04c6707cccd29327584e326de75b79c3e90531d91287dbcce0fa36d"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof"
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links"
+        },
+        {
+          "id": "native-area-resize-water",
+          "delta": 12,
+          "before": 280,
+          "after": 299
+        },
+        {
+          "id": "native-area-resize-water",
+          "delta": -8,
+          "before": 299,
+          "after": 286
+        },
+        {
+          "id": "native-area-width-resize-water",
+          "delta": 12,
+          "before": 320,
+          "after": 339
+        },
+        {
+          "id": "native-area-width-resize-water",
+          "delta": -8,
+          "before": 339,
+          "after": 326
+        },
+        {
+          "id": "native-area-resize-unassigned",
+          "delta": 12,
+          "before": 220,
+          "after": 239
+        },
+        {
+          "id": "native-area-resize-unassigned",
+          "delta": -8,
+          "before": 239,
+          "after": 226
+        },
+        {
+          "id": "native-area-width-resize-unassigned",
+          "delta": 12,
+          "before": 320,
+          "after": 339
+        },
+        {
+          "id": "native-area-width-resize-unassigned",
+          "delta": -8,
+          "before": 339,
+          "after": 326
+        },
+        {
+          "id": "native-area-resize-conflicting",
+          "delta": 12,
+          "before": 220,
+          "after": 239
+        },
+        {
+          "id": "native-area-resize-conflicting",
+          "delta": -8,
+          "before": 239,
+          "after": 226
+        },
+        {
+          "id": "native-area-width-resize-conflicting",
+          "delta": 12,
+          "before": 320,
+          "after": 339
+        },
+        {
+          "id": "native-area-width-resize-conflicting",
+          "delta": -8,
+          "before": 339,
+          "after": 326
+        },
+        {
+          "id": "native-area-resize-unresolved",
+          "delta": 12,
+          "before": 220,
+          "after": 239
+        },
+        {
+          "id": "native-area-resize-unresolved",
+          "delta": -8,
+          "before": 239,
+          "after": 226
+        },
+        {
+          "id": "native-area-width-resize-unresolved",
+          "delta": 12,
+          "before": 320,
+          "after": 339
+        },
+        {
+          "id": "native-area-width-resize-unresolved",
+          "delta": -8,
+          "before": 339,
+          "after": 326
+        },
+        {
+          "id": "native-area-resize-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-25T22:08:10.158Z"
+      }
+    },
+    {
+      "name": "P3a curated presets and native Markdown Help",
+      "status": "passed",
+      "startedAt": "2026-10-25T23:57:05.704Z",
+      "completedAt": "2026-10-25T23:57:11.796Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "557d105d8c969adbd3cd82432aad2992fcd974a23d961429d9aa434618798a49",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "23b87b2fd01d79cf3a4679e181422d1f54d70a3137556191dc1bfa39a3961d21"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "04a548beab6f0716a26c3d5d8c73de4ab0c3be0eff4a26ae4d1860f941c46112",
+        "definitions": "e091afadde07605cc2fd1f3f8c7174dbf7ef08ef80819fa39e2b13eb31e01548"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": true
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "native-info-cog-order-real-markdown-headings-code"
+        },
+        {
+          "id": "native-unsaved-preview-safe-links-plain-fences-no-activation"
+        },
+        {
+          "id": "native-info-edit-preview-cancel-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-help-save-existing-queued-preset-writer"
+        },
+        {
+          "id": "native-help-save-reopen-escape-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-help-saved-source-and-escape-cleanup"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-25T23:57:17.285Z"
+      }
+    },
+    {
+      "name": "P3c native portable sharing",
+      "status": "passed",
+      "startedAt": "2026-10-26T00:50:00.218Z",
+      "completedAt": "2026-10-26T00:50:06.106Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "42d3c5d071d38d123e0b5b3b18a26b8a35d6b450f36d7f5f272819ca3f2873b7",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "9069664a2fcac12d4d200dbd22d58209cc59694bb7b8a4bdbbb7cba80adf0442",
+        "definitions": "1d4b12f0e2cde9a4b9dea04d1fe03184be2fada5515293c2265ed149ad2c00bb"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": true
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "native-export-prompt-cancel-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-eight-presets-export-effective-help-inert-ai-explicit-dependencies"
+        },
+        {
+          "id": "native-preset-import-preview-help-save-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-json-help-preview-atomic-save-no-activation"
+        },
+        {
+          "id": "native-disabled-lens-import-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-existing-lens-manager-import-disabled-preserves-preset-camera-attention"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T00:50:11.634Z"
+      }
+    },
+    {
+      "name": "P3c native layouts/bands/editor",
+      "status": "passed",
+      "startedAt": "2026-10-26T00:57:21.654Z",
+      "completedAt": "2026-10-26T00:57:32.885Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "42d3c5d071d38d123e0b5b3b18a26b8a35d6b450f36d7f5f272819ca3f2873b7",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "62e1ffde6cec86fe2398d9e463984a042275c63b83c1189b48701f185c13042c",
+        "definitions": "fa76b3ea767abd47eb7985ec8af7348e14bb331b6ea9ac080649f6be6970fa3f"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": true
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 8,
+          "semanticConnectors": 8
+        },
+        {
+          "id": "native-layout-circular-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-band-svg-holes-and-disjoint-physical-fill",
+          "bands": 4
+        },
+        {
+          "id": "native-layout-concentric-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-vertical-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-horizontal-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-quadrants-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-five-layouts-fit-editor-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-combine-split-diagnostic-chips-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-shared-combine-toggle-three-status-chips-and-separate-size-restoration"
+        },
+        {
+          "id": "native-concentric-outward-width-thickness-resize",
+          "before": 320,
+          "after": 360
+        },
+        {
+          "id": "native-concentric-outward-height-thickness-resize",
+          "before": 280,
+          "after": 320
+        },
+        {
+          "id": "native-band-width-height-reflow-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-inner-band-shared-drop-target-excludes-outer-band-cancel-no-write"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T00:57:38.353Z"
+      }
+    },
+    {
+      "name": "P4 final help",
+      "status": "passed",
+      "startedAt": "2026-10-26T01:58:20.145Z",
+      "completedAt": "2026-10-26T01:58:25.964Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7b290c0064d3d477dc1294e4bcbe501c226fdf6c7fbc86de526f18f15e66d777",
+        "definitions": "33fd528e4306a85b41780f3caf1e4ec134145cc977d71e53d0f88a0a5476ea14"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "native-info-cog-order-real-markdown-headings-code"
+        },
+        {
+          "id": "native-unsaved-preview-safe-links-plain-fences-no-activation"
+        },
+        {
+          "id": "native-info-edit-preview-cancel-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-help-save-existing-queued-preset-writer"
+        },
+        {
+          "id": "native-help-save-reopen-escape-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-help-saved-source-and-escape-cleanup"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T01:58:31.530Z"
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "name": "P4 final sharing",
+      "status": "passed",
+      "startedAt": "2026-10-26T01:58:39.436Z",
+      "completedAt": "2026-10-26T01:58:44.185Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7b290c0064d3d477dc1294e4bcbe501c226fdf6c7fbc86de526f18f15e66d777",
+        "definitions": "2619db8e23b423941b27f4178a3d26466e822284fac5607bf3869cfc224feff8"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "native-export-prompt-cancel-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-eight-presets-export-effective-help-inert-ai-explicit-dependencies"
+        },
+        {
+          "id": "native-preset-import-preview-help-save-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-json-help-preview-atomic-save-no-activation"
+        },
+        {
+          "id": "native-disabled-lens-import-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-existing-lens-manager-import-disabled-preserves-preset-camera-attention"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T01:58:49.665Z"
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "name": "P4 final layouts",
+      "status": "passed",
+      "startedAt": "2026-10-26T01:58:57.612Z",
+      "completedAt": "2026-10-26T01:59:07.820Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7b290c0064d3d477dc1294e4bcbe501c226fdf6c7fbc86de526f18f15e66d777",
+        "definitions": "0385eb5fa02195ce6acec1998fd335fe5934c2b49a04a81ac3899b9b86c7636c"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 8,
+          "semanticConnectors": 8
+        },
+        {
+          "id": "native-layout-circular-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-band-svg-holes-and-disjoint-physical-fill",
+          "bands": 4
+        },
+        {
+          "id": "native-layout-concentric-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-vertical-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-horizontal-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-layout-quadrants-captured-choice-keeps-editor-and-canonical-endpoints"
+        },
+        {
+          "id": "native-five-layouts-fit-editor-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-combine-split-diagnostic-chips-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-shared-combine-toggle-three-status-chips-and-separate-size-restoration"
+        },
+        {
+          "id": "native-concentric-outward-width-thickness-resize",
+          "before": 320,
+          "after": 360
+        },
+        {
+          "id": "native-concentric-outward-height-thickness-resize",
+          "before": 280,
+          "after": 320
+        },
+        {
+          "id": "native-band-width-height-reflow-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-inner-band-shared-drop-target-excludes-outer-band-cancel-no-write"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T01:59:13.326Z"
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "name": "P4 final features",
+      "status": "passed",
+      "startedAt": "2026-10-26T01:59:21.341Z",
+      "completedAt": "2026-10-26T01:59:47.896Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7b290c0064d3d477dc1294e4bcbe501c226fdf6c7fbc86de526f18f15e66d777",
+        "definitions": "2030058332116c8547e7df2e72c8afc20f34187ab86ac14aa1f0e27042c5201a"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 8,
+          "semanticConnectors": 8
+        },
+        {
+          "id": "native-area-resize-water",
+          "delta": 12,
+          "before": 280,
+          "after": 310
+        },
+        {
+          "id": "native-area-resize-water",
+          "delta": -8,
+          "before": 310,
+          "after": 290
+        },
+        {
+          "id": "native-area-width-resize-water",
+          "delta": 12,
+          "before": 320,
+          "after": 350
+        },
+        {
+          "id": "native-area-width-resize-water",
+          "delta": -8,
+          "before": 350,
+          "after": 330
+        },
+        {
+          "id": "native-area-resize-unassigned",
+          "delta": 12,
+          "before": 220,
+          "after": 250
+        },
+        {
+          "id": "native-area-resize-unassigned",
+          "delta": -8,
+          "before": 250,
+          "after": 230
+        },
+        {
+          "id": "native-area-width-resize-unassigned",
+          "delta": 12,
+          "before": 320,
+          "after": 350
+        },
+        {
+          "id": "native-area-width-resize-unassigned",
+          "delta": -8,
+          "before": 350,
+          "after": 330
+        },
+        {
+          "id": "native-area-resize-conflicting",
+          "delta": 12,
+          "before": 220,
+          "after": 250
+        },
+        {
+          "id": "native-area-resize-conflicting",
+          "delta": -8,
+          "before": 250,
+          "after": 230
+        },
+        {
+          "id": "native-area-width-resize-conflicting",
+          "delta": 12,
+          "before": 320,
+          "after": 350
+        },
+        {
+          "id": "native-area-width-resize-conflicting",
+          "delta": -8,
+          "before": 350,
+          "after": 330
+        },
+        {
+          "id": "native-area-resize-unresolved",
+          "delta": 12,
+          "before": 220,
+          "after": 250
+        },
+        {
+          "id": "native-area-resize-unresolved",
+          "delta": -8,
+          "before": 250,
+          "after": 230
+        },
+        {
+          "id": "native-area-width-resize-unresolved",
+          "delta": 12,
+          "before": 320,
+          "after": 350
+        },
+        {
+          "id": "native-area-width-resize-unresolved",
+          "delta": -8,
+          "before": 350,
+          "after": 330
+        },
+        {
+          "id": "native-area-resize-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-zero-source-work-classic",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-classic"
+        },
+        {
+          "id": "native-view-settings-cog-zero-source-work-mindmap",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-mindmap"
+        },
+        {
+          "id": "native-view-settings-cog-zero-source-work-wuxing",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-view-settings-cog-wuxing"
+        },
+        {
+          "id": "native-preset-settings-cog-zero-source-work-para",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-settings-cog-para"
+        },
+        {
+          "id": "native-preset-settings-cog-zero-source-work-state",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-settings-cog-state"
+        },
+        {
+          "id": "native-preset-settings-cog-zero-source-work-para",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-preset-settings-cog-para"
+        },
+        {
+          "id": "native-preset-arc",
+          "categories": 3
+        },
+        {
+          "id": "native-preset-para",
+          "categories": 4
+        },
+        {
+          "id": "native-preset-wuxing",
+          "categories": 5
+        },
+        {
+          "id": "native-preset-gtd",
+          "categories": 6
+        },
+        {
+          "id": "native-preset-eaccess",
+          "categories": 7
+        },
+        {
+          "id": "native-preset-sensemaking",
+          "categories": 4
+        },
+        {
+          "id": "native-preset-publishing",
+          "categories": 5
+        },
+        {
+          "id": "native-preset-map-roles",
+          "categories": 4
+        },
+        {
+          "id": "native-preset-state",
+          "categories": 4
+        },
+        {
+          "id": "all-preset-switches-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "wood-metal-relative-labels-preserve-stored-phases-and-canonical-evidence"
+        },
+        {
+          "id": "conflicting-unassigned-focus-no-assumed-relative-phase"
+        },
+        {
+          "id": "native-property-preview-confirm-save-guarded-undo-preserves-body-and-source-relationships"
+        },
+        {
+          "id": "trusted-native-property-area-drop-preserves-source-relationship-and-undo",
+          "transport": "Electron_CDP",
+          "chromiumInterceptedData": true,
+          "mimeTypes": [
+            "text/plain",
+            "text/uri-list"
+          ],
+          "dragOperationsMask": -1
+        },
+        {
+          "id": "native-shared-rules-editor-focus-invalid-save-guard-and-correction"
+        },
+        {
+          "id": "native-wander-prepared-fixture-after-real-note-edits",
+          "before": {
+            "coverage": "local",
+            "prepared": true,
+            "complete": false,
+            "pending": false
+          },
+          "after": {
+            "coverage": "local",
+            "prepared": true,
+            "complete": false,
+            "pending": false
+          },
+          "mode": "eager"
+        },
+        {
+          "id": "native-wander-start-navigate-stop-classic"
+        },
+        {
+          "id": "native-wander-start-navigate-stop-mindmap"
+        },
+        {
+          "id": "native-wander-start-navigate-stop-wuxing"
+        },
+        {
+          "id": "native-alt-click-explicit-center-classic"
+        },
+        {
+          "id": "native-alt-click-explicit-center-mindmap"
+        },
+        {
+          "id": "native-alt-click-explicit-center-wuxing"
+        },
+        {
+          "id": "native-control-placeholder-creation-choice-retains-root-and-cancels-without-write"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T01:59:53.471Z"
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "name": "P4 final pairs",
+      "status": "passed",
+      "startedAt": "2026-10-26T02:00:01.258Z",
+      "completedAt": "2026-10-26T02:00:08.347Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7b290c0064d3d477dc1294e4bcbe501c226fdf6c7fbc86de526f18f15e66d777",
+        "definitions": "16377977b00cb8317b122f8225d4e63f028cd5f8de3505ccc560ead2a02fd687"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment",
+          "owner": "main",
+          "freshCreationTested": false
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment",
+          "owner": "popout",
+          "freshCreationTested": false
+        },
+        {
+          "id": "main-popout-per-canvas-selection-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-compass-wuxing-main-popout-independent-canvas-and-sidecar-state"
+        },
+        {
+          "id": "opening-canvas-selector-owner-survives-window-focus-change"
+        },
+        {
+          "id": "native-two-facets-same-preset-independent-layouts-captured-window-owner",
+          "main": "concentric",
+          "popout": "horizontal"
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor",
+          "owner": "main-wuxing",
+          "simultaneousEditors": 1
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor",
+          "owner": "popout-compass",
+          "simultaneousEditors": 1
+        },
+        {
+          "id": "independent-owned-native-workspace-view-restoration",
+          "applicationRestart": false
+        },
+        {
+          "id": "windows-native-view-select-keyboard",
+          "transport": "Electron",
+          "keys": [
+            {
+              "key": "Home",
+              "trusted": true,
+              "targetSelect": true
+            }
+          ],
+          "changes": [
+            {
+              "trusted": true,
+              "value": "classic"
+            }
+          ]
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T02:00:14.037Z"
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "name": "P4 final editor-lifecycle",
+      "status": "passed",
+      "startedAt": "2026-10-26T02:00:21.787Z",
+      "completedAt": "2026-10-26T02:00:28.794Z",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7b290c0064d3d477dc1294e4bcbe501c226fdf6c7fbc86de526f18f15e66d777",
+        "definitions": "3bb8c5ecb58d09dc2ec9a41d90fa0b93ded83a8f38376cf48ff3d2256fd80021"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "type-configuration-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-settings-preset-manager-durable-multilingual-label"
+        },
+        {
+          "id": "native-attention-editor-expanded-reclassified-resized-and-restored-at-phase-anchor"
+        },
+        {
+          "id": "attention-native-editor-phase-reclassification-resize-compatible-switch",
+          "dirtyAtReclassification": true,
+          "documentRetained": true,
+          "contentRetained": true,
+          "caretRetained": true
+        },
+        {
+          "id": "selection-and-phase-mapping-preserve-editor-and-owned-sidecar"
+        },
+        {
+          "id": "windows-native-editor-typed-input-without-clipboard",
+          "transport": "Electron_insertText",
+          "clipboardAccessed": false
+        },
+        {
+          "id": "explicit-attention-navigation-saves-content-and-retires-old-native-document"
+        },
+        {
+          "id": "attention-editor-popout-main-remount-correct-document-and-session"
+        },
+        {
+          "id": "native-editor-explicit-collapse-cleanup"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "restored": true,
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T02:00:34.354Z"
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Clipboard excluded: this lane uses native typed text; the separate guarded clipboard lane declined rich/custom formats.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    }
+  ],
+  "retainedFailures": [
+    {
+      "sample": "P1 features1/2",
+      "status": "failed",
+      "completedCases": 43,
+      "reason": "Wander correctly declined cached/unprepared center after real fixture note edits; startup preparation was still deferred. Hidden=false, focused=true, pending=false. Not a full native acceptance pass."
+    },
+    {
+      "sample": "P1 features3",
+      "status": "failed",
+      "completedCases": 43,
+      "reason": "Existing foreground preparation refused the unadmitted fixture. Final full-feature setup must use normal startup admission; do not weaken Wander readiness or deadlines."
+    },
+    {
+      "sample": "P3a native Help1-4",
+      "status": "fixture corrections before full sample5 pass",
+      "reason": "Initial default Help source has no list; retained authored-preview list/code/link assertions. Settings owns a separate document; derive event window from controls. Ensure an already open panel stays open. All four samples restored the same baseline."
+    },
+    {
+      "sample": "P3c native sharing1/2",
+      "status": "failed before corrected sample3 passed",
+      "reason": "First generic close selector found no native close icon; use explicit Cancel. Second tried to dismiss the surrounding native Settings shell as a child dialog. Corrected exact owned-dialog selection; no source assertions weakened. All samples restored9 configuration/117 content files and original digest."
+    },
+    {
+      "sample": "P3c layouts1",
+      "status": "failed",
+      "reason": "New three-status fixture expected7 instead of8 regions; exact count corrected."
+    },
+    {
+      "sample": "P3c layouts2/3",
+      "status": "failed",
+      "reason": "All five layout/editor/endpoints and native holes passed, but zero-work sequence recorded4 then1 Obsidian cachedRead calls during native editor-to-canvas focus/activation. Original failures retained. Corrected actual DOM control focus before strict presentation interval; zero read/parse/acquisition/rebuild assertion unchanged and passed in samples4/5."
+    },
+    {
+      "sample": "P3c layouts4",
+      "status": "failed after11 cases",
+      "reason": "Area action dispatch completed before React mounted resize handles. Await actual shared mode/control mount; sample5 passes15 including physical widths/heights and trusted inner-band drop Cancel. All samples restored original Small inventory."
+    },
+    {
+      "sample": "P4 features4-6",
+      "status": "failed fixture admission/preparation",
+      "reason": "Older stager waited for enablement-file write but not actual plugin lifecycle. Eager cached coverage remained unprepared after owned edits; mode-specific producer refused it. Mode-aware recheck also refused. Silent rebuild was refused before a graph was visible. No readiness guard was loosened and no cached proof was relabelled prepared."
+    },
+    {
+      "sample": "P4 features7/8",
+      "status": "stalled and cancelled; outer restoration passed",
+      "reason": "Fixture attempted to await broad initial preparation rather than allow native mounting/attention first. Cancelled controller and unloaded only disposable Small K-Plex to release it. Inner cleanup retained enablement/stale-appearance errors from deliberate unload; outer backups restored all9 configuration/117 content files/original layout/window and digest. No pass claim. Final stager foregrounds Small and waits only for settings/lifecycle readiness; native view owns asynchronous preparation. Final features10 passes54 with guarded prepared local coverage after real edits, without explicit rebuild or profile changes."
+    },
+    {
+      "sample": "P4 editor1",
+      "status": "stopped safely after7 completed cases",
+      "reason": "Original strict clipboard lane detected rich/custom formats and left the OS clipboard untouched. This remains unverified clipboard coverage. Separately named editor-lifecycle lane types owned text through Electron insertText, preserves all saving/navigation/migration/cleanup assertions and passes11; it never accesses the clipboard and is not a clipboard pass."
+    }
+  ],
+  "finalVerification": {
+    "status": "passed",
+    "command": "npm run verify:obsidian",
+    "startedAt": "2026-10-26T02:12:41.502Z",
+    "completedAt": "2026-10-26T02:43:18.564Z",
+    "source": {
+      "revision": "3afcd1d2dba3b62379561ce67fdd2cddf2720ddf",
+      "dirty": false,
+      "node": "v22.22.2",
+      "os": "win32 10.0.26200"
+    },
+    "host": "1.14.5 (installer 1.14.0)",
+    "suites": [
+      {
+        "name": "architecture",
+        "passed": 7,
+        "failed": 0
+      },
+      {
+        "name": "core",
+        "passed": 130,
+        "failed": 0
+      },
+      {
+        "name": "main",
+        "passed": 1617,
+        "failed": 0
+      },
+      {
+        "name": "browser",
+        "passed": 316,
+        "failed": 0
+      },
+      {
+        "name": "sources",
+        "passed": 357,
+        "failed": 0
+      },
+      {
+        "name": "source-browser",
+        "passed": 777,
+        "failed": 0
+      }
+    ],
+    "reportedTests": 3204,
+    "architecture": {
+      "migratedRoots": 209,
+      "reachableFiles": 382,
+      "violations": 0
+    },
+    "scanner": "passed",
+    "productionBuild": "passed",
+    "artifacts": {
+      "sourceHashes": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      },
+      "pluginVersion": "0.2.4",
+      "stagedHashes": {
+        "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+      }
+    },
+    "smoke": [
+      {
+        "id": "open-kplex",
+        "status": "passed",
+        "assertions": [
+          "plugin command registered",
+          "rendered .kplex-app contains K-Plex",
+          "no captured JavaScript errors"
+        ],
+        "elapsedMs": 319
+      }
+    ],
+    "restoration": {
+      "restored": true,
+      "configurationFiles": 9,
+      "contentFiles": 117,
+      "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+      "completedAt": "2026-10-26T02:43:24.457Z"
+    },
+    "limits": [
+      "OS clipboard guarded/unverified",
+      "Mac, physical mobile and minimum host unrun",
+      "Known #215 fresh-popout Sidecar creation, simultaneous editor/Sidecar pairs and whole-app restart unverified"
+    ],
+    "details": "facets-222-final-verification.json"
+  }
+}

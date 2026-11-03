@@ -36,6 +36,109 @@ Arrows mean **may import**, not call direction. A capability interface belongs i
 | `src/adapters/obsidian/` | Vault/source collection, writes, storage, native shells and lifecycle binding | Other layers, lang and Obsidian |
 | `src/main.ts` | Plugin lifecycle and composition | Other layers and Obsidian |
 
+## Internal Plex view policies
+
+Ontology descriptions remain settings-owned vocabulary metadata. The pure
+`core/contracts/ontologyReadModel` projects decoded assignments, exact physical
+names, reciprocal fields and optional descriptions together with caller-supplied
+discovery facts. It has no discovery/index/source capability. Description-only
+edits use the existing serialized ontology writer and presentation notification;
+they are deliberately absent from semantic signatures and graph settings policy,
+so wording never requests semantic preparation or source recovery.
+
+`core/plex/views/` contains host-free projection/layout definitions and the static
+registry. Classic's ordered neighbourhood/sibling policy and measured geometry
+have one implementation; retained host APIs delegate to it. `ui/plexViews/`
+binds admitted canonical pages, lazy styles/counts and existing sections through
+narrow host reads. Definitions receive revision-scoped DTOs, finite preferences
+and measurements; they cannot access the plugin, GraphIndex, Vault or native leaves.
+
+`application/PlexViewSession` owns per-document view choice, bounded restoration
+and exact outgoing-resource disposal. `KplexDocumentSession` retains native
+workspace/editor/Sidecar ownership. Shared actions additionally fence view
+revision; occurrence IDs remain separate from canonical endpoints. The shared
+renderer accepts explicit areas, physical ports and entry/editor/frame anchors. Compass and Facets retain the existing single attention-following native editor. Accepted Mind Map uses the shared capacity-one occurrence host; it does not introduce a second editor implementation or authorize simultaneous editors. Both off-origin framing and rooted/manual/restored camera guards remain part of the shared host.
+For a rooted hierarchy whose primary action centers a node, App joins the shared native save/close preflight before accepting the latest destination. A root editor transfers its mode and dimensions through one transient presentation intent; PlexGraph reopens it only after the new root occurrence and exact native file are admitted. An independent branch editor is saved without being promoted to the center. Folding remains a separate action and refuses to hide a live editor. Failed saves preserve the original buffer, root and attention.
+The graph's read-only pending-transition port also covers the interval after native close and before root admission. Onward navigation joins that same saved intent. A navigation phase prevents synchronous root notifications from admitting an obsolete target; a rejected onward request retains the current valid intent, while stale views, unsupported destinations and newer explicit editors retain their existing rejection guards.
+Production definitions are Compass (`classic`), Mind Map (`mindmap`) and Facets (`wuxing`, retaining its stored identity). Facets presets reuse cached-property availability, the shared predicate/lens owner, measured badges/colors, explicit native assignment actions and input-transparent model decorations. Pure policy never writes note metadata or classifies a phase-derived model guide as canonical evidence. Corpus scoring, arbitrary multihop demand
+and compact large-map rendering require explicit follow-up capabilities. The [API reference](CANVAS_VIEW_API.md) and [developer guide](CANVAS_VIEW_DEVELOPER_GUIDE.md) identify the current public entries and executable examples.
+See [the implemented contract and capability matrix](PLEX_VIEW_PLUGINS.md#16-implemented-boundary-and-capability-matrix).
+This scoped feature does not resume C15–C26 or retire compatibility facades.
+
+`core/plex/views/configuration.ts` validates finite versioned type settings separately
+from session state. `ui/plexViews/settingsContributions.ts` composes native declarative
+pages under **Canvas behavior → Views**, with Compass's legacy controls retaining
+their flat/profile/color owners. New namespace writes share the existing serialized
+settings writer; incoming changes merge supported fields without replacing unrelated
+view configuration. Unknown/future payloads remain inert and preserved.
+
+The native **Canvas view** select is part of **Views and lenses**. It captures the
+opening session, subscribes to its successful selection, rechecks editor/lifetime
+guards and leaves the panel/draft mounted across compatible transitions. The existing
+registry supplies production options; disabled Compass remains visible when alone.
+Same-scope selection and new type configuration do not acquire or rebuild sources. Shared controlled condition rows serve lenses and native Facets rule drafts; availability-aware evaluation explicitly distinguishes current/candidate properties and unknown inputs without changing legacy boolean matching.
+
+Optional section snapshots adapt the existing explicit `SectionExpansion` owner for one source revision. Ordinary shared node measurement/tree/fold rendering and validated physical source anchors retain canonical note/occurrence/evidence identities. `sectionSource` selects attention (Compass/compatibility) or the pinned layout root (Mind Map); unsupported Facets hides/refuses section controls. Central source editors exclude their own outline, while another bound editor retains its document and lifetime. Structural heading rows remain separate from canonical hierarchy branches. Non-Classic conformance and Mind Map integration have separate tests and exact-source native acceptance.
+
+## Trusted public API and CLI
+
+PR #240 composes a versioned local automation API without resuming C15–C26. Its
+[reference](PUBLIC_API.md), [CLI guide](CLI.md) and [original brief](proposals/PUBLIC_API_CLI_V1.md)
+distinguish implemented contracts from platform acceptance. Complete repository verification and
+exact-build Windows native validation pass; remaining environment limits are recorded in the
+[validation report](validation/public-api-cli-240-2026-10-30.md).
+
+`application/PublicApi` owns detached envelopes, bounded operation arguments, revision/coherence
+checks and read-only use cases. `publicApi/createPublicApi` composes existing plugin/index/native
+capabilities once settings are loaded, independently of graph admission. Configuration revisions
+observe a fixed inventory of immutable settings owners; they do not traverse the vault or copy
+the settings model. Submitted settings writes also retire prior configurations before queueing,
+including legacy same-reference and A-to-B-to-A edits. Completion reads never submit writes.
+`core/contracts/ontologyCompletion` owns literal trigger matching, physical role selection and
+inverse-aware filtering shared by `editor/OntologySuggester` and the settings-only public port.
+The native editor retains bold/trailing-space insertion; HTML consumers own their DOM/caret policy.
+The pure ontology read projection from PR #239 supplies physical names,
+roles, inverse partners, authored descriptions and configured/discovered state before hydration.
+
+`adapters/obsidian/publicApiGraph` delegates to passive bounded `GraphIndex` readers over existing
+published node/search/relation/evidence owners. It owns no acquisition, scheduler, cache or
+classifier. Whole-graph certificates, local requested coverage, search vocabulary and cached
+previews remain distinct. `publicApiGraphql` lazily constructs the genuine GraphQL.js schema;
+synchronous resolvers consume the same application reads under token, depth, expanded-selection,
+work, variable and output budgets. Default and introspection resolvers share execution metering.
+There are no GraphQL mutations, subscriptions or network listeners. Its retained legal-comment
+block carries GraphQL.js's installed MIT notice into the bundled release.
+
+`application/PublicCanvasRegistry` leases existing native document-session identities; App owns
+fresh committed metadata/action callbacks, and PlexGraph publishes committed scene readers.
+`ui/publicCanvasScene` only projects supplied geometry/filter/viewport facts on explicit read;
+it never runs layout, relation classification, DOM measurement or source work. Snapshot
+semantic/source/configuration stamps identify the render frame independently of the envelope's
+current revisions. Stale/pending frames cannot certify complete coverage. Camera DOM-transform
+commits advance the same canvas coordinate; motion/paint remain separate observations. Canonical
+nodes, visual occurrences, filter inclusion, viewport intersection and decorative guides stay
+explicitly separate. Navigation/view/preset actions delegate to the captured existing native
+preflight/session/contribution owners and report accepted versus observed completion.
+
+`application/PublicApiConfiguration` wraps the canonical portable package validator, exporter,
+planner, installed-capacity preview and queued writer. It retains at most sixteen session-scoped,
+five-minute one-shot reviews, captures original remote/appearance owners including A→B→A changes,
+and requires explicit apply confirmation. Imported lenses remain disabled; no canvas selection or
+note write is granted. Readback or display-refresh failure after durable acceptance remains a
+saved receipt. Unload disposes configuration reviews and host ports, canvas registrations, service
+ports and lazy GraphQL schema before index teardown; old public handles cannot retain the retired
+plugin/index/native surfaces.
+
+Merged PR #237 supplies the shared `ui/export/captureMindMapMarkdown` and portable
+`core/plex/export/mindMapMarkdown` owners. Public `exportMarkdown` captures the exact committed
+Mind Map scene/filter lifetime and invokes those same services for whole-map or exact-occurrence
+subtree output. It returns formatter bytes/warnings with canvas identity/revision, without
+clipboard, save, source acquisition, branch expansion or a second layout/traversal engine. Current
+filters/folds constrain scope; offscreen constructed rows remain eligible. The public output cap
+still applies. The native image exporter is integrated through merged PR #239; public API image export remains deferred.
+This API introduces no image capture engine. Validation history and platform limits are recorded in the
+[API validation report](validation/public-api-window-240-2026-10-31.md).
+
 ## Action dispatch boundary
 
 The action-manager feature extends the accepted C14 boundaries without resuming structural C15–C26 work. `src/core/plex/actions.ts` owns finite stable IDs, immutable metadata and discriminated request/target/outcome values. `actionPreferences.ts` owns bounded workflow preferences, legacy binding migration and compiled chord/context matching. Neither module acquires host state or executable behavior from persisted data.
@@ -90,7 +193,7 @@ C09 introduces `src/core/graph/read.ts` with the deliberately narrow `GraphSearc
 
 `createLegacyGraphSearchRead()` in `src/adapters/obsidian/graphContracts.ts` is the compatibility boundary. It delegates each query to the existing `GraphIndex.search()`/`titleFor()` behavior and maps only returned pages through the C08 node-view mapper. It does not copy/cache the vault or create a second graph. Metadata arrays remain readonly shared references, so a hit is **not a frozen snapshot**: mapped hits are valid for the publication/presentation revision in which `search()` ran. `App` passes its existing index `renderRevision` to `SearchBox`; full/preview publication, incremental commits, rename/delete, optimistic index notifications, and display-name refresh already emit through that boundary, causing the search box to query again. Activation crosses back into legacy composition by resolving only the opaque ID with `GraphIndex.get()` immediately before the existing navigation callback.
 
-This is intentionally not a general graph API. `layout.ts`, `PlexGraph.tsx`, `PlexFilter.tsx`, `ContentPane.tsx`, legacy lens composition, relationship explanation/evidence, and other navigation/search callers still consume the concrete legacy index or legacy graph pages. The actual predicate/parser/lens evaluation is now portable under C10. Neighborhood and evidence ports should be added only when a real later consumer is migrated; presentation-filtered `neighbours()` must not be mislabeled as raw semantic adjacency. C10 owns lazy property/predicate extraction and C17 owns search implementation extraction.
+This is intentionally not a general graph API. `layout.ts`, `PlexGraph.tsx`, `PlexFilter.tsx`, legacy lens composition, relationship explanation/evidence, and other navigation/search callers still consume the concrete legacy index or legacy graph pages. The actual predicate/parser/lens evaluation is now portable under C10. Neighborhood and evidence ports should be added only when a real later consumer is migrated; presentation-filtered `neighbours()` must not be mislabeled as raw semantic adjacency. C10 owns lazy property/predicate extraction and C17 owns search implementation extraction.
 
 ## C10 portable predicate and lens runtime
 
@@ -177,8 +280,14 @@ inputs; `NeutralSourceRepository` owns immutable bounded facts, selected heads a
 GraphIndex compiles requested scopes from those facts. Complete graph snapshots are optional
 acceleration, and a physical fallback never becomes complete semantic authority by implication.
 Source heads own acquisition progress; legacy graph checkpoint reads remain, while their production
-progress writer is retired. A source-backed global node projection now restores body-only virtual/URL
-search and finite suggestions after cache loss; SI5 acceptance remains open.
+progress writer is retired. A source-backed global node projection restores body-only virtual/URL
+search and finite suggestions after cache loss. Eager initial startup then completes relationships
+through the existing batched full compiler before reporting completion; on-demand retains local
+semantics. A coalesced source-owner publication journal feeds existing background per-file graph
+commits after a complete eager baseline exists. Exact source/native/metadata receipts acknowledge
+only captured observations; source and host backlog closure are both required to renew global
+coverage. Current-node requests and canvas writes retain their higher scheduler priorities. See
+the [eager recovery validation](validation/eager-navigation-fix-2026-11-01.md) for evidence and limits.
 
 An unscoped resolver event still closes source readiness and requires cooperative reconciliation.
 Current canonical resolution output can be compared with an exact selected family using deterministic
@@ -186,6 +295,14 @@ bounded digest batches. Equal output retains the original head and observation; 
 output follows normal source replacement. Every comparison retains family reader leases, validates
 frames/chunks/postings and rejects cancellation or a changed selected head. A head-only manifest
 inspection uses a read-only transaction because it owns no chunks requiring cleanup protection.
+
+Unchanged restart host comparison uses `inspectWithLocalDependencies()` to share the clean
+dependency-owner/head selection. Its result is call-local observation, not durable publication
+authority. Legacy, repair, memory and uncertain selections retain ordinary inspection/repair.
+The subsequent metadata visit pins and authenticates normally, matches the observed revision and
+sequence before delivery, and checks them again in its existing original-connection lease-release
+transaction. Native incarnation/stat, cache/environment, cancellation and final dependency-projection
+fences remain independent. No source-head cache, schema or scheduling policy is added.
 
 A decoded body's weakly held selection avoids repeating values/body-URL validation only when the
 subsequent inspection selects the exact same durable revision and sequence. Host families remain

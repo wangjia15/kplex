@@ -11,12 +11,12 @@ import test from "node:test";
 const temp = mkdtempSync(join(tmpdir(), "kplex-density-"));
 process.on("exit", () => rmSync(temp, { recursive: true, force: true }));
 await build({
-  stdin: { contents: 'export * from "./src/settings"; export * from "./src/ui/layout"; export * from "./src/core/graph/settingsPolicy"; export * from "./src/core/plex/viewPresentation"; export { effectiveViewSettings } from "./src/ui/viewProfile";', resolveDir: process.cwd() },
+  stdin: { contents: 'export * from "./src/settings"; export * from "./src/ui/plexViews/classic/settings"; export * from "./src/ui/layout"; export * from "./src/core/graph/settingsPolicy"; export * from "./src/core/plex/viewPresentation"; export { effectiveViewSettings } from "./src/ui/viewProfile";', resolveDir: process.cwd() },
   outfile: join(temp, "geometry.mjs"), bundle: true, platform: "node", format: "esm",
   plugins: [{ name: "obsidian-boundary", setup(builder) {
     builder.onResolve({ filter: /^obsidian$/ }, () => ({ path: "obsidian", namespace: "double" }));
     builder.onLoad({ filter: /.*/, namespace: "double" }, () => ({ contents: `
-      export class App {} export class ButtonComponent {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class Setting {} export class AbstractInputSuggest {}
+      export class Component {load(){} unload(){}} export const MarkdownRenderer={render:()=>{throw Error("Native Markdown is outside this finite fixture")}}; export class App {} export class ButtonComponent {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class Setting {} export class AbstractInputSuggest {}
       export class ExtraButtonComponent {} export class Scope {} export class SecretComponent {}
       export class SearchComponent {} export const setIcon = () => {}; export const setTooltip = () => {};
       export class PluginSettingTab {} export const getIcon = () => null; export const getIconIds = () => [];
@@ -115,7 +115,10 @@ test("simplified arrangement persists independently for all devices and surfaces
       const current = geometry.captureSettingsPolicy(settings);
       effects.push(geometry.classifySettingsChange(previous, current)); previous = current;
     } };
-  const rows = tab.lateralArrangementDefinitions();
+  const contribution = geometry.classicSettingsContribution.items({translate: tab.kplexPlugin.translator,
+    areaTint: () => ({name: "Owned tint action"}), key: () => {throw Error("Compass must retain legacy keys");}});
+  const flatten = items => items.flatMap(item => [item, ...flatten(item.items ?? [])]);
+  const rows = flatten(contribution).filter(row => row.control?.key.startsWith("layout."));
   assert.equal(rows.length, 6);
   assert.equal(new Set(rows.map(row => row.control.key)).size, 6);
   const signature = geometry.encodeIndexSettingsSignature(settings);
@@ -313,7 +316,7 @@ test("clipped cross-link projection equals full-scene edges while querying only 
 test("focused crosslinks preserve canonical orientation, exact gates, styles and bounded visible adjacency", () => {
   const source=ts.createSourceFile('PlexGraph.tsx',readFileSync('src/ui/PlexGraph.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const definition=source.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='gatesForEdge');assert(definition);
-  const gates=new Function(ts.transpileModule(definition.getText(source),{compilerOptions:{target:ts.ScriptTarget.ES2021}}).outputText+';return gatesForEdge;')();
+  const gates=new Function("classicPorts",ts.transpileModule(definition.getText(source),{compilerOptions:{target:ts.ScriptTarget.ES2021}}).outputText+';return gatesForEdge;')(geometry.classicPorts);
   const pages=new Map(['Center','A','B','C','D','E','Synthetic'].map(name=>[name+'.md',page(name)]));
   pages.get('Synthetic.md').transient={kind:'section-target',sourcePath:'Center.md',actualPath:'A.md',sectionId:'s'};
   const pairs={

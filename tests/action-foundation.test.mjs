@@ -21,6 +21,17 @@ const implementation = (execute = () => ({status: "completed"})) => ({availabili
 /** Provide a shared center independently of whichever editor has focus. */
 const manager = (extra = {}) => new api.ActionManager({readCommandContext: () => ({sharedCenter: node("shared"), windowId: "main", focusRegion: "graph"}), ...extra});
 
+test('explicit center activation is a finite invocation intent, preserving placeholder-open choices',()=>{
+ assert.equal(api.validActionArguments('node.activate',undefined),true);
+ assert.equal(api.validActionArguments('node.activate',{intent:'destination'}),true);
+ for(const args of [{intent:'root-anywhere'},{intent:true},{intent:'destination',chooseFolder:true},{root:'B'}])
+  assert.equal(api.validActionArguments('node.activate',args),false);
+ assert.equal(api.validActionArguments('node.open',{chooseFolder:true,preserveCenter:true}),true);
+ assert.equal(api.validActionArguments('node.open',{intent:'destination'}),false);
+ for(const maximize of [true,false,undefined])assert.equal(api.validActionArguments('editor.expand',{maximize}),true);
+ for(const args of [{maximize:'yes'},{maximize:true,other:1},{file:'B.md'}])assert.equal(api.validActionArguments('editor.expand',args),false);
+});
+
 test("document-sync commands capture their originating surface and its center independently of shared history",async()=>{
  let preferred="B";const calls=[],app=manager({readCommandContext:()=>({sharedCenter:node("global-saved"),windowId:"main",preferredSurfaceId:preferred}),implementations:Object.fromEntries(["document.sync-from-center","center.sync-from-document","center.focus-active-note"].map(id=>[id,implementation(context=>{calls.push({id,surface:context.surfaceId,node:context.target.kind==="node"?context.target.node.identity:null});return{status:"completed"};})]))});
  app.registerSurface({id:"A",generation:1,readSnapshot:()=>snapshot(node("A"))});app.registerSurface({id:"B",generation:2,readSnapshot:()=>snapshot(node("B"))});
@@ -130,10 +141,26 @@ test("fold recency consumers read the existing interaction order without recordi
   app.check({id:"graph.focus",source:"obsidian-command"});assert.equal(app.readInteractionOrder("A"),first);app.dispose();
 });
 
-test("catalog contains bounded variants, 22 preserved IDs, nine new publication defaults and session-only actions", () => {
+test("Markdown export accepts the exact native menu occurrence as well as the command's current selection", async () => {
+  let captured;
+  const app = manager();
+  app.registerSurface({id: "canvas", generation: 1, readSnapshot: () => snapshot(),
+    implementations: {"view.export.markdown": implementation(context => {captured = context.target;return {status: "completed"};})}});
+  const outcome = await app.dispatch({id: "view.export.markdown", source: "context-menu", surfaceId: "canvas",
+    target: {kind: "explicit", node: node("A"), occurrenceId: "root"}});
+  assert.equal(outcome.status, "completed");
+  assert.deepEqual(captured, {kind: "node", node: node("A"), occurrenceId: "root"});
+  app.dispose();
+});
+
+test("catalog contains bounded variants, preserved IDs, the Markdown and PNG export publication defaults and session-only actions", () => {
   assert.equal(new Set(api.ACTION_CATALOG.map(item => item.id)).size, api.ACTION_CATALOG.length);
   assert.equal(new Set(api.ACTION_CATALOG.flatMap(item => item.command ? [item.command.id] : [])).size, api.ACTION_CATALOG.filter(item => item.command).length);
-  assert.equal(api.ACTION_CATALOG.filter(item => item.command?.defaultPublished).length, 32);
+  assert.equal(api.ACTION_CATALOG.filter(item => item.command?.defaultPublished).length, 34);
+  assert.equal(api.ACTION_BY_ID.get("view.export.markdown").command.id, "kplex-export-mindmap-markdown");
+  assert.equal(api.ACTION_BY_ID.get("view.export.markdown").target, "selected-or-center");
+  assert.equal(api.ACTION_BY_ID.get("view.export.image").command.id, "kplex-export-canvas-png");
+  assert.equal(api.ACTION_BY_ID.get("view.export.image").target, "none");
   const support = api.ACTION_BY_ID.get("support.report-bug");
   assert.equal(support.command.id, "kplex-support-report-bug");
   assert.equal(support.target, "none");
@@ -312,8 +339,8 @@ test("public command diff preserves editor callbacks, omits global hotkeys and r
   const app = manager({implementations: {"index.rebuild": implementation(), "ontology.assign.parent": implementation()}});
   const publisher = api.createActionCommandPublisher({host: {addCommand: command => {added.push(command); return command;}, removeCommand: id => removed.push(id)}, manager: app, translate: key => key, makeRequest: id => ({id, source: "obsidian-command", ...(id.startsWith("ontology.") ? {target: {kind: "editor-field", editorInvocationId: "cursor"}} : {})}), releaseRequest: request => released.push(request.id)});
   const preferences = api.migrateActionPreferences(undefined).preferences;
-  publisher.sync(preferences); assert.equal(added.length, 32);
-  publisher.sync(preferences); assert.equal(added.length, 32);
+  publisher.sync(preferences); assert.equal(added.length, 34);
+  publisher.sync(preferences); assert.equal(added.length, 34);
   assert(added.every(command => command.hotkeys === undefined));
   const editor = added.find(command => command.id === "kplex-ontology-parent"); assert.equal(typeof editor.editorCheckCallback, "function"); assert.equal(editor.checkCallback, undefined);
   assert.equal(editor.editorCheckCallback(true, {}, {}), true); assert.deepEqual(released, ["ontology.assign.parent"]);
@@ -355,12 +382,33 @@ test("explicit saves opt into retained default overlaps while old loads migrate 
   const before=structuredClone(raw),legacy=api.sanitizeActionPreferences(raw,false,'windows');
   assert(legacy.skippedDefaults.includes('node.rename'));assert.deepEqual(legacy.preferences.localBindings['node.rename'],[]);
   const saved=api.sanitizeActionPreferences(raw,false,'windows',true);
-  assert.equal(saved.preferences.defaultBindingsVersion,1);assert.deepEqual(saved.skippedDefaults,[]);assert.equal(saved.preferences.localBindings['node.rename'],undefined);
+  assert.equal(saved.preferences.defaultBindingsVersion,3);assert.deepEqual(saved.skippedDefaults,[]);assert.equal(saved.preferences.localBindings['node.rename'],undefined);
   const reload=api.sanitizeActionPreferences(saved.preferences,false,'windows');
   assert.deepEqual(reload.preferences,saved.preferences);assert.deepEqual(reload.skippedDefaults,[]);
   assert.equal(api.compileActionBindings(reload.preferences,'windows').resolve(event('r',{code:'KeyR',altKey:true}),'graph').state,'ambiguous');
-  const future={...before,defaultBindingsVersion:2},futureBefore=structuredClone(future),unsupported=api.sanitizeActionPreferences(future,false,'windows');
-  assert.equal(unsupported.unsupportedVersion,2);assert.deepEqual(future,futureBefore);assert.deepEqual(raw,before);
+  const future={...before,defaultBindingsVersion:4},futureBefore=structuredClone(future),unsupported=api.sanitizeActionPreferences(future,false,'windows');
+  assert.equal(unsupported.unsupportedVersion,4);assert.deepEqual(future,futureBefore);assert.deepEqual(raw,before);
+});
+
+test('centering, new-tab opening and Alt Enter folding have graph-only defaults and v3 migration preserves explicit shortcuts',()=>{
+ for(const convention of ['windows','macos']){
+  const prefs=api.migrateActionPreferences(undefined,convention).preferences,c=api.compileActionBindings(prefs,convention);
+  assert.equal(c.match(event('Enter'),'graph'),'node.activate');
+  for(const [modifier,action] of [['altKey','branch.toggle'],[convention==='macos'?'metaKey':'ctrlKey','node.open.new-tab'],['shiftKey',null]]){
+   assert.equal(c.match(event('Enter',{[modifier]:true}),'graph'),action);
+   for(const context of ['embedded-editor','sidecar-editor','native-control','search'])assert.equal(c.match(event('Enter',{[modifier]:true}),context),null);
+  }
+  assert.deepEqual(c.conflicts,[]);
+ }
+ const raw={version:1,defaultBindingsVersion:1,localBindings:{'node.open':[{match:'key',value:'Enter',modifiers:['mod']}],
+  'pin.toggle':[{match:'code',value:'KeyR',modifiers:['alt']}]},publishedCommands:{}};
+ for(const defaultBindingsVersion of [1,2]){const saved={...raw,defaultBindingsVersion},before=structuredClone(saved),migrated=api.sanitizeActionPreferences(saved,false,'windows');assert.equal(migrated.preferences.defaultBindingsVersion,3);assert.deepEqual(migrated.skippedDefaults,['node.open.new-tab']);assert.deepEqual(saved,before);}
+ const before=structuredClone(raw),result=api.sanitizeActionPreferences(raw,false,'windows');
+ assert.equal(result.preferences.defaultBindingsVersion,3);assert.deepEqual(result.skippedDefaults,['node.open.new-tab']);
+ assert.deepEqual(result.preferences.localBindings['node.open'],raw.localBindings['node.open']);
+ assert.equal(result.preferences.localBindings['node.rename'],undefined,'Previously accepted default overlap is not silently migrated away');
+ assert.equal(api.compileActionBindings(result.preferences,'windows').match(event('Enter',{ctrlKey:true}),'graph'),'node.open');
+ assert.deepEqual(api.sanitizeActionPreferences(result.preferences).preferences,result.preferences);assert.deepEqual(raw,before);
 });
 
 test("partial public registration failure reports actual state and stable-ID retry without duplicate success", () => {
@@ -368,9 +416,9 @@ test("partial public registration failure reports actual state and stable-ID ret
   const app = manager();
   const publisher = api.createActionCommandPublisher({host: {addCommand: command => {counts.set(command.id, (counts.get(command.id) ?? 0) + 1); if (command.id === "kplex-actions" && fail) throw new Error("native failure"); return command;}, removeCommand: () => {}}, manager: app, translate: key => key, makeRequest: id => ({id, source: "obsidian-command"})});
   const preferences = api.migrateActionPreferences(undefined).preferences;
-  const first = publisher.sync(preferences); assert.equal(first.failures.length, 1); assert.equal(publisher.registeredIds().length, 31);
-  const actual = publisher.registeredIds(); actual.pop(); assert.equal(publisher.registeredIds().length, 31);
-  fail = false; assert.equal(publisher.sync(preferences).failures.length, 0); assert.equal(publisher.registeredIds().length, 32);
+  const first = publisher.sync(preferences); assert.equal(first.failures.length, 1); assert.equal(publisher.registeredIds().length, 33);
+  const actual = publisher.registeredIds(); actual.pop(); assert.equal(publisher.registeredIds().length, 33);
+  fail = false; assert.equal(publisher.sync(preferences).failures.length, 0); assert.equal(publisher.registeredIds().length, 34);
   assert.equal(counts.get("kplex-actions"), 2); assert.equal(counts.get("kplex-start"), 1);
   publisher.dispose(); app.dispose();
 });
@@ -446,7 +494,7 @@ test("modified laptop defaults match Mac Option glyphs by physical position and 
   for (const region of ["embedded-editor", "sidecar-editor"]) assert.equal(compiled.match(event("¿", {code: "Slash", altKey: true, shiftKey: true}), region), null, "Editors keep their own help chords");
   assert.equal(compiled.match(event("g", {metaKey: true, shiftKey: true}), "embedded-editor"), "graph.focus");
   assert.equal(compiled.match(event("e", {metaKey: true, shiftKey: true}), "graph"), "editor.focus");
-  assert.equal(compiled.match(event("Enter", {metaKey: true}), "graph"), "node.open");
+  assert.equal(compiled.match(event("Enter", {metaKey: true}), "graph"), "node.open.new-tab");
   assert.equal(compiled.match(event("ArrowUp", {altKey: true}), "graph"), "selection.section.up");
   assert.equal(compiled.match(event("ArrowUp", {metaKey: true}), "graph"), "relationship.create-center.parent");
 });
@@ -536,4 +584,13 @@ test("modified physical dead chords capture and resolve while accent typing, log
   for (const modifier of ["Shift", "Alt", "Control", "Meta"]) {
     assert.equal(api.captureActionBinding(event(modifier, {code: `${modifier}Left`, altKey: true}), "macos", "code"), null);
   }
+});
+
+
+test("Markdown export targets its canvas even when shared attention has no note",async()=>{
+ let captured;const app=manager({readCommandContext:()=>({sharedCenter:null,preferredSurfaceId:'canvas'})});
+ app.registerSurface({id:'canvas',generation:1,readSnapshot:()=>snapshot(),implementations:{'view.export.markdown':implementation(context=>{captured=context.target;return{status:'completed'}})}});
+ assert.equal(app.check({id:'view.export.markdown',source:'obsidian-command'}).state,'enabled');
+ assert.equal((await app.dispatch({id:'view.export.markdown',source:'obsidian-command'})).status,'completed');
+ assert.deepEqual(captured,{kind:'node',node:node('A')});app.dispose();
 });

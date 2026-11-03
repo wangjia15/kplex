@@ -1,0 +1,512 @@
+{
+  "scope": "Shared Markdown heading measurements across Compass and Mind Map",
+  "status": "passed",
+  "baseline": "6f630d967c03862fe8c7f87a0254a32e6f026a3a",
+  "totalCases": 55,
+  "lanes": [
+    {
+      "lane": "ux",
+      "sample": 28,
+      "status": "passed",
+      "driverNode": "v22.22.2",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "startedAt": "2026-10-26T13:47:06.315Z",
+      "completedAt": "2026-10-26T13:47:26.541Z",
+      "artifacts": {
+        "main.js": "6c56ff064a927ad5b43bffc4958409c1a9630f48a2d72cacfd67e8d3980a05dd",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "19a1bb1a25bfbc6db417420e2a07a281e50b48cb5f121ff52d486d9cc3dd47d5"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/ui/PlexGraph.tsx": "8a675c71be7e083b06d82a70fd7c628107e39909044608c95312d39d25dcaf72",
+        "src/ui/plexViews/prepareScene.ts": "930a5d3804081711e8d7d9a60498a38c35ad7626cd119fa91ba0f8ae4d904188",
+        "src/core/plex/views/contracts.ts": "96141f3a4507c4db8433771c6ff3f90c27ca1b682a51d870350e4aa9ec96fc90",
+        "src/core/plex/views/hierarchy.ts": "eabf11a0ec8d3acff87dab7d78a06601611ec3236a18f54b3d4adac3b2498ed7",
+        "src/core/plex/views/registry.ts": "4c5f99783ecc3075cea93ca8aff189b8a19f1e71099a1ea28ae505f309ae255b",
+        "src/core/plex/views/mindmap/definition.ts": "278c788dc9d2cfd5d1973164f418def6e36575270ed56206b41006284f64b292",
+        "src/core/plex/views/mindmap/projection.ts": "6d1185efb47b9f635d28e5037a7404954411f07901431669cf8bd9ab2ba4178d",
+        "src/core/plex/views/mindmap/layout.ts": "4a41e304025e4a030be24526b4ef3bea56a592a6647c35c455b8ed8b7b1d4b0d",
+        "src/core/plex/views/wuxing/definition.ts": "1d3e8b9db72978b6097eaad3df2d6d409d4f7e44b978322267a09691292b4885",
+        "src/core/plex/views/facets/projection.ts": "b78a6c38806e895933ba56dd522678a14b4b00b6152e68f18478db9e2272d3b5",
+        "src/core/plex/views/facets/layout.ts": "7ba987cb8678365c82f4113d2aa3dbf7eb2680ae83ac87998fd716a301437559",
+        "src/core/plex/views/facets/rules.ts": "9f6a6cb6260424166e353567021e3a2748a5322fd9cef7170e3adb8db7d5f5e4",
+        "src/core/plex/predicate.ts": "1385f7eeaa80a8a22813a1dd71ad436784eec626261a2ce8eb39a48ee9f3d9da",
+        "src/ui/plexViews/facets/FacetPresetEditor.ts": "5cde206795032048ef1461cdbcf328382229c36edd71f9c0ff752d4d23e8e616",
+        "src/ui/CanvasPropertyAssignmentActions.ts": "7c9d038187c439a255d53691caf46a0a633e0d810c0bb73088187c35d56a2c8c",
+        "src/adapters/obsidian/predicateContracts.ts": "a880ddf39add8ca9adacc2dc0bce2937d17207f2bebeeec26e0a13c1c000b955",
+        "src/ui/NativeMarkdownHelp.ts": "5ffc0b5a5af0a091bfa622ebd75bc2c928159d817e981d2684797ae74a44fdc7",
+        "src/ui/MarkdownHelpModal.ts": "6fec2222d055dde51231cb05030514fb092e62bf63458490114a37da9f70ce76",
+        "src/core/contracts/markdownHelp.ts": "9034e70ea66566c0c81bc0360fb722e55d9051df28e769e4ad4d60c773d120c1",
+        "src/ui/plexViews/facets/helpSettings.ts": "4ef188ea9ad4d22b2bccaa1981e1508a078308d5ed01812ed6704eac5ba09d7f",
+        "src/core/plex/views/facets/templates.ts": "917a1c562ba1810688deaa0410908f7c7499470ca25693ca11b2f00155041f12"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "native-preset-controls-travel-together",
+          "windowWidth": 1280,
+          "controlWidths": [
+            222,
+            40,
+            40
+          ]
+        },
+        {
+          "id": "native-preset-controls-travel-together",
+          "windowWidth": 640,
+          "controlWidths": [
+            222,
+            40,
+            40
+          ]
+        },
+        {
+          "id": "native-preset-help-full-width-below-description",
+          "width": 1074,
+          "rowWidth": 1074
+        },
+        {
+          "id": "native-wide-preset-editor-single-icon-row",
+          "width": 1120,
+          "buttons": 7
+        },
+        {
+          "id": "native-draft-json-actions-present",
+          "nativeFileCompletionVerified": false,
+          "clipboardAccessed": false
+        },
+        {
+          "id": "native-preset-draft-reset-save-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-import-format-help-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-import-paste-file-guidance-single-footer-and-readonly-help"
+        },
+        {
+          "id": "native-facets-area-columns-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-facets-width-keyboard-one-and-multiple-columns"
+        },
+        {
+          "id": "native-compass-central-sections-shared-source-tree-and-fold"
+        },
+        {
+          "id": "native-mindmap-canonical-gate-counts",
+          "expected": {
+            "top": 3,
+            "bottom": 7,
+            "left": 0
+          }
+        },
+        {
+          "id": "native-arrow-selected-enter-fold-unfold-no-navigation"
+        },
+        {
+          "id": "native-parent-columns-1-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 1
+        },
+        {
+          "id": "native-parent-columns-2-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 2
+        },
+        {
+          "id": "native-parent-columns-3-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 3
+        },
+        {
+          "id": "native-mindmap-heading-labels-fit-shared-section-measurement"
+        },
+        {
+          "id": "native-mindmap-heading-fold-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-mindmap-central-only-sections-shared-tree-independent-fold-camera",
+          "headings": 4
+        },
+        {
+          "id": "native-mindmap-attention-retains-root-outline"
+        },
+        {
+          "id": "native-mindmap-root-outline-other-editor-focus-content-caret-save-cleanup"
+        },
+        {
+          "id": "native-mindmap-root-editor-excludes-only-own-outline"
+        },
+        {
+          "id": "native-facets-sections-disabled-after-view-switch"
+        },
+        {
+          "id": "native-depth-configuration-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-mindmap-depth-nine-admission",
+          "configuredMaximumDepth": 20
+        },
+        {
+          "id": "native-mindmap-eight-scope-limit-retains-visible-frontier"
+        }
+      ],
+      "strictEditorFacts": {
+        "leafSame": true,
+        "editorSame": true,
+        "valueSame": true,
+        "cursorSame": true,
+        "focused": true,
+        "bindingSame": true,
+        "contentConnected": true,
+        "activeElement": "cm-content cm-lineWrapping",
+        "beforeLength": 165,
+        "afterLength": 165,
+        "attentionSame": true,
+        "rootSame": true,
+        "beforeCursor": "{\"line\":4,\"ch\":29}",
+        "afterCursor": "{\"line\":4,\"ch\":29}",
+        "markerRetained": true
+      },
+      "cleanup": "passed",
+      "restoration": {
+        "status": "passed",
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T13:47:32.204Z"
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "pairs",
+      "sample": 6,
+      "status": "passed",
+      "driverNode": "v22.22.2",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "startedAt": "2026-10-26T13:49:09.920Z",
+      "completedAt": "2026-10-26T13:49:20.252Z",
+      "artifacts": {
+        "main.js": "6c56ff064a927ad5b43bffc4958409c1a9630f48a2d72cacfd67e8d3980a05dd",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "19a1bb1a25bfbc6db417420e2a07a281e50b48cb5f121ff52d486d9cc3dd47d5"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/ui/PlexGraph.tsx": "8a675c71be7e083b06d82a70fd7c628107e39909044608c95312d39d25dcaf72",
+        "src/ui/plexViews/prepareScene.ts": "930a5d3804081711e8d7d9a60498a38c35ad7626cd119fa91ba0f8ae4d904188",
+        "src/core/plex/views/contracts.ts": "96141f3a4507c4db8433771c6ff3f90c27ca1b682a51d870350e4aa9ec96fc90",
+        "src/core/plex/views/hierarchy.ts": "eabf11a0ec8d3acff87dab7d78a06601611ec3236a18f54b3d4adac3b2498ed7",
+        "src/core/plex/views/registry.ts": "4c5f99783ecc3075cea93ca8aff189b8a19f1e71099a1ea28ae505f309ae255b",
+        "src/core/plex/views/mindmap/definition.ts": "278c788dc9d2cfd5d1973164f418def6e36575270ed56206b41006284f64b292",
+        "src/core/plex/views/mindmap/projection.ts": "6d1185efb47b9f635d28e5037a7404954411f07901431669cf8bd9ab2ba4178d",
+        "src/core/plex/views/mindmap/layout.ts": "4a41e304025e4a030be24526b4ef3bea56a592a6647c35c455b8ed8b7b1d4b0d",
+        "src/core/plex/views/wuxing/definition.ts": "1d3e8b9db72978b6097eaad3df2d6d409d4f7e44b978322267a09691292b4885",
+        "src/core/plex/views/facets/projection.ts": "b78a6c38806e895933ba56dd522678a14b4b00b6152e68f18478db9e2272d3b5",
+        "src/core/plex/views/facets/layout.ts": "7ba987cb8678365c82f4113d2aa3dbf7eb2680ae83ac87998fd716a301437559",
+        "src/core/plex/views/facets/rules.ts": "9f6a6cb6260424166e353567021e3a2748a5322fd9cef7170e3adb8db7d5f5e4",
+        "src/core/plex/predicate.ts": "1385f7eeaa80a8a22813a1dd71ad436784eec626261a2ce8eb39a48ee9f3d9da",
+        "src/ui/plexViews/facets/FacetPresetEditor.ts": "5cde206795032048ef1461cdbcf328382229c36edd71f9c0ff752d4d23e8e616",
+        "src/ui/CanvasPropertyAssignmentActions.ts": "7c9d038187c439a255d53691caf46a0a633e0d810c0bb73088187c35d56a2c8c",
+        "src/adapters/obsidian/predicateContracts.ts": "a880ddf39add8ca9adacc2dc0bce2937d17207f2bebeeec26e0a13c1c000b955",
+        "src/ui/NativeMarkdownHelp.ts": "5ffc0b5a5af0a091bfa622ebd75bc2c928159d817e981d2684797ae74a44fdc7",
+        "src/ui/MarkdownHelpModal.ts": "6fec2222d055dde51231cb05030514fb092e62bf63458490114a37da9f70ce76",
+        "src/core/contracts/markdownHelp.ts": "9034e70ea66566c0c81bc0360fb722e55d9051df28e769e4ad4d60c773d120c1",
+        "src/ui/plexViews/facets/helpSettings.ts": "4ef188ea9ad4d22b2bccaa1981e1508a078308d5ed01812ed6704eac5ba09d7f",
+        "src/core/plex/views/facets/templates.ts": "917a1c562ba1810688deaa0410908f7c7499470ca25693ca11b2f00155041f12"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment",
+          "owner": "main",
+          "freshCreationTested": false
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment",
+          "owner": "popout",
+          "freshCreationTested": false
+        },
+        {
+          "id": "main-popout-per-canvas-selection-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-compass-wuxing-main-popout-independent-canvas-and-sidecar-state"
+        },
+        {
+          "id": "opening-canvas-selector-owner-survives-window-focus-change"
+        },
+        {
+          "id": "native-shared-preset-layout-and-independent-preset-selection",
+          "main": "para",
+          "popout": "publishing"
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor",
+          "owner": "main-wuxing",
+          "simultaneousEditors": 1
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor",
+          "owner": "popout-compass",
+          "simultaneousEditors": 1
+        },
+        {
+          "id": "independent-owned-native-workspace-view-restoration",
+          "applicationRestart": false
+        },
+        {
+          "id": "windows-native-view-select-keyboard",
+          "transport": "Electron",
+          "keys": [
+            {
+              "key": "Home",
+              "trusted": true,
+              "targetSelect": true
+            }
+          ],
+          "changes": [
+            {
+              "trusted": true,
+              "value": "classic"
+            }
+          ]
+        },
+        {
+          "id": "native-independent-main-popout-root-outlines-and-unsupported-facets",
+          "simultaneousRootOutlines": 2,
+          "otherEditorsOrSidecarsRetargeted": false
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "status": "passed",
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T13:49:25.766Z"
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "lane": "editor-lifecycle",
+      "sample": 5,
+      "status": "passed",
+      "driverNode": "v22.22.2",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "startedAt": "2026-10-26T13:49:31.587Z",
+      "completedAt": "2026-10-26T13:49:40.886Z",
+      "artifacts": {
+        "main.js": "6c56ff064a927ad5b43bffc4958409c1a9630f48a2d72cacfd67e8d3980a05dd",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "19a1bb1a25bfbc6db417420e2a07a281e50b48cb5f121ff52d486d9cc3dd47d5"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/ui/PlexGraph.tsx": "8a675c71be7e083b06d82a70fd7c628107e39909044608c95312d39d25dcaf72",
+        "src/ui/plexViews/prepareScene.ts": "930a5d3804081711e8d7d9a60498a38c35ad7626cd119fa91ba0f8ae4d904188",
+        "src/core/plex/views/contracts.ts": "96141f3a4507c4db8433771c6ff3f90c27ca1b682a51d870350e4aa9ec96fc90",
+        "src/core/plex/views/hierarchy.ts": "eabf11a0ec8d3acff87dab7d78a06601611ec3236a18f54b3d4adac3b2498ed7",
+        "src/core/plex/views/registry.ts": "4c5f99783ecc3075cea93ca8aff189b8a19f1e71099a1ea28ae505f309ae255b",
+        "src/core/plex/views/mindmap/definition.ts": "278c788dc9d2cfd5d1973164f418def6e36575270ed56206b41006284f64b292",
+        "src/core/plex/views/mindmap/projection.ts": "6d1185efb47b9f635d28e5037a7404954411f07901431669cf8bd9ab2ba4178d",
+        "src/core/plex/views/mindmap/layout.ts": "4a41e304025e4a030be24526b4ef3bea56a592a6647c35c455b8ed8b7b1d4b0d",
+        "src/core/plex/views/wuxing/definition.ts": "1d3e8b9db72978b6097eaad3df2d6d409d4f7e44b978322267a09691292b4885",
+        "src/core/plex/views/facets/projection.ts": "b78a6c38806e895933ba56dd522678a14b4b00b6152e68f18478db9e2272d3b5",
+        "src/core/plex/views/facets/layout.ts": "7ba987cb8678365c82f4113d2aa3dbf7eb2680ae83ac87998fd716a301437559",
+        "src/core/plex/views/facets/rules.ts": "9f6a6cb6260424166e353567021e3a2748a5322fd9cef7170e3adb8db7d5f5e4",
+        "src/core/plex/predicate.ts": "1385f7eeaa80a8a22813a1dd71ad436784eec626261a2ce8eb39a48ee9f3d9da",
+        "src/ui/plexViews/facets/FacetPresetEditor.ts": "5cde206795032048ef1461cdbcf328382229c36edd71f9c0ff752d4d23e8e616",
+        "src/ui/CanvasPropertyAssignmentActions.ts": "7c9d038187c439a255d53691caf46a0a633e0d810c0bb73088187c35d56a2c8c",
+        "src/adapters/obsidian/predicateContracts.ts": "a880ddf39add8ca9adacc2dc0bce2937d17207f2bebeeec26e0a13c1c000b955",
+        "src/ui/NativeMarkdownHelp.ts": "5ffc0b5a5af0a091bfa622ebd75bc2c928159d817e981d2684797ae74a44fdc7",
+        "src/ui/MarkdownHelpModal.ts": "6fec2222d055dde51231cb05030514fb092e62bf63458490114a37da9f70ce76",
+        "src/core/contracts/markdownHelp.ts": "9034e70ea66566c0c81bc0360fb722e55d9051df28e769e4ad4d60c773d120c1",
+        "src/ui/plexViews/facets/helpSettings.ts": "4ef188ea9ad4d22b2bccaa1981e1508a078308d5ed01812ed6704eac5ba09d7f",
+        "src/core/plex/views/facets/templates.ts": "917a1c562ba1810688deaa0410908f7c7499470ca25693ca11b2f00155041f12"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "type-configuration-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-settings-preset-manager-durable-multilingual-label"
+        },
+        {
+          "id": "native-attention-editor-expanded-reclassified-resized-and-restored-at-phase-anchor"
+        },
+        {
+          "id": "attention-native-editor-phase-reclassification-resize-compatible-switch",
+          "dirtyAtReclassification": true,
+          "documentRetained": true,
+          "contentRetained": true,
+          "caretRetained": true
+        },
+        {
+          "id": "selection-and-phase-mapping-preserve-editor-and-owned-sidecar"
+        },
+        {
+          "id": "windows-native-editor-typed-input-without-clipboard",
+          "transport": "Electron_insertText",
+          "clipboardAccessed": false
+        },
+        {
+          "id": "explicit-attention-navigation-saves-content-and-retires-old-native-document"
+        },
+        {
+          "id": "attention-editor-popout-main-remount-correct-document-and-session"
+        },
+        {
+          "id": "native-editor-explicit-collapse-cleanup"
+        }
+      ],
+      "cleanup": "passed",
+      "restoration": {
+        "status": "passed",
+        "configurationFiles": 9,
+        "contentFiles": 117,
+        "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+        "completedAt": "2026-10-26T13:49:46.496Z"
+      },
+      "limits": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Clipboard excluded: this lane uses native typed text; the separate guarded clipboard lane declined rich/custom formats.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    }
+  ],
+  "remaining": [
+    "Mac/physical mobile/minimum-host/OSclipboard and known215 coverage limits retained"
+  ],
+  "runtimeCommit": "cd82da8d95acf69446f0fa4fa5b8b83107127768",
+  "fullVerification": "Clean runtime-head verify:obsidian and exact final documentation-head CI results are recorded in the PR before delivery."
+}

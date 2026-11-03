@@ -1,0 +1,137 @@
+/** Bounded real-native M0 proof. No production definition, editor implementation or persistent debug API. */
+import {buildSync} from 'esbuild';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {runControlledProbe} from './controlledProbe.mjs';
+import {nativeDocumentSessions} from './nativeDocumentSessions.mjs';
+
+/** Exercise the real shared occurrence host and restore every owned fixture on settled exits. */
+async function scenario(app,c){
+ const p=app.plugins.plugins['k-plex'],workspace=app.workspace;
+ if(!p||app.vault.getFiles().length>=1000||app.setting.isOpen)throw Error('Clean disposable Small required');
+ const original=structuredClone(p.settings),policy=p.savedSettingsPolicy,layout=workspace.getLayout(),sessions=c.documentSessions(p),owners=sessions.capture();
+ const files=[],hosts=[],releases=[],restores=[],embedded=new Set(),cases=[],cleanup=[],folder='Kplex-219-M0-'+Date.now(),path=name=>folder+'/'+name+'.md';
+ let createdFolder,failure,host,session,registry;
+ const check=(value,message)=>{if(c.closed||!value)throw Error(message)};
+ const wait=async ms=>{check(true,'Retired controller');await new Promise(resolve=>window.setTimeout(resolve,ms));check(true,'Retired controller')};
+ const until=async(read,message)=>{const end=Date.now()+20000;while(!read()){check(Date.now()<end,message);await wait(30)}};
+ const root=()=>host?.view.contentEl.querySelector('.kplex-app');
+ const overlay=()=>root()?.querySelector('.kplex-central-editor-overlay');
+ const content=()=>root()?.querySelector('.kplex-central-editor-content .cm-content');
+ const attention=()=>host.view.documentSession.centerPath;
+ const instance=()=>[...embedded].find(leaf=>leaf.view.containerEl.isConnected&&root()?.querySelector('.kplex-central-editor-leaf-host')?.contains(leaf.view.containerEl));
+ const surface=()=>[...p.actionSurfaceHosts].find(([,registration])=>registration.leaf===host)?.[0];
+ const act=async(id,args,target)=>{const result=await p.actionManager.dispatch({id,source:'internal',surfaceId:surface(),...(args?{args}:{}),...(target?{target}:{})});await wait(40);return result};
+ const currentBinding=()=>session.editors.bindings[0];
+ const selectB1=async()=>{await act('selection.center');await act('selection.section.up');check(p.actionManager.readSnapshot(surface())?.selected?.occurrenceId==='repeat-above','Exact B1 selection required')};
+ const markDirty=async(editor,marker)=>{content().focus();editor.replaceRange('\n'+marker+'\n',editor.getCursor('to'));const line=editor.getValue().split('\n').findIndex(value=>value.includes(marker));editor.setSelection({line,ch:1},{line,ch:5});const ranges=editor.listSelections();check(ranges.length>0&&JSON.stringify(ranges[0].anchor)!==JSON.stringify(ranges[0].head),'Nonempty native selection required');check(!(await app.vault.read(files.find(file=>file.path===path('B')))).includes(marker),'Genuinely dirty native editor required');return{value:editor.getValue(),selections:JSON.stringify(ranges)}};
+ const untilSaved=async(file,marker)=>{const end=Date.now()+20000;while(!(await app.vault.read(file)).includes(marker)){check(Date.now()<end,'Native teardown did not persist owned marker');await wait(30)}};
+ c.progress={phase:'fixture',cases};
+ try{
+  await until(()=>!p.isStartupInitializing(),'Startup pending');
+  const remote=require('@electron/remote'),win=remote.getCurrentWindow();remote.app.focus({steal:true});win.show();win.focus();win.webContents.focus();
+  workspace.leftSplit.collapse();workspace.rightSplit.collapse();await sessions.off();
+  createdFolder=await app.vault.createFolder(folder);const child=p.settings.hierarchy.children[0];check(child,'Child ontology required');
+  for(const name of ['R','A','B','C']){const file=await app.vault.create(path(name),name==='R'?`---\n${JSON.stringify(child)}: "[[${path('B')}]]"\n---\n# R\n`:`# ${name}\n\nOwned native occurrence fixture.\n`);files.push(file);p.index.insertCreatedFile(file);releases.push(p.index.acquireSemanticDemand(file.path))}
+  await until(()=>files.every(file=>app.metadataCache.getFileCache(file))&&!p.index.hasPendingSemanticPreparation()&&!p.index.hasActiveSemanticPreparation(),'Fixture not ready');
+  Object.assign(p.settings,{documentSyncMode:'off',sidecarOpen:false,embedCentralNode:false,autoOpenCentralDocument:false,followActiveFile:false,centralNodeMarkdownMode:'source',animationSpeed:0,graphDepth:1,renderSiblings:false,showPageNodes:true,showInferredNodes:true,showFolderNodes:false,showTagNodes:false,graphLenses:[],applyPowerFilter:false,groupRelations:false});p.index.notifyPresentation();
+  host=workspace.getLeaf('tab');hosts.push(host);const prototype=Object.getPrototypeOf(host),setState=prototype.setViewState;
+  prototype.setViewState=function(...args){if(this.containerEl.closest('.kplex-central-editor-leaf-host'))embedded.add(this);return setState.apply(this,args)};restores.push(()=>{prototype.setViewState=setState});
+  await host.setViewState({type:'k-plex-react-view',active:true});await host.view.waitUntilReady();host.view.centerPresentation.update({embedCentralNode:false,centralNodeMarkdownMode:'source'});p.notifyNavigation(path('A'),host);
+  await until(()=>attention()===path('A'),'Initial attention absent');
+  session=host.view.documentSession.plexView;registry=session.registry;
+  const legacy=c.createLegacy({root:path('R'),repeated:path('B')}),probe=c.createProbe({root:path('R'),repeated:path('B'),next:path('C')}),noEditor={...legacy,id:'test.no-editor',capabilities:{...legacy.capabilities,editor:false}};
+  const testRegistry=new registry.constructor([...registry.available,legacy,probe,noEditor]);session.registry=testRegistry;session.select(probe.id);session.setRoot(path('R'));
+  await until(()=>root()?.querySelector('[data-kplex-keyboard-id="repeat-above"]')&&!root().querySelector('.kplex-view-error'),'Rooted native probe absent');
+  await p.openSidecar(host,p.index.get(path('A')));const side=p.sidecarLeaves.get(host);check(side,'Owned Sidecar required');await workspace.revealLeaf(host);await host.view.waitUntilReady();
+  for(let i=0;i<4;i++)await act('view.zoom-out');await selectB1();
+  const initial={root:session.layoutRoot(path('A')),attention:attention(),side:side.view.file?.path,active:workspace.activeLeaf,focus:document.activeElement,camera:root().querySelector('.kplex-camera').style.transform};
+  check((await act('editor.expand')).status==='completed','Shared editor expansion rejected');
+  await until(()=>content()&&instance()?.view.editor,'Actual native editor absent');let leaf=instance(),editor=leaf.view.editor,element=root().querySelector('.kplex-central-editor-content'),binding=currentBinding();
+  check(leaf.view.file===files.find(file=>file.path===path('B'))&&binding.occurrenceId==='repeat-above','Editor did not open B1 canonical document');
+  check(session.layoutRoot(path('A'))===initial.root&&attention()===initial.attention&&side.view.file?.path===initial.side,'Background editor redirected root/attention/Sidecar');
+  check(workspace.activeLeaf===initial.active&&document.activeElement===initial.focus,'Background editor stole native focus');check(root().querySelector('.kplex-camera').style.transform===initial.camera,'Opening editor changed camera');
+  check(!root().querySelector('[data-kplex-keyboard-id="repeat-below"] .kplex-central-editor-placeholder'),'B2 expanded with B1');
+  cases.push({id:'R-A-B1-background-native-host',rootRetained:true,attentionRetained:true,sidecarRetained:true,focusRetained:true});c.progress={phase:'attention-and-dirty-geometry',cases};
+  const ref={identity:binding.target.nodeId,path:binding.target.path,fileIdentity:binding.target.fileIdentity,kind:'file'};
+  const capacity=await act('editor.expand',undefined,{kind:'explicit',node:ref,occurrenceId:'repeat-below'});check(capacity.status==='unavailable'&&capacity.reasonKey==='actions.editor-capacity'&&currentBinding().id===binding.id,'Capacity-one contract failed');
+  p.notifyNavigation(path('C'),host);await until(()=>attention()===path('C')&&root()?.querySelector('[data-kplex-keyboard-id="look-here"]')?.dataset.kplexPath===path('C'),'Attention C absent');
+  check(session.layoutRoot(path('C'))===path('R')&&instance()===leaf&&leaf.view.editor===editor&&leaf.view.file?.path===path('B'),'Attention retargeted B or root');cases.push({id:'attention-C-retains-R-and-native-B1',capacityReason:capacity.reasonKey});
+  const dirty=await markDirty(editor,'Kplex-219-dirty-geometry'),camera=root().querySelector('.kplex-camera').style.transform,sideFile=side.view.file?.path;
+  check((await act('editor.resize',{bindingId:binding.id,width:660,height:410})).status==='completed','Shared resize rejected');check(session.updateState({hideRepeated:false,reflowOffset:35}),'Admitted reflow rejected');await wait(80);
+  check(instance()===leaf&&leaf.view.editor===editor&&root().querySelector('.kplex-central-editor-content')===element,'Reflow replaced native instance');
+  check(editor.getValue()===dirty.value&&JSON.stringify(editor.listSelections())===dirty.selections&&element.contains(document.activeElement),'Dirty text/selection/focus lost through geometry');
+  check(session.layoutRoot(path('C'))===path('R')&&root().querySelector('.kplex-camera').style.transform===camera&&side.view.file?.path===sideFile,'Geometry changed root/camera/Sidecar');
+  const scroll=root().querySelector('.kplex-zone-grove .kplex-zone-scroll'),top=overlay().style.top;scroll.scrollTop=100;scroll.dispatchEvent(new Event('scroll'));await until(()=>overlay().style.top!==top,'Overlay did not follow actual area scroll');
+  const clip=overlay().style.clipPath,clipTop=Number.parseFloat(clip.slice(6));check(clip.startsWith('inset(')&&clipTop>0&&instance()===leaf&&editor.getValue()===dirty.value&&JSON.stringify(editor.listSelections())===dirty.selections,'Scroll clipping or editing state changed');
+  const anchor=root().querySelector('[data-kplex-keyboard-id="repeat-above"]').getBoundingClientRect(),box=overlay().getBoundingClientRect();
+  check(['left','top','width','height'].every(key=>Math.abs(anchor[key]-box[key])<1),'Native editor does not match its displayed occurrence rectangle');
+  cases.push({id:'dirty-resize-reflow-scroll-clip-retains-native-state',clip:overlay().style.clipPath,capacity:session.editors.capacity});c.progress={phase:'filters-and-removal',cases};
+  root().querySelector('.kplex-filter-trigger').click();await until(()=>document.querySelector('.kplex-filter-panel .kplex-quick-lens-row input'),'Quick lens absent');
+  const panel=document.querySelector('.kplex-filter-panel'),input=panel.querySelector('.kplex-quick-lens-row input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Kplex-219-no-match');input.dispatchEvent(new Event('input',{bubbles:true}));await wait(100);
+  check(instance()===leaf&&currentBinding().occurrenceId==='repeat-above'&&!root().querySelector('[data-kplex-keyboard-id="repeat-below"]'),'Filtering removed B1 or pinned both occurrences');
+  check(session.updateState({hideRepeated:true,reflowOffset:35})===false&&instance()===leaf,'Branch removal discarded native editor');
+  const selector=panel.querySelector('.kplex-view-selector select');selector.value='classic';selector.dispatchEvent(new Event('change',{bubbles:true}));await wait(60);
+  check(session.definition.id===probe.id&&selector.value===probe.id&&panel.querySelector('.kplex-view-selector [role="status"]')?.textContent,'Blocked selection was optimistic or unexplained');session.select(noEditor.id);check(session.definition.id===probe.id,'Incompatible view discarded editor');
+  panel.querySelector('.kplex-filter-clear').click();panel.querySelector('.kplex-filter-close')?.click();if(document.querySelector('.kplex-filter-panel'))root().querySelector('.kplex-filter-trigger').click();
+  cases.push({id:'exact-filter-pin-branch-removal-and-selector-guards'});c.progress={phase:'save-failure',cases};
+  const save=leaf.view.save;let saveAttempts=0;leaf.view.save=async()=>{saveAttempts++;throw Error('Owned native save rejection')};restores.push(()=>{leaf.view.save=save});
+  const rejected=await act('editor.collapse',{bindingId:binding.id});check(rejected.status==='failed'&&instance()===leaf&&editor.getValue()===dirty.value&&!currentBinding().closing,'Failed save discarded native editor');
+  const excluded=p.settings.excludeFilepaths;p.settings.excludeFilepaths=[...excluded,path('B')];p.index.notifyPresentation();
+  await until(()=>root()?.querySelector('.kplex-view-error')&&currentBinding()&&!currentBinding().closing,'Authoritative removal did not retain the rejected-save binding');
+  check(instance()===leaf&&editor.getValue()===dirty.value&&attention()===path('C')&&session.layoutRoot(path('C'))===path('R'),'Rejected save during removal lost or retargeted native buffer');
+  check(overlay().inert&&overlay().ownerDocument.defaultView.getComputedStyle(overlay()).visibility==='hidden'&&root().querySelector('.kplex-view-error [data-kplex-close-bound-editor]'),'Authoritative hiding must conceal the retained native buffer and offer explicit close');
+  const beforeRecoveryClose=saveAttempts;root().querySelector('.kplex-view-error [data-kplex-close-bound-editor]').click();await until(()=>saveAttempts>beforeRecoveryClose&&currentBinding()&&!currentBinding().closing,'Hidden-buffer close did not reach the native save lifecycle');check(instance()===leaf&&editor.getValue()===dirty.value&&overlay().inert,'Rejected hidden-buffer close discarded its native state');
+  p.settings.excludeFilepaths=excluded;p.index.notifyPresentation();await until(()=>!root()?.querySelector('.kplex-view-error')&&instance()===leaf,'Visibility recovery replaced the native host');
+  cases.push({id:'authoritative-removal-save-failure-retains-buffer-for-explicit-recovery'});leaf.view.save=save;
+  check((await act('editor.collapse',{bindingId:binding.id})).status==='completed','Explicit collapse did not complete');await until(()=>!overlay()&&!session.editors.bindings.length,'Collapsed native host remains');check((await app.vault.read(files.find(file=>file.path===path('B')))).includes('Kplex-219-dirty-geometry'),'Native collapse lost edits');
+  cases.push({id:'native-save-failure-retention-and-explicit-durable-collapse'});c.progress={phase:'restoration-and-migration',cases};
+  await p.closeSidecar(host);await p.setDocumentSyncMode(host,'off');await until(()=>!p.index.hasPendingSemanticPreparation()&&!p.index.hasActiveSemanticPreparation(),'Saved removal-recovery source work did not settle');await selectB1();const reopened=await act('editor.expand');check(reopened.status==='completed','Reopen rejected: '+JSON.stringify(reopened));await until(()=>content()&&instance()?.view.editor,'Reopened editor absent');
+  const saved=host.view.getState();check(!JSON.stringify(saved).includes('fileIdentity'),'Workspace contains native file token');await host.setViewState({type:'empty',active:false});await host.setViewState({type:'k-plex-react-view',state:saved,active:true});await host.view.waitUntilReady();
+  session=host.view.documentSession.plexView;session.registry=testRegistry;session.recover();session.select(probe.id);await until(()=>content()&&currentBinding()&&instance()?.view.file?.path===path('B'),'Owned view restoration failed to admit B');
+  check(session.layoutRoot(path('C'))===path('R')&&attention()===path('C'),'Restoration changed root or attention');cases.push({id:'bounded-editor-intent-restores-after-native-view-recreation',applicationRestart:false});
+  editor=instance().view.editor;await markDirty(editor,'Kplex-219-dirty-migration');const ownerSession=host.view.documentSession;
+  check(typeof workspace.moveLeafToPopout==='function','Native popout method unavailable');workspace.moveLeafToPopout(host);await until(()=>host.view.contentEl.ownerDocument!==document&&content()&&instance()?.view.editor?.getValue().includes('Kplex-219-dirty-migration'),'Dirty popout migration did not retain B content');await host.view.waitUntilReady();
+  check(host.view.documentSession===ownerSession&&session.layoutRoot(path('C'))===path('R')&&instance().view.file?.path===path('B'),'Migration retargeted root/document owner');
+  const parents=[];workspace.iterateRootLeaves(candidate=>{if(candidate!==host&&candidate.view.containerEl.ownerDocument===document&&candidate.view.containerEl.isConnected)parents.push(candidate.parent)});check(parents.length,'Main native parent absent');host.parent.removeChild(host);parents[0].insertChild(parents[0].children.length,host);await workspace.revealLeaf(host);await host.view.waitUntilReady();
+  await until(()=>host.view.contentEl.ownerDocument===document&&instance()?.view.editor?.getValue().includes('Kplex-219-dirty-migration'),'Main migration lost B');
+  check((await act('editor.collapse',{bindingId:currentBinding().id})).status==='completed','Post-migration collapse rejected');check((await app.vault.read(files.find(file=>file.path===path('B')))).includes('Kplex-219-dirty-migration'),'Migration did not persist native buffer');cases.push({id:'dirty-popout-main-native-migration-and-durable-close'});
+  c.progress={phase:'rename-and-delete',cases};const m=app.metadataCache;const cacheGate={clean:m.isCacheClean(),inProgress:m.inProgressTaskCount,queued:m.linkResolverQueue.items.length,running:m.linkResolverQueue.runnable.isRunning()};c.progress={...c.progress,cacheGate};await selectB1();check((await act('editor.expand')).status==='completed','Rename control reopen rejected');await until(()=>content()&&instance()?.view.editor,'Rename control editor absent');
+  const B=files.find(file=>file.path===path('B'));await markDirty(instance().view.editor,'Kplex-219-dirty-rename');await app.vault.rename(B,path('B-renamed'));
+  await until(()=>!session.editors.bindings.length&&!overlay(),'Renamed occurrence was not safely retired');check((await app.vault.read(B)).includes('Kplex-219-dirty-rename')&&!app.vault.getFileByPath(path('B')),'Rename lost edits or recreated old identity');
+  await app.vault.rename(B,path('B'));await until(()=>root()?.querySelector('[data-kplex-keyboard-id="repeat-above"]')&&!root().querySelector('.kplex-view-error'),'Renamed-back occurrence not ready');cases.push({id:'external-rename-flushes-bound-document-without-old-path-resurrection'});
+  await selectB1();check((await act('editor.expand')).status==='completed','Deletion control reopen rejected');await until(()=>content()&&instance()?.view.editor,'Deletion control editor absent');
+  const deletedBinding=currentBinding(),deletedRef={identity:deletedBinding.target.nodeId,path:deletedBinding.target.path,fileIdentity:deletedBinding.target.fileIdentity,kind:'file'};await markDirty(instance().view.editor,'Kplex-219-dirty-deletion');await app.vault.delete(B,true);
+  await until(()=>!session.editors.bindings.length&&!overlay(),'Deleted occurrence retained a live editor');await wait(2300);
+  check(!app.vault.getFileByPath(path('B'))&&!await app.vault.adapter.exists(path('B')),'A native save resurrected the deleted document');
+  const recreated=await app.vault.create(path('B'),'# B recreated\n');files.push(recreated);p.index.insertCreatedFile(recreated);releases.push(p.index.acquireSemanticDemand(recreated.path));
+  await until(()=>root()?.querySelector('[data-kplex-keyboard-id="repeat-above"]')&&!root().querySelector('.kplex-view-error'),'Recreated B not admitted');
+  check((await act('editor.expand',undefined,{kind:'explicit',node:deletedRef,occurrenceId:'repeat-above'})).status==='unavailable','Deleted native incarnation opened the recreated note');cases.push({id:'external-deletion-does-not-resurrect-or-retarget-recreated-document'});
+  c.progress={phase:'unchanged-attention-compatibility',cases};session.select(legacy.id);host.view.centerPresentation.update({embedCentralNode:true,centralNodeMarkdownMode:'source'});await until(()=>content()&&instance()?.view.file?.path===path('C'),'Unchanged off-centre attention editor absent');
+  const legacyLeaf=instance(),legacyEditor=legacyLeaf.view.editor,legacyElement=root().querySelector('.kplex-central-editor-content');const marker='\nKplex-219-legacy-attention\n';content().focus();legacyEditor.replaceRange(marker,legacyEditor.getCursor('to'));const value=legacyEditor.getValue(),selections=JSON.stringify(legacyEditor.listSelections());
+  check(!(await app.vault.read(files.find(file=>file.path===path('C')))).includes('Kplex-219-legacy-attention'),'Legacy dirty-state precondition absent');
+  for(const id of ['classic',legacy.id]){session.select(id);await wait(60);check(instance()===legacyLeaf&&legacyLeaf.view.editor===legacyEditor&&root().querySelector('.kplex-central-editor-content')===legacyElement&&legacyEditor.getValue()===value&&JSON.stringify(legacyEditor.listSelections())===selections,'Legacy compatible switch changed native editor state')}
+  check(legacy.editorHosting===undefined&&legacy.navigation===undefined,'Compatibility probe adopted M0');cases.push({id:'unchanged-off-centre-attention-definition-and-Compass-native-compatibility'});
+  await host.setViewState({type:'empty',active:false});await untilSaved(files.find(file=>file.path===path('C')),'Kplex-219-legacy-attention');
+  check(![...embedded].some(owned=>owned.view.containerEl.isConnected)&&!session.editors.bindings.length&&!session.canSelect('classic'),'Native teardown retained an editor owner');cases.push({id:'native-teardown-persists-content-and-releases-editor-owners'});
+  c.progress={phase:'complete',cases};return{cases,cacheGate,capacity:1,limits:['One live editor per canvas.','Native Electron automation; no physical mobile/Windows acceptance.','Owned view recreation is not a whole-application restart.','External rename uses Vault.rename; the separate FileManager cache-gate failure remains unpassed.']};
+ }catch(error){failure=error;c.progress={...c.progress,cases,diagnostic:{attention:host?.view.documentSession?.centerPath,binding:session?.editors.bindings.map(item=>({id:item.id,occurrence:item.occurrenceId,closing:item.closing})),status:root()?.querySelector('.kplex-central-editor-status')?.textContent,failed:!!root()?.querySelector('.kplex-view-error')}};throw error}
+ finally{
+  const errors=[];const clean=async(label,action)=>{try{await action();cleanup.push({label,status:'passed'})}catch(error){errors.push(label+': '+String(error));cleanup.push({label,status:'failed'})}c.progress={...c.progress,cleanup}};
+  for(const restore of restores.reverse())await clean('restore-native-wrapper',restore);
+  for(const owned of hosts.reverse())await clean('close-owned-host',async()=>{if(workspace.getLeafById(owned.id)!==owned)return;await p.closeSidecar(owned);owned.detach()});
+  for(const release of releases.reverse())await clean('release-demand',release);
+  p.settings=original;await clean('restore-live-settings',()=>p.saveSettings(false,false));p.savedSettingsPolicy=policy;
+  await clean('restore-workspace',()=>workspace.changeLayout(layout));await clean('restore-native-document-sessions',()=>sessions.restore(owners));
+  await new Promise(resolve=>window.setTimeout(resolve,500));
+  for(const file of files.reverse())if(app.vault.getFileByPath(file.path)===file)await clean('delete-owned-file',()=>app.vault.delete(file,true));
+  if(createdFolder&&app.vault.getFolderByPath(folder)===createdFolder&&!createdFolder.children.length)await clean('delete-owned-folder',()=>app.vault.delete(createdFolder,true));
+  await clean('drain-settings',()=>p.settingsWriteQueue);await clean('restore-settings-bytes',()=>app.vault.adapter.write(p.manifest.dir+'/data.json',c.originalData));
+  if(errors.length)throw Error((failure?String(failure)+'; ':'')+errors.join('; '));
+ }
+}
+
+if(process.env.KPLEX_TEST_VAULT_NAME!=='kplex-test-small')throw Error('Explicit Small required');
+const bundle=buildSync({stdin:{resolveDir:process.cwd(),contents:`export {createOccurrenceEditorProbe} from './tests/support/occurrenceEditorProbe';export {createProbeViewDefinition} from './tests/support/plexViewProbe';`},write:false,bundle:true,platform:'browser',format:'cjs'}).outputFiles[0].text;
+const definitions='c.originalData='+JSON.stringify(readFileSync(join(process.env.KPLEX_TEST_CONFIG_DIR,'plugins/k-plex/data.json'),'utf8'))+';c.documentSessions=('+nativeDocumentSessions.toString()+');c.factories=(()=>{const module={exports:{}},exports=module.exports;'+bundle+';return module.exports})();c.createProbe=c.factories.createOccurrenceEditorProbe;c.createLegacy=c.factories.createProbeViewDefinition;';
+await runControlledProbe('occurrence-editors-219',scenario,definitions,['src/application/PlexEditorBindings.ts','src/application/PlexViewSession.ts','src/ui/PlexGraph.tsx','src/ui/CentralNodeEditor.tsx','src/ui/plexViews/prepareScene.ts','src/ui/plexViews/occurrenceEditors.ts','src/adapters/obsidian/embeddedMarkdownLeaf.ts','src/core/plex/actions.ts'],{maximumMs:240000});

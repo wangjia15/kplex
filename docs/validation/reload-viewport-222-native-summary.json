@@ -1,0 +1,57 @@
+{
+  "before": {
+    "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+    "version": "0.3.0",
+    "leafId": "1091f490c2f0d00d",
+    "center": "11 Release notes/Release notes.md",
+    "view": "wuxing",
+    "preset": "help-learning",
+    "cards": 19,
+    "visibleCards": 0,
+    "camera": "translate(1027px, 1622.5px) scale(1)",
+    "viewport": {
+      "width": 2065.3515625,
+      "height": 954.2317504882812
+    }
+  },
+  "passes": [
+    {
+      "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+      "version": "0.3.0",
+      "leafId": "1091f490c2f0d00d",
+      "center": "11 Release notes/Release notes.md",
+      "view": "wuxing",
+      "preset": "help-learning",
+      "cards": 19,
+      "visibleCards": 1,
+      "camera": "translate(1032.5px, 477px) scale(1)",
+      "viewport": {
+        "width": 2065.3515625,
+        "height": 954.2317504882812
+      }
+    },
+    {
+      "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+      "version": "0.3.0",
+      "leafId": "1091f490c2f0d00d",
+      "center": "11 Release notes/Release notes.md",
+      "view": "wuxing",
+      "preset": "help-learning",
+      "cards": 19,
+      "visibleCards": 1,
+      "camera": "translate(1032.5px, 477px) scale(1)",
+      "viewport": {
+        "width": 2065.3515625,
+        "height": 954.2317504882812
+      }
+    }
+  ],
+  "artifacts": {
+    "main.js": "8b2ff4729a036fb8f0d9e7039169f410e53c50ad4e67db6cbbaedb32f0685de9",
+    "styles.css": "d8984f7094c5a1638a69f38a4ba246df33c460f6775268d3faf25c68378fff83",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350"
+  },
+  "completedAt": "2026-10-27T07:46:47.332Z",
+  "notesEdited": false,
+  "navigationPerformed": false
+}

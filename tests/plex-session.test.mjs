@@ -16,7 +16,7 @@ test("native sessions serialize only scalar workspace intent and never retain an
   a.pendingFollow={file:{path:"Pending.md"},leaf:a.linkedDocumentLeaf,revision:0};
   a.pendingUrl={url:"https://example.com/private-pending",leaf:a.linkedDocumentLeaf,revision:0};
   for(const name of ["A.md","B.md","A.md","C.md"])a.footprints.accept(ref(name));
-  const state=a.getState();assert.deepEqual(Object.keys(state).sort(),["version","ownerId","centerPath","targetId",...Object.keys(defaults)].sort());
+  const state=a.getState();assert.deepEqual(Object.keys(state).sort(),["version","ownerId","centerPath","targetId","plexView",...Object.keys(defaults)].sort());
   const json=JSON.stringify(state);for(const privateValue of ["visits","footprints","native-A.md","Secret.md","Pending.md","private-pending","privateNativeObject","revision","restoreTask"])assert(!json.includes(privateValue));
   assert.equal(b.footprints.length,0);assert.equal(b.linkedDocumentLeaf,null);assert.equal(b.preferences.sidecarPosition,"right");assert.deepEqual(writes,[]);
   const restarted=new KplexDocumentSession(defaults,"A",()=>{});restarted.restore(JSON.parse(json));
@@ -61,4 +61,13 @@ test("native view keeps the memory owner across React migration and excludes tra
   const migration=view.slice(view.indexOf("this.containerEl.onWindowMigrated"),view.indexOf("this.renderReact();\n    // View"));
   assert(!migration.includes("documentSession.dispose"));assert.match(view,/this.plugin.onKplexViewClosed\(this.leaf, this.documentSession\);\s*this.documentSession.dispose\(\)/);
   assert(!main.slice(main.indexOf("reportBug(origin"),main.indexOf("private searchTargetLeaf")).includes("footprints"));
+});
+
+test("view restoration subscribers observe fully restored native document intent",()=>{
+  const session=new KplexDocumentSession(defaults,"A",()=>assert.fail("Restoration must not persist")),observed=[];
+  session.plexView.subscribe(()=>observed.push({center:session.centerPath,target:session.targetId,mode:session.preferences.documentSyncMode,open:session.preferences.sidecarOpen,restored:session.restored}));
+  session.restore({version:1,ownerId:"A",centerPath:"Restored.md",targetId:"native-sidecar",documentSyncMode:"pinned",sidecarOpen:true,plexView:{version:1,id:"classic",states:{}}});
+  assert.deepEqual(observed,[{center:"Restored.md",target:"native-sidecar",mode:"pinned",open:true,restored:true}]);
+  const duplicate=new KplexDocumentSession(defaults,"copy",()=>{});duplicate.restore(session.getState());
+  assert.equal(duplicate.centerPath,"Restored.md");assert.equal(duplicate.targetId,null);assert.equal(duplicate.preferences.sidecarOpen,false);
 });

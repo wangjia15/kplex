@@ -1,0 +1,168 @@
+{
+  "startingSource": "809510f3edb5027848ea3cd6bcbf929dc051031d",
+  "archiveCheckpoint": "0a1365e820d343c2cf8708c66eeea8417f77cbc7",
+  "status": "passed",
+  "completedAt": "2026-10-27T12:49:55.793Z",
+  "node": "v22.22.2",
+  "obsidian": "1.14.5 (installer 1.14.0)",
+  "host": {
+    "node": "v24.18.1",
+    "electron": "43.3.0",
+    "chrome": "150.0.7871.212",
+    "hidden": false
+  },
+  "artifacts": {
+    "main.js": "5a32c460a951df1f7d517fd939de0d0fcd425455f3962b10623658988afef1e0",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+    "styles.css": "f8731d83ca2d163a3c706d731dd419442e83d7bdbbbdc1415855737bc0925a33"
+  },
+  "cases": [
+    {
+      "id": "requested-local-cache-proof",
+      "current": true,
+      "coverage": "cached",
+      "globalSemanticPending": false
+    },
+    {
+      "id": "production-registry-five-phases-canonical-links",
+      "regions": 7,
+      "semanticConnectors": 7
+    },
+    {
+      "id": "native-two-builtins-status-emoji-and-defaults-without-save",
+      "names": [
+        "Wu Xing",
+        "Local map roles"
+      ]
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-workshop",
+      "source": "property",
+      "layout": "horizontal",
+      "classified": 7
+    },
+    {
+      "id": "native-help-scroll-continuations-keep-visible-counterpart-routes",
+      "routes": 10,
+      "continuations": 2
+    },
+    {
+      "id": "native-help-preset-markdown-captured"
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-topics",
+      "source": "tag",
+      "layout": "circular",
+      "classified": 7
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-learning",
+      "source": "type",
+      "layout": "vertical",
+      "classified": 7
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-workbench",
+      "source": "rules",
+      "layout": "quadrants",
+      "classified": 9
+    },
+    {
+      "id": "native-help-canonical-child-budget",
+      "checked": 140,
+      "maximum": 12
+    },
+    {
+      "id": "native-help-preset-area-sliders-value-keyboard-inherit-reset-cancel",
+      "range": [
+        200,
+        2400
+      ],
+      "opening": "600",
+      "inheritedWidth": 320
+    },
+    {
+      "id": "native-help-preset-editor-captured-through-registered-settings-owner-without-save"
+    },
+    {
+      "id": "native-help-category-code-shares-full-width-monospace-expression-field-without-save",
+      "width": 1074,
+      "height": 72
+    },
+    {
+      "id": "native-help-sharing-export-preview-captured-without-import-download-or-clipboard"
+    },
+    {
+      "id": "native-help-mindmap-canvas-captured"
+    },
+    {
+      "id": "native-help-compass-and-current-keyboard-help-captured"
+    },
+    {
+      "id": "native-help-mindmap-settings-common-sliders-permanent-values",
+      "controls": 8,
+      "owningSettingsDocument": true
+    }
+  ],
+  "cleanup": "passed",
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-27T12:50:01.480Z"
+  },
+  "limits": [
+    "Windows native automation is separate from macOS and physical mobile acceptance.",
+    "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+    "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+  ],
+  "implementationCheckpoint": "8cd3f60bea6921918ba35e7c137eb406fbb8608f",
+  "helpCheckpoint": "294b662270712e27c192f53cd9afc176f51c5e6b",
+  "helpDeployment": {
+    "before": {
+      "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+      "version": "0.3.0",
+      "leafId": "f96c6c66434b3021",
+      "center": "00 Start Here/K-Plex Help.md",
+      "view": "wuxing",
+      "preset": "help-workbench",
+      "cards": 37,
+      "visibleCards": 1,
+      "camera": "translate(1032.5px, 477px) scale(1)",
+      "viewport": {
+        "width": 2065.3515625,
+        "height": 954.2317504882812
+      }
+    },
+    "passes": [
+      {
+        "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+        "version": "0.3.0",
+        "leafId": "f96c6c66434b3021",
+        "center": "00 Start Here/K-Plex Help.md",
+        "view": "wuxing",
+        "preset": "help-workbench",
+        "cards": 29,
+        "visibleCards": 1,
+        "camera": "translate(1032.5px, 477px) scale(1)",
+        "viewport": {
+          "width": 2065.3515625,
+          "height": 954.2317504882812
+        }
+      }
+    ],
+    "artifacts": {
+      "main.js": "5a32c460a951df1f7d517fd939de0d0fcd425455f3962b10623658988afef1e0",
+      "styles.css": "f8731d83ca2d163a3c706d731dd419442e83d7bdbbbdc1415855737bc0925a33",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350"
+    },
+    "completedAt": "2026-10-27T12:57:15.238Z",
+    "notesEdited": false,
+    "navigationPerformed": false
+  }
+}

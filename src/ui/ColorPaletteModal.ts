@@ -16,6 +16,8 @@ export type ColorPaletteModalOptions = Omit<ColorPreviewOptions, "target"> & Rea
   subscribe: (changed: () => void) => () => void;
   subscribeCss?: (changed: () => void) => () => void;
   onClosed?: () => void;
+  /** Other registered settings owners expose usage only, never a second replacement writer. */
+  protectedUsage?: () => Readonly<{available: boolean; uses: ReadonlyMap<string, number>}>;
 }>;
 
 /** One native palette lifetime owns children, metadata subscription and current search window. */
@@ -59,11 +61,13 @@ export class ColorPaletteModal extends StyleEditorModal {
   private renderRows(): void {
     if (!this.list || !this.footer || !this.summary || !this.add) return;
     const t = this.options.translate, preferences = this.options.preferences(), readOnly = this.options.readOnly();
-    const canDelete = this.options.canDelete();
-    const uses = namedColorUsage(this.options.read()), query = this.query.trim().toLocaleLowerCase();
+    const protectedUsage = this.options.protectedUsage?.(), canDelete = this.options.canDelete() && protectedUsage?.available !== false;
+    const uses = new Map(namedColorUsage(this.options.read())), query = this.query.trim().toLocaleLowerCase();
+    for (const [id, count] of protectedUsage?.uses ?? []) uses.set(id, (uses.get(id) ?? 0) + count);
     const pairs = preferences.palette.filter(pair => pair.name.toLocaleLowerCase().includes(query));
     const window = collectionWindow(pairs, this.visibleLimit, 12);
     this.summary.setText(readOnly ? t("colors.readOnly") : t("colors.pairCount", {count: preferences.palette.length}));
+    if (protectedUsage?.available === false) this.summary.createDiv({text: t("facets.paletteUnavailable"), cls: "setting-item-description"});
     this.add.disabled = readOnly || preferences.palette.length >= 5000; this.list.empty(); this.footer.empty();
     if (!pairs.length) this.list.createDiv({text: t("colors.noColors"), cls: "setting-item-description"});
     for (const pair of window.visible) {
@@ -74,7 +78,9 @@ export class ColorPaletteModal extends StyleEditorModal {
       row.createSpan({text: t("colors.uses", {count: uses.get(pair.id) ?? 0}), cls: "setting-item-description"});
       const duplicate = row.createEl("button", {text: t("colors.duplicate"), attr: {type: "button"}}); duplicate.disabled = readOnly || preferences.palette.length >= 5000;
       duplicate.addEventListener("click", () => { if (this.canEdit() && !this.options.readOnly()) this.editPair(null, pair); });
-      const remove = row.createEl("button", {text: t("common.delete"), attr: {type: "button"}}); remove.disabled = readOnly || !canDelete;
+      const protectedCount = protectedUsage?.uses.get(pair.id) ?? 0;
+      const remove = row.createEl("button", {text: t("common.delete"), attr: {type: "button"}}); remove.disabled = readOnly || !canDelete || protectedCount > 0;
+      if (protectedCount > 0) row.createSpan({text: t("facets.paletteProtected"), cls: "setting-item-description"});
       remove.addEventListener("click", () => { if (this.canEdit() && !this.options.readOnly() && this.options.canDelete()) this.deletePair(pair); });
     }
     this.renderedRevision++;
@@ -112,12 +118,16 @@ export class ColorPaletteModal extends StyleEditorModal {
 
   /** In-use deletion requires an explicit replacement; the latest queue recount/rewrite is atomic. */
   private deletePair(pair: SemanticColorPair): void {
+    const protectedUsage = this.options.protectedUsage?.();
+    if (protectedUsage && (!protectedUsage.available || (protectedUsage.uses.get(pair.id) ?? 0) > 0)) return;
     const t = this.options.translate, uses = namedColorUsage(this.options.read()).get(pair.id) ?? 0;
     const dialog = new ColorSourceModal(this.app, {...this.options, title: t("colors.deletePair"), target: {kind: "node", field: "backgroundColor"},
       initial: uses ? {kind: "palette", id: pair.id} : undefined,
       confirmation: {description: t("colors.deleteUses", {name: pair.name, count: uses}), actionLabel: t("common.delete")},
       acceptSource: source => !(source && typeof source !== "string" && source.kind === "palette" && source.id === pair.id),
       onSave: replacement => this.writeAndRefresh(draft => {
+        const latest = this.options.protectedUsage?.();
+        if (latest && (!latest.available || (latest.uses.get(pair.id) ?? 0) > 0)) throw new Error("Change registered view colors before deleting this named color");
         if (!this.options.canDelete()) throw new Error("Unsupported color sources prevent safe deletion");
         if (!uses && replacement === undefined && (namedColorUsage(draft).get(pair.id) ?? 0) > 0) {
           if (this.canEdit()) new Notice(t("colors.deleteNowUsed"));

@@ -1,0 +1,59 @@
+{
+  "source": "6253617f78f804ff0eee2327a0bd63522ad47942",
+  "status": "failed",
+  "node": "v22.22.2",
+  "startedAt": "2026-10-26T12:11:49.960Z",
+  "completedAt": "2026-10-26T12:23:26.534Z",
+  "completedChecks": {
+    "releaseMetadata": "passed",
+    "architecture": {
+      "tests": 7,
+      "pass": 7,
+      "fail": 0
+    },
+    "core": {
+      "tests": 130,
+      "pass": 130,
+      "fail": 0
+    },
+    "scanner": "passed",
+    "main": {
+      "tests": 1627,
+      "pass": 1627,
+      "fail": 0
+    },
+    "browser": {
+      "tests": 325,
+      "pass": 323,
+      "fail": 2
+    }
+  },
+  "failures": [
+    {
+      "test": "selected iframe native-shell owner receives modal controls, selection and teardown",
+      "file": "tests/support-report-modal-browser.test.mjs",
+      "reason": "Chromium bundle startup deadline, document still loading; no scenario assertion executed",
+      "isolatedUnchangedRetry": "passed"
+    },
+    {
+      "test": "attachment rename collision retires placeholder DOM through collapse, later layout and unmount",
+      "file": "tests/ui-components.test.mjs",
+      "reason": "Extracted renderNode fixture omitted new sectionDocument/sectionEditorAvailable context; React recovery appeared as repeated style-dictionary work",
+      "correction": "Provide the actual Classic context; original style-work/rename assertions unchanged",
+      "isolatedRetry": "passed"
+    }
+  ],
+  "notRun": [
+    "source suites",
+    "final build within full run",
+    "native installation smoke"
+  ],
+  "restoration": {
+    "status": "passed",
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-26T12:23:26.534Z"
+  },
+  "productionSourceChanged": false
+}

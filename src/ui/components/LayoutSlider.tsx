@@ -4,7 +4,8 @@
  * A marked accessible wrapper supplies help to the shell's shared delayed control-tooltip owner;
  * the input retains its concise name and no competing browser title tooltip is emitted.
  */
-import type { ChangeEvent, ReactNode } from "react";
+import {useEffect, useRef, useState, type ChangeEvent, type ReactNode} from "react";
+import {LatestSliderValue} from "./latestSliderValue";
 
 /** Render a bounded rail with its exact value, preserving the established Plex control footprint. */
 export function LayoutSlider({ label, caption, hint, icon, value, displayValue, min, max, step, onChange }: {
@@ -13,19 +14,28 @@ export function LayoutSlider({ label, caption, hint, icon, value, displayValue, 
   hint?: string;
   icon: ReactNode;
   value: number;
-  displayValue: string;
+  displayValue: string | ((value: number) => string);
   min: number;
   max: number;
   step: number;
-  onChange: (value: number) => void;
+  onChange: (value: number) => void | Promise<void>;
 }) {
-  const percent = Math.max(0, Math.min(100, (value - min) / (max - min) * 100));
+  const [draft, setDraft] = useState<number | null>(null), delivery = useRef<LatestSliderValue | null>(null);
+  useEffect(/** Closing the rail detaches its draft; the guarded owner may finish its last intent.
+   * A retired view rejects that intent, and StrictMode remount creates a fresh delivery owner. */ () => () => {
+    delivery.current?.dispose(); delivery.current = null;
+  }, []);
+  const shown = draft ?? value, formatted = typeof displayValue === "function" ? displayValue(shown) : draft === null ? displayValue : String(draft);
+  const percent = Math.max(0, Math.min(100, (shown - min) / (max - min) * 100));
   return <label className="kplex-density-control" aria-label={hint ?? label} data-kplex-control-tooltip>
-    <span className="kplex-density-heading">{icon}<span>{caption}</span><output>{displayValue}</output></span>
+    <span className="kplex-density-heading">{icon}<span>{caption}</span><output>{formatted}</output></span>
     <span className={`kplex-density-rail${step === 1 ? " is-stepped" : ""}`}>
       <span className="kplex-density-fill" style={{ width: `${percent}%` }} />
-      <input type="range" min={min} max={max} step={step} value={value} aria-label={label}
-        onChange={/** Emit a number without owning the caller's layout or storage policy. */ (event: ChangeEvent<HTMLInputElement>) => onChange(Number(event.currentTarget.value))} />
+      <input type="range" min={min} max={max} step={step} value={shown} aria-label={label}
+        onChange={/** Keep the thumb immediate while coalescing only unstarted async callback values. */ (event: ChangeEvent<HTMLInputElement>) => {
+          delivery.current ??= new LatestSliderValue(setDraft, error => console.error("K-Plex slider callback failed", error));
+          delivery.current.submit(Number(event.currentTarget.value), onChange);
+        }} />
     </span>
   </label>;
 }

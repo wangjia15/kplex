@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "status": "passed_for_4fc8c40_before_final_title_polish",
+  "runtimeCommit": "4fc8c40bb1ef6e31dc5606f009780122aa0075fa",
+  "publishedCheckpoint": "ca6e70302884972fd70161e890dddae88164c1c9",
+  "requiredNode": "22.22.2",
+  "ci": {
+    "run": 541,
+    "id": 40274658056,
+    "url": "https://github.com/zsviczian/kplex/actions/runs/40274658056",
+    "conclusion": "success",
+    "actualNode": "22.22.2",
+    "suites": [
+      {
+        "name": "architecture",
+        "tests": 7,
+        "passed": 7,
+        "failed": 0,
+        "durationMs": 513.482132
+      },
+      {
+        "name": "restricted-core",
+        "tests": 130,
+        "passed": 130,
+        "failed": 0,
+        "durationMs": 7416.024551
+      },
+      {
+        "name": "main",
+        "tests": 1618,
+        "passed": 1618,
+        "failed": 0,
+        "durationMs": 330521.439191
+      },
+      {
+        "name": "browser",
+        "tests": 319,
+        "passed": 319,
+        "failed": 0,
+        "durationMs": 367636.239236
+      },
+      {
+        "name": "sources",
+        "tests": 357,
+        "passed": 357,
+        "failed": 0,
+        "durationMs": 39761.858735
+      },
+      {
+        "name": "source-browser",
+        "tests": 777,
+        "passed": 777,
+        "failed": 0,
+        "durationMs": 1687746.833227
+      }
+    ],
+    "total": 3208,
+    "scanner": "passed",
+    "productionBuild": "passed"
+  },
+  "localWindows": {
+    "status": "passed",
+    "command": "npm run verify via existing runPortableVerification",
+    "exitCode": 0,
+    "actualNode": "v22.22.2",
+    "completionObservedAt": "2026-10-26T06:36:23.002Z",
+    "logCreatedAt": "2026-10-26T06:05:34.616Z",
+    "source": {
+      "runtimeCommit": "4fc8c40bb1ef6e31dc5606f009780122aa0075fa",
+      "checkpointCommit": "ca6e70302884972fd70161e890dddae88164c1c9",
+      "productionSourceChangesDuringRun": false,
+      "note": "Checkpoint changes native drivers/docs only; recovery documentation edited while portable suite ran."
+    },
+    "suites": [
+      {
+        "name": "architecture",
+        "tests": 7,
+        "passed": 7,
+        "failed": 0,
+        "durationMs": 1072.8992
+      },
+      {
+        "name": "restricted-core",
+        "tests": 130,
+        "passed": 130,
+        "failed": 0,
+        "durationMs": 2392.514
+      },
+      {
+        "name": "main",
+        "tests": 1618,
+        "passed": 1618,
+        "failed": 0,
+        "durationMs": 219419.743
+      },
+      {
+        "name": "browser",
+        "tests": 319,
+        "passed": 319,
+        "failed": 0,
+        "durationMs": 379229.581
+      },
+      {
+        "name": "sources",
+        "tests": 357,
+        "passed": 357,
+        "failed": 0,
+        "durationMs": 12554.3694
+      },
+      {
+        "name": "source-browser",
+        "tests": 777,
+        "passed": 777,
+        "failed": 0,
+        "durationMs": 1052940.6196
+      }
+    ],
+    "total": 3208,
+    "scanner": "passed",
+    "productionBuild": "passed",
+    "artifacts": {
+      "main.js": "f3dfe5b2b28f452aa1891dcd722f7ca89e244fe22787a01a582ababfc955b2dd",
+      "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01"
+    },
+    "privateLogSha256": "926c1aa8c2b3725bd3a0dabd1fe235c5a1475eb042b98eb8e5abb1cb1a7da13a",
+    "nativeSmokeRun": false
+  },
+  "nativeAcceptance": "Final16b8e82 native124checks and maintainer-completed file export passed; see ux-native-summary.json",
+  "latestSmallRestoration": "passed2026-10-26T07:02:20.372Z",
+  "limits": [
+    "CI and portable browser verification do not establish Windows native interaction acceptance.",
+    "The previous f4d64a1 native receipts are historical."
+  ],
+  "checkpointCI": {
+    "run": 542,
+    "id": 40278412619,
+    "attempt1": {
+      "conclusion": "failure",
+      "failedTest": "native hotkey search finds physical defaults and logical Option glyphs without saving or changing add semantics",
+      "file": "tests/action-settings.test.mjs:221",
+      "cause": "Chromium startup timeout before test execution",
+      "mainPassed": 1617,
+      "mainFailed": 1
+    },
+    "retry": {
+      "conclusion": "success",
+      "node": "22.22.2",
+      "totalTests": 3208,
+      "scanner": "passed",
+      "productionBuild": "passed",
+      "job": 121429939739
+    }
+  }
+}

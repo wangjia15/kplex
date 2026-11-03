@@ -1,0 +1,163 @@
+{
+  "status": "passed",
+  "runtimeCommit": "c107681d97009ea1740bd5e0aeb5da38a0135c1a",
+  "artifacts": {
+    "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+    "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+    "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+  },
+  "focusedTests": {
+    "passed": 45,
+    "node": "22.22.2"
+  },
+  "architecture": "passed",
+  "restrictedCore": {
+    "passed": 130
+  },
+  "scanner": "passed",
+  "productionBuild": "passed",
+  "nativeUX": {
+    "passed": 19,
+    "cases": [
+      {
+        "id": "requested-local-cache-proof",
+        "current": true,
+        "coverage": "cached",
+        "globalSemanticPending": false
+      },
+      {
+        "id": "production-registry-five-phases-canonical-links",
+        "regions": 7,
+        "semanticConnectors": 7
+      },
+      {
+        "id": "native-preset-controls-travel-together",
+        "windowWidth": 1280,
+        "controlWidths": [
+          222,
+          40,
+          40
+        ]
+      },
+      {
+        "id": "native-preset-controls-travel-together",
+        "windowWidth": 640,
+        "controlWidths": [
+          222,
+          40,
+          40
+        ]
+      },
+      {
+        "id": "native-wide-preset-editor-single-icon-row",
+        "width": 1120,
+        "buttons": 7
+      },
+      {
+        "id": "native-draft-json-actions-present",
+        "nativeFileCompletionVerified": false,
+        "clipboardAccessed": false
+      },
+      {
+        "id": "native-preset-draft-reset-save-zero-source-work",
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "acquisitions": 0,
+          "rebuilds": 0
+        }
+      },
+      {
+        "id": "native-import-format-help-zero-source-work",
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "acquisitions": 0,
+          "rebuilds": 0
+        }
+      },
+      {
+        "id": "native-import-paste-file-guidance-single-footer-and-readonly-help"
+      },
+      {
+        "id": "native-arrow-selected-enter-fold-unfold-no-navigation"
+      },
+      {
+        "id": "native-parent-columns-1-zero-source-work",
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "acquisitions": 0,
+          "rebuilds": 0
+        }
+      },
+      {
+        "id": "native-parent-column-outward-directions",
+        "columns": 1
+      },
+      {
+        "id": "native-parent-columns-2-zero-source-work",
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "acquisitions": 0,
+          "rebuilds": 0
+        }
+      },
+      {
+        "id": "native-parent-column-outward-directions",
+        "columns": 2
+      },
+      {
+        "id": "native-parent-columns-3-zero-source-work",
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "acquisitions": 0,
+          "rebuilds": 0
+        }
+      },
+      {
+        "id": "native-parent-column-outward-directions",
+        "columns": 3
+      },
+      {
+        "id": "native-depth-configuration-zero-source-work",
+        "work": {
+          "reads": 0,
+          "parses": 0,
+          "acquisitions": 0,
+          "rebuilds": 0
+        }
+      },
+      {
+        "id": "native-mindmap-depth-nine-admission",
+        "configuredMaximumDepth": 20
+      },
+      {
+        "id": "native-mindmap-eight-scope-limit-retains-visible-frontier"
+      }
+    ],
+    "cleanupPassed": true,
+    "restoration": {
+      "restored": true,
+      "configurationFiles": 9,
+      "contentFiles": 117,
+      "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+      "completedAt": "2026-10-26T08:03:23.722Z"
+    }
+  },
+  "baselineFullVerification": "facets-222-ux-pre-depth-verification.json",
+  "retainedFailures": [
+    "Initial minimal file fixture lacked native stat; corrected before meaningful old-guard repro.",
+    "Old guard rejected actual depth9. Admission-only fix still pruned deep nodes through the existing eight-level closure.",
+    "Diagnostic throw removed immediately.",
+    "CI543 unchanged eager-alias case failed; three isolated repeats and CI544 passed without source/assertion changes."
+  ],
+  "limits": [
+    "Eight non-root source scopes unchanged; depth20 is an admission ceiling, not an unbounded traversal guarantee.",
+    "Earlier assisted OS file export belongs to16b8e82; transfer code unchanged.",
+    "OS clipboard/Mac/mobile/minimum-host/known215 limits retained."
+  ],
+  "fullVerification": "facets-222-ux-final-verification.json"
+}

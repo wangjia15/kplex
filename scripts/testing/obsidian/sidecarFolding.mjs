@@ -3,6 +3,7 @@
  * vault. Reuses the CLI/target owners and actual commands, native tabs, display modes and input.
  * Owns temporary copies for native Markdown/drawing/PDF/Canvas transitions; existing notes remain
  * unchanged. Every case retains finite observations; cleanup restores layout/settings/configuration.
+ * KPLEX_SIDECAR_MODIFIER_ONLY selects the bounded shortcut matrix with the same guards/cleanup.
  * Renderer interruption/restart and physical-device acceptance are separate, explicit gates.
  */
 import assert from "node:assert/strict";
@@ -59,7 +60,7 @@ function evaluate(code) {code=withNativeDocumentSessions(code); return JSON.pars
 function pause(milliseconds) { return new Promise(/** Yield one bounded driver interval. */ done => setTimeout(done, milliseconds)); }
 
 /** Exercise actual host owners and native controls while retaining cleanup even after a failed assertion. */
-function installProbe(extendedCases, routingCases, lifecycleCases) {
+function installProbe(extendedCases, routingCases, lifecycleCases, modifierOnly = false) {
   const p = app.plugins.plugins["k-plex"], native = require("@electron/remote").getCurrentWindow();
   if (!p?.actionManager || window.__kplex173FoldProbe || app.setting.isOpen || document.querySelector(".modal-container .modal,.modal-container .prompt")) throw Error("Clean loaded native prerequisites required");
   const c = window.__kplex173FoldProbe = { done: false, scenarios: [], wrappers: [], layout: app.workspace.getLayout(), settings: structuredClone(p.settings),
@@ -133,15 +134,15 @@ function installProbe(extendedCases, routingCases, lifecycleCases) {
     await until(/** No graph-ready condition substitutes for the fold owner. */ () => folded() === expected, `Command did not ${expected ? "fold" : "unfold"}`); await frames();
   };
   /** Deliver trusted renderer input only to an unobscured native recovery button. */
-  const click = async button => {
+  const click = async (button, modifiers = []) => {
     check(button?.isConnected, "Recovery control missing"); const doc = button.ownerDocument, win = doc.defaultView.require("@electron/remote").getCurrentWindow();
     win.show(); win.focus(); win.webContents.focus(); await until(/** Focus belongs to the button's actual window. */ () => doc.hasFocus() && win.isFocused(), "Recovery renderer not foreground");
     const r = button.getBoundingClientRect(), x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
     check(button.contains(doc.elementFromPoint(x, y)), "Recovery button obscured");
     const zoom = win.webContents.getZoomFactor(), nativeX = Math.round(x * zoom), nativeY = Math.round(y * zoom);
-    win.webContents.sendInputEvent({ type: "mouseMove", x: nativeX, y: nativeY });
-    win.webContents.sendInputEvent({ type: "mouseDown", x: nativeX, y: nativeY, button: "left", clickCount: 1 });
-    win.webContents.sendInputEvent({ type: "mouseUp", x: nativeX, y: nativeY, button: "left", clickCount: 1 }); await frames();
+    win.webContents.sendInputEvent({ type: "mouseMove", x: nativeX, y: nativeY, modifiers });
+    win.webContents.sendInputEvent({ type: "mouseDown", x: nativeX, y: nativeY, button: "left", clickCount: 1, modifiers });
+    win.webContents.sendInputEvent({ type: "mouseUp", x: nativeX, y: nativeY, button: "left", clickCount: 1, modifiers }); await frames();
   };
   /** Create native-content fixtures only after clean-work assertions; companion autosaves may alter these owned copies. */
   const prepareFiles = async () => {
@@ -193,6 +194,40 @@ function installProbe(extendedCases, routingCases, lifecycleCases) {
     await host.view.waitUntilReady(); check(surface(host), "Current action surface required");
     check(p.sidecarLeaves.size === 0 && p.collapsedPlexHosts.size === 0, "Start without managed companions/folds");
     const page = p.index.get(p.settings.lastActivePath); check(page?.file, "An existing physical center is required");
+    if (modifierOnly) {
+      /** Reacquire the real React control after native layout replaces its owning elements. */
+      const primary = () => host.view.containerEl.querySelector(".kplex-sidecar-primary");
+      for (const [position, modifiers] of [["right", ["alt"]], ["left", ["control"]], ["above", ["shift"]], ["below", ["meta"]], ["right", ["alt", "control", "shift", "meta"]]]) {
+        await scenario(`modifier-maximize-${position}-${modifiers.join("-")}`, async () => {
+          await p.moveSidecar(host, position, page); workspace.setActiveLeaf(host, {focus: true}); await frames();
+          await until(/** React must expose the closed-pane action before the native click. */ () => primary()?.getAttribute("aria-pressed") === "false", "Open Sidecar control missing");
+          check(primary().getAttribute("aria-label").includes("ALT/OPT") && !primary().hasAttribute("title"), "Open modifier tooltip missing or duplicated");
+          await click(primary(), modifiers);
+          await until(/** Opening must finish through normal native ownership before folding. */ () => folded() && !p.sidecarMovingHosts.has(host), "Modifier open did not fold K-Plex"); await frames();
+          companion = p.sidecarLeaves.get(host); check(companion, "Modifier open lost its companion");
+          const axis = position === "left" || position === "right" ? "width" : "height";
+          check(box(group(host))[axis] === 0 && Math.abs(box(group(companion))[axis] - box(group(companion).parentElement)[axis]) < 3, "Sidecar did not receive the pair's full allocation");
+          const recovery = group(companion).querySelector(".kplex-sidecar-unfold-plex");
+          check(recovery?.getAttribute("aria-label").includes("ALT/OPT") && !recovery.hasAttribute("title"), "Recovery modifier tooltip missing or duplicated");
+          await click(recovery, modifiers);
+          await until(/** One recovery click must both restore the Plex and close its managed pane. */ () => !folded() && !p.sidecarLeaves.has(host), "Modifier recovery did not close Sidecar"); await frames();
+          check(workspace.activeLeaf === host && box(group(host))[axis] > 8, "Recovered K-Plex is not visible/focused");
+          check(Math.abs(box(group(host))[axis] - box(group(host).parentElement)[axis]) < 3, "K-Plex did not regain full allocation");
+          check(!document.querySelector(".kplex-sidecar-unfold-plex"), "Recovery control leaked");
+        });
+      }
+      await scenario("ordinary-click-retains-two-step-behavior", async () => {
+        await click(primary()); await until(/** Ordinary opening keeps both native groups visible. */ () => p.isSidecarOpen(host) && !p.sidecarMovingHosts.has(host), "Ordinary open failed");
+        check(!folded(), "Ordinary click unexpectedly folded K-Plex");
+        await p.collapsePlexForSidecar(host); await frames(); companion = p.sidecarLeaves.get(host);
+        await click(group(companion).querySelector(".kplex-sidecar-unfold-plex"));
+        await until(/** Ordinary recovery restores without closing the companion. */ () => !folded(), "Ordinary recovery failed");
+        check(p.sidecarLeaves.get(host) === companion && p.isSidecarOpen(host), "Ordinary recovery closed Sidecar");
+        await click(primary()); await until(/** Ordinary close retains its existing companion owner. */ () => !p.sidecarLeaves.has(host), "Ordinary close failed");
+      });
+      c.final = { fileCount: app.vault.getFiles().length, markdownCount: app.vault.getMarkdownFiles().length, folds: p.collapsedPlexHosts.size };
+      return;
+    }
     await p.moveSidecar(host,"right",page); await p.openSidecar(host, page); companion = p.sidecarLeaves.get(host); check(companion, "Normal Sidecar did not open");
     sibling = workspace.createLeafInParent(companion.parent, companion.parent.children.length); c.createdLeaves.push(sibling);
     await sibling.setViewState({ type: "empty", active: false });
@@ -303,7 +338,7 @@ try {
     assert(built.equals(installed), `Stage the exact build before this lane: ${name}`);
     report.artifacts[name] = createHash("sha256").update(built).digest("hex");
   }
-  cli("dev:errors", "clear"); evaluate(`(${installProbe.toString()})(${runSidecarFoldingCases.toString()},${runSidecarFoldRoutingCases.toString()},${runSidecarFoldingLifecycleCases.toString()})`); started = true;
+  cli("dev:errors", "clear"); evaluate(`(${installProbe.toString()})(${runSidecarFoldingCases.toString()},${runSidecarFoldRoutingCases.toString()},${runSidecarFoldingLifecycleCases.toString()},${process.env.KPLEX_SIDECAR_MODIFIER_ONLY === "true"})`); started = true;
   const deadline = Date.now() + 240000;
   while (true) {
     const value = evaluate("JSON.stringify((()=>{const c=window.__kplex173FoldProbe;return {done:c?.done,error:c?.error,currentScenario:c?.currentScenario,scenarios:c?.scenarios,before:c?.before,final:c?.final,cleanTransitionCounts:c?.cleanTransitionCounts,routingFailure:c?.routingFailure,lifecycleFailure:c?.lifecycleFailure,errorEvents:c?.errorEvents}})())");

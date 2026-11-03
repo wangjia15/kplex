@@ -1,0 +1,63 @@
+{
+  "name": "second-fixes",
+  "status": "passed",
+  "node": "v22.22.3",
+  "startedAt": "2026-10-28T21:07:35.803Z",
+  "maximumMs": 180000,
+  "driver": {
+    "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+    "scenario": "9bda9a7aa7b04eb566017c002cd31f577df9a2447507e0a213e8fbfac544529e",
+    "definitions": "a4c6c2e237557145a0dbe5c2c8c93db3d6a7fb78e0ed8ccaf6fd62c9a71a7806"
+  },
+  "artifacts": {
+    "main.js": "c827464f88fb43403a860f0808abe6f25e631d8b16b8eb12d079a00337ecf995",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+    "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+  },
+  "source": {
+    "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+    "src/index/GraphIndex.ts": "0fc52b8170f462cfaeeec726bc531d61014ea31e9a64363e911f7fcc81fbd474",
+    "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+    "src/index/HostMetadataPreview.ts": "c698cf532e1a7ac8e2d0b7057cfa4b5bf8381a57001e2d09b4198ae108070d17",
+    "src/adapters/obsidian/sourceAcquisition.ts": "b85f517282b59b45217aa40ac489d39be1387551ec3e337db4da46c596667391"
+  },
+  "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+  "obsidian": "1.15.0 (installer 1.14.0)",
+  "result": {
+    "cases": [
+      "two native Plex views and production structural move action",
+      "destination children preserved through all observed publications",
+      "visible inline ontology refreshed while optional global inventory paused",
+      "each Markdown center recovered its own incoming owner",
+      "native folder selection matches complete sorted prefix",
+      "limit and attachment visibility changes replace native coverage",
+      "outside-cap canonical parent provenance survives",
+      "ordinary native alias patch refreshes folder selection",
+      "another canvas unreadable body does not block recovery",
+      "another canvas missing metadata does not block recovery",
+      "unrelated native edit re-admits stationary canvas recovery",
+      "native alias facets survive global recovery"
+    ],
+    "nativeEvents": {
+      "changed": 1,
+      "resolve": 1,
+      "resolved": 3
+    },
+    "observations": 48,
+    "mode": "eager",
+    "markdown": 94,
+    "sourceCounterDelta": {
+      "checked": 82,
+      "reusedBodies": 172,
+      "legacyBodies": 0,
+      "vaultReads": 1,
+      "parses": 1,
+      "repaired": 4,
+      "resolutionRefreshes": 0,
+      "pendingMetadata": 0,
+      "failures": 0
+    }
+  },
+  "cleanup": "passed",
+  "completedAt": "2026-10-28T21:07:42.016Z"
+}

@@ -1,12 +1,15 @@
 /** Read-only ontology vocabulary projections shared by native managers and selection surfaces.
  * Rows collapse pairs; options preserve every physical field. Neither projection discovers or saves data. */
 import {normalizeFieldName} from '../../core/contracts/fieldName';
-import {ONTOLOGY_ROLE_GROUP, type OntologyConfiguration, type OntologyRole} from '../../core/contracts/ontologyConfiguration';
+import {type OntologyConfiguration, type OntologyRole} from '../../core/contracts/ontologyConfiguration';
 import type {Translator} from '../../lang';
+import {ontologyReadModel,type OntologyDescriptions,type DiscoveredOntologyField} from '../../core/contracts/ontologyReadModel';
+import {ontologySelectionFields} from '../../core/contracts/ontologyCompletion';
+export {ontologySelectionFields,ontologySelectionMatches} from '../../core/contracts/ontologyCompletion';
+export type {DiscoveredOntologyField} from '../../core/contracts/ontologyReadModel';
 
 export type OntologyFilter='all'|OntologyRole|'unassigned';
-export type DiscoveredOntologyField=Readonly<{normalized:string;name:string;count:number}>;
-export type OntologyFieldView=Readonly<{key:string;name:string;role:OntologyRole|'unassigned';roles:readonly OntologyRole[];partner?:string;partnerRole?:OntologyRole;count?:number;documentCount?:number;countPartial?:boolean}>;
+export type OntologyFieldView=Readonly<{key:string;name:string;role:OntologyRole|'unassigned';roles:readonly OntologyRole[];partner?:string;partnerRole?:OntologyRole;description?:string;count?:number;documentCount?:number;countPartial?:boolean}>;
 export type OntologyManagerEntry=Readonly<{key:string;first:OntologyFieldView;second?:OntologyFieldView}>;
 export type OntologyDocumentCount=Readonly<{count?:number;partial:boolean}>;
 
@@ -24,30 +27,14 @@ export function withOntologyDocumentCounts(fields:readonly OntologyFieldView[],c
   return result;
 }
 
-/** One selectable option per normalized physical identity, retaining the caller's order and spelling. */
-export function ontologySelectionFields(fields:readonly string[]):string[] {
-  const seen=new Set<string>();return fields.filter(/** Legacy multi-role assignments must not duplicate a physical option. */ field=>{const key=normalizeFieldName(field);if(!key||seen.has(key))return false;seen.add(key);return true;});
-}
-
 /** Translate role/state captions identically across the native and React adapters. */
 export function ontologyRoleLabel(role:OntologyRole|'unassigned',t:Translator):string {
   switch(role){case 'parent':return t('role.parent');case 'child':return t('role.child');case 'left':return t('role.friendLeft');case 'right':return t('role.challengerRight');case 'previous':return t('role.previous');case 'next':return t('role.next');case 'hidden':return t('role.hidden');case 'excluded':return t('role.excludedMetadata');case 'unassigned':return t('ontology.manager.unassigned');}
 }
 
 /** Keep physical spelling, effective precedence and truthful legacy multiplicity without changing lists. */
-export function ontologyFieldViews(configuration:OntologyConfiguration,discovered:readonly DiscoveredOntologyField[]=[]):OntologyFieldView[] {
-  const fields=new Map<string,OntologyFieldView>();
-  for(const [role,group] of Object.entries(ONTOLOGY_ROLE_GROUP) as [OntologyRole,keyof typeof configuration.hierarchy][]){
-    for(const name of configuration.hierarchy[group]??[]){
-      const key=normalizeFieldName(name);if(!key)continue;
-      const prior=fields.get(key);
-      if(prior){if(!prior.roles.includes(role))fields.set(key,{...prior,roles:[...prior.roles,role]});continue;}
-      const pair=configuration.pairs.get(key);
-      fields.set(key,{key,name,role:configuration.roles.get(key)??role,roles:[role],partner:pair?.partner,partnerRole:pair?.partnerRole});
-    }
-  }
-  for(const field of discovered){const key=normalizeFieldName(field.name);if(key&&!fields.has(key))fields.set(key,{key,name:field.name,role:'unassigned',roles:[],count:field.count});}
-  return [...fields.values()];
+export function ontologyFieldViews(configuration:OntologyConfiguration,discovered:readonly DiscoveredOntologyField[]=[],descriptions:OntologyDescriptions={}):OntologyFieldView[] {
+  return ontologyReadModel(configuration,descriptions,discovered);
 }
 
 /** Compact detail annotates a selectable physical field; it never becomes the inserted property. */
@@ -57,7 +44,7 @@ export function ontologyFieldDetail(field:OntologyFieldView|undefined,t:Translat
   if(field.partner&&field.partnerRole)parts.push(t('ontology.manager.pairedWith',{field:field.partner,role:ontologyRoleLabel(field.partnerRole,t)}));
   if(partnerMatch)parts.push(t('ontology.manager.partnerMatch'));
   if(field.roles.length>1)parts.push(t('ontology.manager.multipleAssignments',{roles:field.roles.map(/** Show every retained assignment's role. */ role=>ontologyRoleLabel(role,t)).join(', ')}));
-  return parts.join(' · ');
+  return [parts.join(' · '),field.description].filter(Boolean).join('\n');
 }
 
 /** Extend an existing ranked matcher with partner-only candidates, retaining original physical values.
@@ -84,12 +71,4 @@ export function ontologyManagerEntries(fields:readonly OntologyFieldView[],filte
     rows.push({key:[field.key,partner?.key??''].sort().join('\u0000'),first,second});
   }
   return rows.sort(/** Alphabetical presentation never reorders persisted defaults. */ (a,b)=>a.first.name.localeCompare(b.first.name));
-}
-
-/** Direct physical-name matches precede partner-only matches; role eligibility is supplied by the caller. */
-export function ontologySelectionMatches(fields:readonly string[],views:readonly OntologyFieldView[],query:string):string[] {
-  const byKey=new Map(views.map(/** Reuse current field annotations for native string-valued options. */ field=>[field.key,field]));
-  const needle=query.toLocaleLowerCase(),direct:string[]=[],indirect:string[]=[];
-  for(const name of ontologySelectionFields(fields)){if(name.toLocaleLowerCase().includes(needle))direct.push(name);else if(byKey.get(normalizeFieldName(name))?.partner?.toLocaleLowerCase().includes(needle))indirect.push(name);}
-  return [...direct,...indirect];
 }

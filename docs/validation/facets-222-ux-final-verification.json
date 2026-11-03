@@ -1,0 +1,95 @@
+{
+  "status": "passed",
+  "command": "npm run verify:obsidian",
+  "startedAt": "2026-10-26T08:09:31.652Z",
+  "completedAt": "2026-10-26T08:37:40.795Z",
+  "source": {
+    "revision": "c107681d97009ea1740bd5e0aeb5da38a0135c1a",
+    "dirty": false,
+    "node": "v22.22.2",
+    "os": "win32 10.0.26200"
+  },
+  "host": "1.14.5 (installer 1.14.0)",
+  "suites": [
+    {
+      "name": "architecture",
+      "tests": 7,
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "name": "core",
+      "tests": 130,
+      "passed": 130,
+      "failed": 0
+    },
+    {
+      "name": "main",
+      "tests": 1622,
+      "passed": 1622,
+      "failed": 0
+    },
+    {
+      "name": "browser",
+      "tests": 319,
+      "passed": 319,
+      "failed": 0
+    },
+    {
+      "name": "sources",
+      "tests": 357,
+      "passed": 357,
+      "failed": 0
+    },
+    {
+      "name": "source-browser",
+      "tests": 777,
+      "passed": 777,
+      "failed": 0
+    }
+  ],
+  "reportedTests": 3212,
+  "scanner": "passed",
+  "productionBuild": "passed",
+  "artifacts": {
+    "sourceHashes": {
+      "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+      "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+    },
+    "pluginVersion": "0.2.4",
+    "stagedHashes": {
+      "main.js": "dbb6264f76d3196775005f8af0cbcd9c003398c910f418f8f0fada0bc7f154d5",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+      "styles.css": "8d1191d97810d38680697800625b1219b9e834752e561e795c2690b0ed61cc0e"
+    }
+  },
+  "smoke": [
+    {
+      "id": "open-kplex",
+      "status": "passed",
+      "assertions": [
+        "plugin command registered",
+        "rendered .kplex-app contains K-Plex",
+        "no captured JavaScript errors"
+      ],
+      "elapsedMs": 317
+    }
+  ],
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-26T08:37:46.361Z"
+  },
+  "privateLogSha256": "d6d8b9b2d43f4bba355c298ebe19f26bdfd2e5282cfe6a2802ebf3ffae228ef1",
+  "nativeReceipt": "facets-222-ux-native-summary.json",
+  "nativeReportedChecks": 127,
+  "limits": [
+    "OS clipboard guarded/unverified",
+    "Assisted OS file export on16b8e82; transfer sources unchanged throughc107681, explicit attribution retained",
+    "Mac, physical mobile and minimum-host unrun",
+    "Known215 fresh-popout Sidecar/two simultaneous editor-Sidecar pairs/whole-app restart acceptance not claimed"
+  ]
+}

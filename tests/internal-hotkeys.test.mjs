@@ -13,7 +13,7 @@ await build({ stdin: { contents: 'export * from "./src/core/plex/internalHotkeys
   plugins: [{ name: "host-types-only", setup(builder) {
     builder.onResolve({ filter: /^obsidian$/ }, () => ({ path: "obsidian", namespace: "stub" }));
     builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: `
-      export class App {} export class ButtonComponent {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class AbstractInputSuggest {} export class Setting {}
+      export class Component {load(){} unload(){}} export const MarkdownRenderer={render:()=>{throw Error("Native Markdown is outside this finite fixture")}}; export class App {} export class ButtonComponent {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class AbstractInputSuggest {} export class Setting {}
       export class ExtraButtonComponent {} export class Scope {} export class SecretComponent {}
       export class SearchComponent {} export const setIcon = () => {}; export const setTooltip = () => {};
       export class PluginSettingTab {} export const getIcon = () => null; export const getIconIds = () => [];

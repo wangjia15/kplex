@@ -506,8 +506,8 @@ export class ActionSettingsController {
         });
         return this.own(setting, group, undefined, () => {});
         } },
-        ...(["characterShortcutsEnabled", "crossSectionAtBoundary"] as const).map(/** Workflow-wide toggles remain real searchable definitions with immediate saves. */ key => ({
-          aliases: [key], name: translate(key === "characterShortcutsEnabled" ? "actions.characterShortcuts" : "actions.crossSection"), desc: translate(key === "characterShortcutsEnabled" ? "actions.characterShortcutsHelp" : "actions.crossSectionHelp"),
+        ...(["characterShortcutsEnabled"] as const).map(/** Character shortcut opt-out remains searchable; plain arrows always cross area boundaries. */ key => ({
+          aliases: [key], name: translate("actions.characterShortcuts"), desc: translate("actions.characterShortcutsHelp"),
           render: (setting: Setting) => {
             setting.settingEl.setAttr("data-action-preference", key);
             const status = setting.infoEl.createDiv({ cls: "kplex-action-feedback" });

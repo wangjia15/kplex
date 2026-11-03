@@ -1,0 +1,175 @@
+{
+  "base": "6596f689c07f1b8c9ba84d09b7cf9c01f929a568",
+  "branch": "2026-10-29-fix-startup-and-center-editor",
+  "sourceHashes": {
+    "src/index/GraphIndex.ts": "ffa6d9214058a4c198d5d64981542b54087e168635885beac9a3f2c08a4fcd2c",
+    "src/lang/de.ts": "633029cf28514e3db98a0b7cadb8e7aa860a97294663f9db00ebab6d4ad11f72",
+    "src/lang/en.ts": "59224d2b6c776f04d43d44b560c22c0b990dca5c44d66ad3d259dd99e0436c39",
+    "src/lang/es.ts": "dcadb83ba4917c320d1a7ad50b442affcb3703f8c891d6bc2547925ed8926597",
+    "src/lang/fr.ts": "db2a3ab3e175e4182ac835a9495e81d05cc9debe3f8578255a373ee29edf3665",
+    "src/lang/ja.ts": "da6f7c1d9b7bb8ece4a0bc79b738e129f357748eb6060f76dfcef5052a036dec",
+    "src/lang/nl.ts": "0ae8d40f9c57745a82568e79690b46820dea6737a15ddc76686e0f8148cb8f85",
+    "src/lang/ru.ts": "c70479260ee7469b329839313066a603185f9933f42c01d33394e10318ddcc47",
+    "src/lang/zh-TW.ts": "e113c4d112ffd5e00a043fb8f017e159305ca0b966b31489391b143fb9b4d45f",
+    "src/main.ts": "d652e839a1178ff001844aa74d2716a1d9d97cb18ed51bc945480fa21fe148e3",
+    "src/ui/App.tsx": "be3c18e046952ffc56e71fca8d51ca364438c214593e081901b01427fbeea01b",
+    "src/ui/PlexGraph.tsx": "fc9f6f3421d89963efe498b1098bdc7ed3b8073c59ba6203e5bbc8c02aa9106f",
+    "src/ui/usePlexActions.ts": "60056d3b18af2df4b6256535044e45ca9c0bd5374c87750a105a8d97c4d44dee"
+  },
+  "artifacts": {
+    "main.js": "4390d514339f7a67f1f5d9ed20a75dbdf5cddf66dfef757068b279d3f7cff956",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+    "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+  },
+  "focused": {
+    "startup": {
+      "passed": 38,
+      "failed": 0
+    },
+    "navigationAndEditors": {
+      "passed": 90,
+      "failed": 0
+    }
+  },
+  "verification": {
+    "status": "passed",
+    "architecture": 9,
+    "core": 130,
+    "main": 1692,
+    "uiBrowser": 412,
+    "portableSources": 357,
+    "sourceBrowser": 855,
+    "installedTypesAndPreliminaryBuild": "passed",
+    "finalSourceArchitectureAndScanner": "passed",
+    "totalTests": 3455,
+    "sourceBrowserDurationMs": 964572.750042,
+    "command": "npm run verify:obsidian",
+    "standardNative": {
+      "status": "passed",
+      "startedAt": "2026-10-29T18:05:37.111Z",
+      "completedAt": "2026-10-29T18:31:32.760Z",
+      "source": {
+        "revision": "6596f689c07f1b8c9ba84d09b7cf9c01f929a568",
+        "dirty": true,
+        "node": "v22.22.3",
+        "os": "darwin 23.5.0"
+      },
+      "artifacts": {
+        "sourceHashes": {
+          "main.js": "4390d514339f7a67f1f5d9ed20a75dbdf5cddf66dfef757068b279d3f7cff956",
+          "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+          "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+        },
+        "pluginVersion": "0.3.0",
+        "stagedHashes": {
+          "main.js": "4390d514339f7a67f1f5d9ed20a75dbdf5cddf66dfef757068b279d3f7cff956",
+          "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+          "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+        }
+      },
+      "scenarios": [
+        {
+          "id": "open-kplex",
+          "status": "passed",
+          "assertions": [
+            "plugin command registered",
+            "rendered .kplex-app contains K-Plex",
+            "no captured JavaScript errors"
+          ],
+          "elapsedMs": 56
+        }
+      ]
+    }
+  },
+  "native": {
+    "host": "1.15.0 (installer 1.14.0)",
+    "node": "v22.22.3",
+    "mindMap": {
+      "status": "passed",
+      "cleanup": "passed",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "28bcac62b5a8268ef4c01d1cfba951287bc02b17d44e869159c3daa939bcdd62",
+        "definitions": "3bcb972825a4ba8fd80c3a6b643a9f01e37f0bb42d7eff3669f69889a36a161c"
+      },
+      "result": {
+        "lane": "center-navigation",
+        "cases": [
+          {
+            "id": "center-navigation-save-failure-preserves-native-buffer-root-and-attention"
+          },
+          {
+            "id": "trusted-node-click-saves-source-and-transfers-root-editor-mode-and-size"
+          },
+          {
+            "id": "fold-controls-preserve-root-editor-and-next-center-preserves-preview-mode"
+          }
+        ],
+        "capacity": 1,
+        "limits": [
+          "Native Electron automation; no physical Windows/mobile proof.",
+          "Owned native-view restoration is not whole-application restart.",
+          "Dedicated M0 FileManager cache-gate limitation remains unproven; no FileManager pass claimed.",
+          "Session acceptance preserves a main-window Sidecar; separate fresh-popout Sidecar creation remained empty and is not a passing workflow."
+        ]
+      }
+    },
+    "startup": {
+      "status": "passed",
+      "fallbackMs": 177,
+      "nodes": 175,
+      "statusFacts": {
+        "upToDate": true,
+        "phase": "ready",
+        "indexedFiles": 74,
+        "totalFiles": 74,
+        "label": "Status: index ready"
+      },
+      "sourceReady": true,
+      "sourceActive": false,
+      "terminalNotification": true,
+      "renderedReady": true,
+      "hidden": false,
+      "revisionUnchanged": true
+    },
+    "cleanup": {
+      "loaded": true,
+      "controller": false,
+      "ownedFixtureFiles": 0,
+      "status": {
+        "upToDate": true,
+        "phase": "ready",
+        "indexedFiles": 74,
+        "totalFiles": 74,
+        "label": "Status: index ready"
+      },
+      "scheduler": {
+        "active": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "waiting": 0,
+        "pauses": 622,
+        "pausesByLane": [
+          0,
+          0,
+          564,
+          3,
+          55
+        ],
+        "idleWindows": 327,
+        "pacing": false,
+        "throttle": "responsive"
+      }
+    }
+  },
+  "limitations": [
+    "No production-vault modifications or deployment.",
+    "Native checks use disposable Small on macOS; no physical mobile or Windows acceptance.",
+    "No production hydration performance or actual paint measurement.",
+    "The original missing cached graph chunk is outside this correction."
+  ]
+}

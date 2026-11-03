@@ -1,22 +1,32 @@
 /**
  * Native Obsidian link-drag boundary for Plex nodes. Desktop HTML drag events use the same
  * guarded DragManager.dragLink/onDragStart pair as native links; touch/gate gestures remain
- * caller-owned. Only one captured node reference and a view-owner token live for the gesture.
+ * caller-owned. One captured canonical node, displayed occurrence/relationship and view-owner
+ * lifetime live only for the gesture.
  * Reading a drop resolves that exact existing node, with no enumeration, acquisition or writes.
  */
 import type { App } from "obsidian";
 import type { NodeRef } from "../../core/plex/actions";
 import { tagDisplayName } from "../../core/graph/presentation";
-import type { GraphPage, Role } from "../../types";
+import type { GraphPage, LinkDirection, RelationType, Role } from "../../types";
 import { actionNodeRef, resolveActionPage } from "./actionNode";
 import { getDraggedFile } from "./fileExplorerDrag";
+import {canonicalWebUrl, webUrlOrigin} from "./urlIdentity";
 
-/** Native, transient source metadata; owner identity distinguishes an internal move from a copy. */
+/** Captured canonical relationship context, never permission to mutate without current scene admission. */
+export type NodeLinkDragRelationship = Readonly<{origin: NodeRef; role: Role; direction?: LinkDirection | null;
+  relationType?: RelationType; typeDefinition?: string}>;
+
+/** One displayed source and its existing canvas lifetime; no occurrence registry or graph snapshot is retained. */
+export type NodeLinkDragOccurrence = Readonly<{id: string; current: () => boolean; relationship?: NodeLinkDragRelationship}>;
+
+/** Native, transient source metadata; exact occurrence and owner distinguish an internal move from a copy. */
 export type NodeLinkDragSource = Readonly<{
   kind: "kplex-node-link";
   owner: object;
   node: NodeRef;
   role: Role | "center";
+  occurrence?: NodeLinkDragOccurrence;
 }>;
 
 type NativeDraggable = { type: string; title: string; icon: string; source?: unknown };
@@ -48,11 +58,12 @@ export function canDragNodeLink(page: GraphPage): boolean {
  * tags use standard HTML text and the same bounded captured identity for Plex consumers.
  * @returns The exact source token to retire on drag end, or null when no drag was accepted.
  */
-export function startNodeLinkDrag(app: App, page: GraphPage, event: DragEvent, owner: object, role: Role | "center", title: string, sourcePath: string): NodeLinkDragSource | null {
+export function startNodeLinkDrag(app: App, page: GraphPage, event: DragEvent, owner: object, role: Role | "center", title: string, sourcePath: string,
+  occurrence?: NodeLinkDragOccurrence): NodeLinkDragSource | null {
   const manager = dragManager(app);
   if (!event.dataTransfer || !canDragNodeLink(page) || manager?.draggable || plainTagDrags.has(app)) return null;
   if (page.file && app.vault.getFileByPath(page.file.path) !== page.file) return null;
-  const source: NodeLinkDragSource = { kind: "kplex-node-link", owner, node: actionNodeRef(page), role };
+  const source: NodeLinkDragSource = { kind: "kplex-node-link", owner, node: actionNodeRef(page), role, ...(occurrence ? {occurrence} : {}) };
   try {
     if (page.isTag) {
       event.dataTransfer.setData("text/plain", `#${tagDisplayName(page.path, true).replace(/^#/, "")}`);
@@ -87,22 +98,32 @@ export function nodeLinkDragSource(app: App): NodeLinkDragSource | null {
   return source as NodeLinkDragSource;
 }
 
-/** Resolve current native file drags or this plugin's captured URL/tag/placeholder without scans. */
-export function draggedGraphPage(app: App, read: { get(path: string): GraphPage | undefined }, event?: Pick<DragEvent, "dataTransfer">): GraphPage | null {
+/** Check the owning gesture/occurrence lifetime only. Consumers must separately validate current canonical relationship context before permitting removal. */
+export function isNodeLinkDragCurrent(source: NodeLinkDragSource | null): boolean {
+  try {return Boolean(source?.occurrence && typeof source.occurrence.id === "string" && source.occurrence.id
+    && typeof source.occurrence.current === "function" && source.occurrence.current());} catch {return false;}
+}
+
+/** Resolve exact native files, captured Plex identities and single existing web/tag links without scans, parsing note bodies or creating targets. Selected cold files may use the existing physical-search facade; only accepted navigation materializes them. */
+export function draggedGraphPage(app: App, read: {get(path: string): GraphPage | undefined; getVaultSearchPage?(path: string): GraphPage | null | undefined}, event?: Pick<DragEvent, "dataTransfer">): GraphPage | null {
   const source = nodeLinkDragSource(app);
   if (source) {
     const page = resolveActionPage(read, source.node);
     return page && (!page.file || app.vault.getFileByPath(page.file.path) === page.file) ? page : null;
   }
   const file = getDraggedFile(app);
-  if (file) return read.get(file.path) ?? null;
+  if (file) return read.get(file.path) ?? read.getVaultSearchPage?.(file.path) ?? null;
   const native = dragManager(app)?.draggable;
   // An actual resolved file wins above: its #heading is not a tag. Accept only an unambiguous
   // single tag from the known native link shape or ordinary text when no native drag owns it.
   const link = native && "type" in native && native.type === "link" && "linktext" in native && typeof native.linktext === "string"
     && "sourcePath" in native && typeof native.sourcePath === "string" && !("file" in native && native.file) ? native.linktext : null;
   const text = link ?? (!native ? event?.dataTransfer?.getData("text/plain") : null);
-  if (!text || !/^#[^\s#[\]|]+$/u.test(text)) return null;
+  if (!text) return null;
+  if (/^https?:\/\/\S+$/i.test(text) && webUrlOrigin(text)) {
+    const page = read.get(canonicalWebUrl(text));return page?.url && !page.transient ? page : null;
+  }
+  if (!/^#[^\s#[\]|]+$/u.test(text)) return null;
   const page = read.get(`tag:${text.slice(1)}`);
   return page?.isTag && !page.transient ? page : null;
 }

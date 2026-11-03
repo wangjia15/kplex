@@ -1,10 +1,11 @@
 /**
  * Portable dispatch facade: bounded snapshots resolve ordinary intent and injected owners perform
- * effects. Sidecar folding captures an explicit host-resolved pair/window incarnation independently
+ * effects. An optional displayed-center occurrence lets explicit creation reuse strict editor admission.
+ * Sidecar folding captures an explicit host-resolved pair/window incarnation independently
  * of graph readiness; it never falls back to the ordinary surface chooser or imports host objects.
  */
 import { ACTION_BY_ID, isActionId, validActionArguments, type ActionId, type ActionMetadata, type ActionOutcome, type ActionRequest, type Availability, type FocusRegion, type NodeRef, type ResolvedTarget } from "../core/plex/actions";
-export type SurfaceSnapshot = Readonly<{ mounted: boolean; visible: boolean; windowId?: string; center: NodeRef | null; selected: Readonly<{node: NodeRef; occurrenceId: string}> | null; focusRegion: FocusRegion; commandFocusRegion?: FocusRegion; interactionRevision: number; historyBack?: boolean; historyForward?: boolean; editorAvailable?: boolean }>;
+export type SurfaceSnapshot = Readonly<{ mounted: boolean; visible: boolean; windowId?: string; center: NodeRef | null; centerOccurrence?: Readonly<{node: NodeRef; occurrenceId: string}> | null; selected: Readonly<{node: NodeRef; occurrenceId: string}> | null; focusRegion: FocusRegion; commandFocusRegion?: FocusRegion; interactionRevision: number; viewRevision?: number; historyBack?: boolean; historyForward?: boolean; editorAvailable?: boolean; editorBindingId?: string }>;
 /** Opaque native pair/session incarnation; the host retains all leaf, group and document objects. */
 export type SidecarFoldTarget = Readonly<{id: string; windowId: string}>;
 /** Explicit absence and ambiguity never grant the generic surface resolver permission to choose. */
@@ -179,7 +180,7 @@ export class ActionManager {
     else if (requested.kind === "editor-field") { const token = "editorInvocationId" in requested ? requested.editorInvocationId : command?.editorInvocationId; if (!token || typeof token !== "string") return "actions.editor-unavailable"; target = {kind: "editor-field", editorInvocationId: token}; }
     else if (requested.kind === "none") target = {kind: "none"};
     else if (["center", "selected", "selected-or-center"].includes(requested.kind)) {
-      const selected = snapshot?.selected, center = command && metadata.id !== "document.sync-from-center" ? command.sharedCenter : snapshot?.center;
+      const selected = snapshot?.selected, center = command && metadata.id !== "document.sync-from-center" && metadata.id !== "view.export.markdown" ? command.sharedCenter : snapshot?.center;
       const node = requested.kind === "selected" ? selected?.node : requested.kind === "selected-or-center" ? selected?.node ?? center : center;
       if (!node || !validNode(node)) return "actions.target-unavailable";
       target = {kind: "node", node: {...node}, ...(selected?.node === node ? {occurrenceId: selected.occurrenceId} : {})};
@@ -200,6 +201,7 @@ export class ActionManager {
   private contextLive(context: ActionContext, expectedRegistration?: SurfaceRegistration): boolean {
     if (expectedRegistration && this.surfaces.get(expectedRegistration.id)?.registration !== expectedRegistration) return false;
     if (this.disposed || context.surfaceId && (this.surfaces.get(context.surfaceId)?.registration.generation !== context.generation || !this.readSnapshot(context.surfaceId)?.mounted)) return false;
+    if (context.surfaceId && this.readSnapshot(context.surfaceId)?.viewRevision !== context.invocationSnapshot?.viewRevision) return false;
     if (context.sidecarFold) {
       const targets = context.sidecarFold.state === "resolved" ? [context.sidecarFold.target] : context.sidecarFold.targets;
       const validate = this.options.validateSidecarFold;

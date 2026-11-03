@@ -9,8 +9,8 @@ import test from "node:test";
 import ts from "typescript";
 import {loadPortableModules} from "./support/portableTypeScript.mjs";
 
-const {exports: {ActionManager, ACTION_CATALOG, surfaceAction}} = loadPortableModules([
-  "src/application/ActionManager.ts", "src/core/plex/actions.ts", "src/ui/surfaceActionImplementation.ts",
+const {exports: {ActionManager, ACTION_CATALOG, surfaceAction, validActionArguments, hasClickModifier}} = loadPortableModules([
+  "src/application/ActionManager.ts", "src/core/plex/actions.ts", "src/ui/surfaceActionImplementation.ts", "src/ui/components/modifierClick.ts",
 ]);
 const foldId = "view.sidecar.collapse-plex";
 const app = ts.createSourceFile("src/ui/App.tsx", readFileSync(new URL("../src/ui/App.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -34,6 +34,35 @@ function implementation(id) {
   return declaration("appImplementations").initializer.properties.find(node => ts.isPropertyAssignment(node)
     && ts.isStringLiteral(node.name) && node.name.text === id);
 }
+
+/** Exercise the actual toolbar handler and action adapter for every modifier combination. */
+test("Sidecar primary click captures any modifier and forwards only finite maximize intent", async () => {
+  let button;
+  /** Locate the current primary control without duplicating its implementation. */
+  const visit = node => {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(app) === "button"
+      && node.openingElement.attributes.properties.some(attribute => attribute.name?.text === "className" && attribute.initializer?.text === "kplex-sidecar-primary")) button = node;
+    ts.forEachChild(node, visit);
+  };
+  visit(app); assert(button);
+  const handler = button.openingElement.attributes.properties.find(attribute => attribute.name?.text === "onClick").initializer.expression;
+  const requests = [], calls = [], hostLeaf = {}, page = {};
+  const click = expression(handler.getText(app), {actions: {dispatch: request => requests.push(request)}, hasClickModifier});
+  const action = expression(implementation("view.sidecar.toggle").initializer.getText(app), {
+    uiAction: surfaceAction, hostLeaf, page, surface: "leaf", plugin: {toggleSidecar: (...args) => calls.push(args)},
+  });
+  for (let mask = 0; mask < 16; mask++) {
+    click({altKey: !!(mask & 1), ctrlKey: !!(mask & 2), metaKey: !!(mask & 4), shiftKey: !!(mask & 8)});
+    const request = requests.at(-1);
+    assert.deepEqual(request, {id: "view.sidecar.toggle", source: "toolbar", args: {maximize: mask !== 0}});
+    assert(validActionArguments(request.id, request.args));
+    await action.execute({request}); assert.deepEqual(calls.at(-1), [hostLeaf, page, mask !== 0]);
+  }
+  await action.execute({request: {id: "view.sidecar.toggle", source: "obsidian-command"}});
+  assert.deepEqual(calls.at(-1), [hostLeaf, page, false], "Unmodified commands retain ordinary toggle behavior");
+  for (const args of [{maximize: "true"}, {maximize: 1}, {maximize: true, execute: true}]) assert(!validActionArguments("view.sidecar.toggle", args));
+  assert(!validActionArguments("view.sidecar.detach", {maximize: true}), "Intent does not broaden unrelated actions");
+});
 
 /** Extract a native local-menu method without loading Obsidian or a browser runtime. */
 function menuMethod(name, dependencies = {}) {

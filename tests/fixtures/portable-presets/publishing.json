@@ -1,0 +1,92 @@
+{
+  "format": "kplex-preset",
+  "version": 1,
+  "kind": "facets",
+  "id": "publishing-example",
+  "preset": {
+    "version": 1,
+    "name": "Publishing workflow",
+    "source": "property",
+    "field": "state",
+    "categories": {
+      "seed": {
+        "label": "Seed",
+        "color": "#7ba65b",
+        "values": [
+          "seed"
+        ],
+        "assignment": "seed"
+      },
+      "research": {
+        "label": "Research",
+        "color": "#6299ba",
+        "values": [
+          "research"
+        ],
+        "assignment": "research"
+      },
+      "draft": {
+        "label": "Draft",
+        "color": "#c39853",
+        "values": [
+          "draft"
+        ],
+        "assignment": "draft"
+      },
+      "review": {
+        "label": "Review",
+        "color": "#ad7dba",
+        "values": [
+          "review"
+        ],
+        "assignment": "review"
+      },
+      "published": {
+        "label": "Published",
+        "color": "#5ba699",
+        "values": [
+          "published"
+        ],
+        "assignment": "published"
+      }
+    },
+    "order": [
+      "seed",
+      "research",
+      "draft",
+      "review",
+      "published"
+    ],
+    "start": "seed",
+    "spacing": 56,
+    "regionWidth": 320,
+    "regionHeight": 280,
+    "guides": true,
+    "tints": true,
+    "layout": "vertical",
+    "focusAnchor": "left",
+    "diagnostics": {
+      "combined": true,
+      "side": "right",
+      "orientation": "vertical",
+      "showEmpty": true
+    },
+    "flow": {
+      "direction": "forward",
+      "style": "arrow",
+      "caption": "Develop deliberately",
+      "captionPosition": "middle"
+    },
+    "conflictingColor": {
+      "kind": "theme",
+      "variable": "--color-orange"
+    },
+    "unassignedColor": {
+      "kind": "theme",
+      "variable": "--text-muted"
+    },
+    "helpMarkdown": "# Publishing workflow\n\nUse explicit states to read the focused note and its directly related notes. This is a local classification, not a whole-vault board or an automatic publication action.\n\n## Categories\n\n- Seed: an idea worth keeping.\n- Research: material under investigation.\n- Draft: work in progress.\n- Review: a draft ready for deliberate checking.\n- Published: work you classify as shared or complete.\n\n## Example\n\n```yaml\nstate: review\n```\n\nUse the exact values seed, research, draft, review or published. Choose Assign category and review the native preview before editing. Following a note does not advance its state.\n\n## Limits\n\nUnavailable metadata remains Cannot classify; multiple matching states are Conflicting. Combined Diagnostics never means clearing a property. Workflow arrows are decorative and do not assert recorded note relationships or publish anything. The shared native editor and save safeguards remain in charge.\n",
+    "helpSourceLocale": "en"
+  },
+  "aiContext": "Version1 data-only K-Plex Facets example. Generate useful preset-specific helpMarkdown from the actual state values, keep it distinct from this inert AI authoring context, and use the canonical validator. https://github.com/zsviczian/kplex/blob/main/docs/FACETS_AUTHORING.md"
+}

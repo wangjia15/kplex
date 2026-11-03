@@ -1,0 +1,152 @@
+{
+  "name": "editor-area-growth",
+  "status": "passed",
+  "node": "v22.22.2",
+  "startedAt": "2026-10-27T18:25:16.713Z",
+  "maximumMs": 180000,
+  "driver": {
+    "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+    "scenario": "d6904dad56431f957e5264812556763d02e9fe19f996ceabb78a413103493b43",
+    "definitions": "dcc07df42d510b7ddb40889df4c40a0c72a73f47e7215a7317602a30b39435e0"
+  },
+  "artifacts": {
+    "main.js": "302f5f015ba423ae8a0142ab6cb971a42d323845a740db3ae4556782c8af2de5",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+    "styles.css": "f205d6e8b16494817de3abe8a07f15cfd1b96dec83fac6a772f5092d739d9857"
+  },
+  "source": {
+    "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+    "src/index/GraphIndex.ts": "c0a921ab4f65185400da1536432cee257a97d21574b764273a56f0dd991c68fa",
+    "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+    "src/ui/PlexGraph.tsx": "b26f7514b98c6616013b760990923759111e77f8d4d7446d601f5169cbd9b7ab",
+    "src/ui/plexViews/prepareScene.ts": "03d5d7daa1053e7342109b372056b6fa41775fbdd3ce989ab7616261267d3dc6",
+    "src/core/plex/views/wuxing/definition.ts": "31cfc464bd4fe20c39b5c447792a562166fe1ad7cf86fd0618a8432d7059a85c",
+    "src/core/plex/views/classic/geometry.ts": "08174532e18bcde3205c6d9c7f3cd4385708deb2c6bfef0def3563631f3c7a18"
+  },
+  "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+  "obsidian": "1.14.5 (installer 1.14.0)",
+  "progress": {
+    "cases": [
+      {
+        "id": "native-in-place-editor-area-growth-save-close",
+        "view": "wuxing",
+        "clip": "inset(0px)",
+        "width": 920,
+        "height": 700
+      },
+      {
+        "id": "native-in-place-editor-area-growth-save-close",
+        "view": "classic",
+        "clip": "inset(0px)",
+        "width": 920,
+        "height": 700
+      }
+    ],
+    "view": "mindmap",
+    "clip": "none",
+    "dimensions": {
+      "width": 920,
+      "height": 700
+    }
+  },
+  "result": {
+    "cases": [
+      {
+        "id": "native-in-place-editor-area-growth-save-close",
+        "view": "wuxing",
+        "clip": "inset(0px)",
+        "width": 920,
+        "height": 700
+      },
+      {
+        "id": "native-in-place-editor-area-growth-save-close",
+        "view": "classic",
+        "clip": "inset(0px)",
+        "width": 920,
+        "height": 700
+      },
+      {
+        "id": "native-in-place-editor-area-growth-save-close",
+        "view": "mindmap",
+        "clip": "none",
+        "width": 920,
+        "height": 700
+      }
+    ],
+    "host": {
+      "electron": "43.3.0",
+      "chrome": "150.0.7871.212"
+    },
+    "fixtureNotesEditedOnly": true
+  },
+  "cleanup": "passed",
+  "completedAt": "2026-10-27T18:25:22.703Z",
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-27T18:25:28.492Z"
+  },
+  "baseline": {
+    "sha": "d450ecc9c75287dca8e15626c7b7f8b9ccbb32ec",
+    "tests": 17,
+    "pass": 14,
+    "fail": 3,
+    "failures": [
+      "not ok 6 - bound editor retirement is explicit while attention-following definitions remain unchanged",
+      "not ok 14 - compatible editor leases, per-view heights and transient geometry survive only their intended scope",
+      "not ok 15 - a live attention editor blocks occurrence-host selection while unchanged attention definitions remain compatible"
+    ]
+  },
+  "focused": {
+    "node": "v22.22.2",
+    "tests": 90,
+    "pass": 90,
+    "fail": 0
+  },
+  "fullRegression": "deferred",
+  "implementationCheckpoint": "dd2048c3931636153b9debcb6a42ef927f893361",
+  "helpDeployment": {
+    "before": {
+      "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+      "version": "0.3.0",
+      "leafId": "f96c6c66434b3021",
+      "center": "00 Start Here/K-Plex Help.md",
+      "view": "wuxing",
+      "preset": "help-workbench",
+      "cards": 37,
+      "visibleCards": 1,
+      "camera": "translate(1032.5px, 476.5px) scale(1)",
+      "viewport": {
+        "width": 2065.3515625,
+        "height": 952.5650634765625
+      }
+    },
+    "passes": [
+      {
+        "path": "C:\\Users\\viczi\\GitHub\\kplex-help",
+        "version": "0.3.0",
+        "leafId": "f96c6c66434b3021",
+        "center": "00 Start Here/K-Plex Help.md",
+        "view": "wuxing",
+        "preset": "help-workbench",
+        "cards": 37,
+        "visibleCards": 1,
+        "camera": "translate(1032.5px, 476.5px) scale(1)",
+        "viewport": {
+          "width": 2065.3515625,
+          "height": 952.5650634765625
+        }
+      }
+    ],
+    "artifacts": {
+      "main.js": "302f5f015ba423ae8a0142ab6cb971a42d323845a740db3ae4556782c8af2de5",
+      "styles.css": "f205d6e8b16494817de3abe8a07f15cfd1b96dec83fac6a772f5092d739d9857",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350"
+    },
+    "completedAt": "2026-10-27T18:28:29.992Z",
+    "notesEdited": false,
+    "navigationPerformed": false
+  }
+}

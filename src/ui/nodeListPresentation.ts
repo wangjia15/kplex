@@ -1,13 +1,24 @@
-/** Shared saved-node row facets; no graph preparation, metadata reads or canvas-label policy changes. */
+/** Shared saved-node row facets and optional compact node paint. Canvas style resolution owns
+ * type/tag/kind precedence; these cache-only projections never prepare graph or metadata work. */
+import type {CSSProperties} from "react";
 import type { GraphPage } from "../types";
+import type {KplexSettings} from "../settings";
+import {resolveNodeStyle, nodePaint, nodePaintFallbacks} from "../index/style";
 import { graphNodeKindFromLegacy } from "../adapters/obsidian/graphContracts";
 import { tagDisplayName } from "../core/graph/presentation";
 import { searchResultIconName } from "./features/searchResultPresentation";
 
-/** Keep hierarchical tags unambiguous in saved lists, reusing Find's type/icon owner. */
-export function nodeListPresentation(page: GraphPage, title: string): { label: string; icon: string } {
+/** Keep hierarchical tags unambiguous, reusing Find's kind icon unless node styling overrides it.
+ * Optional live settings add compact fill/text/border/icon/prefix appearance; list dimensions stay
+ * list-owned and no central/relationship treatment is invented for a saved navigation reference. */
+export function nodeListPresentation(page: GraphPage, title: string, settings?: KplexSettings): { label: string; icon: string; style?: CSSProperties } {
+  const style = settings ? resolveNodeStyle(page, null, "child", settings) : undefined;
+  const paint = style ? nodePaint(style, nodePaintFallbacks({page, role: "child"})) : undefined;
   return {
-    label: page.isTag ? `#${tagDisplayName(page.path, true).replace(/^#/, "")}` : title,
-    icon: searchResultIconName({ kind: graphNodeKindFromLegacy(page), file: page.file }),
+    label: `${style?.prefix ?? ""}${page.isTag ? `#${tagDisplayName(page.path, true).replace(/^#/, "")}` : title}`,
+    icon: style?.icon ?? searchResultIconName({ kind: graphNodeKindFromLegacy(page), file: page.file }),
+    ...(paint && style ? {style: {background: paint.background, color: paint.foreground, borderColor: paint.border,
+      borderWidth: style.strokeWidth ?? 1, borderStyle: style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid",
+      borderRadius: style.strokeShaprness === "sharp" ? 5 : 12}} : {}),
   };
 }

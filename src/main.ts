@@ -1,8 +1,19 @@
 /**
+ * Captured section opens retain exact native request identities. Explicit node copies use the
+ * revocable host clipboard owner; section-scoped bulk visibility uses the existing settings queue.
+ * Related-note completion keeps link and creation preferences independent through that same writer.
+ * Eager startup admits optional URL replay only after primary graph completion, so its higher
+ * per-owner preparation cannot starve saved-graph hydration or initial source compilation.
+ * Full publication retires only its captured creation backlog; a later metadata save stays a
+ * per-file update, while a genuinely newer structural creation retains its own revision.
+ * Pending relationship repair shows an active source audit's measured progress; a settled
+ * unavailable scope retains the existing incomplete state instead of hiding ongoing validation.
  * Saved native centers/history are primed before asynchronous startup. Partial graph absence
  * cannot select and persist an unrelated history entry while the requested center is loading.
  * Obsidian plugin lifecycle and host orchestration for indexing, navigation and vault mutations. Portable owners determine semantics; this host boundary supplies effects, cleanup and localized product feedback. Native metadata events request finite visible presentation repair independently of semantic readiness. Passive document synchronization preserves the current representation of exact matching native destinations; explicit opening and source inspection retain their separate navigation contracts. Support reporting projects retained facts without starting index work; this lifetime owns its bounded recorder and native report dialogs. Per-note Markdown zoom preferences follow Vault rename/delete events independently of index readiness.
  * Remote node image consent publishes synchronously before persistence and never requests semantics.
+ * Deletion retains canonical/native endpoint identity across refreshed display facades and explains
+ * surviving placeholder references through the existing native source-navigation dialog.
  * Style-manager drafts commit on the settings disk queue before live publication; style-only
  * completion refreshes cached presentation without clearing or reacquiring semantic scopes.
  * Durable/live publication releases editors through one bounded optional-refresh completion lease;
@@ -40,7 +51,11 @@
  * identity/path/stat/event proof; dormant semantic edits and destructive changes retain reconciliation.
  * Ontology text drafts persist one guarded field through the existing settings queue before live
  * semantic publication; slow refresh remains outside the disk queue and cannot replay failed saves.
+ * New-file after-saving choices reuse surface-owned editor actions and exact native tab/Sidecar destinations; bounded readiness waits settle on unload.
  */
+import { registerFileMenus, type FilePlexNode, type FilePlexTarget } from "./adapters/obsidian/fileMenu";
+import { drawingAutomation, drawingTemplateOptions } from "./adapters/obsidian/drawingTemplates";
+import {viewLabel} from "./ui/plexViews/labels";
 import {startupIndexPolicy} from './core/plex/startupIndexPreferences';
 import { tagMembershipPair } from "./ui/structuralConnectionActions";
 import {SettingsReconciliation, type SettingsSnapshot, type SettingsWriteIntent} from "./adapters/obsidian/settingsReconciliation";
@@ -48,15 +63,26 @@ import {assertExternalSettingsRecord} from "./adapters/obsidian/settingsInput";
 import { graphTagValue } from "./adapters/obsidian/tagMembership";
 import { StructuralNodeDropActions } from "./ui/StructuralNodeDropActions";
 import { mergeGraphLensDefinitions } from "./lens/GraphLens";
+import {facetLibrary} from "./core/plex/views/facets/configuration";
+import {applyPortableImport, PortableSharingCapacityError, type PreparedImport, type SharingState} from "./core/plex/sharing/transfer";
 import { appearanceColorReferences } from "./core/contracts/appearance";
 import { requireNamedColor } from "./core/plex/colorEditing";
 import * as appearanceThemes from "./core/plex/appearanceThemes";
+import {editOntologyDescriptions,type OntologyDescriptions} from './core/contracts/ontologyReadModel';
+import {createPublicApi, type KplexPublicApi, type PublicApiOwner} from './publicApi/createPublicApi';
+import {publishPublicApiWindows} from './adapters/obsidian/publicApiWindow';
+import type {PublicCanvasRegistry} from './application/PublicCanvasRegistry';
 import {ontologyConfiguration, assignOntologyField, applyOntologyEdit, ontologyEndpointState, editOntologyEntries, ONTOLOGY_GROUPS, type OntologyConfiguration, type OntologyConfigurationInput, type OntologyEdit} from './core/contracts/ontologyConfiguration';
 import type {StyleEditorModal} from "./ui/StyleEditorModal";
 import {NotificationModal} from "./ui/NotificationModal";
 
 import { FileView, ItemView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, TFolder, apiVersion, getLanguage, getAllTags, normalizePath, parseLinktext, type Editor, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { captureSettingsPolicy, classifySettingsChange, isStyleOnlySettingsChange, type SettingsPolicy } from "./core/graph/settingsPolicy";
+import {builtInCanvasViewSettings} from "./ui/plexViews/settingsContributions";
+import {editViewConfigurationAt, migrateViewConfiguration, readViewConfiguration, readViewConfigurationAt, resetViewConfiguration,
+  viewConfigurationOwnerDomains, viewConfigurationUpdateDomain, type ViewConfigurationAddress, type ViewConfigurationEdit,
+  type ViewConfigurationExpected, type PlexViewConfiguration} from "./core/plex/views/configuration";
+import {configurationJson} from "./core/plex/views/configurationValues";
 import { removeMarkdownZoomModes, renameMarkdownZoomModes } from "./core/plex/markdownZoomPreferences";
 import { GraphIndex } from "./index/GraphIndex";
 import {SavedSettingsRefresh} from "./adapters/obsidian/savedSettingsRefresh";
@@ -92,6 +118,8 @@ import { createTranslator, type Translator } from "./lang";
 import { isGraphTabCommandAvailable, isPopoutCommandAvailable, primaryOpenSurface } from "./core/plex/viewPresentation";
 import { createAdjacentFileLeaf } from "./adapters/obsidian/adjacentFileLeaf";
 import { isEmbeddedMarkdownLeaf } from "./adapters/obsidian/embeddedMarkdownLeaf";
+import {CanvasPropertyAssignmentActions, type CanvasPropertyAssignmentRequest} from "./ui/CanvasPropertyAssignmentActions";
+import type {PlexPropertyAssignment} from "./core/plex/views/propertyAssignment";
 import { StartupDiagnostics } from "./adapters/obsidian/startupDiagnostics";
 import { writeRelationshipMetadata, SavedRelationshipPendingError, relationshipMetadataPayload } from "./adapters/obsidian/relationshipMetadataWrite";
 import { SOURCE_DECODE_BUDGET_BYTES } from "./index/SourceFacts";
@@ -107,6 +135,8 @@ import { createSupportReport } from "./application/supportReport";
 import type { IndexingActivityCapture } from "./application/IndexingActivity";
 import { SessionEventRecorder } from "./application/SessionEventRecorder";
 import { SupportClipboardSession } from "./application/supportClipboard";
+import {NodeLinkClipboard} from "./adapters/obsidian/nodeLinkClipboard";
+import {contentVisibilityPatch, type ContentVisibilityKey, type ContentVisibilityScope} from "./core/plex/contentVisibility";
 import { SupportReportModal } from "./adapters/obsidian/SupportReportModal";
 import { readSupportCustomizations } from "./adapters/obsidian/supportEnvironment";
 import { PartialRelatedFileError } from "./adapters/obsidian/relatedFileOutcome";
@@ -117,6 +147,8 @@ import { ACTION_BY_ID, ACTION_RELATION_ROLES, type ActionId, type ActionOutcome,
 import { compileActionBindings, migrateActionPreferences, sanitizeActionPreferences, type ActionPreferencesV1 } from "./core/plex/actionPreferences";
 import { createActionCommandPublisher, type ActionCommandPublisher } from "./adapters/obsidian/actionCommands";
 import { actionNodeRef, resolveActionPage } from "./adapters/obsidian/actionNode";
+import {creationAfterSavingActions, effectiveCreationAfterSaving, effectiveCreatedNoteDestination, sanitizeCreationAfterSaving, type CreationAfterSavingAction, type CreatedNoteContext, type CreatedNoteDestination} from "./core/plex/createdNoteDestination";
+import type {CreatedNoteCompletionControl} from "./ui/features/CreationCompletionSelect";
 import { translateActionText } from "./ui/actionPresentation";
 import { ActionTargetPicker } from "./ui/ActionTargetPicker";
 import { PlexFoldSession, plexFoldIdentity, type PlexFoldCandidate } from "./ui/PlexFoldSession";
@@ -182,10 +214,26 @@ type RecentIndexedNavigationTarget = {
 
 /** Finite appearance intents cross the same settings queue; initialization/import never add another writer. */
 type StyleCommitOptions = Readonly<{themeAction?: appearanceThemes.AppearanceThemeAction; legacyImport?: unknown; initializeThemes?: {existing: boolean; adoptNativeBase?: boolean; notifyMigration?: boolean};
+  /** Optional registered-view leaf joins the same atomic appearance/dependency snapshot. */
+  canvasViewEdit?: Readonly<{id: string; address: ViewConfigurationAddress; value: unknown; expected: ViewConfigurationExpected; current: () => boolean}>;
   /** Imperative compatibility callers may replace a coherent root/library pair that still differs from disk. */
   persistExistingChanges?: boolean}>;
 
 export default class KplexPlugin extends Plugin {
+  /** Clipboard receipts live only as long as this native plugin instance. */
+  nodeLinkClipboard?: NodeLinkClipboard;
+  /** Versioned trusted automation surface; settings-based reads precede graph hydration. */
+  api:KplexPublicApi|null=null;
+  /** Public discovery leases contain callbacks only; native sessions retain actual canvas state. */
+  publicCanvases!:PublicCanvasRegistry;
+  private publicApiOwner:PublicApiOwner|null=null;
+  private disposePublicApiWindows:(()=>void)|null=null;
+  /** Committed render adapters stamp their frame without retaining settings or acquiring graph facts. */
+  readPublicApiRevision():import('./application/publicApiContracts').PublicApiRevision {
+    return this.publicApiOwner?.revisions()??{semantic:0,source:0,configuration:0};
+  }
+  /** Finite native Settings composition; tests may construct an independent registry, never register production extensions dynamically. */
+  readonly viewSettingsRegistry = builtInCanvasViewSettings;
   settings: KplexSettings = DEFAULT_SETTINGS;
   index!: GraphIndex;
   paperReading!: PaperReadingController;
@@ -255,9 +303,12 @@ export default class KplexPlugin extends Plugin {
   private explicitIndexPreparationRequested = false;
   private indexSearchPrimed = false;
   private readonly layoutReadyWaiters = new Set<() => void>();
+  private readonly createdEditorWaits = new Map<number, () => void>();
   private metadataStabilized = false;
   private metadataStabilityPromise: Promise<number> | null = null;
   private readonly indexBacklogReasons = new Set<string>();
+  /** Exact generic creation observation; unrelated metadata cannot retain an already covered create. */
+  private pendingCreateRevision = 0;
   private indexDirtyRevision = 0;
   private rebuildTask: Promise<void> | null = null;
   private visibleMetadataTimer: number | null = null;
@@ -290,7 +341,7 @@ export default class KplexPlugin extends Plugin {
   /** Incarnation metadata only; existing Sidecar and fold maps remain the sole owner inventories. */
   private readonly plexFoldRevisions = new WeakMap<WorkspaceLeaf, number>();
   private readonly sidecarListeners = new Set<() => void>();
-  private readonly navigationListeners = new Set<(path: string, hostLeaf?: WorkspaceLeaf) => void>();
+  private readonly navigationListeners = new Set<(path: string, hostLeaf?: WorkspaceLeaf, reroot?: boolean) => void>();
   private readonly searchFocusListeners = new Map<WorkspaceLeaf, () => void>();
   private readonly nodeFlairListeners = new Set<(path: string) => void>();
   private readonly indexStatusListeners = new Set<() => void>();
@@ -305,6 +356,7 @@ export default class KplexPlugin extends Plugin {
   /** Pending saved relationship observers release on unload, rename/delete or actual convergence. */
   private readonly relationshipWriteCancels = new Set<() => void>();
   private structuralDrops: StructuralNodeDropActions | null = null;
+  private canvasPropertyAssignments: CanvasPropertyAssignmentActions | null = null;
   /** Paths suppress the synchronous vault:create rebuild; object identity protects optimistic UI. */
   private readonly managedCreatedPaths = new Map<string, number>();
   private readonly managedCreatedFiles = new WeakSet<TFile>();
@@ -364,6 +416,8 @@ export default class KplexPlugin extends Plugin {
     this.supportEvents.record("plugin-start");
     this.startupDiagnostics.begin((window as Window & { kplexStartupDiagnosticsEnabled?: boolean }).kplexStartupDiagnosticsEnabled === true);
     this.translator = createObsidianTranslator();
+    this.nodeLinkClipboard = new NodeLinkClipboard(this.app, /** Feedback belongs to this plugin's active catalog. */ key => {new Notice(this.translator(key));});
+    this.registerEvent(this.app.workspace.on("editor-paste", /** The native receiver supplies destination context, including embedded and popout editors. */ (event, editor, info) => this.nodeLinkClipboard?.paste(event, editor, info)));
     const ownData: unknown = await this.loadData();
     const hasOwnData = ownData !== null && ownData !== undefined;
     const ownRecord = ownData && typeof ownData === "object" ? ownData as Record<string, unknown> : null;
@@ -390,6 +444,10 @@ export default class KplexPlugin extends Plugin {
     this.index = new GraphIndex(this, this.app, true, this.startupIndexPolicy.mode);
     this.paperReading = new PaperReadingController(this);
     this.pdfCrops = new PdfCropRenderer(this.app);
+    this.publicApiOwner=createPublicApi(this,()=>!this.unloading,()=>this.getIndexDiagnosticsStatus());
+    this.publicCanvases=this.publicApiOwner.canvases;this.api=this.publicApiOwner.api;
+    this.disposePublicApiWindows=publishPublicApiWindows(this.app.workspace,this.api,
+      /** Obsidian also owns listener cleanup if initialization fails later. */ event=>this.registerEvent(event));
     this.installPreRestoreChangeFence();
     this.index.primeSavedNavigation([this.settings.lastActivePath, ...this.settings.navigationHistory.slice(-14), ...this.settings.pinnedNodes]);
     this.registerMarkdownZoomPreferenceListeners();
@@ -532,6 +590,7 @@ export default class KplexPlugin extends Plugin {
         this.layoutReadyWaiters.clear();
         this.startupDiagnostics.mark("layout-ready");
         this.registerOntologyContextMenu();
+        registerFileMenus(this);
         this.prepareIndexIfRequested();
 
         // Re-associate a persisted sidecar before normal recent-tab synchronization is allowed to
@@ -619,6 +678,11 @@ export default class KplexPlugin extends Plugin {
     for (const resolve of this.layoutReadyWaiters) resolve();
     this.layoutReadyWaiters.clear();
     this.unloading = true;
+    this.nodeLinkClipboard?.dispose();this.nodeLinkClipboard = undefined;
+    for (const [timer, resolve] of this.createdEditorWaits) {window.clearTimeout(timer); resolve();}
+    this.createdEditorWaits.clear();
+    this.disposePublicApiWindows?.();this.disposePublicApiWindows=null;
+    this.publicApiOwner?.dispose();this.publicApiOwner=null;
     this.initialSourceRecovery = null;
     this.savedSettingsRefresh?.close();
     this.settingsReconciliation?.dispose();
@@ -628,6 +692,7 @@ export default class KplexPlugin extends Plugin {
     this.externalSettingsRetryTimers.clear();
     this.structuralDrops?.dispose();
     this.structuralDrops = null;
+    this.canvasPropertyAssignments?.dispose();this.canvasPropertyAssignments = null;
     this.settingsTab?.disposeActionSettings();
     this.settingsTab = null;
     for (const dialog of this.actionDialogs.keys()) dialog.close();
@@ -746,6 +811,7 @@ export default class KplexPlugin extends Plugin {
         || uncoveredCreateReasons.has(reason));
       if (this.preRestoreDormantReasons.has(reason) || inventoryRevision === null || revision > inventoryRevision || uncoveredCreate) {
         this.indexBacklogReasons.add(reason);
+        if (reason === "vault:create") this.pendingCreateRevision = revision;
         this.preRestoreUncoveredChanges = true;
       }
     }
@@ -1212,6 +1278,7 @@ export default class KplexPlugin extends Plugin {
   private scheduleRebuild(reason = "unknown"): void {
     this.indexDirty = true;
     this.indexDirtyRevision += 1;
+    if (reason === "vault:create") this.pendingCreateRevision = this.indexDirtyRevision;
     this.indexBacklogReasons.add(reason);
     this.notifyIndexStatus();
     if (!this.hasVisibleKplexSurface() || !this.initialIndexComplete || this.rebuildTask) return;
@@ -1223,6 +1290,11 @@ export default class KplexPlugin extends Plugin {
       this.rebuildTimer = null;
       void this.rebuildIndex(false, false, reason);
     }, delayMs);
+  }
+
+  /** A successful complete build covers its captured create, never a newer native creation. */
+  private retireCoveredCreateReason(revision: number): void {
+    if (this.pendingCreateRevision === revision) this.indexBacklogReasons.delete("vault:create");
   }
 
   async onKplexViewOpened(hostLeaf?: WorkspaceLeaf, session?: KplexDocumentSession): Promise<void> {
@@ -1260,20 +1332,36 @@ export default class KplexPlugin extends Plugin {
     this.index.cancelPendingPersistence();
   }
 
-  /** Complete the initial source owner; an unsuccessful adoption reports incomplete coverage until a later attempt succeeds. */
+  /** Close source recovery before declaring eager startup complete.
+   * Vocabulary adoption preserves a usable scene but does not provide global relationships. Eager
+   * recovery completes them with the existing foreground-preemptible batched full compiler; events
+   * arriving during that pass remain in the normal patch backlog. On-demand keeps local semantics.
+   */
   private async adoptInitialSourceIndex(): Promise<void> {
     this.initialSourceIndexIncomplete = false;
     const index = this.index;
     let adopted: boolean;
-    try { adopted = await index.adoptStartupSources(); }
+    let coveredCreateRevision: number | null = null;
+    try {
+      adopted = await index.adoptStartupSources({deferVocabulary: !index.isOnDemandMode()});
+      if (adopted && !this.unloading && this.index === index && !index.isOnDemandMode()
+        && index.hasSourceBackedStartup()) {
+        coveredCreateRevision = this.pendingCreateRevision;
+        adopted = await index.rebuild({retainSourceInventory: true});
+      }
+    }
     catch (error) {
       if (!this.unloading && this.index === index) { this.initialSourceIndexIncomplete = true; this.notifyIndexStatus(); }
       throw error;
     }
     if (this.unloading || this.index !== index) return;
+    // A concurrent complete fallback can retire source adoption while its await is settling.
+    // Its certified completion must not be overwritten by the retired adopter's false result.
+    adopted ||= this.initialIndexComplete && index.isFullSnapshotHydrated() && !index.hasSourceBackedStartup();
     this.initialSourceIndexIncomplete = !adopted;
     this.initialIndexComplete = adopted;
     if (adopted) {
+      if (coveredCreateRevision !== null) this.retireCoveredCreateReason(coveredCreateRevision);
       for (const reason of ["startup:no-snapshot", "startup:stale-snapshot", "startup:partial-restore-incomplete"]) {
         this.indexBacklogReasons.delete(reason);
       }
@@ -1358,7 +1446,9 @@ export default class KplexPlugin extends Plugin {
     const task = Promise.resolve().then(async () => {
       if (this.unloading) return;
       this.index.admitPreparation();
-      void this.index.startBackgroundUrlIndex();
+      // Independent URL inventory must not hold P3 ahead of an Eager graph's P4 hydration.
+      // Local mode keeps its existing independent discovery while requested neighborhoods prepare.
+      if (this.index.isOnDemandMode()) void this.index.startBackgroundUrlIndex();
       if (!this.indexSearchPrimed) {
         await this.index.primePhysicalSearchCatalog();
         if (this.unloading) return;
@@ -1375,7 +1465,7 @@ export default class KplexPlugin extends Plugin {
       this.supportEvents.record("cache-restore-start", { category: "cache" });
       let restored: Awaited<ReturnType<GraphIndex["restorePersistedSnapshot"]>>;
       try {
-        this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot(startupSeedPaths);
+        this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot(startupSeedPaths, {deferEagerVocabulary: true, deferEagerUrlRestore: true});
         restored = await this.snapshotRestoreTask;
       } catch (error) {
         this.supportEvents.record("cache-restore-failure", { category: "cache", outcome: "failed", durationMs: perfNow() - restoreStarted });
@@ -1456,8 +1546,8 @@ export default class KplexPlugin extends Plugin {
         this.indexBacklogReasons.add("startup:partial-restore-incomplete");
       }
 
-      // Missing graph acceleration is recoverable source progress, not a reason to rebuild all
-      // semantics. Source inventory owns offline/sync repair; requested scopes own current views.
+      // Source recovery first preserves current views and vocabulary. Eager startup must also
+      // complete global relationships before its coordinator can report the initial index ready.
       if (this.index.hasSourceBackedStartup()) {
         await this.adoptInitialSourceIndex();
         return;
@@ -1528,6 +1618,7 @@ export default class KplexPlugin extends Plugin {
       // Keep the resolved promise only after a complete initial index. If iOS work was cancelled
       // because the last K-Plex view closed, reopening must be able to resume the durable prewarm.
       if (!this.initialIndexComplete) this.initialIndexTask = null;
+      else if (!this.unloading && !this.index.isOnDemandMode()) void this.index.startBackgroundUrlIndex();
     });
     return this.initialIndexTask;
   }
@@ -1554,6 +1645,7 @@ export default class KplexPlugin extends Plugin {
     await this.performRebuild(showNotice, force, reason, false);
     if (firstExplicit && !this.unloading) {
       this.initialIndexComplete = this.index.isOnDemandMode() ? this.index.hasLocalBaseline() : this.index.isFullSnapshotHydrated();
+      if (this.initialIndexComplete) void this.index.startBackgroundUrlIndex();
       this.notifyIndexStatus();
     }
   }
@@ -1720,17 +1812,22 @@ export default class KplexPlugin extends Plugin {
         return;
       }
       if (showNotice) new Notice(this.translator("notice.rebuildingIndex"), 1200);
-      const progressiveStartup = allowClosed && !showNotice && !force && !this.initialIndexComplete && !this.index.isFullSnapshotHydrated();
+      const rebuiltIndex = this.index;
+      const reuseStartupSources = allowClosed && !showNotice && !force && !this.initialIndexComplete
+        && this.index.hasReusableSourceInventory();
+      const progressiveStartup = allowClosed && !showNotice && !force && !this.initialIndexComplete
+        && !this.index.isFullSnapshotHydrated() && !reuseStartupSources;
       this.index.noteBuildDecision(progressiveStartup ? "cold-progressive" : "full-rebuild",
         [...this.indexBacklogReasons].sort().join("|") || reason);
+      const coveredCreateRevision = this.pendingCreateRevision;
       const published = progressiveStartup
-        ? await this.index.rebuildProgressively(this.startupGraphSeedPaths(), {
+        ? await rebuiltIndex.rebuildProgressively(this.startupGraphSeedPaths(), {
           // Keep the large-iOS low-memory checkpoint strategy, but only after the useful center
           // neighborhood has been published so first paint is no longer blocked by vault prewarm.
           prewarmBodyCache: Platform.isIosApp && this.app.vault.getMarkdownFiles().length > 5000,
         })
-        : await this.index.rebuild();
-      if (this.unloading) return;
+        : await rebuiltIndex.rebuild(reuseStartupSources ? {retainSourceInventory: true} : undefined);
+      if (this.unloading || this.index !== rebuiltIndex) return;
       if (!published) {
         this.indexDirty = true;
         this.indexBacklogReasons.add(reason);
@@ -1744,6 +1841,16 @@ export default class KplexPlugin extends Plugin {
           }, 1100);
         }
         return;
+      }
+
+      if (rebuiltIndex.isFullSnapshotHydrated()) this.retireCoveredCreateReason(coveredCreateRevision);
+
+      // A cancelled initial owner may already have released its task. A later complete fallback
+      // publication must finish that startup too; partial/source-backed publications still belong
+      // to their adopter. Newer edits retain their dirty backlog and ordinary catch-up checks.
+      if (rebuiltIndex.isFullSnapshotHydrated() && !rebuiltIndex.hasSourceBackedStartup()) {
+        this.initialIndexComplete = true;
+        this.initialSourceIndexIncomplete = false;
       }
 
       // The authoritative build covered its startup reasons. New Markdown files created after
@@ -2004,6 +2111,8 @@ export default class KplexPlugin extends Plugin {
         conflict: /** Event saves can report a refused local intent without an unhandled rejection. */ () => {
           const error = new Error(this.translator("settingsSync.conflict")); error.name = "SettingsConflictError"; return error;
         },
+        canvasEntries: /** Only an installed schema can declare independently owned collection entries. */ (id, field) =>
+          (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(id)?.configuration?.fields[field]?.entries === true,
         wait: /** Release bounded retry tasks explicitly on unload as well as normal timeout. */ ms => new Promise(resolve => {
           const timers = this.externalSettingsRetryTimers ??= new Map();
           const timer = window.setTimeout(/** A completed retry no longer retains its owning plugin. */ () => {timers.delete(timer); resolve();}, ms);
@@ -2089,10 +2198,89 @@ export default class KplexPlugin extends Plugin {
   }
 
   /** Expose only a domain epoch for existing editor/control lifetimes, never the persistence baseline. */
-  receivedSettingsRevision(domain: string): number | undefined {return this.settingsReconciliation?.revision(domain);}
+  receivedSettingsRevision(domain: string): number | undefined {
+    const owner = this.settingsReconciliation;
+    return owner ? viewConfigurationOwnerDomains(domain).reduce((sum, key) => sum + owner.revision(key), 0) : undefined;
+  }
 
   /** Existing recorders capture their opening remote owner while keeping drafts out of live state. */
-  receivedSettingsOwner(domain: string): () => boolean {return this.settingsReconciliation?.owner(domain) ?? (/** Finite pre-startup host consumers retain their existing lifetime. */ () => !this.unloading);}
+  receivedSettingsOwner(domain: string): () => boolean {
+    const owners = viewConfigurationOwnerDomains(domain).map(key => this.settingsReconciliation?.owner(key) ?? (() => !this.unloading));
+    return () => owners.every(current => current());
+  }
+
+  /** Read only one registered view's validated effective settings; unavailable extensions stay inert. */
+  readCanvasViewConfiguration(id: string): PlexViewConfiguration {
+    const definition = (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(id);
+    return definition ? readViewConfiguration(definition, this.settings.canvasViewSettings) : {status: "unavailable", reason: "unsupported"};
+  }
+
+  /** Keep the published scalar API on the same scoped queue; no view writes data.json directly. */
+  async updateCanvasViewSetting(id: string, field: string, value: unknown): Promise<void> {
+    return this.updateCanvasViewConfiguration(id, {field}, {kind: "set", value});
+  }
+
+  /** Submit one detached field/path operation. Sibling preset edits rebase on the latest queue
+   * state; stale same-entry remote epochs or an optional stale opening leaf reject safely. */
+  async updateCanvasViewConfiguration(id: string, address: ViewConfigurationAddress, edit: ViewConfigurationEdit,
+    expected?: ViewConfigurationExpected, isCurrent: () => boolean = () => true): Promise<void> {
+    const definition = (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(id);
+    if (!definition || !edit || !["set", "remove"].includes(edit.kind)) throw new Error(this.translator("view.settingsUnavailable"));
+    const submitted = {field: address.field, ...(address.path ? {path: [...address.path]} : {})};
+    const operation: ViewConfigurationEdit = edit.kind === "set" ? {kind: "set", value: configurationJson(edit.value)} : {kind: "remove"};
+    const opening: ViewConfigurationExpected | undefined = expected ? {present: expected.present,
+      ...(expected.value !== undefined ? {value: configurationJson(expected.value)} : {})} : undefined;
+    await this.commitCanvasViewConfiguration(id, viewConfigurationUpdateDomain(definition, submitted),
+      /** Pure updates preserve other namespaces and unknown fields on each fresh accepted map. */ (stored, validateOpening) =>
+        editViewConfigurationAt(definition, stored, submitted, operation, validateOpening ? opening : undefined), isCurrent);
+  }
+
+  /** Explicit reset retains all unknown fields and other views; its scope is one address or the
+   * named view's known schema defaults, never vault properties or another preset namespace. */
+  async resetCanvasViewConfiguration(id: string, address?: ViewConfigurationAddress): Promise<void> {
+    const definition = (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(id);
+    if (!definition) throw new Error(this.translator("view.settingsUnavailable"));
+    const submitted = address ? {field: address.field, ...(address.path ? {path: [...address.path]} : {})} : undefined;
+    await this.commitCanvasViewConfiguration(id, submitted ? viewConfigurationUpdateDomain(definition, submitted) : `canvasViewSettings:${id}`,
+      /** Reset is a pure explicit operation; future/failed payloads refuse destructive downgrade. */ stored => resetViewConfiguration(definition, stored, submitted));
+  }
+
+  /** Persist a successful schema upgrade through the existing writer. Failed/future migration
+   * leaves the original payload untouched and exposes the existing actionable Settings failure. */
+  async migrateCanvasViewConfiguration(id: string): Promise<void> {
+    const definition = (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(id);
+    if (!definition) throw new Error(this.translator("view.settingsUnavailable"));
+    await this.commitCanvasViewConfiguration(id, `canvasViewSettings:${id}`, stored => {
+      const result = migrateViewConfiguration(definition, stored);
+      if (result.status === "unavailable") throw new Error(this.translator("view.settingsUnavailable"));
+      return result.settings;
+    });
+  }
+
+  /** The sole view-settings effect: serialized rebase/disk commit, then live installation and
+   * presentation refresh. No session/navigation/source/index mutation is granted to a view. */
+  private async commitCanvasViewConfiguration(id: string, domain: string,
+    apply: (stored: unknown, validateOpening: boolean) => Record<string, unknown>, isCurrent: () => boolean = () => true): Promise<void> {
+    const registry = this.viewSettingsRegistry ?? builtInCanvasViewSettings, definition = registry.definition(id);
+    const current = this.receivedSettingsOwner(domain);
+    let changed = false;
+    await this.enqueueSettingsWrite(async () => {
+      if (this.unloading || !isCurrent() || !current() || !definition || (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(id) !== definition)
+        throw new Error(this.translator("settingsSync.conflict"));
+      const source = this.settingsForWrite(), canvasViewSettings = apply(source.canvasViewSettings, true);
+      registry.validatePaletteReferences(definition, source.canvasViewSettings, canvasViewSettings, source.colorPreferences.palette);
+      if (appearanceThemes.themeValuesEqual(source.canvasViewSettings, canvasViewSettings)) return;
+      const next = {...source, canvasViewSettings};
+      await this.writeSettingsSnapshot(this.settingsSnapshotForPersistence(source.actionPreferencesFuture ?? source.actionPreferences, next));
+      if (this.unloading) return;
+      this.settings.canvasViewSettings = apply(this.settings.canvasViewSettings, false);
+      const policy = captureSettingsPolicy(this.settings);
+      this.savedSettingsPolicy = {values: {...(this.savedSettingsPolicy ?? policy).values, canvasViewSettings: policy.values.canvasViewSettings}};
+      changed = true;
+    });
+    if (!changed || this.unloading || !this.index) return;
+    await this.refreshSavedSettings(false, true);
+  }
 
   /** Read a transaction's accepted base plus only its submitted imperative roots, excluding later queued controls. */
   private settingsForWrite(intent = this.settingsWriteContext?.intent): KplexSettings {
@@ -2134,27 +2322,32 @@ export default class KplexPlugin extends Plugin {
   /** Both manual configuration and pair-aware modal edits share one queued, validated writer.
    * Compare effective policy separately from pairing; caption-only saves never invalidate semantics.
    * Failed storage publishes neither raw configuration nor presentation. Accepted storage survives dismissal. */
-  private async updateOntologyConfiguration(edit:(source:KplexSettings)=>KplexSettings['hierarchy'],current:()=>boolean):Promise<StyleCommitResult> {
-    let persisted=false,changed=false,semantic=false;
+  private async updateOntologyConfiguration(edit:(source:KplexSettings)=>KplexSettings['hierarchy'],current:()=>boolean,describe?:(source:KplexSettings)=>OntologyDescriptions):Promise<StyleCommitResult> {
+    let persisted=false,changed=false,semantic=false,descriptionsOnly=false;
     try {await this.enqueueSettingsWrite(/** Prepare against latest accepted settings, including concurrent partner assignments. */ async()=>{
       if(this.unloading||!current()){const error=new Error(this.translator('settings.ontology.conflict'));error.name='SettingsConflictError';throw error;}
-      const source=this.settingsForWrite(),hierarchy=edit(source),next={...source,hierarchy};
+      const source=this.settingsForWrite(),hierarchy=edit(source),ontologyDescriptions=describe?.(source)??source.ontologyDescriptions,next={...source,hierarchy,ontologyDescriptions};
       ontologyConfiguration(next);
-      if(appearanceThemes.themeValuesEqual(source.hierarchy,hierarchy))return;
+      const hierarchyChanged=!appearanceThemes.themeValuesEqual(source.hierarchy,hierarchy),descriptionChanged=!appearanceThemes.themeValuesEqual(source.ontologyDescriptions,ontologyDescriptions);
+      if(!hierarchyChanged&&!descriptionChanged)return;
+      descriptionsOnly=!hierarchyChanged&&descriptionChanged;
       const before=captureSettingsPolicy(source),policy=captureSettingsPolicy(next),effects=classifySettingsChange(before,policy);
       await this.writeSettingsSnapshot(this.settingsSnapshotForPersistence(source.actionPreferencesFuture??source.actionPreferences,next));persisted=true;
       if(this.unloading)return;
       const groups=ONTOLOGY_GROUPS.filter(/** Publish this edit's finite role changes without dropping a later unrelated imperative draft. */ group=>!appearanceThemes.themeValuesEqual(source.hierarchy[group],hierarchy[group]));
-      if(groups.every(/** A pair is one atomic edit; a later draft on either affected role retains ownership. */ group=>appearanceThemes.themeValuesEqual(this.settings.hierarchy[group],source.hierarchy[group]))){
+      if(appearanceThemes.themeValuesEqual(this.settings.ontologyDescriptions,source.ontologyDescriptions)&&groups.every(/** A pair is one atomic edit; a later draft on either affected role retains ownership. */ group=>appearanceThemes.themeValuesEqual(this.settings.hierarchy[group],source.hierarchy[group]))){
         const live={...this.settings.hierarchy};for(const group of groups)live[group]=hierarchy[group];
-        ontologyConfiguration({...this.settings,hierarchy:live});this.settings.hierarchy=live;
+        ontologyConfiguration({...this.settings,hierarchy:live});this.settings.hierarchy=live;this.settings.ontologyDescriptions=ontologyDescriptions;
       }
       const values={...(this.savedSettingsPolicy??captureSettingsPolicy(this.settings)).values};
       for(const key of effects.changedKeys)values[key]=policy.values[key];this.savedSettingsPolicy={values};
-      semantic=effects.semanticInvalidation;changed=effects.render;
+      semantic=effects.semanticInvalidation;changed=effects.render||descriptionChanged;
       if(semantic)this.index?.invalidateSemanticPolicy();
     });}catch(error){if(!persisted)throw error instanceof Error?error:new Error(String(error));console.error('K-Plex saved ontology publication failed',error);return {refreshPending:true};}
-    if(this.unloading||!changed||!this.index)return {refreshPending:false};return this.refreshSavedSettings(semantic);
+    if(this.unloading||!changed||!this.index)return {refreshPending:false};
+    // Authored wording is vocabulary presentation only: do not enter graph/source refresh owners.
+    if(descriptionsOnly){try{this.index.notifyPresentation();return {refreshPending:false};}catch(error){console.error('K-Plex saved ontology description publication failed',error);return {refreshPending:true};}}
+    return this.refreshSavedSettings(semantic);
   }
 
   /** Serialize valid workflow preferences including overlaps; failed storage never installs a draft or touches indexing. */
@@ -2194,14 +2387,16 @@ export default class KplexPlugin extends Plugin {
     return result;
   }
 
-  /** Finish durable saves through one optional refresh lease; UI pending never means disk cancellation. */
-  private refreshSavedSettings(semantic: boolean): Promise<StyleCommitResult> {
+  /** Finish durable saves through one optional refresh lease. Result-owning dialogs retain their feedback; void saves request host recovery only for actual rejection, including after the short UI wait. */
+  private refreshSavedSettings(semantic: boolean, notifyFailure = false): Promise<StyleCommitResult> {
     this.savedSettingsRefresh ??= new SavedSettingsRefresh(/** Existing index owners retain atomic publication and source/demand fences. */ async (needsSemantic, current) => {
       if (this.unloading || !current()) return;
       await this.index.refreshPresentationSettings();
       if (needsSemantic && !this.unloading && current()) await this.index.refreshSemanticSettings();
+    }, /** Only an actual refresh rejection warrants recovery feedback; normal coalescing/timeouts are successful durable saves. */ () => {
+      if (!this.unloading) new Notice(this.translator("settings.savedRefreshPending"));
     });
-    return this.savedSettingsRefresh.request(semantic);
+    return this.savedSettingsRefresh.request(semantic, notifyFailure);
   }
 
   /** Queue settings disk writes without allowing an older pending save to overwrite new actions. */
@@ -2232,8 +2427,11 @@ export default class KplexPlugin extends Plugin {
       ? source.colorPreferencesFuture : source.colorPreferences };
   }
 
-  /** Persist live settings at the queued boundary, preserving an unsupported future schema verbatim. */
+  /** Observe submitted configuration before queueing, then persist it at the existing boundary.
+   * Local A-to-B-to-A preference saves must retire previously issued completion results even
+   * when no canvas or external API read occurs between them. Future schemas remain verbatim. */
   private persistSettingsSnapshot(startupMigration = false): Promise<void> {
+    this.publicApiOwner?.configurationSubmitted();
     return this.enqueueSettingsWrite(/** Only this submitted workflow intent crosses the shared boundary. */ () => {
       if (startupMigration && this.externalSettingsReceived) {
         this.settings.kplexInitialized = this.settingsForWrite({edits: [], versions: new Map()}).kplexInitialized;
@@ -2310,6 +2508,8 @@ export default class KplexPlugin extends Plugin {
       if (options.initializeThemes && this.externalSettingsReceived) return;
       if (!this.isAppearanceOwnerCurrent(owner)) throw new Error("Appearance editor belongs to an earlier theme activation");
       const source = this.settingsForWrite();
+      const viewEdit = options.canvasViewEdit, viewDefinition = viewEdit && (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition(viewEdit.id);
+      if (viewEdit && (!viewDefinition || !viewEdit.current())) throw new Error(this.translator("settingsSync.conflict"));
       if (source.appearanceThemesFuture !== undefined && !options.initializeThemes) throw new Error("Newer appearance themes are read-only");
       const importing = "legacyImport" in options && !(options.initializeThemes && this.externalSettingsReceived);
       const working = importing ? importExcaliBrainGraphSettings(options.legacyImport, source) : source;
@@ -2352,6 +2552,10 @@ export default class KplexPlugin extends Plugin {
       }
       const next = {...working};
       for (const key of STYLE_SETTINGS_KEYS) Object.assign(next, {[key]: draft[key]});
+      if (viewEdit && viewDefinition) {
+        next.canvasViewSettings = editViewConfigurationAt(viewDefinition, source.canvasViewSettings, viewEdit.address, {kind: "set", value: viewEdit.value}, viewEdit.expected);
+        (this.viewSettingsRegistry ?? builtInCanvasViewSettings).validatePaletteReferences(viewDefinition, source.canvasViewSettings, next.canvasViewSettings, draft.colorPreferences.palette);
+      }
       if (library) next.appearanceThemes = library;
       if (options.initializeThemes) next.kplexInitialized = true;
       const policy = captureSettingsPolicy(next), effects = classifySettingsChange(before, policy);
@@ -2376,6 +2580,8 @@ export default class KplexPlugin extends Plugin {
         if (!effects.changedKeys.includes(key) || current.values[key] !== before.values[key]) continue;
         Object.assign(this.settings, {[key]: draft[key]});
       }
+      if (viewEdit && viewDefinition) this.settings.canvasViewSettings = editViewConfigurationAt(viewDefinition, this.settings.canvasViewSettings,
+        viewEdit.address, {kind: "set", value: viewEdit.value});
       for (const field of importedFields) if (appearanceThemes.themeValuesEqual(Reflect.get(this.settings, field.key), field.before)) Object.assign(this.settings, {[field.key]: field.after});
       for (const key of effects.changedKeys) if (current.values[key] === before.values[key]) values[key] = policy.values[key];
       // Compatibility callers already published their live fields. Record the exact queued disk
@@ -2453,6 +2659,14 @@ export default class KplexPlugin extends Plugin {
   /** Open the actual Hidden-fields control without creating a field or approving a note write. */
   openHiddenOntologySettings(): void {
     if (this.openSettingsPage(this.translator("settings.ui.ontology"))) this.settingsTab?.openOntologyManager('hidden');
+  }
+
+  /** Reuse native page-path navigation with the existing owning-tab fallback for settings cross-links. */
+  openCanvasViewSettings(id: string, target?: string): boolean {
+    const definition = this.viewSettingsRegistry.definition(id);
+    if (!definition) return false;
+    const opened = this.openSettingsPage(this.translator("settings.ui.plex.behavior"), viewLabel(definition.labelKey, this.translator));
+    return opened && (target === undefined || !!this.settingsTab?.openCanvasViewManager(id, target));
   }
 
   /** Reuse native page-path navigation with the existing owning-tab fallback for settings cross-links. */
@@ -2643,6 +2857,32 @@ export default class KplexPlugin extends Plugin {
   }
 
   /**
+   * Commit one explicit section-wide visibility choice through the existing disk queue. Rebase on
+   * current settings, publish only after persistence and retain later imperative edits. Visibility
+   * reads already consume live settings; the render-only notification cannot prepare native covers.
+   */
+  async setContentVisibility(scope: ContentVisibilityScope, enabled: boolean): Promise<boolean> {
+    let changed = false;
+    await this.enqueueSettingsWrite(/** Merge the finite patch without replacing unrelated or unknown settings. */ async () => {
+      if (this.unloading) return;
+      const source = this.settingsForWrite(), patch = contentVisibilityPatch(source, scope, enabled);
+      const keys = Object.keys(patch) as ContentVisibilityKey[];
+      if (!keys.length) return;
+      const opening = new Map(keys.map(/** Retain later imperative changes to the same live controls. */ key => [key, this.settings[key]]));
+      const next = {...source, ...patch};
+      await this.writeSettingsSnapshot(this.settingsSnapshotForPersistence(source.actionPreferencesFuture ?? source.actionPreferences, next));
+      if (this.unloading) return;
+      for (const key of keys) if (this.settings[key] === opening.get(key)) this.settings[key] = enabled;
+      const policy = captureSettingsPolicy(next), previous = this.savedSettingsPolicy ?? policy;
+      const values = {...previous.values};
+      for (const key of keys) values[key] = policy.values[key];
+      this.savedSettingsPolicy = {values}; changed = true;
+    });
+    if (changed && !this.unloading) this.index.notifyPresentation();
+    return changed;
+  }
+
+  /**
    * Persist all caller mutations through the canonical immutable settings projection. The legacy
    * boolean is a call-site compatibility facade only: managers/imports cannot bypass classification.
    * Capture before awaiting storage so overlapping saves cannot lose a semantic invalidation.
@@ -2658,7 +2898,7 @@ export default class KplexPlugin extends Plugin {
     const previousPolicy = this.savedSettingsPolicy;
     const effects = classifySettingsChange(previousPolicy ?? next, next);
     const consentOnly = effects.changedKeys.length === 1 && effects.changedKeys[0] === "allowRemoteNodeImages";
-    const layoutOnly = effects.changedKeys.length > 0 && effects.changedKeys.every(key => key === "layoutProfiles" || key === "groupRelations");
+    const layoutOnly = effects.changedKeys.length > 0 && effects.changedKeys.every(key => key === "layoutProfiles" || key === "groupRelations" || key === "canvasViewSettings");
     const appearanceChanged = effects.changedKeys.some(/** Legacy imperative saves delegate appearance synchronization to the one queued owner. */ key => STYLE_SETTINGS_KEYS.some(/** This is the appearance-write inventory, not the theme schema. */ field => field === key));
     const queuedAppearance = appearanceChanged && (this.settings.appearanceThemes || this.settings.appearanceThemesFuture !== undefined);
     // The appearance queue owns its durable policy baseline. Advancing it here would make a
@@ -2681,8 +2921,7 @@ export default class KplexPlugin extends Plugin {
     if (this.unloading) return;
     // Preserve the established coverage decision; optional completion cannot hold the disk queue or Settings close.
     const needsSemantic = effects.semanticInvalidation || (effects.render && !effects.typographyOnly && !effects.paintOnly && !consentOnly && !layoutOnly && !isStyleOnlySettingsChange(effects) && !effects.changedKeys.every(/** Non-color theme geometry uses presentation/layout only. */ key => STYLE_SETTINGS_KEYS.some(/** Lens behavior keeps its separate owner. */ field => field === key)));
-    const completion = await this.refreshSavedSettings(needsSemantic);
-    if (completion.refreshPending && !this.unloading) new Notice(this.translator("settings.savedRefreshPending"));
+    await this.refreshSavedSettings(needsSemantic, true);
     // Workflow-only callers can still request their historical view notification. Changed settings
     // use the separate presentation channel and never pretend relationship evidence changed.
     if ((!effects.render || effects.typographyOnly) && notifyIndex) this.index.notifyPresentation();
@@ -3069,7 +3308,7 @@ export default class KplexPlugin extends Plugin {
       session = new PlexFoldSession(candidate, this.translator("sidecar.unfoldPlex"),
         /** A stale control/observer owns only its exact captured session. */ () => session !== null && this.isPlexFoldSessionValid(session),
         /** Window retirement restores without stealing focus or persisting folded state. */ () => { if (this.collapsedPlexHosts.get(candidate.hostLeaf) === session) this.restoreCollapsedPlex(candidate.hostLeaf); },
-        /** Native button and published command share the exact same explicit restore owner. */ () => { if (this.collapsedPlexHosts.get(candidate.hostLeaf) === session) void this.expandPlexFromSidecar(candidate.hostLeaf); });
+        /** Native modifier-click composes restoration and close through the same exact owner. */ maximize => { if (this.collapsedPlexHosts.get(candidate.hostLeaf) === session) void this.expandPlexFromSidecar(candidate.hostLeaf, maximize); });
       this.collapsedPlexHosts.set(candidate.hostLeaf, session);
       this.advancePlexFoldRevision(candidate.hostLeaf);
       if (!session.hide()) { this.restoreCollapsedPlex(candidate.hostLeaf); return false; }
@@ -3094,8 +3333,9 @@ export default class KplexPlugin extends Plugin {
     await this.togglePlexFold(candidate);
   }
 
-  /** Explicit recovery reveals the exact live view; delayed completion yields to newer native selection. */
-  async expandPlexFromSidecar(hostLeaf: WorkspaceLeaf): Promise<void> {
+  /** Explicit recovery reveals the exact live view; delayed completion yields to newer native selection.
+   * Modifier intent additionally closes only the captured managed companion after a valid reveal. */
+  async expandPlexFromSidecar(hostLeaf: WorkspaceLeaf, maximize = false): Promise<void> {
     const session = this.collapsedPlexHosts.get(hostLeaf);
     if (!session) return;
     const c = session.candidate;
@@ -3107,9 +3347,14 @@ export default class KplexPlugin extends Plugin {
     // Its later completion must not add a focus change after a different tab was selected.
     const activeAfterReveal = this.app.workspace.getActiveViewOfType(ItemView)?.leaf;
     await reveal;
-    if (!this.unloading && this.plexFoldRevisions.get(hostLeaf) === revision && !this.collapsedPlexHosts.has(hostLeaf) && hostLeaf.view === c.hostView
+    /** Native focus listeners can synchronously replace ownership or selection; fence both effects. */
+    const current = (active: WorkspaceLeaf | undefined): boolean => !this.unloading && this.plexFoldRevisions.get(hostLeaf) === revision && !this.collapsedPlexHosts.has(hostLeaf) && hostLeaf.view === c.hostView
       && c.hostView.getPlexFoldGeneration() === c.generation && this.leafIsAttached(hostLeaf)
-      && this.app.workspace.getActiveViewOfType(ItemView)?.leaf === activeAfterReveal) this.app.workspace.setActiveLeaf(hostLeaf, { focus: true });
+      && this.app.workspace.getActiveViewOfType(ItemView)?.leaf === active;
+    if (current(activeAfterReveal)) {
+      this.app.workspace.setActiveLeaf(hostLeaf, { focus: true });
+      if (maximize && current(hostLeaf) && this.sidecarLeaves.get(hostLeaf) === c.sidecarLeaf) await this.closeSidecar(hostLeaf);
+    }
   }
 
   private leafRect(leaf: WorkspaceLeaf | null): DOMRect | null {
@@ -3716,7 +3961,9 @@ export default class KplexPlugin extends Plugin {
   async syncPageToDocumentLeaf(page: GraphPage, hostLeaf: WorkspaceLeaf): Promise<void> {
     if (this.unloading || !this.documentSession(hostLeaf) || !this.syncKplexToLeafEnabled(hostLeaf) || !page.file && !page.url
       || page.file && this.app.vault.getFileByPath(page.file.path) !== page.file) return;
-    const leaf = this.targetNoteLeaf(hostLeaf, true);
+    // Passive following must never manufacture native tabs/splits or move focus. Explicit
+    // sync/open actions own creation; a recent-mode canvas with no document simply stays put.
+    const leaf = this.targetNoteLeaf(hostLeaf, false);
     if (!leaf || !this.leafIsAttached(leaf)) return;
     const session = this.documentSession(hostLeaf);
     if (session && !this.leafDisplaysPage(leaf, page)) session.lastDocumentLeaf = leaf;
@@ -3735,15 +3982,15 @@ export default class KplexPlugin extends Plugin {
     return leaf.getViewState().type === "empty";
   }
 
-  subscribeNavigation(listener: (path: string, hostLeaf?: WorkspaceLeaf) => void): () => void {
+  subscribeNavigation(listener: (path: string, hostLeaf?: WorkspaceLeaf, reroot?: boolean) => void): () => void {
     this.navigationListeners.add(listener);
     return () => this.navigationListeners.delete(listener);
   }
 
   /** Notify existing navigation consumers while retaining only a path-free request boundary. */
-  private notifyNavigation(path: string, hostLeaf?: WorkspaceLeaf): void {
+  private notifyNavigation(path: string, hostLeaf?: WorkspaceLeaf, reroot = false): void {
     this.supportEvents.record("navigation-request", { category: "navigation" });
-    for (const listener of this.navigationListeners) listener(path, hostLeaf);
+    for (const listener of this.navigationListeners) listener(path, hostLeaf, reroot);
   }
 
   /**
@@ -3882,7 +4129,7 @@ export default class KplexPlugin extends Plugin {
     const loadingCache = this.index.hasPendingSnapshotHydration();
     const semanticPreparing = this.index.hasPendingSemanticPreparation();
     const startupIncomplete = !this.initialIndexComplete && this.initialSourceIndexIncomplete;
-    const semanticIncomplete = semanticPreparing && !this.index.hasActiveSemanticPreparation?.()
+    const semanticIncomplete = semanticPreparing && !this.index.hasActiveSemanticPreparation?.() && !this.index.hasActiveSourcePreparation?.()
       || Boolean(this.index.getSearchVocabularyFailure?.()) || Boolean(this.index.hasUnavailableLocalCounts?.()) || startupIncomplete;
     const upToDate = (this.initialIndexComplete || this.index.isOnDemandMode() && this.index.hasLocalBaseline())
       && !this.indexDirty
@@ -3893,16 +4140,17 @@ export default class KplexPlugin extends Plugin {
       && !semanticIncomplete
       && !this.index.hasPendingSearchVocabulary();
     if (upToDate && recordReadiness) this.startupDiagnostics?.finish();
+    const compiledFiles = this.index.getBuildProgress?.()?.processed ?? this.index.indexedMarkdownFileCount();
     const indexedFiles = totalFiles === null
-      ? this.index.indexedMarkdownFileCount()
-      : upToDate && !this.index.isOnDemandMode() ? totalFiles : Math.min(totalFiles, this.index.indexedMarkdownFileCount());
+      ? compiledFiles
+      : upToDate && !this.index.isOnDemandMode() ? totalFiles : Math.min(totalFiles, compiledFiles);
     const phase = upToDate
       ? "ready"
       : loadingCache
         ? "loading-cache"
         : this.index.isCheckpointSaving()
           ? "saving-cache"
-        : !this.initialIndexComplete && this.rebuildTask !== null
+        : !this.initialIndexComplete && (this.rebuildTask !== null || this.index.isBuilding?.())
           ? "indexing"
           : semanticIncomplete && this.rebuildTask === null && this.rebuildTimer === null && (startupIncomplete || !this.indexDirty)
             ? "incomplete"
@@ -3938,6 +4186,7 @@ export default class KplexPlugin extends Plugin {
     const searchFailure = phase === "incomplete" && !failure ? this.index.getSearchVocabularyFailure?.() : null;
     const aliasProgress = phase === "updating" ? this.index.getUrlAliasUpgradeProgress?.() : null;
     const urlProgress = this.index.getUrlIndexProgress();
+    const buildProgress = phase === "indexing" ? this.index.getBuildProgress?.() : null;
     const label = phase === "deferred" ? this.translator("indexing.deferred") : urlProgress.active
       ? urlProgress.total === 0
         ? urlProgress.restored > 0
@@ -3967,12 +4216,19 @@ export default class KplexPlugin extends Plugin {
           : phase === "checking-cache"
             ? this.translator("index.statusCheckingCache")
             : phase === "indexing"
-              ? this.translator("index.statusIndexingProgress", { indexed: indexedFiles, total: totalFiles })
+              ? buildProgress?.stage === "relationships" ? this.translator("index.startupResolution")
+                : buildProgress?.stage === "presentation" ? this.translator("index.startupSearch")
+                : this.index.isBuilding?.()
+                ? this.translator("index.startupNotesProgress", {activity: this.translator("index.startupSemantics"),
+                  processed: indexedFiles.toLocaleString(), total: totalFiles.toLocaleString(),
+                  percent: totalFiles > 0 ? Math.floor(indexedFiles * 100 / totalFiles) : 0})
+                : this.translator("index.statusIndexingProgress", { indexed: indexedFiles, total: totalFiles })
               : phase === "saving-cache"
                 ? this.translator("index.statusSavingCache")
               : this.translator("index.statusUpdating");
     const hydration = this.index.getSnapshotHydrationDiagnostics?.();
-    const sourceProgress = phase === "preparing" && !this.index.isOnDemandMode() && !urlProgress.active && !urlProgress.failed
+    const sourceProgress = (phase === "preparing" || phase === "updating" && this.index.hasActiveSourcePreparation?.())
+      && !this.index.isOnDemandMode() && !urlProgress.active && !urlProgress.failed
       ? this.startupDiagnostics?.progress("source") : null;
     const progress = phase === "loading-cache" && hydration?.phase === "source-authority"
       ? this.startupDiagnostics?.progress("source") : phase === "loading-cache" ? this.startupDiagnostics?.progress("hydration")
@@ -4019,10 +4275,10 @@ export default class KplexPlugin extends Plugin {
     };
   }
 
-  /** Notify actual startup activity at most four times per second, without graph revisions or new timers. */
-  notifyStartupProgress(): void {
+  /** Throttle per-note activity, but always publish settled progress without a trailing timer. */
+  notifyStartupProgress(settled = false): void {
     const now = window.performance.now();
-    if (now - this.lastStartupProgressNotification < 250) return;
+    if (!settled && now - this.lastStartupProgressNotification < 250) return;
     this.lastStartupProgressNotification = now;
     this.notifyIndexStatus();
   }
@@ -4061,6 +4317,50 @@ export default class KplexPlugin extends Plugin {
       draft.graphLenses = merged;
     }, owner);
     return result;
+  }
+
+  /** Read only selected settings data for a native sharing preview, never graph/vault/device state. */
+  readPortableSharingState(source = this.settings): SharingState {
+    const definition = (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition("wuxing");
+    const library = definition && facetLibrary(readViewConfiguration(definition, source.canvasViewSettings));
+    return {presets: library?.presets ?? {}, lenses: source.graphLenses, palette: source.colorPreferences.palette};
+  }
+
+  /** Preview and Save reuse actual installed-library capacity/palette admission, never an approximate parallel schema. */
+  previewPortableSharing(plan: PreparedImport, source = this.settings): ReturnType<typeof applyPortableImport> {
+    if (source.graphLensesColorFuture !== undefined || source.colorPreferencesFuture !== undefined || source.appearanceThemesFuture !== undefined) throw new Error("Newer sharing dependencies are read-only");
+    const applied = applyPortableImport(plan, this.readPortableSharingState(source));
+    const preferences = {...source.colorPreferences, palette: applied.palette};
+    if (migrateColorPreferences(preferences).future !== undefined) throw new PortableSharingCapacityError();
+    const known = new Set(appearanceColorReferences({graphLenses: source.graphLenses}).map(value => JSON.stringify(value)));
+    for (const value of appearanceColorReferences({graphLenses: applied.lenses})) if (!known.has(JSON.stringify(value))) requireNamedColor(value, preferences);
+    if (applied.preset) {
+      const registry = this.viewSettingsRegistry ?? builtInCanvasViewSettings, definition = registry.definition("wuxing");
+      if (!definition) throw new Error("Facets configuration is unavailable");
+      let next: Record<string, unknown>;
+      try {next = editViewConfigurationAt(definition, source.canvasViewSettings, {field: "presets", path: [plan.choices.targetId]}, {kind: "set", value: applied.preset});}
+      catch {throw new PortableSharingCapacityError();}
+      registry.validatePaletteReferences(definition, source.canvasViewSettings, next, applied.palette);
+    }
+    return applied;
+  }
+
+  /** Import one reviewed plan through the existing atomic appearance/view writer. No view selection or lens activation is granted. */
+  async importPortableSharing(plan: PreparedImport, current: () => boolean, owner = this.captureAppearanceOwner()): Promise<StyleCommitResult> {
+    const submitted = JSON.parse(JSON.stringify(plan)) as PreparedImport;
+    const definition = (this.viewSettingsRegistry ?? builtInCanvasViewSettings).definition("wuxing");
+    if (submitted.package.kind === "facets" && !definition) throw new Error("Facets configuration is unavailable");
+    const address = {field: "presets", path: [submitted.choices.targetId]}, expected = definition
+      ? readViewConfigurationAt(definition, this.settings.canvasViewSettings, address) : {present: false};
+    const incoming = this.receivedSettingsOwner(submitted.package.kind === "facets" && definition
+      ? viewConfigurationUpdateDomain(definition, address) : "graphLenses");
+    return this.updateStyleSettings(draft => {
+      if (!current() || !incoming() || this.unloading) throw new Error(this.translator("settingsSync.conflict"));
+      if (this.settings.graphLensesColorFuture !== undefined || this.settings.colorPreferencesFuture !== undefined) throw new Error("Newer sharing dependencies are read-only");
+      const applied = this.previewPortableSharing(submitted, this.settingsForWrite());
+      draft.graphLenses = applied.lenses;draft.colorPreferences = {...draft.colorPreferences, palette: applied.palette};
+    }, owner, submitted.package.kind === "facets" ? {canvasViewEdit: {id: "wuxing", address, value: submitted.package.preset, expected,
+      current: () => current() && incoming()}} : {});
   }
 
   subscribeNodeFlair(listener: (path: string) => void): () => void {
@@ -4529,8 +4829,14 @@ export default class KplexPlugin extends Plugin {
     }
   }
 
-  async openSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
+  /** Open the managed companion through existing document/layout fences. Optional modifier intent
+   * folds only this completed native pair, after its moving lease ends; superseded opens cannot fold a successor. */
+  async openSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage, maximize = false): Promise<void> {
     const session = this.documentSession(hostLeaf);if (!session) return;
+    const hostView = hostLeaf.view;
+    const hostGeneration = maximize && hostView instanceof KplexView ? hostView.getPlexFoldGeneration() : null;
+    let openedLeaf: WorkspaceLeaf | null = null;
+    let openedRevision: number | undefined;
     // Opening can emit layout-change before the new split has usable geometry,
     // just like moving an existing companion. Retain ownership through that boundary.
     const alreadyMoving = this.sidecarMovingHosts.has(hostLeaf);
@@ -4550,8 +4856,14 @@ export default class KplexPlugin extends Plugin {
       if (this.documentSession(hostLeaf) !== session || session.revision !== revision || this.sidecarLeaves.get(hostLeaf) !== leaf) return;
       session.persist();
       this.notifySidecar();
+      openedLeaf = leaf; openedRevision = revision;
     } finally {
       if (!alreadyMoving && this.documentSession(hostLeaf) === session) this.sidecarMovingHosts.delete(hostLeaf);
+    }
+    if (maximize && !alreadyMoving && openedLeaf && this.documentSession(hostLeaf) === session
+      && session.revision === openedRevision && this.sidecarLeaves.get(hostLeaf) === openedLeaf
+      && hostLeaf.view === hostView && hostView instanceof KplexView && hostView.getPlexFoldGeneration() === hostGeneration) {
+      await this.collapsePlexForSidecar(hostLeaf);
     }
   }
 
@@ -4604,9 +4916,10 @@ export default class KplexPlugin extends Plugin {
     await this.releaseSidecar(hostLeaf, true);
   }
 
-  async toggleSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
+  /** Ordinary toggle preserves existing behavior; modifier-opening also folds the completed Plex group. */
+  async toggleSidecar(hostLeaf: WorkspaceLeaf, page: GraphPage, maximize = false): Promise<void> {
     if (this.isSidecarOpen(hostLeaf)) await this.closeSidecar(hostLeaf);
-    else await this.openSidecar(hostLeaf, page);
+    else await this.openSidecar(hostLeaf, page, maximize);
   }
 
   async moveSidecar(hostLeaf: WorkspaceLeaf, position: SidecarPosition, page: GraphPage): Promise<void> {
@@ -4706,10 +5019,13 @@ export default class KplexPlugin extends Plugin {
     // Publish the completion lease before invoking native code, including synchronous host echoes.
     let completeNative!: () => void;
     const nativeCompletion = new Promise<void>(/** Resolve on success or failure so a rejected predecessor cannot poison newer navigation. */ resolve => { completeNative = resolve; });
-    const previousNativeFile = previous?.leaf === leaf && previous.pending ? previous.nativeFile : null;
+    // Activation can expose the destination's existing file before openFile publishes its target.
+    // Retain both that identity and an older in-flight target, without suppressing unrelated user navigation.
+    const pendingNativeFile = previous?.leaf === leaf && previous.pending ? previous.nativeFile : null;
+    const previousNativeFile = this.fileForLeaf(leaf) ?? pendingNativeFile;
     const previousNativeUrl = previous?.pending ? previous.nativeUrl : this.webViewerUrlForLeaf(leaf);
     const request = { leaf, file, filePath, url: page.url, pending: true, nativeCompletion,
-      nativeFile: previousNativeFile, previousNativeFile, nativeUrl: previousNativeUrl, previousNativeUrl };
+      nativeFile: pendingNativeFile ?? previousNativeFile, previousNativeFile, nativeUrl: previousNativeUrl, previousNativeUrl };
     this.passiveSidecarSyncRequests.set(hostLeaf, request);
     this.nativeDocumentRequests.set(leaf, request);
     /** Only this exact live destination and canonical file incarnation may finish passive work. */
@@ -4728,7 +5044,7 @@ export default class KplexPlugin extends Plugin {
       // A -> B -> A can return to the opening file after retiring A's original mode work.
       // Finish that owned initial representation without reopening; unrelated same-file
       // observations continue to preserve the user's representation.
-      if (!intent && this.leafDisplaysPage(leaf, page) && (managed !== leaf || !file || previousNativeFile !== file)) return;
+      if (!intent && this.leafDisplaysPage(leaf, page) && (managed !== leaf || !file || pendingNativeFile !== file)) return;
       request.nativeFile = file;
       request.nativeUrl = page.url;
       if (managed === leaf || page.url || intent?.sourceMode !== undefined) await this.openPageInSidecarLeaf(leaf, page, stillCurrent, hostLeaf, intent);
@@ -4747,6 +5063,42 @@ export default class KplexPlugin extends Plugin {
     }
   }
 
+
+  /** Open a captured native file or unresolved link without waiting for complete graph publication. */
+  async openFileInKplex(file: FilePlexNode, target: FilePlexTarget): Promise<void> {
+    const path = file.path, native = "source" in file ? null : file;
+    const source = "source" in file ? file.source : null, sourcePath = source?.path;
+    /** A retired native/source identity or a newly resolved placeholder cannot inherit this request. */
+    const current = (): boolean => !this.unloading && (native
+      ? native.path === path && this.app.vault.getFileByPath(path) === native
+      : Boolean(source && source.path === sourcePath && this.app.vault.getFileByPath(sourcePath ?? "") === source
+        && !this.app.metadataCache.getFirstLinkpathDest(path, sourcePath ?? "")));
+    if (!current()) return;
+    if (!native && !this.index.get(path)) this.index.insertVirtualPage(path);
+    const workspace = this.app.workspace;
+    const environment = readObsidianPresentationEnvironment();
+    let leaf: WorkspaceLeaf | undefined;
+    if (environment.device === "phone" || target === "sidepanel") {
+      await this.activateSidepanel();
+      leaf = workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0];
+    } else {
+      if (target === "reuse") {
+        const leaves = workspace.getLeavesOfType(KPLEX_VIEW_TYPE);
+        leaf = leaves.find(candidate => candidate === workspace.getMostRecentLeaf()) ?? leaves[0];
+      }
+      if (!leaf) {
+        this.rememberDocumentLeaf(workspace.getMostRecentLeaf());
+        leaf = target === "window" && environment.device === "desktop" ? workspace.getLeaf("window")
+          : target === "split" ? workspace.getLeaf("split", "vertical") : workspace.getLeaf("tab");
+        await leaf.setViewState({type: KPLEX_VIEW_TYPE, state: {plexSession: {version: 1, centerPath: path}}, active: true});
+      }
+    }
+    const view = leaf?.view;
+    // The native shell opens before React subscribes to navigation. Retain the requested file
+    // until this exact incarnation's consumers are mounted, including warm split/popout creation.
+    if (view instanceof KplexView || view instanceof KplexSidepanelView) await view.waitUntilReady();
+    if (leaf && leaf.view === view && current()) await this.focusInKplex(path, leaf);
+  }
 
   async activateView(): Promise<void> {
     // Phones intentionally route the generic/open-ribbon action to the sidepanel. Tablets retain
@@ -4841,17 +5193,17 @@ export default class KplexPlugin extends Plugin {
     await this.focusInKplex(file.path,leaves.find(/** Prefer exact recent native ownership when several Plexes exist. */ leaf=>leaf===recent)??leaves[0]);
   }
 
+  /** Reveal an explicit destination using native availability; selected scopes prepare after acceptance. */
   async focusInKplex(path: string, hostLeaf?: WorkspaceLeaf): Promise<void> {
     if (!hostLeaf) {
       if (this.app.workspace.getLeavesOfType(KPLEX_VIEW_TYPE).length + this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE).length > 1) return;
       await this.activateView();hostLeaf = this.app.workspace.getLeavesOfType(KPLEX_VIEW_TYPE)[0] ?? this.app.workspace.getLeavesOfType(KPLEX_SIDEPANEL_VIEW_TYPE)[0];
     }
     const session = this.documentSession(hostLeaf), file = this.app.vault.getFileByPath(path);
-    if (!hostLeaf || !session || !file) return;
-    await this.ensureIndexReady("focus-active-note");
-    if (this.documentSession(hostLeaf) !== session || this.app.vault.getFileByPath(file.path) !== file || !this.index.get(file.path)) return;
+    const page = file ? this.index.getVaultSearchPage(path, file) : this.index.get(path);
+    if (!hostLeaf || !session || !page || file && page.file !== file) return;
     await this.app.workspace.revealLeaf(hostLeaf);
-    if (this.documentSession(hostLeaf) === session && this.app.vault.getFileByPath(file.path) === file) this.notifyNavigation(file.path, hostLeaf);
+    if (!this.unloading && this.documentSession(hostLeaf) === session && this.app.vault.getFileByPath(path) === file) this.notifyNavigation(path, hostLeaf, true);
   }
 
   /** Explicitly open and reveal a native document, superseding passive work on that exact leaf. */
@@ -4864,14 +5216,14 @@ export default class KplexPlugin extends Plugin {
     await this.syncSidecarToPage(hostLeaf, {file, url: null}, leaf, {active: true});
   }
 
-  /** Open a section's native source subpath without letting an older passive mode request win. */
+  /** Open a captured section's exact native source/anchor; queued work retains file-incarnation guards. */
   async openSection(page: GraphPage, hostLeaf?: WorkspaceLeaf): Promise<void> {
     const session = this.documentSession(hostLeaf); if (!session) return ;
     const sourcePath = page.transient?.sourcePath;
     const subpath = page.transient?.subpath;
     if (!sourcePath || !subpath) return;
-    const file = this.app.vault.getAbstractFileByPath(sourcePath);
-    if (!(file instanceof TFile)) return;
+    const file = this.app.vault.getFileByPath(sourcePath);
+    if (!file || page.file && page.file !== file) return;
     this.validateLinkedDocumentLeaf(hostLeaf);
     const leaf = session.linkedDocumentLeaf ?? this.findRecentDocumentLeaf(hostLeaf) ?? this.app.workspace.getLeaf("split");
     session.lastDocumentLeaf = leaf;
@@ -5027,7 +5379,7 @@ export default class KplexPlugin extends Plugin {
         const error=new Error(this.translator('settings.ontology.conflict'));error.name='SettingsConflictError';throw error;
       }
       return applyOntologyEdit(source,submitted);
-    },current);
+    },current,/** Preserve all unchanged exact names, including an old partner when pairing changes. */ source=>editOntologyDescriptions(source.ontologyDescriptions,submitted.kind==='remove'?[{field:submitted.field,description:''}]:[{field:submitted.field,description:submitted.description},...(submitted.partner?[{field:submitted.partner,description:submitted.partnerDescription}]:[])]));
   }
 
   private fieldAtEditorCursor(editor: Editor): string | null {
@@ -5557,7 +5909,8 @@ export default class KplexPlugin extends Plugin {
     }, target.path);
   }
 
-  private async addRelationshipOntology(storageFile: TFile, target: GraphPage, field: string): Promise<void> {
+  /** Append one explicit ontology through the existing metadata/publication owner, preserving other declarations and optional caller spelling. */
+  private async addRelationshipOntology(storageFile: TFile, target: GraphPage, field: string, referenceOverride?: string): Promise<void> {
     if (!this.index.isSemanticWriteReady(storageFile.path, target.path)
       && !(await this.index.prepareRelationshipPair(storageFile.path, target.path, this.index.get(target.path) ? undefined : target))) {
       throw new Error(this.translator("relation.preparingRelationship"));
@@ -5567,7 +5920,7 @@ export default class KplexPlugin extends Plugin {
     this.pruneManagedMetadataWrites();
     this.managedMetadataWrites.set(storageFile.path, Date.now() + 15000);
     const desiredNormalized = normalizeFieldName(field);
-    const reference = this.referenceForPage(target, storageFile);
+    const reference = referenceOverride ?? this.referenceForPage(target, storageFile);
 
     await this.mutateRelationshipMetadata(storageFile, new Set([desiredNormalized]), (frontmatter: Record<string, unknown>) => {
       this.appendRelationshipReference(frontmatter, storageFile, target, field, reference);
@@ -5616,8 +5969,9 @@ export default class KplexPlugin extends Plugin {
     return this.createRelationToPage(origin, semanticRole, selectedPage, selectedField);
   }
 
-  /** Persist an existing-target relationship under exact current pair authority, then await canonical saved publication. */
-  async createRelationToPage(origin: GraphPage, semanticRole: RelationshipRole, target: GraphPage, selectedField: string, referenceOverride?: string): Promise<RelationshipWriteResult> {
+  /** Persist under exact current pair authority. Native imports without removal authority reuse the existing append-only ontology owner; legacy callers retain automatic relink. */
+  async createRelationToPage(origin: GraphPage, semanticRole: RelationshipRole, target: GraphPage, selectedField: string, referenceOverride?: string,
+    additiveOnly = false): Promise<RelationshipWriteResult> {
     return this.index.withForegroundPriority(async () => {
       const originPath = origin.path;
       const targetPath = target.path;
@@ -5629,18 +5983,20 @@ export default class KplexPlugin extends Plugin {
         return { state: "unavailable" };
       }
 
-      // A target connected through another gate remains a valid drag target. Treat that gesture
-      // as a relink so the new YAML relationship becomes authoritative over any stale body link.
-      if (this.index.isConnected(origin, target.path)) {
+      // Legacy creation keeps its automatic-relink policy. An import without source removal
+      // authority must instead append, even when this canonical pair already has another role.
+      if (!additiveOnly && this.index.isConnected(origin, target.path)) {
         return this.relinkCentralNeighbour(origin, target, semanticRole, selectedField, origin.neighbours.get(target.path)?.direction ?? null);
       }
 
       if (origin.file?.extension === "md") {
-        await this.writeRelationship(origin.file, target, selectedField, referenceOverride);
+        if (additiveOnly) await this.addRelationshipOntology(origin.file, target, selectedField, referenceOverride);
+        else await this.writeRelationship(origin.file, target, selectedField, referenceOverride);
         await this.publishSavedRelationship(origin.path, target.path);
       } else if (target.file?.extension === "md") {
         const inverseField = this.inverseOntologyField(selectedField, semanticRole);
-        await this.writeRelationship(target.file, origin, inverseField);
+        if (additiveOnly) await this.addRelationshipOntology(target.file, origin, inverseField);
+        else await this.writeRelationship(target.file, origin, inverseField);
         await this.publishSavedRelationship(target.path, origin.path);
       } else {
         new Notice(this.translator("notice.dragOriginRequiresMarkdownTarget"), 2800);
@@ -5815,6 +6171,11 @@ export default class KplexPlugin extends Plugin {
       typeof manager?.plugins?.["obsidian-excalidraw-plugin"]?.createDrawing === "function";
   }
 
+  /** Capture available public companion templates once when a creation dialog opens. */
+  drawingTemplateOptions(): ReturnType<typeof drawingTemplateOptions> {
+    return drawingTemplateOptions(this.settings.lastDrawingTemplatePath);
+  }
+
   async rememberNewNodeDefaultType(kind: "markdown" | "excalidraw"): Promise<void> {
     if (this.settings.newNodeDefaultType === kind) return;
     this.settings.newNodeDefaultType = kind;
@@ -5887,13 +6248,18 @@ export default class KplexPlugin extends Plugin {
     return [...references.values()].sort((a, b) => a.line - b.line);
   }
 
+  /** Collect known declaring notes from target incidence and displayed exact pairs, without a vault scan. */
   private referencingMarkdownFiles(target: GraphPage): TFile[] {
     const paths = new Set<string>();
+    /** Pair-local publications may know a source before the target owns a complete incoming scope. */
+    const addSource = (evidence: RelationEvidence): void => {
+      if (evidence.declaredTargetPath === target.path && evidence.declaredByPath !== target.path) paths.add(evidence.declaredByPath);
+    };
     for (const relation of this.index.evidenceFrom(target.path)) {
-      for (const evidence of relation.evidence) {
-        if (evidence.declaredTargetPath !== target.path || evidence.declaredByPath === target.path) continue;
-        paths.add(evidence.declaredByPath);
-      }
+      for (const evidence of relation.evidence) addSource(evidence);
+    }
+    for (const path of target.neighbours.keys()) {
+      for (const evidence of this.index.evidenceBetween(path, target.path)) addSource(evidence);
     }
     const files: TFile[] = [];
     for (const path of paths) {
@@ -6294,9 +6660,32 @@ export default class KplexPlugin extends Plugin {
     const capturedFile = target.file;
     const captured = actionNodeRef(target);
     const canonicalTarget = this.index.pages.get(target.path);
-    const preview = await this.captureDeleteNodePreview(target);
-    if (this.unloading || resolveActionPage(this.index,captured) !== target || target.path !== captured.path || target.file !== capturedFile
-      || capturedFile && this.app.vault.getFileByPath(captured.path) !== capturedFile) return {status:"unavailable",reasonKey:"actions.target-unavailable"};
+    /** Read facades may refresh during preview; only a changed canonical/native endpoint retires consent. */
+    const currentBeforeTrash = (): boolean => {
+      const current = resolveActionPage(this.index, captured);
+      return !this.unloading && current?.path === captured.path && current.file === capturedFile
+        && target.path === captured.path && target.file === capturedFile
+        && (!canonicalTarget || this.index.pages.get(captured.path) === canonicalTarget)
+        && this.app.vault.getFileByPath(captured.path) === capturedFile;
+    };
+    let preview: DeleteNodePreview;
+    try {
+      preview = await this.captureDeleteNodePreview(target);
+    } catch {
+      if (!this.unloading && !capturedFile && currentBeforeTrash()) {
+        const references = this.referencingMarkdownFiles(target).map(/** Source coordinates remain useful when a bounded preview cannot read the note body. */ file => ({path:file.path,line:0,label:this.translator("delete.cleanup.reviewSource"),sourceKind:"obsidian-link" as const}));
+        new RemainingNodeReferencesModal(this.app,target.name,references,
+          /** Failed inspection grants manual navigation only, never an automatic link rewrite. */ reference => this.openRelationshipEvidenceLocation(reference,hostLeaf),
+          [this.translator("delete.cleanup.inspectFailed",{path:target.path})]).open();
+      } else if (!this.unloading) {
+        new Notice(this.translator("delete.cleanup.inspectFailed",{path:target.path}));
+      }
+      return {status:"unavailable",reasonKey:"actions.target-unavailable"};
+    }
+    if (!currentBeforeTrash()) {
+      new Notice(this.translator("addRelated.endpointChanged"));
+      return {status:"unavailable",reasonKey:"actions.target-unavailable"};
+    }
     if (!(await this.confirmDeleteNode(target,preview,hostLeaf))) return { status: "cancelled" };
     // Another settings window cannot silently change the automatic cleanup policy after its
     // scope was captured. Reopening deletion prepares fresh defaults before granting trash/write consent.
@@ -6304,8 +6693,7 @@ export default class KplexPlugin extends Plugin {
       new Notice(this.translator("delete.cleanup.settingsChanged"));
       return { status: "cancelled" };
     }
-    if (this.unloading || resolveActionPage(this.index, captured) !== target || target.path !== captured.path || target.file !== capturedFile
-      || capturedFile && this.app.vault.getFileByPath(capturedFile.path) !== capturedFile) {
+    if (!currentBeforeTrash()) {
       new Notice(this.translator("addRelated.endpointChanged"));
       return { status: "unavailable", reasonKey: "actions.target-unavailable" };
     }
@@ -6337,25 +6725,45 @@ export default class KplexPlugin extends Plugin {
 
     const ghost = this.index.get(path);
     if (!ghost) return { status: "committed", affected: [captured] };
-    /** Pair publication may replace read facades, but cleanup cannot adopt another canonical/native endpoint. */
-    const currentTarget = (): boolean => Boolean(canonicalTarget) && this.index.pages.get(path) === canonicalTarget
-      && canonicalTarget!.file === null && this.index.get(path)?.file === null && this.app.vault.getFileByPath(path) === null;
-    const { remaining, issues } = await this.removePropertyReferencesToNode(ghost,preview,currentTarget);
-
-    if (remaining.length || issues.length) {
-      new RemainingNodeReferencesModal(
-        this.app,
-        ghost.name,
-        remaining,
-        (reference) => this.openRelationshipEvidenceLocation({ path: reference.path, line: reference.line }, hostLeaf),
-        issues,
-      ).open();
+    if (ghost.file) {
+      new Notice(this.translator("addRelated.endpointChanged"));
       return { status: "committed", affected: [captured] };
     }
+    /** Pair publication may replace read facades, but cleanup cannot adopt another canonical/native endpoint. */
+    const currentTarget = (): boolean => (!canonicalTarget || this.index.pages.get(path) === canonicalTarget)
+      && (!canonicalTarget || canonicalTarget.file === null) && this.index.get(path)?.file === null && this.app.vault.getFileByPath(path) === null;
+    const { remaining, issues } = await this.removePropertyReferencesToNode(ghost,preview,currentTarget);
 
-    // Remaining references are handled above. Once they are gone, remove the dematerialized graph
-    // endpoint when nothing else still references it; focus/history have already moved away.
-    await this.index.removeVirtualPageIfUnreferencedFromSources(path);
+    if (!remaining.length && !issues.length) {
+      const removed = await this.index.removeVirtualPageIfUnreferencedFromSources(path);
+      const retained = this.index.get(path);
+      if (removed || !retained) return { status: "committed", affected: [captured] };
+      if (retained.file) {
+        new Notice(this.translator("addRelated.endpointChanged"));
+        return { status: "committed", affected: [captured] };
+      }
+      // Current source authority can retain a placeholder that the initial partial preview did
+      // not explain. Reinspect without granting new cleanup consent; all new sources are manual.
+      try {
+        const latest = await this.captureDeleteNodePreview(retained);
+        for (const source of latest.sources) {
+          remaining.push(...source.bodyReferences.map(/** Restore native document positions from the captured body-relative preview. */ reference => ({...reference,line:Math.max(0,source.bodyStart+reference.line)})));
+          remaining.push(...source.properties.map(/** Newly discovered properties were never approved for automatic removal. */ property => ({path:source.path,line:property.line,label:property.field,fieldName:property.field,sourceKind:"frontmatter-ontology" as const})));
+        }
+      } catch {
+        issues.push(this.translator("delete.cleanup.inspectFailed",{path}));
+        remaining.push(...this.referencingMarkdownFiles(retained).map(/** Unreadable sources still offer manual native navigation without guessed line positions. */ file => ({path:file.path,line:0,label:this.translator("delete.cleanup.reviewSource"),sourceKind:"obsidian-link" as const})));
+      }
+      if (!remaining.length && !issues.length) issues.push(this.translator("delete.cleanup.inspectFailed",{path}));
+    }
+
+    new RemainingNodeReferencesModal(
+      this.app,
+      ghost.name,
+      remaining,
+      (reference) => this.openRelationshipEvidenceLocation({ path: reference.path, line: reference.line }, hostLeaf),
+      issues,
+    ).open();
     return { status: "committed", affected: [captured] };
   }
 
@@ -6771,7 +7179,7 @@ export default class KplexPlugin extends Plugin {
   }
 
   /** Create the requested physical note in its target folder and localize user-visible errors without changing vault path semantics. */
-  private async createNewFileInFolder(leafName: string, kind: GhostMaterializationKind, configuredFolder: string, parentCurrent?: () => boolean): Promise<TFile | null> {
+  private async createNewFileInFolder(leafName: string, kind: GhostMaterializationKind, configuredFolder: string, parentCurrent?: () => boolean, templatePath?: string): Promise<TFile | null> {
     const normalizedFolder = configuredFolder ? normalizePath(configuredFolder) : "";
     if (parentCurrent && !parentCurrent()) throw new Error(this.translator("addRelated.endpointChanged"));
     await this.ensureFolderPath(normalizedFolder);
@@ -6792,6 +7200,36 @@ export default class KplexPlugin extends Plugin {
       ? ["excalidraw.md", "excalidraw"].map((extension) => normalizePath(normalizedFolder ? `${normalizedFolder}/${leafName}.${extension}` : `${leafName}.${extension}`))
       : [];
     for (const path of alternateExcalidrawPaths) this.managedCreatedPaths.set(path, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
+
+    const drawingBridge = kind === "excalidraw" ? drawingAutomation() : null;
+    if (drawingBridge) {
+      const bridge = drawingBridge;
+      const ea = bridge.getAPI!();
+      try {
+        const templateFile = templatePath ? this.app.vault.getFileByPath(templatePath) : null;
+        if (templatePath && !templateFile) throw new Error(this.translator("addRelated.endpointChanged"));
+        const exactPath = bridge.getDrawingFilePath!(leafName, normalizedFolder);
+        const createdPath = await ea.create!({exactPath, templatePath: templatePath || undefined, silent: true,
+          validateBeforeCreate: () => {
+            if (this.unloading || parentCurrent && !parentCurrent()
+              || templatePath && this.app.vault.getFileByPath(templatePath) !== templateFile) throw new Error(this.translator("addRelated.endpointChanged"));
+          }});
+        const file = this.app.vault.getFileByPath(createdPath);
+        if (!file) throw new Error(this.translator("error.excalidrawCreatedFileMissing"));
+        this.managedCreatedPaths.set(file.path, Date.now() + MANAGED_CREATED_PATH_TTL_MS);
+        this.rememberManagedCreatedFile(file);
+        if (templatePath !== undefined) {
+          this.settings.lastDrawingTemplatePath = templatePath;
+          try { await this.saveSettings(false, false); }
+          catch (error) { throw new PartialRelatedFileError(file, error); }
+        }
+        return file;
+      } catch (error) {
+        this.managedCreatedPaths.delete(destination);
+        for (const path of alternateExcalidrawPaths) this.managedCreatedPaths.delete(path);
+        throw error;
+      } finally { ea.destroy?.(); }
+    }
 
     if (kind === "excalidraw") {
       type RuntimePlugin = Plugin & {
@@ -6868,7 +7306,7 @@ export default class KplexPlugin extends Plugin {
   }
 
   /** Create a child with exact destination collision checks and existing optimistic/index reconciliation. */
-  async createNewNodeInFolder(folder: GraphPage, rawName: string, kind: GhostMaterializationKind, capturedFolder?: TFolder): Promise<GraphPage | null> {
+  async createNewNodeInFolder(folder: GraphPage, rawName: string, kind: GhostMaterializationKind, capturedFolder?: TFolder, templatePath?: string): Promise<GraphPage | null> {
     return this.index.withForegroundPriority(async () => {
       if (!folder.isFolder) return null;
       const folderPath = folder.path === "folder:/"
@@ -6891,7 +7329,7 @@ export default class KplexPlugin extends Plugin {
       const current = (): boolean => !this.unloading && (!capturedFolder ||
         (capturedFolder === this.app.vault.getRoot() ? this.app.vault.getRoot() : this.app.vault.getFolderByPath(capturedFolder.path)) === capturedFolder);
       if (!current()) throw new Error(this.translator("addRelated.endpointChanged"));
-      const file = await this.createNewFileInFolder(validation.stem, kind, currentFolderPath === "/" ? "" : currentFolderPath, current);
+      const file = await this.createNewFileInFolder(validation.stem, kind, currentFolderPath === "/" ? "" : currentFolderPath, current, templatePath);
       if (!file) return null;
       const displayName = await this.writeCreatedNodeDisplayName(file, rawName);
       const displayField = this.configuredDisplayNameField();
@@ -6911,6 +7349,35 @@ export default class KplexPlugin extends Plugin {
       /** Reuse exact-file saved-metadata observation and plugin cancellation ownership. */ (file, fields, mutate) => this.mutateCreatedNodeMetadata(file, fields, mutate), () => this.settings.noteTypeField);
     return this.structuralDrops;
   }
+
+  /** Reuse the plugin's native metadata/convergence lifetime, keeping real property edits on
+   * ordinary incremental indexing. No managed relationship feedback or whole-vault work. */
+  private canvasPropertyOwner(): CanvasPropertyAssignmentActions {
+    this.canvasPropertyAssignments ??= new CanvasPropertyAssignmentActions(this.app, this.translator,
+      () => [...this.allOntologyFields(), this.settings.noteTypeField, this.settings.primaryTagField, this.settings.thumbnailProperty,
+        this.settings.nodeImageProperty, ...this.settings.nameFields.split(",").map(name => name.trim())],
+      async (file, field, mutate, current) => {
+        await writeRelationshipMetadata(this.app, file, new Set([normalizeFieldName(field)]), mutate, {
+          own: cancel => {this.relationshipWriteCancels.add(cancel);return () => {this.relationshipWriteCancels.delete(cancel);};},
+          pending: () => {new Notice(this.translator("note.savedMetadataPending"), 4000);},
+          savedPendingMessage: () => this.translator("note.savedMetadataPending"),
+          current: () => !this.unloading && current(), preparingMessage: () => this.translator("assignment.unavailable"),
+        });
+      });
+    return this.canvasPropertyAssignments;
+  }
+  /** Shared action/drop admission supplies no relationship removal or document navigation. */
+  canAssignCanvasProperty(page: GraphPage, assignment: PlexPropertyAssignment): boolean {
+    return !this.unloading && this.canvasPropertyOwner().eligible(page, assignment);
+  }
+  /** Both drag/drop and the accessible node action use this one captured native confirmation. */
+  openCanvasPropertyAssignment(request: CanvasPropertyAssignmentRequest): boolean {
+    return !this.unloading && this.canvasPropertyOwner().open(request);
+  }
+  /** At most one applied-value-guarded field receipt belongs to each live canvas. */
+  canUndoCanvasPropertyAssignment(scope: HTMLElement): boolean {return !this.unloading && !!this.canvasPropertyAssignments?.canUndo(scope);}
+  /** Undo uses the same native writer; it cannot overwrite a later field value. */
+  undoCanvasPropertyAssignment(scope: HTMLElement): boolean {return !this.unloading && !!this.canvasPropertyAssignments?.undo(scope);}
 
   /** Handle explicit structural drops without changing ontology relationship semantics. */
   openStructuralNodeDrop(origin: GraphPage, target: GraphPage, options: {immediateMove?: boolean} = {}): boolean {
@@ -7006,7 +7473,7 @@ export default class KplexPlugin extends Plugin {
   }
 
   /** Create a related file for the selected origin while preserving folder/name validation and localized product feedback. */
-  async createNewRelatedFileForOrigin(origin: GraphPage, rawName: string, kind: GhostMaterializationKind, rawAlias = "", selectedFolder?: string): Promise<TFile | null> {
+  async createNewRelatedFileForOrigin(origin: GraphPage, rawName: string, kind: GhostMaterializationKind, rawAlias = "", selectedFolder?: string, templatePath?: string): Promise<TFile | null> {
     return this.index.withForegroundPriority(async () => {
       const destination = this.validateNoteFolderPath(selectedFolder ?? this.newRelatedNoteFolder(origin, rawName, kind));
       if (destination.error) throw new Error(destination.error);
@@ -7020,7 +7487,7 @@ export default class KplexPlugin extends Plugin {
         return null;
       }
 
-      const file = await this.createNewFileInFolder(validation.stem, kind, destination.folderPath);
+      const file = await this.createNewFileInFolder(validation.stem, kind, destination.folderPath, undefined, templatePath);
       if (!file) return null;
       try {
         const displayName = await this.writeCreatedNodeDisplayName(file, rawName);
@@ -7187,14 +7654,117 @@ export default class KplexPlugin extends Plugin {
     });
   }
 
+  /** Capture device/surface availability without modifying the remembered destination. */
+  private createdNoteContext(hostLeaf?: WorkspaceLeaf): CreatedNoteContext {
+    return {sidepanel: hostLeaf?.view.getViewType() === KPLEX_SIDEPANEL_VIEW_TYPE,
+      desktop: readObsidianPresentationEnvironment(hostLeaf?.view.containerEl.ownerDocument.defaultView ?? undefined).device === "desktop"};
+  }
+
+  /** Supply the operation's After saving preference without persisting dialog/context fallbacks. */
+  createdNoteCompletionControl(hostLeaf?: WorkspaceLeaf, options: Readonly<{another?: boolean; editable?: boolean; follow?: boolean; operation?: "create" | "link"}> = {}): CreatedNoteCompletionControl {
+    const context = {...this.createdNoteContext(hostLeaf), another: options.another !== false, editable: options.editable !== false,
+      follow: options.follow !== false}, choices = creationAfterSavingActions(context);
+    const key = options.operation === "link" ? "linkAfterSaving" : "newNodeAfterSaving";
+    const preference = sanitizeCreationAfterSaving(this.settings[key] ?? this.settings.newNodeAfterSaving, this.settings.editNewNodeAfterCreate);
+    return {choices, value: effectiveCreationAfterSaving(preference, context),
+      onChange: /** Persist an actual offered selection through the serialized settings writer. */ value => {
+        if (this.unloading || !choices.includes(value) || this.settings[key] === value) return;
+        this.settings[key] = value;
+        void this.saveSettings(false, false);
+      }};
+  }
+
+  /** Open a new native tab in the invoking Plex group, or the most recent main group for a sidebar. */
+  private async openCreatedNoteInTab(file: TFile, hostLeaf?: WorkspaceLeaf): Promise<void> {
+    const workspace = this.app.workspace;
+    const anchor = hostLeaf && hostLeaf.view.getViewType() !== KPLEX_SIDEPANEL_VIEW_TYPE
+      ? hostLeaf : workspace.getMostRecentLeaf(workspace.rootSplit);
+    let leaf: WorkspaceLeaf;
+    if (anchor) {
+      let count = 0;
+      workspace.iterateAllLeaves(/** Count native siblings without inspecting or activating their views. */ candidate => {if (candidate.parent === anchor.parent) count++;});
+      leaf = workspace.createLeafInParent(anchor.parent, count);
+    } else leaf = workspace.getLeaf("tab");
+    this.lastDocumentLeaf = leaf;
+    await leaf.openFile(file, {active: true});
+    await workspace.revealLeaf(leaf);
+  }
+
+  /** Yield only while an explicit editor request waits for its committed scene; unload settles every wait. */
+  private waitForCreatedEditor(): Promise<void> {
+    return new Promise(/** Retain one bounded main-window timer until it fires or plugin unloads. */ resolve => {
+      const timer = window.setTimeout(/** Completed waits release their owning plugin reference. */ () => {this.createdEditorWaits.delete(timer); resolve();}, 50);
+      this.createdEditorWaits.set(timer, resolve);
+    });
+  }
+
+  /** Open a saved file using the exact invocation; editor readiness probes never replay an accepted action. */
+  async openCreatedNote(page: GraphPage, hostLeaf: WorkspaceLeaf | undefined, destination: CreatedNoteDestination,
+    stillValid: () => boolean = () => true): Promise<void> {
+    const file = page.file;
+    const hostView = hostLeaf?.view;
+    const ownerDocument = hostView?.containerEl.ownerDocument;
+    let editorCenter: KplexDocumentSession | null = null, arrived = false;
+    const initialCenter = hostLeaf ? this.documentSession(hostLeaf)?.centerPath : null;
+    /** Replacements, migrations and deliberate later navigation never inherit the creation operation. */
+    const current = (): boolean => {
+      if (this.unloading || !stillValid() || !file || this.app.vault.getFileByPath(file.path) !== file
+        || hostLeaf && (hostLeaf.view !== hostView || hostLeaf.view.containerEl.ownerDocument !== ownerDocument || this.documentSession(hostLeaf) === null)) return false;
+      if (!editorCenter) return true;
+      if (editorCenter.centerPath === file.path) {arrived = true; return true;}
+      return !arrived && editorCenter.centerPath === initialCenter;
+    };
+    if (!current() || !file) return;
+    const target = effectiveCreatedNoteDestination(destination, this.createdNoteContext(hostLeaf));
+    if (target === "none") return;
+    if (target === "tab") return this.openCreatedNoteInTab(file, hostLeaf);
+    if (target === "window") return this.openFileInPopout(file);
+    if (target === "sidecar") {
+      if (hostLeaf) await this.openSidecar(hostLeaf, page);
+      else await this.openCreatedNoteInTab(file);
+      if (current() && hostLeaf) this.focusAssociatedEditor(hostLeaf);
+      return;
+    }
+    if (!hostLeaf) return;
+    // A durable new file is available independently of semantic relationship reconciliation.
+    if (this.index.get(file.path)?.file !== file) this.index.insertCreatedFile(file);
+    editorCenter = this.documentSession(hostLeaf);
+    this.notifyNavigation(file.path, hostLeaf, true);
+    const deadline = Date.now() + 10_000;
+    while (current()) {
+      const owner = [...this.actionSurfaceHosts].find(/** Never borrow another canvas's editor capability. */ ([, value]) => value.leaf === hostLeaf);
+      const displayed = owner ? this.actionManager.readSnapshot(owner[0])?.centerOccurrence : null;
+      const reference = actionNodeRef({...page, path: file.path, file});
+      if (owner && displayed?.node.path === file.path && displayed.node.identity === reference.identity && displayed.node.fileIdentity === reference.fileIdentity) {
+        const request = this.actionManager.prepare({id: "editor.expand", source: "internal", surfaceId: owner[0],
+          target: {kind: "explicit", node: reference, occurrenceId: displayed.occurrenceId}, args: {maximize: target === "editor-maximized"}});
+        if (request.state === "accepted") {
+          const outcome = await request.run();
+          if (current() && outcome.status === "unavailable") new Notice(translateActionText(this.translator, outcome.reasonKey));
+          return;
+        }
+      }
+      if (Date.now() >= deadline) {new Notice(this.translator("actions.target-unavailable")); return;}
+      await this.waitForCreatedEditor();
+    }
+  }
+
   /** Apply explicit creation navigation only while its originating invocation remains current. */
   async finishNewRelatedNode(
     page: GraphPage,
     hostLeaf: WorkspaceLeaf | undefined,
-    openForEditing: boolean,
+    openForEditing: boolean | CreationAfterSavingAction,
     stillValid: () => boolean = () => true,
   ): Promise<void> {
     if (this.unloading || !stillValid()) return;
+    if (typeof openForEditing !== "boolean") {
+      const action = openForEditing;
+      if (action === "return" || action === "another") return;
+      if (hostLeaf && (action === "follow" || action === "sidecar")) this.notifyNavigation(page.path, hostLeaf, true);
+      if (action === "follow" || !page.file) return;
+      await this.openCreatedNote(page, hostLeaf, action, stillValid);
+      return;
+    }
     if (hostLeaf) this.notifyNavigation(page.path, hostLeaf);
     if (!openForEditing || !page.file) return;
     const host = hostLeaf && this.documentSession(hostLeaf) && hostLeaf.view.getViewType() !== KPLEX_SIDEPANEL_VIEW_TYPE ? hostLeaf : null;
@@ -7250,6 +7820,8 @@ export default class KplexPlugin extends Plugin {
     current: () => boolean = () => true,
     preserveCenter = false,
     hostLeaf?: WorkspaceLeaf,
+    templatePath?: string,
+    afterSaving: CreationAfterSavingAction = "return",
   ): Promise<boolean> {
     const retainedPlan = retainedFile ? continuation.relocation : undefined;
     const oldPath = retainedPlan?.oldPath ?? page.path;
@@ -7274,7 +7846,7 @@ export default class KplexPlugin extends Plugin {
       this.translator("ghost.relocationUnsupported"));
     if (this.unloading || retainedFile && this.app.vault.getFileByPath(retainedFile.path) !== retainedFile) throw new Error(changed);
     if (retainedFile && (retainedFile.parent?.path === "/" ? "" : retainedFile.parent?.path) !== destination.folderPath) throw new Error(changed);
-    const file = retainedFile ?? await this.createNewFileInFolder(stem, kind, destination.folderPath);
+    const file = retainedFile ?? await this.createNewFileInFolder(stem, kind, destination.folderPath, undefined, templatePath);
     if (!file) return false;
     try {
       if ((file.parent?.path === "/" ? "" : file.parent?.path) !== destination.folderPath) throw new Error(changed);
@@ -7291,9 +7863,9 @@ export default class KplexPlugin extends Plugin {
       // center to unrelated surfaces; each mounted App follows its own canonical identity remap.
       if (!preserveCenter && wasCenter && current() && hostLeaf) this.notifyNavigation(file.path, hostLeaf);
       if (navigationChanged) await this.saveSettings(false, false);
-      // Opening a document can trigger follow-active-note synchronization. In-place creation
-      // promotes the endpoint and its saved references without issuing that navigation request.
-      if (current() && !preserveCenter) await this.openInDocumentLeaf(file, hostLeaf);
+      // Return promotes the endpoint and saved references without opening a document.
+      // Explicit after-saving choices own any subsequent native opening or editor navigation.
+      if (current() && afterSaving !== "return" && afterSaving !== "another") await this.finishNewRelatedNode({...page, path: file.path, file}, hostLeaf, afterSaving, current);
       return true;
     } catch (error) { throw error instanceof PartialRelatedFileError ? error : new PartialRelatedFileError(file, error); }
   }
@@ -7470,11 +8042,6 @@ export default class KplexPlugin extends Plugin {
       ? "excalidraw"
       : "markdown";
 
-    if (!chooseFolder && locations.length === 1 && !excalidrawAvailable) {
-      await this.materializeGhostPage(page, validation.stem, "markdown", locations[0].folderPath, rawLeafName, undefined, {}, ownerCurrent, preserveCenter, hostLeaf);
-      return;
-    }
-
     const continuation: { relocation?: PlaceholderRelocation } = {};
     new MaterializeGhostModal(
       this.app,
@@ -7482,9 +8049,11 @@ export default class KplexPlugin extends Plugin {
       locations,
       excalidrawAvailable,
       defaultKind,
-      (kind, folderPath, retainedFile, current) => this.materializeGhostPage(page, validation.stem, kind, folderPath, rawLeafName, retainedFile, continuation,
-        /** Combine the modal's submit lease with this exact native owner. */ () => (!current || current()) && ownerCurrent(), preserveCenter, hostLeaf),
+      (kind, folderPath, retainedFile, current, templatePath, afterSaving) => this.materializeGhostPage(page, validation.stem, kind, folderPath, rawLeafName, retainedFile, continuation,
+        /** Combine the modal's submit lease with this exact native owner. */ () => (!current || current()) && ownerCurrent(), preserveCenter, hostLeaf, templatePath, afterSaving),
       chooseFolder,
+      this.drawingTemplateOptions(),
+      this.createdNoteCompletionControl(hostLeaf, {another: false, follow: false}),
     ).open();
   }
 

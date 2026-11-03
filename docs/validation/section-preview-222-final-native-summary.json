@@ -1,0 +1,374 @@
+{
+  "purpose": "Final PR222 section preview including stale-proof canonical header preservation",
+  "startingHead": "c133d9aa145f80a08e1109405e38ebd5e7d4768f",
+  "source": {
+    "src/index/SectionExpansion.ts": "2c6c93445e9e77c19d81b67c7801cc2acb779eba2eb0a79911c0583a95997d69",
+    "src/index/SectionPreview.ts": "302fd618e33a349b8c4b95a42ac0f8d430e32d2bb9b3a77fedd46c63e0e01594",
+    "src/index/GraphIndex.ts": "c0a921ab4f65185400da1536432cee257a97d21574b764273a56f0dd991c68fa",
+    "src/ui/plexViews/sections.ts": "f577c4947bdeaeacf921862df30e78a92b7549ccd200d1ea922d6e72365a7f8d"
+  },
+  "artifacts": {
+    "main.js": "f479f02aa3d5ff58398ce8d0eae52c7a1e2ada5dd4bb0ccb5f01848be823992a",
+    "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+    "styles.css": "19a1bb1a25bfbc6db417420e2a07a281e50b48cb5f121ff52d486d9cc3dd47d5"
+  },
+  "totalNativeChecks": 48,
+  "lanes": [
+    {
+      "name": "wuxing-220-ux",
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T17:12:25.549Z",
+      "completedAt": "2026-10-26T17:12:47.378Z",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "5d50898c21b337e08f44787bcd31ccdf2e3eb6c0fcc0e8e4ac64052764a6b0a0",
+        "definitions": "1d6519ae16f493ee82aa0a6c33a8a128b995828e5799d2b25383d561b2d47f1a"
+      },
+      "artifacts": {
+        "main.js": "f479f02aa3d5ff58398ce8d0eae52c7a1e2ada5dd4bb0ccb5f01848be823992a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "19a1bb1a25bfbc6db417420e2a07a281e50b48cb5f121ff52d486d9cc3dd47d5"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "native-preset-controls-travel-together",
+          "windowWidth": 1280,
+          "controlWidths": [
+            222,
+            40,
+            40
+          ]
+        },
+        {
+          "id": "native-preset-controls-travel-together",
+          "windowWidth": 640,
+          "controlWidths": [
+            222,
+            40,
+            40
+          ]
+        },
+        {
+          "id": "native-preset-help-full-width-below-description",
+          "width": 1074,
+          "rowWidth": 1074
+        },
+        {
+          "id": "native-wide-preset-editor-single-icon-row",
+          "width": 1120,
+          "buttons": 7
+        },
+        {
+          "id": "native-draft-json-actions-present",
+          "nativeFileCompletionVerified": false,
+          "clipboardAccessed": false
+        },
+        {
+          "id": "native-preset-draft-reset-save-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-import-format-help-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-import-paste-file-guidance-single-footer-and-readonly-help"
+        },
+        {
+          "id": "native-facets-area-columns-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-facets-width-keyboard-one-and-multiple-columns"
+        },
+        {
+          "id": "native-compass-central-sections-shared-source-tree-and-fold"
+        },
+        {
+          "id": "native-mindmap-canonical-gate-counts",
+          "expected": {
+            "top": 3,
+            "bottom": 7,
+            "left": 0
+          }
+        },
+        {
+          "id": "native-arrow-selected-enter-fold-unfold-no-navigation"
+        },
+        {
+          "id": "native-parent-columns-1-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 1
+        },
+        {
+          "id": "native-parent-columns-2-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 2
+        },
+        {
+          "id": "native-parent-columns-3-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-parent-column-outward-directions",
+          "columns": 3
+        },
+        {
+          "id": "native-mindmap-heading-labels-fit-shared-section-measurement"
+        },
+        {
+          "id": "native-mindmap-heading-fold-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-mindmap-central-only-sections-shared-tree-independent-fold-camera",
+          "headings": 4
+        },
+        {
+          "id": "native-mindmap-attention-retains-root-outline"
+        },
+        {
+          "id": "native-mindmap-root-outline-other-editor-focus-content-caret-save-cleanup"
+        },
+        {
+          "id": "native-mindmap-root-editor-excludes-only-own-outline"
+        },
+        {
+          "id": "native-facets-sections-disabled-after-view-switch"
+        },
+        {
+          "id": "native-compass-outline-retains-saved-targets-before-evidence",
+          "controlledEvidenceHold": true
+        },
+        {
+          "id": "native-mindmap-saved-connectors-start-at-physical-sections-before-evidence",
+          "controlledEvidenceHold": true
+        },
+        {
+          "id": "native-preview-section-presentation-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-retired-section-metadata-proof-retains-canonical-header-targets",
+          "controlledEvidenceHold": true
+        },
+        {
+          "id": "native-depth-configuration-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-mindmap-depth-nine-admission",
+          "configuredMaximumDepth": 20
+        },
+        {
+          "id": "native-mindmap-eight-scope-limit-retains-visible-frontier"
+        }
+      ],
+      "cleanup": "passed",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    },
+    {
+      "name": "wuxing-220-pairs",
+      "status": "passed",
+      "node": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "startedAt": "2026-10-26T17:13:37.378Z",
+      "completedAt": "2026-10-26T17:13:47.697Z",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "5d50898c21b337e08f44787bcd31ccdf2e3eb6c0fcc0e8e4ac64052764a6b0a0",
+        "definitions": "cc267a671008e10203cbe1536817f2cb3a411fa34181bbbc0bf21d1ae05525a6"
+      },
+      "artifacts": {
+        "main.js": "f479f02aa3d5ff58398ce8d0eae52c7a1e2ada5dd4bb0ccb5f01848be823992a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "19a1bb1a25bfbc6db417420e2a07a281e50b48cb5f121ff52d486d9cc3dd47d5"
+      },
+      "cases": [
+        {
+          "id": "requested-local-cache-proof",
+          "current": true,
+          "coverage": "cached",
+          "globalSemanticPending": false
+        },
+        {
+          "id": "production-registry-five-phases-canonical-links",
+          "regions": 7,
+          "semanticConnectors": 7
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment",
+          "owner": "main",
+          "freshCreationTested": false
+        },
+        {
+          "id": "sidecar-explicit-loaded-native-document-attachment",
+          "owner": "popout",
+          "freshCreationTested": false
+        },
+        {
+          "id": "main-popout-per-canvas-selection-zero-source-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0
+          }
+        },
+        {
+          "id": "native-compass-wuxing-main-popout-independent-canvas-and-sidecar-state"
+        },
+        {
+          "id": "opening-canvas-selector-owner-survives-window-focus-change"
+        },
+        {
+          "id": "native-shared-preset-layout-and-independent-preset-selection",
+          "main": "para",
+          "popout": "publishing"
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor",
+          "owner": "main-wuxing",
+          "simultaneousEditors": 1
+        },
+        {
+          "id": "other-canvas-switch-preserves-native-editor",
+          "owner": "popout-compass",
+          "simultaneousEditors": 1
+        },
+        {
+          "id": "independent-owned-native-workspace-view-restoration",
+          "applicationRestart": false
+        },
+        {
+          "id": "windows-native-view-select-keyboard",
+          "transport": "Electron",
+          "keys": [
+            {
+              "key": "Home",
+              "trusted": true,
+              "targetSelect": true
+            }
+          ],
+          "changes": [
+            {
+              "trusted": true,
+              "value": "classic"
+            }
+          ]
+        },
+        {
+          "id": "native-independent-main-popout-root-outlines-and-unsupported-facets",
+          "simultaneousRootOutlines": 2,
+          "otherEditorsOrSidecarsRetargeted": false
+        }
+      ],
+      "cleanup": "passed",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "limitations": [
+        "Windows native automation is separate from macOS and physical mobile acceptance.",
+        "#215 extra-tab application restart/combined two-editor-pair baseline failures are not claimed fixed.",
+        "Native trusted input uses Electron; this is not an OS clipboard acceptance receipt."
+      ]
+    }
+  ],
+  "restoration": [
+    {
+      "restored": true,
+      "configurationFiles": 9,
+      "contentFiles": 117,
+      "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+      "completedAt": "2026-10-26T17:12:52.859Z"
+    },
+    {
+      "restored": true,
+      "configurationFiles": 9,
+      "contentFiles": 117,
+      "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+      "completedAt": "2026-10-26T17:13:53.245Z"
+    }
+  ],
+  "limits": [
+    "Controlled native evidence hold forwards actual canonical neighborhoods, not a whole-application restart timing claim. Genuine private snapshot holds use real Chromium IndexedDB.",
+    "Mac, physical mobile, minimum-host and OS clipboard not certified; known #215 fresh-popout Sidecar/two editor-pair/application restart limits remain."
+  ]
+}

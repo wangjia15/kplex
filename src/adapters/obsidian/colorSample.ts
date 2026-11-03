@@ -1,11 +1,12 @@
 /**
- * Editor-only color sampling for alpha/composited contrast and explicit source-to-fixed conversion.
+ * Bounded appearance color sampling for alpha/composited contrast and explicit source-to-fixed conversion.
  * CSS resolves in the actual owning scope. Common RGB values use the portable parser; modern color
  * spaces use one lazily allocated 1px sRGB canvas. No images, resources, note data or saved writes.
  */
 import { parseLiteralColor, type LiteralColor } from "../../core/contracts/colorValue";
 
-/** One editor document's tiny conversion resource; normal graph rendering never uses it. */
+/** One owning document's tiny conversion resource. Ordinary nodes never sample; a measured
+ * contrast-aware badge may reuse it only when its actual color context changes. */
 export class ColorSampleReader {
   private canvas: HTMLCanvasElement | null = null;
   private context: CanvasRenderingContext2D | null = null;

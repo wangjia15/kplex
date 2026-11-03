@@ -1,0 +1,210 @@
+{
+  "status": "passed",
+  "completedAt": "2026-10-27T05:54:25.323Z",
+  "runtimeSource": "5cb0069ed53675e0313e463c7e47df8448bfec37",
+  "helpSnapshot": "4aa47f3220c67420e42a88e9ad8235f3e3a4e394",
+  "node": "v22.22.2",
+  "obsidian": "1.14.5 (installer 1.14.0)",
+  "host": {
+    "node": "v24.18.1",
+    "electron": "43.3.0",
+    "chrome": "150.0.7871.212",
+    "hidden": false
+  },
+  "artifacts": {
+    "main.js": "1ba0edda18d7118fc0754a96c9ed3620bae9308394d56c9058bb10dbf0a1a107",
+    "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+    "styles.css": "02cbb4724e9ba017333be0ed3fcfc44b0aa532e472353667296598cdaeb2a682"
+  },
+  "driver": {
+    "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+    "scenario": "6f728c17963eb680372baafee3cfcc7fbb6ec10cf5ea4b82c18940c4f38403f4",
+    "definitions": "9b43e61d75fe21226ef3be9aa4402d7ab8bf45e6e88504629f71a29ec76a20db"
+  },
+  "source": {
+    "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+    "src/index/GraphIndex.ts": "c0a921ab4f65185400da1536432cee257a97d21574b764273a56f0dd991c68fa",
+    "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+    "scripts/testing/obsidian/helpVaultFacets222.mjs": "872d97d340f7bc9598050f30bcdd42cbae9a34a6957772171dc824a0fae4587e",
+    "src/ui/PlexGraph.tsx": "9628657e52a7a37b2e21e67eca064880fc84db1e781b25ca229b88d9752fb0dd",
+    "src/ui/plexViews/areaVisibility.ts": "5365e697ac0bb811259898a70928e8c2e3a8b68f468ee0fa1f3d5a9b101fd863",
+    "src/ui/plexViews/reflowArea.ts": "1f0b9f2668abf6d35ae4a49d0eebf86acc42cfcbc6c155869bd31e8c699cb6b4",
+    "src/ui/plexViews/scene.ts": "49fe06bbfb3e46c1e0b8f46e8eb6014303f1ad83d50221928a87bfc5feac29b9",
+    "src/ui/plexViews/prepareScene.ts": "1a5fac90de37c90e504cd7f04ea61da2a554a131824c3dfd4afa187d96fb2aa8",
+    "src/core/plex/views/contracts.ts": "f81274269ef12ab3d9cac95c03fb256cab8ff8487bd4983cf73ae4a60734593b",
+    "src/core/plex/views/hierarchy.ts": "eabf11a0ec8d3acff87dab7d78a06601611ec3236a18f54b3d4adac3b2498ed7",
+    "src/core/plex/views/registry.ts": "0a71e0c44bee06ae8b9c65ece285f1cba70364ed5e005e7104a73a977efde67a",
+    "src/core/plex/views/mindmap/definition.ts": "18ef7c507e8144d7bf5e1b85136652ca7dd63948891f899c82fa74ea7785db71",
+    "src/core/plex/views/mindmap/projection.ts": "6d1185efb47b9f635d28e5037a7404954411f07901431669cf8bd9ab2ba4178d",
+    "src/core/plex/views/mindmap/layout.ts": "af35738a3bb011e41d9a33544b9081cd282d190768ecefd2d79bc8c09318c16d",
+    "src/core/plex/views/wuxing/definition.ts": "1d3e8b9db72978b6097eaad3df2d6d409d4f7e44b978322267a09691292b4885",
+    "src/core/plex/views/facets/projection.ts": "b78a6c38806e895933ba56dd522678a14b4b00b6152e68f18478db9e2272d3b5",
+    "src/core/plex/views/facets/layout.ts": "7ba987cb8678365c82f4113d2aa3dbf7eb2680ae83ac87998fd716a301437559",
+    "src/core/plex/views/facets/rules.ts": "9f6a6cb6260424166e353567021e3a2748a5322fd9cef7170e3adb8db7d5f5e4",
+    "src/core/plex/predicate.ts": "1385f7eeaa80a8a22813a1dd71ad436784eec626261a2ce8eb39a48ee9f3d9da",
+    "src/ui/plexViews/facets/FacetPresetEditor.ts": "5cde206795032048ef1461cdbcf328382229c36edd71f9c0ff752d4d23e8e616",
+    "src/ui/CanvasPropertyAssignmentActions.ts": "7c9d038187c439a255d53691caf46a0a633e0d810c0bb73088187c35d56a2c8c",
+    "src/adapters/obsidian/predicateContracts.ts": "a880ddf39add8ca9adacc2dc0bce2937d17207f2bebeeec26e0a13c1c000b955",
+    "src/ui/NativeMarkdownHelp.ts": "5ffc0b5a5af0a091bfa622ebd75bc2c928159d817e981d2684797ae74a44fdc7",
+    "src/ui/MarkdownHelpModal.ts": "6fec2222d055dde51231cb05030514fb092e62bf63458490114a37da9f70ce76",
+    "src/core/contracts/markdownHelp.ts": "9034e70ea66566c0c81bc0360fb722e55d9051df28e769e4ad4d60c773d120c1",
+    "src/ui/plexViews/facets/helpSettings.ts": "4ef188ea9ad4d22b2bccaa1981e1508a078308d5ed01812ed6704eac5ba09d7f",
+    "src/core/plex/views/facets/templates.ts": "917a1c562ba1810688deaa0410908f7c7499470ca25693ca11b2f00155041f12"
+  },
+  "cases": [
+    {
+      "id": "requested-local-cache-proof",
+      "current": true,
+      "coverage": "cached",
+      "globalSemanticPending": false
+    },
+    {
+      "id": "production-registry-five-phases-canonical-links",
+      "regions": 7,
+      "semanticConnectors": 7
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-workshop",
+      "source": "property",
+      "layout": "horizontal",
+      "classified": 7
+    },
+    {
+      "id": "native-help-preset-markdown-captured"
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-topics",
+      "source": "tag",
+      "layout": "circular",
+      "classified": 7
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-learning",
+      "source": "type",
+      "layout": "vertical",
+      "classified": 7
+    },
+    {
+      "id": "native-help-facets-classification-and-canvas",
+      "preset": "help-workbench",
+      "source": "rules",
+      "layout": "quadrants",
+      "classified": 9
+    },
+    {
+      "id": "native-help-canonical-child-budget",
+      "checked": 140,
+      "maximum": 12
+    },
+    {
+      "id": "native-help-preset-editor-captured-through-registered-settings-owner-without-save"
+    },
+    {
+      "id": "native-help-sharing-export-preview-captured-without-import-download-or-clipboard"
+    },
+    {
+      "id": "native-help-mindmap-canvas-captured"
+    },
+    {
+      "id": "native-help-compass-and-current-keyboard-help-captured"
+    }
+  ],
+  "canonicalChildren": {
+    "checked": 140,
+    "tooMany": []
+  },
+  "cleanup": {
+    "status": "passed",
+    "operations": 305,
+    "failed": []
+  },
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-27T05:54:31.015Z"
+  },
+  "screenshots": [
+    {
+      "file": "facets-help-compass-workshop.png",
+      "sha256": "577adfbfdda8e5a1bb2cc54fc2df0738c1d1142603fe5475dd60866f4824826f"
+    },
+    {
+      "file": "facets-help-help-learning.png",
+      "sha256": "7a3085cd260f3b34b41510f085431330d7468b8dc68a03141ca694ad7557a95c"
+    },
+    {
+      "file": "facets-help-help-topics.png",
+      "sha256": "d6b72f9c5742f03cebb50645fa5cc37d3159a5408fd23704fd1e716ce4e20279"
+    },
+    {
+      "file": "facets-help-help-workbench.png",
+      "sha256": "d637ac388db14e42a310ce4530cb5ab50aaf79c77a6ae0ef762f84bd9b9dde6b"
+    },
+    {
+      "file": "facets-help-help-workshop.png",
+      "sha256": "e4c716c38849763312db9acccc37e08dd821d1f49ec6a0ff77c17ed300f5abcc"
+    },
+    {
+      "file": "facets-help-keyboard-help.png",
+      "sha256": "3be68ff3ab45f904b43f14b739154cd89293274b6f2548b96f5423480a46d97d"
+    },
+    {
+      "file": "facets-help-mindmap-workshop.png",
+      "sha256": "53a848613511dd6fa1b8eac9e3e098fc4205e297667205cd35856dddf038b6e3"
+    },
+    {
+      "file": "facets-help-preset-editor.png",
+      "sha256": "83945c870fddb52f7bb74730dbecf7da748866120b0ec9e7ddc9ab1cb04a523e"
+    },
+    {
+      "file": "facets-help-preset-help.png",
+      "sha256": "0283093fccfe7daf1287ddb0e09a2d90581a6540805205ab47df4a12f71a1da7"
+    },
+    {
+      "file": "facets-help-sharing-export.png",
+      "sha256": "61a66ef06f1d05a26b736744f6841955e126239391349a9ed8962758f47bc1b5"
+    },
+    {
+      "file": "facets-help-sharing-preview.png",
+      "sha256": "f9d08e5202a6fa9c908dd35551a02c5b5097e484b8d2f43b22dd91cdd16df5dd"
+    }
+  ],
+  "limits": [
+    "Windows desktop only; physical touch, macOS and minimum Obsidian are not certified.",
+    "Public Help snapshot copied into the existing disposable Small fixture; original Help binaries/workspace and production vault untouched.",
+    "Screenshots verify actual native UI and measured framing. Mind Map/Compass captures include public attachment placeholders and incomplete metadata; they are layout examples, not full hydration acceptance.",
+    "Sharing capture is an ID-collision preflight with replacement disabled. No import, clipboard or file export executed.",
+    "Preset editor captured via the registered Settings owner; the separate Edit help handoff is not certified by this lane.",
+    "Final Help screenshot embeds/captions/Related roles are audited separately from this frozen metadata/config snapshot.",
+    "Full regression/CI deferred by maintainer instruction; previous parent native24 belongs to runtime130facf, not this artifact."
+  ],
+  "finalHelpDelivery": {
+    "commit": "195b2a235cc53e5716e5de5ba2b4d6d50f1a10b7",
+    "branch": "2026-10-27-canvas-facets-help",
+    "pullRequest": "https://github.com/zsviczian/kplex-help/pull/4",
+    "state": "open",
+    "draft": true,
+    "remoteVerified": true,
+    "classificationFieldsUnchangedAcross": 140,
+    "settingsUnchangedFromNativeSnapshot": true,
+    "newScreenshotAssets": 11,
+    "screenshotEmbeds": 17,
+    "allEmbedsHaveRelatedRoles": true,
+    "finalAudit": {
+      "node": "22.22.2",
+      "pages": 140,
+      "yamlLinkImageUseCaseErrors": 0,
+      "semanticChildOverLimit": 0,
+      "encodingErrors": 0,
+      "includesImageEmbeds": true
+    },
+    "originalAssetsUnchanged": true,
+    "bundledPluginFilesUnchanged": true,
+    "workspaceAndHotkeysUnchanged": true
+  }
+}

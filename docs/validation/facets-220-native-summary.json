@@ -1,0 +1,490 @@
+{
+  "scope": "Windows trusted Electron/CDP in authorized disposable Small; no physical OS drag or OS clipboard claim",
+  "priorRuntime": "ced282594854ea548275a0941166fc7a642da42b",
+  "cogRuntime": "444dc1cfcfa56e34741624ff69b271e72999f654",
+  "reports": [
+    {
+      "sample": "features-10",
+      "name": "wuxing-220-features",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:01:59.241Z",
+      "completedAt": "2026-10-25T20:02:19.885Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "b810583c1c6d884d3aa21ba08f0a007add69f68a4a3e2c79da952d9faafb4160",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "e5aed01c15e30ca415ef1331b2f3c97a086e0fb5f3fd69f871e77bd06f463d1a"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "48cd2506670517ea6f85d3a690cc7ea9f63f090d92c8e387d13c4ac7a9772355",
+        "definitions": "45758a7a39544bb2aba1ce0a286d564eec0403947fcce3e616dc2d41a7220c37"
+      },
+      "cases": [
+        "requested-local-cache-proof",
+        "production-registry-five-phases-canonical-links",
+        "native-area-resize-water",
+        "native-area-resize-water",
+        "native-area-resize-unassigned",
+        "native-area-resize-unassigned",
+        "native-area-resize-conflicting",
+        "native-area-resize-conflicting",
+        "native-area-resize-unresolved",
+        "native-area-resize-unresolved",
+        "native-area-resize-zero-source-work",
+        "native-preset-ace",
+        "native-preset-para",
+        "native-preset-wuxing",
+        "native-preset-gtd",
+        "native-preset-eaccess",
+        "native-preset-state",
+        "all-preset-switches-zero-source-work",
+        "wood-metal-relative-labels-preserve-stored-phases-and-canonical-evidence",
+        "conflicting-unassigned-focus-no-assumed-relative-phase",
+        "native-property-preview-confirm-save-guarded-undo-preserves-body-and-source-relationships",
+        "trusted-native-property-area-drop-preserves-source-relationship-and-undo",
+        "native-shared-rules-editor-focus-invalid-save-guard-and-correction",
+        "native-wander-start-navigate-stop-classic",
+        "native-wander-start-navigate-stop-mindmap",
+        "native-wander-start-navigate-stop-wuxing",
+        "native-alt-click-explicit-center-classic",
+        "native-alt-click-explicit-center-mindmap",
+        "native-alt-click-explicit-center-wuxing",
+        "native-control-placeholder-creation-choice-retains-root-and-cancels-without-write"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "editor-11",
+      "name": "wuxing-220-editor",
+      "status": "passed",
+      "startedAt": "2026-10-25T19:19:30.095Z",
+      "completedAt": "2026-10-25T19:19:36.389Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "b810583c1c6d884d3aa21ba08f0a007add69f68a4a3e2c79da952d9faafb4160",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "e5aed01c15e30ca415ef1331b2f3c97a086e0fb5f3fd69f871e77bd06f463d1a"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "caa591481f3a1752657a6aa2d4cd4143b896879995f06cce5909f65a8f0b567a",
+        "definitions": "278b636134f3866c4e1ef7a614d5501036c6f776388595389903072355e5774c"
+      },
+      "cases": [
+        "requested-local-cache-proof",
+        "production-registry-five-phases-canonical-links",
+        "type-configuration-zero-source-work",
+        "native-settings-preset-manager-durable-multilingual-label",
+        "native-attention-editor-expanded-reclassified-resized-and-restored-at-phase-anchor",
+        "attention-native-editor-phase-reclassification-resize-compatible-switch",
+        "selection-and-phase-mapping-preserve-editor-and-owned-sidecar",
+        "windows-native-editor-clipboard-keys",
+        "explicit-attention-navigation-saves-content-and-retires-old-native-document",
+        "attention-editor-popout-main-remount-correct-document-and-session",
+        "native-editor-explicit-collapse-cleanup",
+        "native-clipboard-original-text-and-formats-restored"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "pairs-3",
+      "name": "wuxing-220-pairs",
+      "status": "passed",
+      "startedAt": "2026-10-25T19:18:03.437Z",
+      "completedAt": "2026-10-25T19:18:08.587Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "b810583c1c6d884d3aa21ba08f0a007add69f68a4a3e2c79da952d9faafb4160",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "e5aed01c15e30ca415ef1331b2f3c97a086e0fb5f3fd69f871e77bd06f463d1a"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "caa591481f3a1752657a6aa2d4cd4143b896879995f06cce5909f65a8f0b567a",
+        "definitions": "7e060d07b050482dabca6e21e275d0c42b0d7ab9f6c9d5341e13f179d75815ff"
+      },
+      "cases": [
+        "requested-local-cache-proof",
+        "production-registry-five-phases-canonical-links",
+        "sidecar-explicit-loaded-native-document-attachment",
+        "sidecar-explicit-loaded-native-document-attachment",
+        "main-popout-per-canvas-selection-zero-source-work",
+        "native-compass-wuxing-main-popout-independent-canvas-and-sidecar-state",
+        "opening-canvas-selector-owner-survives-window-focus-change",
+        "other-canvas-switch-preserves-native-editor",
+        "other-canvas-switch-preserves-native-editor",
+        "independent-owned-native-workspace-view-restoration",
+        "windows-native-view-select-keyboard"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "settings-1",
+      "name": "canvas-settings-218",
+      "status": "passed",
+      "startedAt": "2026-10-25T19:28:32.577Z",
+      "completedAt": "2026-10-25T19:28:38.682Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "b810583c1c6d884d3aa21ba08f0a007add69f68a4a3e2c79da952d9faafb4160",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "e5aed01c15e30ca415ef1331b2f3c97a086e0fb5f3fd69f871e77bd06f463d1a"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "8a301ba772628e2fa9e7eb1cc48ce176a871fe66e9c8b5118ceeba035aadacb1",
+        "definitions": "95e87881578a54ecfb2df6cfb5fcac2ef87fce3be720e811b1b97152c585e18f"
+      },
+      "cases": [
+        "production-registered-views",
+        "native-legacy-slider-save",
+        "native-tint-action-start",
+        "native-edit-click-delivery",
+        "native-tint-action-complete",
+        "main-shared-compass-native-controls-and-area-tint",
+        "main-test-contribution-to-effective-native-view",
+        "production-mindmap-native-settings-save",
+        "native-type-configuration-zero-work",
+        "native-contributed-save-failure-rolls-back-control",
+        "native-contributed-control-recovers-after-storage-failure",
+        "main-native-search-and-moved-control-focus",
+        "main-native-back-navigation",
+        "native-tint-action-start",
+        "native-edit-click-delivery",
+        "native-tint-action-complete",
+        "native-settings-popout-control-focus-and-tint",
+        "native-mounted-panel-and-unsaved-lens-draft-retained",
+        "native-same-scope-draft-switch-zero-work",
+        "native-incompatible-editor-transition-rejected",
+        "native-main-popout-independent-selection-focus-and-camera",
+        "native-select-key-delivery",
+        "native-owning-document-select-keyboard",
+        "native-main-popout-switch-keyboard-zero-work",
+        "native-owned-view-reload-independent-workspace-selection"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "interactions-2",
+      "name": "mindmap-219-interactions",
+      "status": "passed",
+      "startedAt": "2026-10-25T19:32:41.480Z",
+      "completedAt": "2026-10-25T19:32:58.095Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "b810583c1c6d884d3aa21ba08f0a007add69f68a4a3e2c79da952d9faafb4160",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "e5aed01c15e30ca415ef1331b2f3c97a086e0fb5f3fd69f871e77bd06f463d1a"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "0e40c47a98310993322b46220cbe88031064e4fe4c01a045b349cdcb570f66aa",
+        "definitions": "2b1739e523829702bec62b8d6c47ab0792c3da1ff01f747ebc3633d663324a53"
+      },
+      "cases": [
+        "trusted-parent-columns-and-height-scroll",
+        "production-mindmap-canonical-cross-links",
+        "trusted-f4-result-reroots-owning-map",
+        "trusted-bidirectional-compass-mindmap-center-drops",
+        "trusted-cross-view-parent-area-shared-composer",
+        "trusted-native-second-occurrence-additive-save",
+        "trusted-native-parent-child-relink-feedback-settles",
+        "trusted-native-occurrence-editor-text-drop",
+        "trusted-native-parent-child-relink-feedback-settles",
+        "trusted-native-parent-child-relink-feedback-settles"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "navigation-2",
+      "name": "mindmap-219-navigation",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:01:36.872Z",
+      "completedAt": "2026-10-25T20:01:43.949Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "b810583c1c6d884d3aa21ba08f0a007add69f68a4a3e2c79da952d9faafb4160",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "e5aed01c15e30ca415ef1331b2f3c97a086e0fb5f3fd69f871e77bd06f463d1a"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "1ba7c80ded5ecaad2ab2adfdde17eb824b9c76d751ef4b1014ebc3128ef2781a",
+        "definitions": "e8fa4f129e09d8aceb928a9c3ca9a0594e0def139c0fd72c4cd21b1d12f0f7de"
+      },
+      "cases": [
+        "native-SVG-bottom-child-outward-peer-and-top-parent-origins",
+        "trusted-primary-toggles-child-and-peer-context-without-editor-or-reroot",
+        "native-selector-current-node-entry-and-pins-history-reroot",
+        "trusted-bottom-left-density-rails-share-durable-type-settings",
+        "native-cycle-reference-reveals-earlier-occurrence-and-notice"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "features-14",
+      "name": "wuxing-220-features",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:26:32.317Z",
+      "completedAt": "2026-10-25T20:26:54.459Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "558588b7c36c050b279f9e710b4bd753d1ff612c0b84d453cece13a0caea2401",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "2a6ae92ec96f864ea701f62eea6232da247d80d5ba218cf38ac8c20a0f8fad55"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "48cd2506670517ea6f85d3a690cc7ea9f63f090d92c8e387d13c4ac7a9772355",
+        "definitions": "fb895719c32f0ed1c654eb101bd5d5bb4c406d719ca0a3f337eaebd7539e9855"
+      },
+      "cases": [
+        "requested-local-cache-proof",
+        "production-registry-five-phases-canonical-links",
+        "native-area-resize-water",
+        "native-area-resize-water",
+        "native-area-resize-unassigned",
+        "native-area-resize-unassigned",
+        "native-area-resize-conflicting",
+        "native-area-resize-conflicting",
+        "native-area-resize-unresolved",
+        "native-area-resize-unresolved",
+        "native-area-resize-zero-source-work",
+        "native-view-settings-cog-zero-source-work-classic",
+        "native-view-settings-cog-classic",
+        "native-view-settings-cog-zero-source-work-mindmap",
+        "native-view-settings-cog-mindmap",
+        "native-view-settings-cog-zero-source-work-wuxing",
+        "native-view-settings-cog-wuxing",
+        "native-preset-settings-cog-zero-source-work-para",
+        "native-preset-settings-cog-para",
+        "native-preset-settings-cog-zero-source-work-state",
+        "native-preset-settings-cog-state",
+        "native-preset-settings-cog-zero-source-work-para",
+        "native-preset-settings-cog-para",
+        "native-preset-ace",
+        "native-preset-para",
+        "native-preset-wuxing",
+        "native-preset-gtd",
+        "native-preset-eaccess",
+        "native-preset-state",
+        "all-preset-switches-zero-source-work",
+        "wood-metal-relative-labels-preserve-stored-phases-and-canonical-evidence",
+        "conflicting-unassigned-focus-no-assumed-relative-phase",
+        "native-property-preview-confirm-save-guarded-undo-preserves-body-and-source-relationships",
+        "trusted-native-property-area-drop-preserves-source-relationship-and-undo",
+        "native-shared-rules-editor-focus-invalid-save-guard-and-correction",
+        "native-wander-start-navigate-stop-classic",
+        "native-wander-start-navigate-stop-mindmap",
+        "native-wander-start-navigate-stop-wuxing",
+        "native-alt-click-explicit-center-classic",
+        "native-alt-click-explicit-center-mindmap",
+        "native-alt-click-explicit-center-wuxing",
+        "native-control-placeholder-creation-choice-retains-root-and-cancels-without-write"
+      ],
+      "cleanup": "passed"
+    }
+  ],
+  "finalRuntime": "444dc1cfcfa56e34741624ff69b271e72999f654; following checkpoint changes documentation only",
+  "refreshedReports": [
+    {
+      "sample": "pairs",
+      "name": "wuxing-220-pairs",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:29:41.215Z",
+      "completedAt": "2026-10-25T20:29:46.013Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "host": {
+        "node": "v24.18.1",
+        "electron": "43.3.0",
+        "chrome": "150.0.7871.212",
+        "hidden": false
+      },
+      "artifacts": {
+        "main.js": "558588b7c36c050b279f9e710b4bd753d1ff612c0b84d453cece13a0caea2401",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "2a6ae92ec96f864ea701f62eea6232da247d80d5ba218cf38ac8c20a0f8fad55"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "48cd2506670517ea6f85d3a690cc7ea9f63f090d92c8e387d13c4ac7a9772355",
+        "definitions": "d834f51bdaf9dd32d31a62d369efcc694ef99ab47168039e22f9af9cdfe26995"
+      },
+      "cases": [
+        "requested-local-cache-proof",
+        "production-registry-five-phases-canonical-links",
+        "sidecar-explicit-loaded-native-document-attachment",
+        "sidecar-explicit-loaded-native-document-attachment",
+        "main-popout-per-canvas-selection-zero-source-work",
+        "native-compass-wuxing-main-popout-independent-canvas-and-sidecar-state",
+        "opening-canvas-selector-owner-survives-window-focus-change",
+        "other-canvas-switch-preserves-native-editor",
+        "other-canvas-switch-preserves-native-editor",
+        "independent-owned-native-workspace-view-restoration",
+        "windows-native-view-select-keyboard"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "settings",
+      "name": "canvas-settings-218",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:29:46.142Z",
+      "completedAt": "2026-10-25T20:29:52.036Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "558588b7c36c050b279f9e710b4bd753d1ff612c0b84d453cece13a0caea2401",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "2a6ae92ec96f864ea701f62eea6232da247d80d5ba218cf38ac8c20a0f8fad55"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "8a301ba772628e2fa9e7eb1cc48ce176a871fe66e9c8b5118ceeba035aadacb1",
+        "definitions": "95e87881578a54ecfb2df6cfb5fcac2ef87fce3be720e811b1b97152c585e18f"
+      },
+      "cases": [
+        "production-registered-views",
+        "native-legacy-slider-save",
+        "native-tint-action-start",
+        "native-edit-click-delivery",
+        "native-tint-action-complete",
+        "main-shared-compass-native-controls-and-area-tint",
+        "main-test-contribution-to-effective-native-view",
+        "production-mindmap-native-settings-save",
+        "native-type-configuration-zero-work",
+        "native-contributed-save-failure-rolls-back-control",
+        "native-contributed-control-recovers-after-storage-failure",
+        "main-native-search-and-moved-control-focus",
+        "main-native-back-navigation",
+        "native-tint-action-start",
+        "native-edit-click-delivery",
+        "native-tint-action-complete",
+        "native-settings-popout-control-focus-and-tint",
+        "native-mounted-panel-and-unsaved-lens-draft-retained",
+        "native-same-scope-draft-switch-zero-work",
+        "native-incompatible-editor-transition-rejected",
+        "native-main-popout-independent-selection-focus-and-camera",
+        "native-select-key-delivery",
+        "native-owning-document-select-keyboard",
+        "native-main-popout-switch-keyboard-zero-work",
+        "native-owned-view-reload-independent-workspace-selection"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "interactions",
+      "name": "mindmap-219-interactions",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:29:52.100Z",
+      "completedAt": "2026-10-25T20:30:08.767Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "558588b7c36c050b279f9e710b4bd753d1ff612c0b84d453cece13a0caea2401",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "2a6ae92ec96f864ea701f62eea6232da247d80d5ba218cf38ac8c20a0f8fad55"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "1ba7c80ded5ecaad2ab2adfdde17eb824b9c76d751ef4b1014ebc3128ef2781a",
+        "definitions": "2b1739e523829702bec62b8d6c47ab0792c3da1ff01f747ebc3633d663324a53"
+      },
+      "cases": [
+        "trusted-parent-columns-and-height-scroll",
+        "production-mindmap-canonical-cross-links",
+        "trusted-f4-result-reroots-owning-map",
+        "trusted-bidirectional-compass-mindmap-center-drops",
+        "trusted-cross-view-parent-area-shared-composer",
+        "trusted-native-second-occurrence-additive-save",
+        "trusted-native-parent-child-relink-feedback-settles",
+        "trusted-native-occurrence-editor-text-drop",
+        "trusted-native-parent-child-relink-feedback-settles",
+        "trusted-native-parent-child-relink-feedback-settles"
+      ],
+      "cleanup": "passed"
+    },
+    {
+      "sample": "navigation",
+      "name": "mindmap-219-navigation",
+      "status": "passed",
+      "startedAt": "2026-10-25T20:30:08.829Z",
+      "completedAt": "2026-10-25T20:30:14.707Z",
+      "automationNode": "v22.22.2",
+      "obsidian": "1.14.5 (installer 1.14.0)",
+      "artifacts": {
+        "main.js": "558588b7c36c050b279f9e710b4bd753d1ff612c0b84d453cece13a0caea2401",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "2a6ae92ec96f864ea701f62eea6232da247d80d5ba218cf38ac8c20a0f8fad55"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "1ba7c80ded5ecaad2ab2adfdde17eb824b9c76d751ef4b1014ebc3128ef2781a",
+        "definitions": "e8fa4f129e09d8aceb928a9c3ca9a0594e0def139c0fd72c4cd21b1d12f0f7de"
+      },
+      "cases": [
+        "native-SVG-bottom-child-outward-peer-and-top-parent-origins",
+        "trusted-primary-toggles-child-and-peer-context-without-editor-or-reroot",
+        "native-selector-current-node-entry-and-pins-history-reroot",
+        "trusted-bottom-left-density-rails-share-durable-type-settings",
+        "native-cycle-reference-reveals-earlier-occurrence-and-notice"
+      ],
+      "cleanup": "passed"
+    }
+  ],
+  "editorRerun": {
+    "runtime": "444dc1cfcfa56e34741624ff69b271e72999f654",
+    "status": "stopped-at-safety-guard",
+    "reason": "Clipboard has rich/custom formats; left untouched",
+    "completedAt": "2026-10-25T20:29:02.308Z",
+    "completedCases": [
+      "requested-local-cache-proof",
+      "production-registry-five-phases-canonical-links",
+      "type-configuration-zero-source-work",
+      "native-settings-preset-manager-durable-multilingual-label",
+      "native-attention-editor-expanded-reclassified-resized-and-restored-at-phase-anchor",
+      "attention-native-editor-phase-reclassification-resize-compatible-switch",
+      "selection-and-phase-mapping-preserve-editor-and-owned-sidecar"
+    ],
+    "artifacts": {
+      "main.js": "558588b7c36c050b279f9e710b4bd753d1ff612c0b84d453cece13a0caea2401",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+      "styles.css": "2a6ae92ec96f864ea701f62eea6232da247d80d5ba218cf38ac8c20a0f8fad55"
+    },
+    "cleanup": "passed",
+    "priorFullPass": "ced2825, editor-11,12 cases; retained separately, not relabelled as final runtime"
+  }
+}

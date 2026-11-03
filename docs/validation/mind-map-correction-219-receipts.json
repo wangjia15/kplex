@@ -1,0 +1,1438 @@
+{
+  "schemaVersion": 1,
+  "status": "interim",
+  "preparedBy": "Zsolt's Codex Agent",
+  "productionPrivacy": "Production observation is summarized with generic identities in the companion report. No private note content, paths or screenshots are included.",
+  "nativeSamplesInOrder": [
+    {
+      "sample": "navigation-2",
+      "reportName": "mindmap-219-navigation.json",
+      "startedAt": "2026-10-25T05:15:24.560Z",
+      "completedAt": "2026-10-25T05:15:48.991Z",
+      "status": "failed",
+      "error": "Error: Error: Trusted primary click not delivered",
+      "phase": "root-context-and-navigation",
+      "cases": [
+        {
+          "id": "staging-native-theme-information-dismissed"
+        },
+        {
+          "id": "native-SVG-bottom-child-outward-peer-and-top-parent-origins"
+        },
+        {
+          "id": "trusted-primary-expands-child-and-peer-context-without-editor-or-reroot"
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "b2dc7f9384822d26bdd11791fd8fd9b5c0432b1c645bb544652dc350047617b0",
+        "definitions": "a1f3615afba6a8129157c47438898c513ad44d2d6e67ef2e192047c10f056a69"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "c4d8cab0e9fceb83b956af693ad9fde5147a88c77545b51e8427679f2398ba7f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "32626bfd53f212fcb7303aac26c2a82b036b668232daadc8a8a33328e693c64f",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "83130f08e4b9e681fd822f4d97314a8e10cb25c51147b4bd5c575c141f5bcb73"
+    },
+    {
+      "sample": "navigation-3",
+      "reportName": "mindmap-219-navigation.json",
+      "startedAt": "2026-10-25T05:16:09.482Z",
+      "completedAt": "2026-10-25T05:16:32.859Z",
+      "status": "failed",
+      "error": "Error: Error: Trusted primary click not delivered",
+      "phase": "trusted-fixture-pin",
+      "cases": [
+        {
+          "id": "native-SVG-bottom-child-outward-peer-and-top-parent-origins"
+        },
+        {
+          "id": "trusted-primary-expands-child-and-peer-context-without-editor-or-reroot"
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "ef2bc76270bb6a4ee42ee60005d39802f3bea4bc75f7163847c67c43fae97125",
+        "definitions": "a1f3615afba6a8129157c47438898c513ad44d2d6e67ef2e192047c10f056a69"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "baf688b7339d6def79ca702cb769d83a17e8af3909768fb864b3031a998e844c",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "467810ecdb9d0a5fc6a247e996c2cc422fb7ef9a80c31a8c3cce5e8f901f836c"
+    },
+    {
+      "sample": "navigation-4",
+      "reportName": "mindmap-219-navigation.json",
+      "startedAt": "2026-10-25T05:16:42.006Z",
+      "completedAt": "2026-10-25T05:16:48.175Z",
+      "status": "passed",
+      "error": null,
+      "phase": "complete",
+      "cases": [
+        {
+          "id": "native-SVG-bottom-child-outward-peer-and-top-parent-origins"
+        },
+        {
+          "id": "trusted-primary-expands-child-and-peer-context-without-editor-or-reroot"
+        },
+        {
+          "id": "native-selector-current-node-entry-and-pins-history-reroot"
+        },
+        {
+          "id": "trusted-bottom-left-density-rails-share-durable-type-settings"
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7910db8e44b425c34cccf51955ced56b935b1c3d1cbbd5555a187e3c8994d345",
+        "definitions": "a1f3615afba6a8129157c47438898c513ad44d2d6e67ef2e192047c10f056a69"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "663dfddf4837803fe1174f940598275f9e4f2cf05ca518f10540d489df1c584f",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "fdb2d4da4d0fa2808cc217bb30c66c8ae93dd47f18a751705fa088b08846ec8d"
+    },
+    {
+      "sample": "editor-1",
+      "reportName": "mindmap-219-editor.json",
+      "startedAt": "2026-10-25T05:17:09.272Z",
+      "completedAt": "2026-10-25T05:17:15.418Z",
+      "status": "passed",
+      "error": null,
+      "phase": "complete",
+      "cases": [
+        {
+          "id": "production-diamond-and-terminal-cycle-references"
+        },
+        {
+          "id": "find-selects-exact-occurrence-without-activation-or-editor"
+        },
+        {
+          "id": "trusted-explicit-B1-editor-retains-root-through-attention-C",
+          "capacity": 1
+        },
+        {
+          "id": "dirty-native-resize-type-reflow-focus-and-nonoverlap"
+        },
+        {
+          "id": "exact-filter-pin-branch-root-and-selector-save-guards"
+        },
+        {
+          "id": "dirty-popout-main-migration-and-durable-collapse"
+        },
+        {
+          "id": "production-root-fold-restoration",
+          "applicationRestart": false
+        },
+        {
+          "id": "trusted-explicit-root-from-outside-current-map"
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7910db8e44b425c34cccf51955ced56b935b1c3d1cbbd5555a187e3c8994d345",
+        "definitions": "e5be503cdf4cc87075e6346f7937686c62894e05292cfdf82a9b0a72792eddd9"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "663dfddf4837803fe1174f940598275f9e4f2cf05ca518f10540d489df1c584f",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "9d5756c5f852c31597fcf10c56c9d6b4d5cd3e79cd22d0d695b67a5449bc979c"
+    },
+    {
+      "sample": "sessions-1",
+      "reportName": "mindmap-219-sessions.json",
+      "startedAt": "2026-10-25T05:17:30.851Z",
+      "completedAt": "2026-10-25T05:17:52.138Z",
+      "status": "failed",
+      "error": "Error: Error: Fixture not ready",
+      "phase": "settle-fixture",
+      "cases": [],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7910db8e44b425c34cccf51955ced56b935b1c3d1cbbd5555a187e3c8994d345",
+        "definitions": "3602edc011ead4f1e0fe79edafc0ab0052bbdcedc71ea5e998538b83615f0a46"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "663dfddf4837803fe1174f940598275f9e4f2cf05ca518f10540d489df1c584f",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "2acf8c803579ba93099df519e3fbcb1b096788eeef3c291c3b68704f7fe9c1e9"
+    },
+    {
+      "sample": "sessions-fresh-1",
+      "reportName": "mindmap-219-sessions.json",
+      "startedAt": "2026-10-25T05:18:21.998Z",
+      "completedAt": "2026-10-25T05:18:44.254Z",
+      "status": "failed",
+      "error": "Error: Error: Staging information did not dismiss",
+      "phase": "fixture",
+      "cases": [],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "7910db8e44b425c34cccf51955ced56b935b1c3d1cbbd5555a187e3c8994d345",
+        "definitions": "3602edc011ead4f1e0fe79edafc0ab0052bbdcedc71ea5e998538b83615f0a46"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "663dfddf4837803fe1174f940598275f9e4f2cf05ca518f10540d489df1c584f",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "9c61dbff6d3ac19feecdb26503ef3b9bc014efbdad7b233aee7a5209420b1f23"
+    },
+    {
+      "sample": "sessions-fresh-2",
+      "reportName": "mindmap-219-sessions.json",
+      "startedAt": "2026-10-25T05:19:55.361Z",
+      "completedAt": "2026-10-25T05:20:17.585Z",
+      "status": "failed",
+      "error": "Error: Error: Staging information owner did not retire",
+      "phase": "fixture",
+      "cases": [],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "0643f656cc3b92b652409fee6538d6f9d81c377d192833d2a5e34214d1aee87a",
+        "definitions": "3602edc011ead4f1e0fe79edafc0ab0052bbdcedc71ea5e998538b83615f0a46"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "353bcfd3dd8a6e7cf5c99237f3948663df69b1432b44c09e57d267df342ba806",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "44fc4039865b8f241ef7d235ef513672352b1f24fe4f0bf1ea9fdacd01c5ff19",
+        "scripts/testing/obsidian/mindMap.mjs": "231f17dc443916d0177f723c7f5b078d08ab37d2310ffa606e66932f0bff08e6",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "379c09610fcb30ebd0bf124c58131be254e472e3d8dff1693daf256b0180f71e"
+    },
+    {
+      "sample": "sessions-fresh-3",
+      "reportName": "mindmap-219-sessions.json",
+      "startedAt": "2026-10-25T05:20:59.954Z",
+      "completedAt": "2026-10-25T05:21:22.224Z",
+      "status": "failed",
+      "error": "Error: Error: Staging information owner did not retire",
+      "phase": "fixture",
+      "cases": [],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "0643f656cc3b92b652409fee6538d6f9d81c377d192833d2a5e34214d1aee87a",
+        "definitions": "3602edc011ead4f1e0fe79edafc0ab0052bbdcedc71ea5e998538b83615f0a46"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "5fc5192a66f8b79869e080e7898b6ced579e4596c559eeb7283e34165b3152cd",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "76af8c8447a297a70dc2768b9871a5ca40d214fa12b547102568744ba11d10b6",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "0caf0ba6f5104713045455810dec76957653b7db0e238f78a7f50835842649f9",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "1d90d696692b34bcb910c73509340f97941aac48f3fb9b021411c41fa8d152d3",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "986095da052c2435525bca16b2a8400fb906db5aa609f752f3594df5d5b04279",
+        "scripts/testing/obsidian/mindMap.mjs": "8398eb8787f0ac1527c21facb7e6e979b74ad48dc186ed97de26f3813d5885ae",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "e60eea3ce9750266d22f2d390e11bd166ae5cb34e42c3409976b3bb4d8cfed99"
+    },
+    {
+      "sample": "sessions-notice-close-1",
+      "reportName": "mindmap-219-sessions.json",
+      "startedAt": "2026-10-25T05:21:37.963Z",
+      "completedAt": "2026-10-25T05:21:41.222Z",
+      "status": "passed",
+      "error": null,
+      "phase": "complete",
+      "cases": [
+        {
+          "id": "staging-native-theme-information-dismissed",
+          "publicModalClose": true,
+          "ownDocument": false,
+          "visible": false
+        },
+        {
+          "id": "production-Compass-Mindmap-independent-main-popout-panels-roots-and-Sidecar",
+          "entryRoot": "own-current-note"
+        },
+        {
+          "id": "production-independent-native-view-restoration",
+          "applicationRestart": false
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "e031c3a503ae43b531b2b567bbdc23d0832dfb3b1a5d342fc5720f5e759c9424",
+        "definitions": "3602edc011ead4f1e0fe79edafc0ab0052bbdcedc71ea5e998538b83615f0a46"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "5fc5192a66f8b79869e080e7898b6ced579e4596c559eeb7283e34165b3152cd",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "76af8c8447a297a70dc2768b9871a5ca40d214fa12b547102568744ba11d10b6",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "0caf0ba6f5104713045455810dec76957653b7db0e238f78a7f50835842649f9",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "8575943deeb0b5b256995cf0e4c2b63fa18050226688640d5c8fc30182f8cc9f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "1d90d696692b34bcb910c73509340f97941aac48f3fb9b021411c41fa8d152d3",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "986095da052c2435525bca16b2a8400fb906db5aa609f752f3594df5d5b04279",
+        "scripts/testing/obsidian/mindMap.mjs": "85aa54cafccb7bcd086deb92c10cef1ecae5b168dfee85b4c0f696eadc0e2c99",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "200830e9236327bf107ed2bc546ee7e89a6416aa553d60084c2a149a216c7990"
+    },
+    {
+      "sample": "settings-1",
+      "reportName": "canvas-settings-218.json",
+      "startedAt": "2026-10-25T05:22:05.501Z",
+      "completedAt": "2026-10-25T05:22:10.588Z",
+      "status": "failed",
+      "error": "Error: Error: Native range fixture requests one bounded endpoint",
+      "phase": "native-settings",
+      "cases": [
+        {
+          "id": "production-compass-mindmap-only"
+        },
+        {
+          "id": "native-legacy-slider-save",
+          "pendingAtDurableReceipt": 0
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "main-shared-compass-native-controls-and-area-tint",
+          "parentMaxHeight": 800
+        },
+        {
+          "id": "main-test-contribution-to-effective-native-view",
+          "beforeLeft": "-236px",
+          "afterLeft": "-186px",
+          "rootRetained": true,
+          "sessionRetained": true,
+          "focusRetained": true
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "b0a64995f22314351a25ab9c7df955e288be6f364e847de8fbe0193419b02ed6",
+        "definitions": "a6b13ae339acf7f9e1602a84ed720139bd88f6846e2aa4e738125f7a4d1d368c"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "ecf3b739481e25ea7adcca08378c5b864ac691a557a9f28309950874d2089f59"
+      },
+      "privateReceiptSha256": "d4117cd5106273caf057d1b2fd02131d859c4d2339e851d2bdb7b30841384d84"
+    },
+    {
+      "sample": "settings-2",
+      "reportName": "canvas-settings-218.json",
+      "startedAt": "2026-10-25T05:22:38.055Z",
+      "completedAt": "2026-10-25T05:23:45.696Z",
+      "status": "failed",
+      "error": "Error: Error: Trusted select keyboard did not change the owning view",
+      "phase": "await-native-select-os-keys",
+      "cases": [
+        {
+          "id": "production-compass-mindmap-only"
+        },
+        {
+          "id": "native-legacy-slider-save",
+          "pendingAtDurableReceipt": 0
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "main-shared-compass-native-controls-and-area-tint",
+          "parentMaxHeight": 800
+        },
+        {
+          "id": "main-test-contribution-to-effective-native-view",
+          "beforeLeft": "-236px",
+          "afterLeft": "-186px",
+          "rootRetained": true,
+          "sessionRetained": true,
+          "focusRetained": true
+        },
+        {
+          "id": "production-mindmap-native-settings-save",
+          "horizontalSpacing": 240
+        },
+        {
+          "id": "native-type-configuration-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "semantic": 0,
+            "builds": 0,
+            "acquisitions": 0,
+            "saves": 0
+          }
+        },
+        {
+          "id": "native-contributed-save-failure-rolls-back-control",
+          "rejectedSaves": 1
+        },
+        {
+          "id": "native-contributed-control-recovers-after-storage-failure"
+        },
+        {
+          "id": "main-native-search-and-moved-control-focus"
+        },
+        {
+          "id": "main-native-back-navigation"
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "native-settings-popout-control-focus-and-tint",
+          "siblingRelativeSize": 85
+        },
+        {
+          "id": "native-mounted-panel-and-unsaved-lens-draft-retained"
+        },
+        {
+          "id": "native-same-scope-draft-switch-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0,
+            "settings": 0
+          }
+        },
+        {
+          "id": "native-incompatible-editor-transition-rejected"
+        },
+        {
+          "id": "native-main-popout-independent-selection-focus-and-camera"
+        },
+        {
+          "id": "native-select-key-delivery",
+          "transport": "OS_CUA",
+          "keys": [],
+          "changes": []
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "9b794e07936444eda653075c971cc75315ff69ee07c389ec7a087ed5fbeb3c09",
+        "definitions": "a6b13ae339acf7f9e1602a84ed720139bd88f6846e2aa4e738125f7a4d1d368c"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "ecf3b739481e25ea7adcca08378c5b864ac691a557a9f28309950874d2089f59"
+      },
+      "privateReceiptSha256": "51e06df98d4a93518b76a198d69621af7da5c9ce595e6e902e0ac8b0b4caea74"
+    },
+    {
+      "sample": "settings-3",
+      "reportName": "canvas-settings-218.json",
+      "startedAt": "2026-10-25T05:24:03.827Z",
+      "completedAt": "2026-10-25T05:24:24.126Z",
+      "status": "passed",
+      "error": null,
+      "phase": "native-main-complete",
+      "cases": [
+        {
+          "id": "production-compass-mindmap-only"
+        },
+        {
+          "id": "native-legacy-slider-save",
+          "pendingAtDurableReceipt": 0
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "main-shared-compass-native-controls-and-area-tint",
+          "parentMaxHeight": 800
+        },
+        {
+          "id": "main-test-contribution-to-effective-native-view",
+          "beforeLeft": "-236px",
+          "afterLeft": "-186px",
+          "rootRetained": true,
+          "sessionRetained": true,
+          "focusRetained": true
+        },
+        {
+          "id": "production-mindmap-native-settings-save",
+          "horizontalSpacing": 240
+        },
+        {
+          "id": "native-type-configuration-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "semantic": 0,
+            "builds": 0,
+            "acquisitions": 0,
+            "saves": 0
+          }
+        },
+        {
+          "id": "native-contributed-save-failure-rolls-back-control",
+          "rejectedSaves": 1
+        },
+        {
+          "id": "native-contributed-control-recovers-after-storage-failure"
+        },
+        {
+          "id": "main-native-search-and-moved-control-focus"
+        },
+        {
+          "id": "main-native-back-navigation"
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "native-settings-popout-control-focus-and-tint",
+          "siblingRelativeSize": 85
+        },
+        {
+          "id": "native-mounted-panel-and-unsaved-lens-draft-retained"
+        },
+        {
+          "id": "native-same-scope-draft-switch-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0,
+            "settings": 0
+          }
+        },
+        {
+          "id": "native-incompatible-editor-transition-rejected"
+        },
+        {
+          "id": "native-main-popout-independent-selection-focus-and-camera"
+        },
+        {
+          "id": "native-select-key-delivery",
+          "transport": "OS_CUA",
+          "keys": [
+            {
+              "key": " ",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            }
+          ],
+          "changes": [
+            {
+              "trusted": true,
+              "value": "test.situated"
+            }
+          ]
+        },
+        {
+          "id": "native-owning-document-select-keyboard",
+          "keys": [
+            {
+              "key": " ",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            }
+          ]
+        },
+        {
+          "id": "native-main-popout-switch-keyboard-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0,
+            "settings": 0
+          }
+        },
+        {
+          "id": "native-owned-view-reload-independent-workspace-selection",
+          "applicationRestart": false,
+          "expected": [
+            "test.second",
+            "test.situated"
+          ]
+        }
+      ],
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "d06091c0f65f9f11bdfe5cee697b351dbdd3d0d2ff0d4b7f05970cff8373b035",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "9b794e07936444eda653075c971cc75315ff69ee07c389ec7a087ed5fbeb3c09",
+        "definitions": "a6b13ae339acf7f9e1602a84ed720139bd88f6846e2aa4e738125f7a4d1d368c"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "ecf3b739481e25ea7adcca08378c5b864ac691a557a9f28309950874d2089f59"
+      },
+      "privateReceiptSha256": "66ff51bf1f4cbaf8a346573df0a749921ba9d4cc63e5561a0e2beedb760557f2"
+    },
+    {
+      "sample": "toggle-navigation-1",
+      "reportName": "mindmap-219-navigation.json",
+      "startedAt": "2026-10-25T05:43:16.299Z",
+      "completedAt": "2026-10-25T05:43:21.516Z",
+      "status": "passed",
+      "error": null,
+      "phase": "trusted-fixture-history",
+      "cases": [
+        {
+          "id": "native-SVG-bottom-child-outward-peer-and-top-parent-origins"
+        },
+        {
+          "id": "trusted-primary-toggles-child-and-peer-context-without-editor-or-reroot"
+        },
+        {
+          "id": "native-selector-current-node-entry-and-pins-history-reroot"
+        },
+        {
+          "id": "trusted-bottom-left-density-rails-share-durable-type-settings"
+        }
+      ],
+      "diagnostic": null,
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "fb4c661cd221abf68976828eb90aa693786e420178306fba623c8afe9314d7f8",
+        "definitions": "45703f7dc25863073cb57e4ecd0303e6ff8d627e985836ce161d8c5dfaccdd64"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "5fc5192a66f8b79869e080e7898b6ced579e4596c559eeb7283e34165b3152cd",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "76af8c8447a297a70dc2768b9871a5ca40d214fa12b547102568744ba11d10b6",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "c36457e7ad8d38bbe8e339743c09e384f8bce4700808ad6252aabfdeac129540",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "b4056230523964f56fff518d82eef53c887324f94107425a41cdc8ca6c96b78f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "1d90d696692b34bcb910c73509340f97941aac48f3fb9b021411c41fa8d152d3",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "7fecd3169ff34ce1e4e08998f14fc7e326470045142b7430b7df3ea6df92a4ba",
+        "scripts/testing/obsidian/mindMap.mjs": "676b139202bd860f54defefda90753886902884918f1d70796697bb0142954eb",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "c811d4bd213f050df758526805c8440944289c404a505a416637d014c667fbce"
+    },
+    {
+      "sample": "toggle-editor-1",
+      "reportName": "mindmap-219-editor.json",
+      "startedAt": "2026-10-25T05:43:59.075Z",
+      "completedAt": "2026-10-25T05:44:21.350Z",
+      "status": "failed",
+      "error": "Error: Error: Fixture not ready",
+      "phase": "settle-fixture",
+      "cases": [],
+      "diagnostic": {
+        "preparation": {
+          "policyRevision": 1,
+          "requested": 9,
+          "prepared": 1,
+          "published": 1,
+          "cancelled": 0,
+          "pending": 8,
+          "dependencyVisits": 144,
+          "fullBuilds": 0,
+          "lastReason": "metadata-pending"
+        },
+        "pending": true,
+        "active": false,
+        "hosts": 0,
+        "files": 8,
+        "views": [],
+        "modals": []
+      },
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "fb4c661cd221abf68976828eb90aa693786e420178306fba623c8afe9314d7f8",
+        "definitions": "3d474a64a8ce779d96bee99a338398b4e374075eb2549f88dd7a53704e81f4bf"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "5fc5192a66f8b79869e080e7898b6ced579e4596c559eeb7283e34165b3152cd",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "76af8c8447a297a70dc2768b9871a5ca40d214fa12b547102568744ba11d10b6",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "c36457e7ad8d38bbe8e339743c09e384f8bce4700808ad6252aabfdeac129540",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "b4056230523964f56fff518d82eef53c887324f94107425a41cdc8ca6c96b78f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "1d90d696692b34bcb910c73509340f97941aac48f3fb9b021411c41fa8d152d3",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "7fecd3169ff34ce1e4e08998f14fc7e326470045142b7430b7df3ea6df92a4ba",
+        "scripts/testing/obsidian/mindMap.mjs": "676b139202bd860f54defefda90753886902884918f1d70796697bb0142954eb",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "49702ac06b6057c404a41da2ee98bb637be517c0a19575dc1457f7073bac50ce"
+    },
+    {
+      "sample": "toggle-editor-readiness-1",
+      "reportName": "mindmap-219-editor.json",
+      "startedAt": "2026-10-25T05:45:18.461Z",
+      "completedAt": "2026-10-25T05:45:22.658Z",
+      "status": "passed",
+      "error": null,
+      "phase": "complete",
+      "cases": [
+        {
+          "id": "production-diamond-and-terminal-cycle-references"
+        },
+        {
+          "id": "find-selects-exact-occurrence-without-activation-or-editor"
+        },
+        {
+          "id": "trusted-explicit-B1-editor-retains-root-through-attention-C",
+          "capacity": 1
+        },
+        {
+          "id": "dirty-native-resize-type-reflow-focus-and-nonoverlap"
+        },
+        {
+          "id": "exact-filter-pin-branch-root-and-selector-save-guards"
+        },
+        {
+          "id": "dirty-popout-main-migration-and-durable-collapse"
+        },
+        {
+          "id": "production-root-fold-restoration",
+          "applicationRestart": false
+        },
+        {
+          "id": "trusted-explicit-root-from-outside-current-map"
+        }
+      ],
+      "diagnostic": null,
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "96d938e0e12ba6d50c93de9fe64ad878c2cbd1ab5149cd615c04e5d507e868e3",
+        "definitions": "3d474a64a8ce779d96bee99a338398b4e374075eb2549f88dd7a53704e81f4bf"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "5fc5192a66f8b79869e080e7898b6ced579e4596c559eeb7283e34165b3152cd",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "76af8c8447a297a70dc2768b9871a5ca40d214fa12b547102568744ba11d10b6",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "c36457e7ad8d38bbe8e339743c09e384f8bce4700808ad6252aabfdeac129540",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "b4056230523964f56fff518d82eef53c887324f94107425a41cdc8ca6c96b78f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "b656ed786cc3f04bbd320daa956d62af98ff8849bc2f39988f5c194a193d1852",
+        "src/core/plex/views/mindmap/projection.ts": "1d90d696692b34bcb910c73509340f97941aac48f3fb9b021411c41fa8d152d3",
+        "src/core/plex/views/mindmap/layout.ts": "bab9eb2e74cfb223c745a6c58133d4ef51b9bb3a4615abf188e19d1eaa5071c3",
+        "src/ui/plexViews/mindmap/settings.ts": "7fecd3169ff34ce1e4e08998f14fc7e326470045142b7430b7df3ea6df92a4ba",
+        "scripts/testing/obsidian/mindMap.mjs": "efe996dadeaee2c80567d49d0e6d832c7e4a9f422560ca71c3c8d8ecf59346e4",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "privateReceiptSha256": "108e7d2a0adafe8146a8516df1211f73f6c054461140e7a4f36476b9e8a088c4"
+    },
+    {
+      "sample": "spacious-settings-1",
+      "reportName": "canvas-settings-218.json",
+      "startedAt": "2026-10-25T05:45:53.047Z",
+      "completedAt": "2026-10-25T05:45:56.129Z",
+      "status": "failed",
+      "error": "Error: Error: Native page absent: settings.ui.plex.behavior",
+      "phase": "native-settings",
+      "cases": [
+        {
+          "id": "production-compass-mindmap-only"
+        }
+      ],
+      "diagnostic": null,
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "fadfa1a357d48b5e43ff42ea9aa6ed7f9c8d2fdf75cfb61cf48cafc8f6f3b249",
+        "definitions": "a6b13ae339acf7f9e1602a84ed720139bd88f6846e2aa4e738125f7a4d1d368c"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "ecf3b739481e25ea7adcca08378c5b864ac691a557a9f28309950874d2089f59"
+      },
+      "privateReceiptSha256": "664ed68ed0b679b54e1ed5f6f1bc353a896c34727957387c03668e6196960a72"
+    },
+    {
+      "sample": "spacious-settings-readiness-1",
+      "reportName": "canvas-settings-218.json",
+      "startedAt": "2026-10-25T05:47:06.812Z",
+      "completedAt": "2026-10-25T05:47:09.905Z",
+      "status": "failed",
+      "error": "Error: TypeError: Cannot read properties of null (reading 'getComputedStyle')",
+      "phase": "native-settings",
+      "cases": [
+        {
+          "id": "production-compass-mindmap-only"
+        }
+      ],
+      "diagnostic": null,
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "9046428916c9be470f7c5e1578f051779809c7b463a783c508ea1fff35e53e77",
+        "definitions": "a6b13ae339acf7f9e1602a84ed720139bd88f6846e2aa4e738125f7a4d1d368c"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "ecf3b739481e25ea7adcca08378c5b864ac691a557a9f28309950874d2089f59"
+      },
+      "privateReceiptSha256": "c397d34fc5c54f67b5e1757cfa18e161cb1549b98f0d490605815f01f1a2c0b9"
+    },
+    {
+      "sample": "spacious-settings-fresh-document-1",
+      "reportName": "canvas-settings-218.json",
+      "startedAt": "2026-10-25T05:48:21.060Z",
+      "completedAt": "2026-10-25T05:49:03.566Z",
+      "status": "passed",
+      "error": null,
+      "phase": "native-select-keys-delivered",
+      "cases": [
+        {
+          "id": "production-compass-mindmap-only"
+        },
+        {
+          "id": "native-legacy-slider-save",
+          "pendingAtDurableReceipt": 0
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "main-shared-compass-native-controls-and-area-tint",
+          "parentMaxHeight": 800
+        },
+        {
+          "id": "main-test-contribution-to-effective-native-view",
+          "beforeLeft": "-236px",
+          "afterLeft": "-186px",
+          "rootRetained": true,
+          "sessionRetained": true,
+          "focusRetained": true
+        },
+        {
+          "id": "production-mindmap-native-settings-save",
+          "horizontalSpacing": 240
+        },
+        {
+          "id": "native-type-configuration-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "semantic": 0,
+            "builds": 0,
+            "acquisitions": 0,
+            "saves": 0
+          }
+        },
+        {
+          "id": "native-contributed-save-failure-rolls-back-control",
+          "rejectedSaves": 1
+        },
+        {
+          "id": "native-contributed-control-recovers-after-storage-failure"
+        },
+        {
+          "id": "main-native-search-and-moved-control-focus"
+        },
+        {
+          "id": "main-native-back-navigation"
+        },
+        {
+          "id": "native-tint-action-start",
+          "pageConnected": true,
+          "scopeConnected": true
+        },
+        {
+          "id": "native-edit-click-delivery",
+          "trusted": false
+        },
+        {
+          "id": "native-tint-action-complete",
+          "ownerCurrent": true,
+          "generationCurrent": true,
+          "pageConnected": true,
+          "scopeConnected": true,
+          "sameDocument": true,
+          "dialogs": 1
+        },
+        {
+          "id": "native-settings-popout-control-focus-and-tint",
+          "siblingRelativeSize": 85
+        },
+        {
+          "id": "native-mounted-panel-and-unsaved-lens-draft-retained"
+        },
+        {
+          "id": "native-same-scope-draft-switch-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0,
+            "settings": 0
+          }
+        },
+        {
+          "id": "native-incompatible-editor-transition-rejected"
+        },
+        {
+          "id": "native-main-popout-independent-selection-focus-and-camera"
+        },
+        {
+          "id": "native-select-key-delivery",
+          "transport": "OS_CUA",
+          "keys": [
+            {
+              "key": " ",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            }
+          ],
+          "changes": [
+            {
+              "trusted": true,
+              "value": "test.situated"
+            }
+          ]
+        },
+        {
+          "id": "native-owning-document-select-keyboard",
+          "keys": [
+            {
+              "key": " ",
+              "trusted": true,
+              "targetSelect": true,
+              "target": "SELECT"
+            }
+          ]
+        },
+        {
+          "id": "native-main-popout-switch-keyboard-zero-work",
+          "work": {
+            "reads": 0,
+            "parses": 0,
+            "acquisitions": 0,
+            "rebuilds": 0,
+            "settings": 0
+          }
+        },
+        {
+          "id": "native-owned-view-reload-independent-workspace-selection",
+          "applicationRestart": false,
+          "expected": [
+            "test.second",
+            "test.situated"
+          ]
+        }
+      ],
+      "diagnostic": null,
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "5de3998f51e84fe9b3dbbd302848dccf235813bb92caed2d97efde758776de1b",
+        "definitions": "a6b13ae339acf7f9e1602a84ed720139bd88f6846e2aa4e738125f7a4d1d368c"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/settings.ts": "2fc40b7de98be98af59469d3f5487a2e8265041cc9380c65200aee2960e5c650",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/core/plex/views/configuration.ts": "43e61aa3623f1dda8ff973868dbe3889d22e64f0ed8c98086b51af66ec53a380",
+        "src/adapters/obsidian/settingsReconciliation.ts": "61f452b75f7f2ec1b93f8a29440d6ee030be689e66b2cafb99343ddec4bfbfe7",
+        "scripts/testing/obsidian/canvasSelectorProbe.mjs": "ecf3b739481e25ea7adcca08378c5b864ac691a557a9f28309950874d2089f59"
+      },
+      "privateReceiptSha256": "c921385f264d26a3fac8541cf52e157fc346bd72f8fe241922e0542253f385c3"
+    },
+    {
+      "sample": "toggle-m0-compatibility-1",
+      "reportName": "occurrence-editors-219.json",
+      "startedAt": "2026-10-25T05:49:24.417Z",
+      "completedAt": "2026-10-25T05:49:32.517Z",
+      "status": "passed",
+      "error": null,
+      "phase": "complete",
+      "cases": [
+        {
+          "id": "R-A-B1-background-native-host",
+          "rootRetained": true,
+          "attentionRetained": true,
+          "sidecarRetained": true,
+          "focusRetained": true
+        },
+        {
+          "id": "attention-C-retains-R-and-native-B1",
+          "capacityReason": "actions.editor-capacity"
+        },
+        {
+          "id": "dirty-resize-reflow-scroll-clip-retains-native-state",
+          "clip": "inset(33.1617px 0px 0px)",
+          "capacity": 1
+        },
+        {
+          "id": "exact-filter-pin-branch-removal-and-selector-guards"
+        },
+        {
+          "id": "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery"
+        },
+        {
+          "id": "native-save-failure-retention-and-explicit-durable-collapse"
+        },
+        {
+          "id": "bounded-editor-intent-restores-after-native-view-recreation",
+          "applicationRestart": false
+        },
+        {
+          "id": "dirty-popout-main-native-migration-and-durable-close"
+        },
+        {
+          "id": "external-rename-flushes-bound-document-without-old-path-resurrection"
+        },
+        {
+          "id": "external-deletion-does-not-resurrect-or-retarget-recreated-document"
+        },
+        {
+          "id": "unchanged-off-centre-attention-definition-and-Compass-native-compatibility"
+        },
+        {
+          "id": "native-teardown-persists-content-and-releases-editor-owners"
+        }
+      ],
+      "diagnostic": null,
+      "cleanup": "passed",
+      "cleanupError": null,
+      "artifacts": {
+        "main.js": "85f16cf5a1c3dfad9319bfebebf73fc7d06f51488d7a7ebe2a892a964de48d84",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "6d24b8e4ac0a6432872354666e05ca882ab4729c6b29c12530b104afabfe354f",
+        "definitions": "f846e8c3ea7bc73228523f5df055de23b0d7500e5ea44df55b1ba05678c08250"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "2c9f09ea059c66d8fbeac9ae4f13c469932cbd84a16865ff58054ac51f824ec0",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/PlexGraph.tsx": "b4056230523964f56fff518d82eef53c887324f94107425a41cdc8ca6c96b78f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "36edec28050d102501db9882a2f2283b8f66712358b639471ab97522e71104cf",
+        "src/ui/plexViews/occurrenceEditors.ts": "b3464ff254ab8bad6b776d25965fcb49439d7acc69502e15f14febc6033ae363",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "331d3a843b180ff6ef1a8085ea2c4497fd66fe4b9982cb987108bc5d963ccaa8"
+      },
+      "privateReceiptSha256": "7dafaccbafb676e6b102195b31b6e2442383e9ca25e7431c9776ac34042a71c4"
+    }
+  ],
+  "pending": [
+    "full verification",
+    "final artifact/native attribution",
+    "production final visual observation",
+    "outer resource restoration",
+    "exact-head CI"
+  ],
+  "fullVerification": {
+    "command": "npm run verify:obsidian (includes npm run verify)",
+    "node": "v22.22.2",
+    "status": "failed",
+    "error": "npm run verify failed (1)",
+    "startedAt": "2026-10-25T05:24:43.170Z",
+    "completedAt": "2026-10-25T05:25:19.456Z",
+    "source": {
+      "revision": "ba1d2f3851b035361e8e0c73c084151f87e4d246",
+      "dirty": true,
+      "node": "v22.22.2",
+      "os": "darwin 23.5.0"
+    },
+    "stoppedAt": "tests/indexing.test.mjs:4060",
+    "assertion": "Inline-field cooperative parser blocked timers for55.0ms; existing45ms limit",
+    "thresholdChanged": false,
+    "laterStages": "not run",
+    "privateReceiptSha256": "92553a201e5cdbb1f2f0356ff03a5a6c5784cf10e18df19e41fc853293e49423"
+  },
+  "parserFollowup": "parser-responsiveness-followup-2026-10-25.json"
+}

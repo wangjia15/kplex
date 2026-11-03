@@ -1,4 +1,4 @@
-/** Delivery-1 source-local dependency integration: real Chromium IndexedDB, production acquisition/repository. */
+/** Source-local dependency integration in real Chromium, including shared restart-selection cancellation before host comparison. */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { contributorBrowserBundle, contributorBrowserInitialize } from "./support/contributorBrowserFixture.mjs";
@@ -36,7 +36,7 @@ test("optional alias replacement rejects primary, dependency-count and final sel
           };
           if(mode==='superseded')r.activate=async function(...args){current=false;return activate.apply(this,args)};
           const result=await r.replace({sourceId:'A.md',physical:selected.head.physical,observation:selected.head.observation,expected:selected.expected,
-            bodyParserVersion:3,aliasUpgradeFrom:{head:selected.head,sequence:selected.sequence,saved:true},families:{...selected.head.families,
+            bodyParserVersion:M.SOURCE_BODY_PARSER_VERSION,aliasUpgradeFrom:{head:selected.head,sequence:selected.sequence,saved:true},families:{...selected.head.families,
               'body-urls':async emit=>{for(const record of records)if(!await emit({...record,...(mode==='primary'?{label:'Changed primary'}:{}),aliases:['First','Second']}))return false;return true;}}},()=>current);
           ok(result.outcome==='rejected'||result.outcome==='superseded'||mode==='superseded'&&result.outcome==='cancelled','Optional proof fails closed for '+mode);
           equal(await capture(),retainedBefore,'No selected head/owner/count/journal/state mutation on '+mode);
@@ -1269,19 +1269,29 @@ test("source-local semantic dependencies are incrementally activated, reusable, 
       })()`), true);
     });
 
-    await t.test("restart dependency await cancellation cannot enter host comparison or grant authority", async () => {
+    await t.test("restart dependency await cancellation cannot enter host comparison or grant authority", /** Inject at the shared pre-comparison await rather than a later projection check. */async () => {
       assert.equal(await browser.evaluate(`(async()=>{
-        const M=sourceModules,f=await fixture('local-r2-merged-cancel'),cache2=new M.KplexIndexedDbCache('local-r2-merged-cancel');let acquisition2;
-        try{
-          f.add('A.md','Friends:: [[Ghost]]');await f.acquire();ok(await f.acquisition.reconcile(),'Seed clean restart');f.acquisition.close();f.cache.close();
-          ok(await cache2.open(),'Reopen clean source');acquisition2=new M.ObsidianSourceAcquisition(f.app,cache2,async text=>M.parseBodyMetadata(text));
-          const repository=cache2.sources,live=repository.ensureLocalDependencies.bind(repository),host=acquisition2.currentHostInventory.bind(acquisition2);let comparisons=0,checks=0;
-          acquisition2.currentHostInventory=(...args)=>{comparisons++;return host(...args)};
-          repository.ensureLocalDependencies=async(...args)=>{checks++;const reason=await live(...args);f.app.metadataCache.trigger('resolved');return reason};
-          equal(await acquisition2.reconcile(),false,'Resolver event cancels the captured restart');equal(checks,1,'Cancellation occurs inside dependency await');equal(comparisons,0,'Cancelled inspection never reaches host facts');
-          equal(acquisition2.hasSemanticDependencies(),false,'Cancelled merged pass publishes no source authority');
-          repository.ensureLocalDependencies=live;ok(await acquisition2.reconcile(),'Fresh captured inventory converges after cancellation');ok(acquisition2.hasSemanticDependencies(),'Fresh pass reopens authority');return true;
-        }finally{acquisition2?.close();cache2.close();f.close();}
+        const M=sourceModules;
+        for(const phase of ['shared-selection','legacy-ensure']){
+          const name='local-r2-merged-cancel-'+phase,f=await fixture(name),cache2=new M.KplexIndexedDbCache(name);let acquisition2;
+          try{
+            f.add('A.md','Friends:: [[Ghost]]');await f.acquire();ok(await f.acquisition.reconcile(),'Seed clean restart');f.acquisition.close();f.cache.close();
+            const db=await cache2.open();ok(db,'Reopen clean source');
+            if(phase==='legacy-ensure'){
+              // This URL-free owner has identical legitimate v3 memberships, requiring the real upgrade path.
+              const owner=await value(db.transaction(M.SOURCE_LOCAL_OWNER_STORE).objectStore(M.SOURCE_LOCAL_OWNER_STORE).get('A.md'));
+              await edit(db,[M.SOURCE_LOCAL_OWNER_STORE],/** Select only this test-owned supported legacy derivative. */tx=>tx.objectStore(M.SOURCE_LOCAL_OWNER_STORE).put({...owner,version:3}));
+            }
+            acquisition2=new M.ObsidianSourceAcquisition(f.app,cache2,/** Reuse the production parser for this host double. */async text=>M.parseBodyMetadata(text));
+            const repository=cache2.sources,method=phase==='shared-selection'?'inspectWithLocalDependencies':'ensureLocalDependencies',live=repository[method].bind(repository),host=acquisition2.currentHostInventory.bind(acquisition2);let comparisons=0,checks=0;
+            acquisition2.currentHostInventory=/** Count any host work reached after the real resolver event. */(...args)=>{comparisons++;return host(...args)};
+            repository[method]=/** Retire the captured inventory after either genuine pre-comparison dependency await. */async(...args)=>{checks++;const selected=await live(...args);f.app.metadataCache.trigger('resolved');return selected};
+            equal(await acquisition2.reconcile(),false,'Resolver event cancels the captured restart');equal(checks,1,'Cancellation occurs inside dependency await');equal(comparisons,0,'Cancelled inspection never reaches host facts');
+            equal(acquisition2.hasSemanticDependencies(),false,'Cancelled merged pass publishes no source authority');
+            repository[method]=live;ok(await acquisition2.reconcile(),'Fresh captured inventory converges after cancellation');ok(acquisition2.hasSemanticDependencies(),'Fresh pass reopens authority');
+          }finally{acquisition2?.close();cache2.close();f.close();}
+        }
+        return true;
       })()`), true);
     });
 

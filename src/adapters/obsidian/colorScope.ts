@@ -8,7 +8,9 @@ import { isPaletteColorId, isThemeColorName, parseLiteralColor, colorValuesEqual
 import { cyclicSemanticColorSlots, SEMANTIC_COLOR_SLOTS, semanticSlotForVariable, SEMANTIC_COLOR_DEFAULTS, type ColorPreferencesV1 } from "../../core/plex/colorPreferences";
 import { colorValueCss, paletteColorProperty, semanticColorCss, themeColorProperty } from "./colorPresentation";
 
-export type ColorScopeConfiguration = Readonly<{ preferences: ColorPreferencesV1; references: readonly ColorValue[] }>;
+export type ColorScopeConfiguration = Readonly<{ preferences: ColorPreferencesV1; references: readonly ColorValue[];
+  /** A contrast-aware measured badge needs the same context owner even with literal-only color. */
+  observeContext?: boolean}>;
 export type ColorScopeIssue = Readonly<{ source: ColorValue; reason: "invalid-name" | "missing-palette" | "invalid-color" | "semantic-cycle" }>;
 export type ColorScopeOptions = Readonly<{
   mode?: "light" | "dark"; observe?: boolean;
@@ -124,7 +126,7 @@ export class ColorScope {
     for (const [name, value] of desired) if (this.scope.style.getPropertyValue(name) !== value) this.scope.style.setProperty(name, value);
     this.values.clear(); for (const [name, value] of desired) this.values.set(name, value);
     this.issues = issues;
-    const watching = this.options.observe !== false && references.some(/** Literals alone follow normal CSS with no JavaScript mode watcher. */ source => typeof source !== "string");
+    const watching = this.options.observe !== false && (this.config.observeContext === true || references.some(/** Ordinary literal-only styles retain their observer-free default. */ source => typeof source !== "string"));
     if (watching) {
       if (!this.observer) {
         const constructors = this.view as Window & { MutationObserver: typeof MutationObserver };

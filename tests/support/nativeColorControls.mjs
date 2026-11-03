@@ -1,7 +1,11 @@
 /** Finite native-control boundary for real Chromium editor tests; installed types/native lanes remain authoritative. */
+import {nativeMarkdownControls} from './nativeMarkdownControls.mjs';
 export const nativeColorControls = `
+${nativeMarkdownControls}
 export const setIcon=()=>{}; export const setTooltip=()=>{}; export class SearchComponent{} export class SecretComponent{} export class ButtonComponent{}
 export const Platform={}; export const getIconIds=()=>[]; export class App{} export class Scope{} export class ExtraButtonComponent{}
+export class FileView{} export class TextFileView extends FileView{} export class WorkspaceLeaf{} export class WorkspaceSplit{}
+export const parseLinktext=path=>({path,subpath:''});
 export class AbstractInputSuggest {constructor(app,input){this.app=app;this.input=input} setValue(value){this.input.value=value} close(){}}
 export class PluginSettingTab {update(){} constructor(app,plugin){this.app=app;this.plugin=plugin;this.containerEl=createDiv();document.body.append(this.containerEl)} hide(){}}
 export const getLanguage=()=>"en";
@@ -21,7 +25,7 @@ export class ColorComponent {
  setDisabled(disabled){this.input.disabled=disabled;return this}
 }
 export class Setting {
- constructor(container){this.components=[];this.el=this.settingEl=container.createDiv();this.nameEl=this.el.createDiv();this.descEl=this.el.createDiv();this.controlEl=this.el.createDiv();}
+ constructor(container){this.components=[];this.el=this.settingEl=container.createDiv({cls:"setting-item"});this.nameEl=this.el.createDiv({cls:"setting-item-name"});this.descEl=this.el.createDiv({cls:"setting-item-description"});this.controlEl=this.el.createDiv({cls:"setting-item-control"});}
  clear(){this.controlEl.empty();this.components=[];return this}
  setName(value){this.nameEl.textContent=value;return this} setDesc(value){this.descEl.textContent=value;return this}
  addToggle(create){const input=this.controlEl.createEl("input",{attr:{type:"checkbox"}});const api={toggleEl:input,setValue(value){input.checked=value;return api},setDisabled(value){input.disabled=value;return api},onChange(run){input.addEventListener("change",()=>run(input.checked));return api}};this.components.push(api);create(api);return this}
@@ -59,3 +63,7 @@ export const initializeColorDom = `(()=>{
  window.scope=createDiv();scope.className='kplex-app';document.body.append(scope);window.preferences=sourceModules.defaultColorPreferences();
  return true;
 })()`;
+
+/** The same finite Obsidian DOM spellings for actual canvas/color renderers. No modal,
+ * palette, production CSS or graph behavior is installed by this helper subset. */
+export const nativeDomHelpers = initializeColorDom.slice(initializeColorDom.indexOf(' function decorate'), initializeColorDom.indexOf(' const migrations'));

@@ -1,0 +1,96 @@
+{
+  "canvasViewSettings": {
+    "wuxing": {
+      "version": 2,
+      "values": {
+        "presets": {
+          "state": {
+            "version": 1,
+            "name": "State",
+            "source": "property",
+            "field": "state",
+            "categories": {
+              "seed": {
+                "label": "Seed",
+                "values": [
+                  "seed"
+                ],
+                "assignment": "seed",
+                "color": {
+                  "kind": "theme",
+                  "variable": "--color-blue"
+                }
+              },
+              "research": {
+                "label": "Research",
+                "values": [
+                  "research"
+                ],
+                "assignment": "research",
+                "color": {
+                  "kind": "theme",
+                  "variable": "--color-green"
+                }
+              },
+              "draft": {
+                "label": "Draft",
+                "values": [
+                  "draft"
+                ],
+                "assignment": "draft",
+                "color": {
+                  "kind": "theme",
+                  "variable": "--color-red"
+                }
+              },
+              "published": {
+                "label": "Published",
+                "values": [
+                  "published"
+                ],
+                "assignment": "published",
+                "color": {
+                  "kind": "theme",
+                  "variable": "--color-orange"
+                }
+              }
+            },
+            "order": [
+              "seed",
+              "research",
+              "draft",
+              "published"
+            ],
+            "start": "seed",
+            "spacing": 56,
+            "regionWidth": 320,
+            "regionHeight": 280,
+            "guides": false,
+            "tints": true,
+            "conflictingColor": {
+              "kind": "theme",
+              "variable": "--color-orange"
+            },
+            "unassignedColor": {
+              "kind": "theme",
+              "variable": "--background-secondary"
+            },
+            "helpMarkdown": "# Custom State example\n\nThis personal four-category workflow uses the explicit state property: seed, research, draft and published. It remains separate from the built-in five-category Publishing preset, which also recognizes review.\n\n## Example\n\n```yaml\nstate: draft\n```\n\nFocus Start here to inspect actual connected notes. Choose a different layout without changing their states. Deliberate assignment uses the native property preview.\n\n## Limits\n\nA review value is intentionally Unassigned here. Multiple recognized states are Conflicting; unavailable metadata stays Cannot classify. Decorative guides never publish notes or create recorded relationships. No automatic transition or all-vault board is provided.\n",
+            "helpSourceLocale": "en"
+          }
+        },
+        "presetOrder": [
+          "arc",
+          "para",
+          "wuxing",
+          "gtd",
+          "eaccess",
+          "sensemaking",
+          "publishing",
+          "map-roles",
+          "state"
+        ]
+      }
+    }
+  }
+}

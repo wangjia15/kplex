@@ -1,0 +1,23 @@
+{
+  "format": "kplex-preset",
+  "version": 1,
+  "kind": "lens",
+  "id": "draft-example",
+  "lens": {
+    "id": "draft-example",
+    "name": "Highlight drafts",
+    "scope": "node",
+    "mode": "style",
+    "expression": "note.state == \"draft\"",
+    "style": {
+      "node": {
+        "borderColor": {
+          "kind": "theme",
+          "variable": "--color-orange"
+        },
+        "strokeWidth": 2
+      }
+    }
+  },
+  "aiContext": "Version1 data-only lens example. Use the shared predicate grammar and canonical package validator; do not add an enabled flag. Import never activates the lens. https://github.com/zsviczian/kplex/blob/main/docs/PORTABLE_PRESETS.md"
+}

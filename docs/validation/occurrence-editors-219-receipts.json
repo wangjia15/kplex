@@ -1,0 +1,802 @@
+{
+  "schemaVersion": 1,
+  "scope": "Bounded ordinary-Markdown M0 proof validated at905b777. Mind Map not implemented; longer-sequence native FileManager cache-gate reliability remains unproven.",
+  "records": [
+    {
+      "id": "native-1",
+      "qualification": "accepted native scope at that stage",
+      "name": "occurrence-editors-219",
+      "status": "passed",
+      "startedAt": "2026-10-24T23:30:16.058Z",
+      "completedAt": "2026-10-24T23:30:19.278Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "fc3996bbfe62f0dc6faade9e0d9a225e2ab0960092c6d2f8fc4e1334935bbe81",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility"
+      ]
+    },
+    {
+      "id": "native-2",
+      "qualification": "failed FileManager cache gate; independent restoration, normal cleanup failed",
+      "name": "occurrence-editors-219",
+      "status": "failed",
+      "startedAt": "2026-10-24T23:33:49.483Z",
+      "completedAt": "2026-10-24T23:38:10.424Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "454762fc16f88c3d93579af133b7ca62ad6a7a07d6f739d11346e86bf38e0efb",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "error": "AssertionError [ERR_ASSERTION]: Native experiment deadline\n\n'failed' !== 'passed'\n",
+      "cleanupError": "AssertionError [ERR_ASSERTION]: Cleanup deadline",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close"
+      ]
+    },
+    {
+      "id": "accepted-main",
+      "qualification": "simpler baseline; not matched full fault sequence",
+      "name": "accepted-main-cache-gate-editor",
+      "status": "passed",
+      "startedAt": "2026-10-24T23:48:21.730Z",
+      "completedAt": "2026-10-24T23:48:24.893Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "1f7d9af168e6504bae61bdc109d510b8a649119a4ce122c6c6abbde6f75ec39d",
+        "definitions": "48427a61035b4b5b948f6df07292969ff7b270ff4eea854777b3a198c2ae196e"
+      },
+      "artifacts": {
+        "main.js": "d50c54d4c6a051467d543e92c143f5b430ac097be1003fadd41c3b2e0a5cbd82",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "baselineRef": "998781070a9382005154f4f884ed753280a9cf52",
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/ui/PlexGraph.tsx": "deb2c352783c03752485e51458dfb0d7c96d4e2d946138ed1a2f2356645da66f",
+        "src/application/PlexViewSession.ts": "72de1b88ea67a6b7f6d064ecba10ac846f502a201de64878233959283e588df9",
+        "src/core/plex/views/contracts.ts": "a24ad961a1c0e2d9193a6f1fdae283236c1ee36efa93b09cf453688a32e1a6b7"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "compatible-switch-editor-zero-source-work",
+        "dirty-editor-caret-incompatible-view-and-failure-recovery",
+        "popout-main-remount-retains-selected-view-and-canonical-occurrences"
+      ]
+    },
+    {
+      "id": "native-3",
+      "qualification": "separate external Vault mutation producer",
+      "name": "occurrence-editors-219",
+      "status": "passed",
+      "startedAt": "2026-10-24T23:49:04.945Z",
+      "completedAt": "2026-10-24T23:49:12.247Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "548f7c8ebee5632d3bf7da57f30525480b630d2373fcfea7bd57123feb440ed0",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "external-rename-flushes-bound-document-without-old-path-resurrection",
+        "external-deletion-does-not-resurrect-or-retarget-recreated-document",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility",
+        "native-teardown-persists-content-and-releases-editor-owners"
+      ],
+      "cacheGate": {
+        "clean": false,
+        "inProgress": 0,
+        "queued": 0,
+        "running": true
+      }
+    },
+    {
+      "id": "native-4",
+      "qualification": "failed reopening before source settlement",
+      "name": "occurrence-editors-219",
+      "status": "failed",
+      "startedAt": "2026-10-24T23:49:45.288Z",
+      "completedAt": "2026-10-24T23:49:48.366Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "506813273fc478c7230a3138de8527a6b8d3953ca1adf2ac828aa5c19c279924",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "error": "Error: Error: Reopen rejected",
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery",
+        "native-save-failure-retention-and-explicit-durable-collapse"
+      ]
+    },
+    {
+      "id": "native-5",
+      "qualification": "source-settled stronger native scope",
+      "name": "occurrence-editors-219",
+      "status": "passed",
+      "startedAt": "2026-10-24T23:50:21.148Z",
+      "completedAt": "2026-10-24T23:50:28.339Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "de14c304b63e9074b661d90562e6d79bbce048ad0665bf8962f2d6390d898699",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "external-rename-flushes-bound-document-without-old-path-resurrection",
+        "external-deletion-does-not-resurrect-or-retarget-recreated-document",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility",
+        "native-teardown-persists-content-and-releases-editor-owners"
+      ],
+      "cacheGate": {
+        "clean": false,
+        "inProgress": 0,
+        "queued": 30,
+        "running": true
+      }
+    },
+    {
+      "id": "healthy-control",
+      "qualification": "no save-fault injection; actual FileManager rename",
+      "name": "occurrence-editors-219-healthy-cache-control",
+      "status": "passed",
+      "startedAt": "2026-10-25T00:04:37.887Z",
+      "completedAt": "2026-10-25T00:04:44.992Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "f8cfe698d19d37a512bfdd952d71e1dd146269d5ae11cd7de67b2fd966547a4b",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "external-rename-flushes-bound-document-without-old-path-resurrection",
+        "external-deletion-does-not-resurrect-or-retarget-recreated-document",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility",
+        "native-teardown-persists-content-and-releases-editor-owners"
+      ],
+      "cacheGate": {
+        "clean": true,
+        "inProgress": 0,
+        "queued": 0,
+        "running": false
+      }
+    },
+    {
+      "id": "native-6",
+      "qualification": "negative control for real authoritative-hide defect",
+      "name": "occurrence-editors-219",
+      "status": "failed",
+      "startedAt": "2026-10-25T00:05:28.972Z",
+      "completedAt": "2026-10-25T00:05:34.078Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "b57ecfd6319a504fd9fe067f317693164e26812f89877eecd34266c51c4c3ff8",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "b315d1cd1c86ed4df43b413b60858e047cbe5132c8618f88d09b4e92cd89f18a",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "e23e333d5e3b1ab71cafb294f9f6fca65d626966c50eb25367665339b0bfca7f",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "497bb9b693747cbdc18ecb470ed5f2e6d9d52ba74b1871f8510a5dccc7e26c03",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "error": "Error: Error: Authoritative hiding must conceal the retained native buffer and offer explicit close",
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards"
+      ]
+    },
+    {
+      "id": "native-7",
+      "qualification": "exploratory only: staging overlapped, not acceptance",
+      "name": "occurrence-editors-219",
+      "status": "passed",
+      "startedAt": "2026-10-25T00:06:50.369Z",
+      "completedAt": "2026-10-25T00:06:57.569Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "6d24b8e4ac0a6432872354666e05ca882ab4729c6b29c12530b104afabfe354f",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "4687f9b7854e08947cce40f20a0bf9b5774556fbbf6719c8019ee9a2594c0877",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "32e1cdee18c4c4ea43c3bcc5cf0244368d61b4154d0fd00220316edab0e89208",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "b3464ff254ab8bad6b776d25965fcb49439d7acc69502e15f14febc6033ae363",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "external-rename-flushes-bound-document-without-old-path-resurrection",
+        "external-deletion-does-not-resurrect-or-retarget-recreated-document",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility",
+        "native-teardown-persists-content-and-releases-editor-owners"
+      ],
+      "cacheGate": {
+        "clean": true,
+        "inProgress": 0,
+        "queued": 0,
+        "running": false
+      }
+    },
+    {
+      "id": "native-8",
+      "qualification": "strict serial corrected native scope",
+      "name": "occurrence-editors-219",
+      "status": "passed",
+      "startedAt": "2026-10-25T00:07:29.023Z",
+      "completedAt": "2026-10-25T00:07:36.151Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "6d24b8e4ac0a6432872354666e05ca882ab4729c6b29c12530b104afabfe354f",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "4687f9b7854e08947cce40f20a0bf9b5774556fbbf6719c8019ee9a2594c0877",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "c409470fd023c4ea5aaaf8f7e02b0a6a81ae9624b55848b0d7c988f7d5f4bbe3",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "32e1cdee18c4c4ea43c3bcc5cf0244368d61b4154d0fd00220316edab0e89208",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "b3464ff254ab8bad6b776d25965fcb49439d7acc69502e15f14febc6033ae363",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "external-rename-flushes-bound-document-without-old-path-resurrection",
+        "external-deletion-does-not-resurrect-or-retarget-recreated-document",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility",
+        "native-teardown-persists-content-and-releases-editor-owners"
+      ],
+      "cacheGate": {
+        "clean": false,
+        "inProgress": 0,
+        "queued": 12,
+        "running": true
+      }
+    },
+    {
+      "id": "fresh-healthy",
+      "qualification": "failed bounded cache-clean precondition without save-fault injection; normal cleanup passed",
+      "name": "occurrence-editors-219-healthy-cache-control",
+      "status": "failed",
+      "startedAt": "2026-10-25T00:33:05.217Z",
+      "completedAt": "2026-10-25T00:33:29.471Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "f8cfe698d19d37a512bfdd952d71e1dd146269d5ae11cd7de67b2fd966547a4b",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "4687f9b7854e08947cce40f20a0bf9b5774556fbbf6719c8019ee9a2594c0877",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "2c9f09ea059c66d8fbeac9ae4f13c469932cbd84a16865ff58054ac51f824ec0",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "9acaf07a31d12c1d534d3f87cd05e2fb27e336857b463a70fcce22fa3929a57b",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "b3464ff254ab8bad6b776d25965fcb49439d7acc69502e15f14febc6033ae363",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "error": "Error: Error: Healthy cache gate did not become clean before FileManager",
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close"
+      ],
+      "cacheGate": {
+        "clean": false,
+        "inProgress": 0,
+        "queued": 0,
+        "running": true
+      }
+    },
+    {
+      "id": "final-occurrence",
+      "qualification": "isolated fresh-renderer twelve-case proof on exact source905b777/artifact4687",
+      "name": "occurrence-editors-219",
+      "status": "passed",
+      "startedAt": "2026-10-25T00:38:36.955Z",
+      "completedAt": "2026-10-25T00:38:43.079Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "6d24b8e4ac0a6432872354666e05ca882ab4729c6b29c12530b104afabfe354f",
+        "definitions": "195347ba639fa692a1f1cded868cf5152defd2c6c88973d78bd605a4ef890802"
+      },
+      "artifacts": {
+        "main.js": "4687f9b7854e08947cce40f20a0bf9b5774556fbbf6719c8019ee9a2594c0877",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/application/PlexEditorBindings.ts": "2c9f09ea059c66d8fbeac9ae4f13c469932cbd84a16865ff58054ac51f824ec0",
+        "src/application/PlexViewSession.ts": "b1059866b56763f3c27cbb155550715e9fcf06b273deb689016b9c4223348999",
+        "src/ui/PlexGraph.tsx": "9acaf07a31d12c1d534d3f87cd05e2fb27e336857b463a70fcce22fa3929a57b",
+        "src/ui/CentralNodeEditor.tsx": "48c809f364ecd242c917194db12cb6206c03e94706e84ac79fbcd26e65a65a8d",
+        "src/ui/plexViews/prepareScene.ts": "df42a776b8f8a6555b6088c92508058b4eceacb27343df64f00ba32bcc1e78b8",
+        "src/ui/plexViews/occurrenceEditors.ts": "b3464ff254ab8bad6b776d25965fcb49439d7acc69502e15f14febc6033ae363",
+        "src/adapters/obsidian/embeddedMarkdownLeaf.ts": "cbad76642d696b36ddec08b44ff78df2316724b06ebc3b2dff187867bac8347b",
+        "src/core/plex/actions.ts": "d3d0825449004ffc0848123fd2ba8805849082adf527709cc65e9ba853a07e9d"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "R-A-B1-background-native-host",
+        "attention-C-retains-R-and-native-B1",
+        "dirty-resize-reflow-scroll-clip-retains-native-state",
+        "exact-filter-pin-branch-removal-and-selector-guards",
+        "authoritative-removal-save-failure-retains-buffer-for-explicit-recovery",
+        "native-save-failure-retention-and-explicit-durable-collapse",
+        "bounded-editor-intent-restores-after-native-view-recreation",
+        "dirty-popout-main-native-migration-and-durable-close",
+        "external-rename-flushes-bound-document-without-old-path-resurrection",
+        "external-deletion-does-not-resurrect-or-retarget-recreated-document",
+        "unchanged-off-centre-attention-definition-and-Compass-native-compatibility",
+        "native-teardown-persists-content-and-releases-editor-owners"
+      ],
+      "cacheGate": {
+        "clean": true,
+        "inProgress": 0,
+        "queued": 0,
+        "running": false
+      }
+    },
+    {
+      "id": "baseline-fixture-failure",
+      "qualification": "fixture error: attention plus two repeats gave three occurrences; failed before migration",
+      "name": "accepted-main-dirty-migration-cache-gate-editor",
+      "status": "failed",
+      "startedAt": "2026-10-25T00:40:15.663Z",
+      "completedAt": "2026-10-25T00:40:18.787Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "3b4577be0f63fdd741a3feb11e14d23ac1d8b41ad331aa122a6c029b64de8904",
+        "definitions": "48427a61035b4b5b948f6df07292969ff7b270ff4eea854777b3a198c2ae196e"
+      },
+      "artifacts": {
+        "main.js": "d50c54d4c6a051467d543e92c143f5b430ac097be1003fadd41c3b2e0a5cbd82",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "baselineRef": "998781070a9382005154f4f884ed753280a9cf52",
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/ui/PlexGraph.tsx": "deb2c352783c03752485e51458dfb0d7c96d4e2d946138ed1a2f2356645da66f",
+        "src/application/PlexViewSession.ts": "72de1b88ea67a6b7f6d064ecba10ac846f502a201de64878233959283e588df9",
+        "src/core/plex/views/contracts.ts": "a24ad961a1c0e2d9193a6f1fdae283236c1ee36efa93b09cf453688a32e1a6b7"
+      },
+      "error": "Error: Error: Duplicate canonical occurrences collapsed",
+      "cleanup": "passed",
+      "cases": [
+        "compatible-switch-editor-zero-source-work",
+        "dirty-editor-caret-incompatible-view-and-failure-recovery"
+      ]
+    },
+    {
+      "id": "baseline-dirty-corrected",
+      "qualification": "accepted-main dirty migration observation; gate cleared, not full longer-sequence equivalence",
+      "name": "accepted-main-dirty-migration-cache-gate-editor",
+      "status": "passed",
+      "startedAt": "2026-10-25T00:42:11.508Z",
+      "completedAt": "2026-10-25T00:42:14.640Z",
+      "node": "v22.22.2",
+      "obsidian": "1.15.0 (installer 1.14.0)",
+      "driver": {
+        "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+        "scenario": "b8e80183244a5fb54683dbb4022e2458e8d10be611d4240f76ead90eeba2d125",
+        "definitions": "48427a61035b4b5b948f6df07292969ff7b270ff4eea854777b3a198c2ae196e"
+      },
+      "artifacts": {
+        "main.js": "d50c54d4c6a051467d543e92c143f5b430ac097be1003fadd41c3b2e0a5cbd82",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "source": {
+        "baselineRef": "998781070a9382005154f4f884ed753280a9cf52",
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "b05e2c51bfd49aef4a033b7c47c008f49efb63f196a7be521beabc436936eb9f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/ui/PlexGraph.tsx": "deb2c352783c03752485e51458dfb0d7c96d4e2d946138ed1a2f2356645da66f",
+        "src/application/PlexViewSession.ts": "72de1b88ea67a6b7f6d064ecba10ac846f502a201de64878233959283e588df9",
+        "src/core/plex/views/contracts.ts": "a24ad961a1c0e2d9193a6f1fdae283236c1ee36efa93b09cf453688a32e1a6b7"
+      },
+      "cleanup": "passed",
+      "cases": [
+        "compatible-switch-editor-zero-source-work",
+        "dirty-editor-caret-incompatible-view-and-failure-recovery",
+        "popout-main-remount-retains-selected-view-and-canonical-occurrences"
+      ],
+      "cacheSamples": [
+        {
+          "label": "initial",
+          "clean": true,
+          "inProgress": 0,
+          "queued": 0,
+          "running": false
+        },
+        {
+          "label": "before-migration",
+          "clean": true,
+          "inProgress": 0,
+          "queued": 0,
+          "running": false
+        },
+        {
+          "label": "after-popout",
+          "clean": true,
+          "inProgress": 0,
+          "queued": 0,
+          "running": false
+        },
+        {
+          "label": "after-main-return",
+          "clean": false,
+          "inProgress": 1,
+          "queued": 0,
+          "running": false
+        },
+        {
+          "label": "after-bounded-gate-observation",
+          "clean": true,
+          "inProgress": 0,
+          "queued": 0,
+          "running": false
+        }
+      ]
+    }
+  ],
+  "fullVerification": {
+    "status": "passed",
+    "startedAt": "2026-10-25T00:10:07.123Z",
+    "completedAt": "2026-10-25T00:32:01.267Z",
+    "source": {
+      "revision": "905b7776ba1db1a58e598b3c53f5f267a5430731",
+      "dirty": false,
+      "node": "v22.22.2",
+      "os": "darwin 23.5.0"
+    },
+    "artifacts": {
+      "sourceHashes": {
+        "main.js": "4687f9b7854e08947cce40f20a0bf9b5774556fbbf6719c8019ee9a2594c0877",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      },
+      "pluginVersion": "0.2.4",
+      "stagedHashes": {
+        "main.js": "4687f9b7854e08947cce40f20a0bf9b5774556fbbf6719c8019ee9a2594c0877",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "ec5b05c72b5f97f005dd81a8d7b7eceffe003cc3e16b0f94b3a9e8a2ad96dc53"
+      }
+    },
+    "lanes": {
+      "architecture": 7,
+      "core": 130,
+      "functional": 1459,
+      "browser": 241,
+      "sources": 357,
+      "sourceBrowser": 775,
+      "failures": 0,
+      "skips": 0
+    },
+    "nativeSmoke": [
+      {
+        "id": "open-kplex",
+        "status": "passed",
+        "assertions": [
+          "plugin command registered",
+          "rendered .kplex-app contains K-Plex",
+          "no captured JavaScript errors"
+        ]
+      }
+    ]
+  },
+  "ci": {
+    "run": 475,
+    "id": 40145615501,
+    "job": 121026189703,
+    "head": "905b7776ba1db1a58e598b3c53f5f267a5430731",
+    "conclusion": "success",
+    "url": "https://github.com/zsviczian/kplex/actions/runs/40145615501",
+    "skippedSteps": 0
+  },
+  "owningWindowControl": {
+    "before": {
+      "hidden": false,
+      "visibility": "visible",
+      "documentFocus": true,
+      "windowFocus": true,
+      "windowVisible": true,
+      "clean": false,
+      "tasks": 0,
+      "queued": 6,
+      "running": true
+    },
+    "observations": 20,
+    "last": {
+      "hidden": false,
+      "visibility": "visible",
+      "documentFocus": true,
+      "windowFocus": true,
+      "windowVisible": true,
+      "clean": false,
+      "tasks": 0,
+      "queued": 6,
+      "running": true
+    },
+    "changedCacheFlags": false,
+    "outcome": "foregrounding did not clear the gate"
+  },
+  "restoration": {
+    "status": "passed",
+    "completedAt": "2026-10-25T00:43:56.630Z",
+    "rendererExited": true,
+    "originallyClosed": true,
+    "controllers": 0,
+    "startupFlagRestored": true,
+    "restored": {
+      "workspace.json": "16794be9a02af5897b7278952131c9d90f73677a724a14e95787ed1693ae39bf",
+      "community-plugins.json": "4ac827989c179ea6dba2e5a878462085dc86e40328300b1b018fb91d466cbc35",
+      "core-plugins.json": "79985eff638a8a3f7fe2946dca1ed0872116d31028bb1498b0efb7ac4e11077b",
+      "app.json": "e3afdecf971ecd6f83ddb4d658e8c357bea75ca0953721d99f906518caa916f3",
+      "plugins/k-plex/data.json": "b986b4c72d7c22ef411484dbe1cb87f3a72bee65da5d78468df90140829352f9",
+      "plugins/k-plex/main.js": "a709657e06d8f893d185fbc933967266e50007424ccbab751e1410c8c286ff68",
+      "plugins/k-plex/manifest.json": "19d9ecce5557733e0ff0f2e27155e635c30158c3cfa6fbca0f11c16e4dedfd2c",
+      "plugins/k-plex/styles.css": "0135225519ad680cace5c7a35e8eab8388a3c6e6a8ead1a10a49f337324b106a"
+    },
+    "content": {
+      "files": 77,
+      "markdown": 74,
+      "bytes": 362132,
+      "digest": "36372292bd7d6d60f52dfe7eccacc4e56d223bdf602c8f0f8614502357cff162"
+    }
+  },
+  "limits": [
+    "Capacity one; ordinary Markdown native proof only.",
+    "No production Mind Map registered at this checkpoint.",
+    "No physical Windows/mobile or whole-application restart acceptance.",
+    "Native FileManager gate condition remains unproven; raw Vault rename is a separate external producer.",
+    "Existing215 combined-editor/two-Sidecar and extra-tab limits retained."
+  ]
+}

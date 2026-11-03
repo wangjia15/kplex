@@ -1,0 +1,345 @@
+{
+  "status": "full-native-pass-restored-user-state-fixed-test-bundle-retained",
+  "parent": "358a0a6f0bec37b8f719cb98fad557cbf615190d",
+  "live": {
+    "artifact": "88c3f3221b403471e5ae6c7a728f44f4e163a93c609f54195d83ae567f0013d2",
+    "role": "child",
+    "pairReady": true,
+    "scopeComplete": true,
+    "pending": false,
+    "active": false,
+    "cacheClean": true,
+    "writeObservers": 0,
+    "modalCount": 0,
+    "compatibilityLists": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "optimisticRole": "child",
+    "updating": true
+  },
+  "negative": {
+    "status": "failed-as-expected",
+    "message": "Published non-Classic relink remained blocked by empty Compass neighbourhood"
+  },
+  "focused": {
+    "cases": 128,
+    "status": "passed"
+  },
+  "classicRouting": {
+    "cases": 1,
+    "status": "passed"
+  },
+  "build": "passed",
+  "nativeSamples": [
+    {
+      "status": "failed",
+      "error": "Error: Error: Production parent/child move lost exact context",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "c2c5ec6ac40308fce0123ae56ede29cc45f048c651a576bcc22fde9041900a44",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/main.ts": "85aa46910870341c407870394e427e9e456876bb3094300216ca8215bb8067f0",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/NewRelatedNoteModal.ts": "cb8c5c4d8be3fa204c1a65bcde6fd1e2d6bc0e87feef77c51efa473b9ab2c20e",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "2dd188242fe1b0b86265e422607244cb9e830f1d977ef3fe00e232b3acb68d3f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "fb6071ff930a1ca926eb3c7f83df5d05cc34d42dd6d95f45ef6ea82dd9887b29",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "3c00b28aa52ba2189b65edc402422e03196f4f7a0525b66539caa1eb475e2176",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "scripts/testing/obsidian/nativeOccurrenceDrag.mjs": "f4035e0a0f80d2dceb5572bf447865d73f78ae9b2d862bcbcaea5501c0aba11f",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "c72a5fcbaca7a26f14405bd0f4d5e3994655112ef33e42f153a08212f01acfba",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "startedAt": "2026-10-25T10:24:45.864Z",
+      "completedAt": "2026-10-25T10:24:51.964Z",
+      "sample": 1,
+      "phase": "native-parent-child-relink",
+      "relinkAttempt": null,
+      "passedCases": [
+        {
+          "id": "trusted-native-second-occurrence-additive-save",
+          "sourceId": "b-second",
+          "canonicalOriginMatched": true,
+          "mode": "create",
+          "canonicalAndNativeIdentityRetained": true,
+          "originalChildDeclarationRetained": true,
+          "otherSourceBytesRetained": true,
+          "targetBytesRetained": true
+        }
+      ]
+    },
+    {
+      "status": "failed",
+      "error": "Error: Error: Chromium did not intercept the trusted node-body drag",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "c2c5ec6ac40308fce0123ae56ede29cc45f048c651a576bcc22fde9041900a44",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/main.ts": "85aa46910870341c407870394e427e9e456876bb3094300216ca8215bb8067f0",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/NewRelatedNoteModal.ts": "cb8c5c4d8be3fa204c1a65bcde6fd1e2d6bc0e87feef77c51efa473b9ab2c20e",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "2dd188242fe1b0b86265e422607244cb9e830f1d977ef3fe00e232b3acb68d3f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "fb6071ff930a1ca926eb3c7f83df5d05cc34d42dd6d95f45ef6ea82dd9887b29",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "3c00b28aa52ba2189b65edc402422e03196f4f7a0525b66539caa1eb475e2176",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "scripts/testing/obsidian/nativeOccurrenceDrag.mjs": "84cf35a8577041387268acfb818652825ad3baeca33dee38470d40d5d91c6936",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "c72a5fcbaca7a26f14405bd0f4d5e3994655112ef33e42f153a08212f01acfba",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "startedAt": "2026-10-25T10:25:30.220Z",
+      "completedAt": "2026-10-25T10:25:54.740Z",
+      "sample": 2,
+      "phase": "native-parent-child-relink",
+      "relinkAttempt": {
+        "gate": "top",
+        "role": "parent",
+        "mode": "relink",
+        "origin": "Kplex-219-Mindmap-1792923930322/R.md",
+        "target": "Kplex-219-Mindmap-1792923930322/P.md",
+        "pairReady": true
+      },
+      "passedCases": [
+        {
+          "id": "trusted-native-second-occurrence-additive-save",
+          "sourceId": "b-second",
+          "canonicalOriginMatched": true,
+          "mode": "create",
+          "canonicalAndNativeIdentityRetained": true,
+          "originalChildDeclarationRetained": true,
+          "otherSourceBytesRetained": true,
+          "targetBytesRetained": true
+        }
+      ]
+    },
+    {
+      "sample": 3,
+      "status": "passed",
+      "cleanup": "passed",
+      "artifacts": {
+        "main.js": "c2c5ec6ac40308fce0123ae56ede29cc45f048c651a576bcc22fde9041900a44",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "source": {
+        "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+        "src/index/GraphIndex.ts": "7c62e628ec8d27eb7ebccb3e15a945bbc22fee616e6cb19f2f39e391bb53664f",
+        "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+        "src/main.ts": "85aa46910870341c407870394e427e9e456876bb3094300216ca8215bb8067f0",
+        "src/application/PlexHierarchyDemand.ts": "95370acfa8a0294b3357b7f9fb8981121130fd0df6eb0a93ec84895d63f8f8a8",
+        "src/application/PlexViewSession.ts": "753adcc0642743678064aed279b629020a1b37d0eea97c3ffe21856f851240b3",
+        "src/ui/App.tsx": "bae49d661239a95cf034996e995921017f344bd11452d9dc248d9000ee4f4277",
+        "src/ui/NewRelatedNoteModal.ts": "cb8c5c4d8be3fa204c1a65bcde6fd1e2d6bc0e87feef77c51efa473b9ab2c20e",
+        "src/ui/KplexDocumentSession.ts": "0fc67a4e9b9237c3fd3dfcf027bf1b9725c15ebc1e90b36667d3f45e4950780f",
+        "src/core/plex/views/contracts.ts": "b4ab753c87800ce6a224f38f68ca64f5713a02bea6259f9e3af6e9eb30ee3ecf",
+        "src/core/plex/views/registry.ts": "c18d5664ff6a2262032e04d0449c686ec7f7c55aead9fd643e70f64d46317fad",
+        "src/core/plex/views/mindmap/configuration.ts": "00bf15796ea82021e386b0c709bf7ee00502e186b2beb4aa116ca4ca20ac7fec",
+        "src/ui/plexViews/settingsContributions.ts": "0a3502364b6af09ed813186987c1aef2520d1ec2fc1fd97f1fd3612d914fdbd4",
+        "src/ui/plexViews/measurement.ts": "fa93fa4efe55ad214f00535693a6fe62815abd2d5f2c2654a21851540d1611ea",
+        "src/types.ts": "6f4ca6fc1a529fd892b35187969d4c098790a4af49ce966c4794eb5bc3d057e0",
+        "src/ui/PlexGraph.tsx": "2dd188242fe1b0b86265e422607244cb9e830f1d977ef3fe00e232b3acb68d3f",
+        "src/ui/ThoughtNode.tsx": "ad25666992ced0012c2ac7303ebde34f817fc6d015b24de0713240fe113219eb",
+        "src/ui/plexViews/prepareScene.ts": "dab05abd0f9cda83bfccffd39656db3b089bc1766bfb96fda50cb20fd4c1becc",
+        "src/ui/plexViews/useHierarchyDemand.ts": "21d19c5c5af0987180f9b3544bc3d0a678f3651ff1b2042623cd4284d50d5bf7",
+        "src/core/plex/views/mindmap/definition.ts": "cbe9046b5262b1be0e83c880ee2ed9bf3c462f0fe6368288bf8ad0745c411820",
+        "src/core/plex/views/mindmap/projection.ts": "9c93042ecd32172d2913011b25ccb84e6879a2af62d0ec946ef3b8f37f0ddff8",
+        "src/core/plex/views/mindmap/layout.ts": "702c73d6cd82dcd8b663a3842ab0600690487aca088513b945bfa724cdebabbb",
+        "src/ui/plexViews/mindmap/settings.ts": "33c03de2c6627f41bfe80fc9eccbf723069d5c05f00678332ec59e3e462ddb44",
+        "scripts/testing/obsidian/mindMap.mjs": "fb6071ff930a1ca926eb3c7f83df5d05cc34d42dd6d95f45ef6ea82dd9887b29",
+        "scripts/testing/obsidian/mindMapInteractions.mjs": "3c00b28aa52ba2189b65edc402422e03196f4f7a0525b66539caa1eb475e2176",
+        "scripts/testing/obsidian/nativeHtmlDrag.mjs": "353188f91bc5f721bde1533a29b03ca3aa034dd87b8780bded2a1b164f15ce3e",
+        "scripts/testing/obsidian/nativeOccurrenceDrag.mjs": "902965c13469a89155825e3f752afb7e10f7743295a9a1992f9568420d757c59",
+        "src/core/plex/views/areaLayout.ts": "3c868763cd077b3ece3cc162323202d1b8656e426c38a8fdc6429d0dedaa2e5d",
+        "src/ui/plexViews/crossLinks.ts": "d4d1b00c570f177bf1f715bb6a874bb7b1179abdc5c9180c335940ebe336ae30",
+        "src/ui/plexViews/reflowArea.ts": "6970ccd2bb42ec486ca86c76cfa5323c3a7b719c9e7a0fa3d3dcfc662f5f7c0e",
+        "src/adapters/obsidian/nodeLinkDrag.ts": "c72a5fcbaca7a26f14405bd0f4d5e3994655112ef33e42f153a08212f01acfba",
+        "scripts/testing/obsidian/nativeDocumentSessions.mjs": "296a4dfd58edba9736f810e0aab03dac48b52db63b05b7fb87fb5e4736ae0805"
+      },
+      "result": {
+        "lane": "interactions",
+        "cases": [
+          {
+            "id": "trusted-native-second-occurrence-additive-save",
+            "sourceId": "b-second",
+            "canonicalOriginMatched": true,
+            "mode": "create",
+            "canonicalAndNativeIdentityRetained": true,
+            "originalChildDeclarationRetained": true,
+            "otherSourceBytesRetained": true,
+            "targetBytesRetained": true
+          },
+          {
+            "id": "trusted-native-parent-child-relink-feedback-settles",
+            "actualSaves": 2,
+            "rootRetained": true,
+            "canonicalRolesConfirmed": true,
+            "updatingFeedbackRetired": true
+          },
+          {
+            "id": "trusted-native-occurrence-editor-text-drop",
+            "sameNativeInstance": true,
+            "sameBinding": true,
+            "rootRetained": true,
+            "durableSave": true
+          }
+        ],
+        "capacity": 1,
+        "limits": [
+          "Native Electron automation; no physical Windows/mobile proof.",
+          "Owned native-view restoration is not whole-application restart.",
+          "Dedicated M0 FileManager cache-gate limitation remains unproven; no FileManager pass claimed.",
+          "Session acceptance preserves a main-window Sidecar; separate fresh-popout Sidecar creation remained empty and is not a passing workflow."
+        ]
+      },
+      "startedAt": "2026-10-25T10:27:00.927Z",
+      "completedAt": "2026-10-25T10:27:07.130Z"
+    }
+  ],
+  "recordedAt": "2026-10-25T10:53:42.893834+00:00",
+  "full": {
+    "status": "passed",
+    "source": {
+      "revision": "ef59f1c765ea87dbe3978d65feb4843c4f132c8f",
+      "dirty": false,
+      "node": "v22.22.2",
+      "os": "darwin 23.5.0"
+    },
+    "startedAt": "2026-10-25T10:28:35.724Z",
+    "completedAt": "2026-10-25T10:50:38.961Z",
+    "tapCounts": [
+      7,
+      130,
+      1503,
+      247,
+      357,
+      777
+    ],
+    "total": 3021,
+    "failures": 0,
+    "skips": 0,
+    "artifacts": {
+      "sourceHashes": {
+        "main.js": "c2c5ec6ac40308fce0123ae56ede29cc45f048c651a576bcc22fde9041900a44",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      },
+      "pluginVersion": "0.2.4",
+      "stagedHashes": {
+        "main.js": "c2c5ec6ac40308fce0123ae56ede29cc45f048c651a576bcc22fde9041900a44",
+        "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+        "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+      }
+    },
+    "nativeSmoke": [
+      {
+        "id": "open-kplex",
+        "status": "passed",
+        "assertions": [
+          "plugin command registered",
+          "rendered .kplex-app contains K-Plex",
+          "no captured JavaScript errors"
+        ],
+        "elapsedMs": 76
+      }
+    ]
+  },
+  "restoration": {
+    "status": "passed",
+    "mainLayoutOriginalFieldsRetained": true,
+    "normalization": "Four peer-side memo entries and editors:null added on warm reopening; original workspace fields retained",
+    "at": "2026-10-25T10:52:49.743Z",
+    "content": {
+      "files": 77,
+      "markdown": 74,
+      "bytes": 362163,
+      "digest": "5ac78b7d56961fa523a4bc6c8a96db8fe119cd0db28140b8b6ea4f2e5d8778f6"
+    },
+    "userRelationshipEditsPreserved": true,
+    "contentHashesMatched": 77,
+    "configByteMatches": {
+      "workspace.json": false,
+      "community-plugins.json": true,
+      "core-plugins.json": true,
+      "app.json": true,
+      "plugins/k-plex/data.json": true
+    },
+    "mainLayoutMatched": false,
+    "controllers": 0,
+    "floating": 0,
+    "ownedFixtureFolders": 0,
+    "updating": false,
+    "canonicalChildConfirmed": true,
+    "retainedCorrectedTestArtifacts": {
+      "main.js": "c2c5ec6ac40308fce0123ae56ede29cc45f048c651a576bcc22fde9041900a44",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+      "styles.css": "783480a9cfae6de540d0ade75ecf59fc5b3240bee44ba2cf69b2b2c561cdff1f"
+    },
+    "productionTouched": false
+  },
+  "offlineRestoration": {
+    "status": "passed",
+    "completedAt": "2026-10-25T10:51:22.371Z",
+    "configurationFilesRestored": 5,
+    "retainedCorrectedBuild": true,
+    "content": {
+      "files": 77,
+      "markdown": 74,
+      "bytes": 362163,
+      "digest": "5ac78b7d56961fa523a4bc6c8a96db8fe119cd0db28140b8b6ea4f2e5d8778f6"
+    }
+  },
+  "otherViews": "Shared non-Classic relink completion path, including Wu Xing after integration; no Wu Xing runtime tested here. Compass guard unchanged.",
+  "CI": "Not awaited per maintainer instruction. No pass claimed for pending publication checks."
+}

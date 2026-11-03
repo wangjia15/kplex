@@ -26,7 +26,7 @@ await build({
         ()=>({path:'obsidian',namespace:'native'}));
       builder.onLoad({filter:/.*/,namespace:'native'},
         /** Supply unused native UI exports plus the editor-owned context required by selection. */
-        ()=>({contents:'export class EditorSuggest {constructor(app){this.app=app;this.context=null}} export class App {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class AbstractInputSuggest {} export class PluginSettingTab {} export class Scope {} export class SecretComponent {} export class Setting {} export class ButtonComponent {} export class ExtraButtonComponent {} export class SearchComponent {} export const setIcon=()=>{},setTooltip=()=>{},getIcon=()=>null,getIconIds=()=>[],getLanguage=()=>"en",Platform={};',loader:'js'}));
+        ()=>({contents:'export class EditorSuggest {constructor(app){this.app=app;this.context=null}} export class Component {load(){} unload(){}} export const MarkdownRenderer={render:()=>{throw Error("Native Markdown is outside this finite fixture")}}; export class App {} export class Modal {} export class SuggestModal extends Modal {} export class ColorComponent {} export class Notice {} export class AbstractInputSuggest {} export class PluginSettingTab {} export class Scope {} export class SecretComponent {} export class Setting {} export class ButtonComponent {} export class ExtraButtonComponent {} export class SearchComponent {} export const setIcon=()=>{},setTooltip=()=>{},getIcon=()=>null,getIconIds=()=>[],getLanguage=()=>"en",Platform={};',loader:'js'}));
     }
   }]
 });
@@ -166,4 +166,12 @@ test('pair-aware native suggestions retain independent physical fields, roles an
  info=invoke(owner,':::support');const options=owner.getSuggestions({...info});assert(options.includes('supports')&&options.includes('supported by'));
  let replacement;owner.context={editor:{replaceRange:(...args)=>replacement=args}};owner.selectSuggestion('supported by');assert.equal(replacement[0],'supported by:: ');
  info=invoke(owner,':::based');assert.deepEqual(owner.getSuggestions({...info}),['based on','quoted in']);
+});
+
+
+test('description migration preserves old ontology behavior and exact authored dictionary values',()=>{
+ const old=migrateAndMergeSettings({ontologyPairingVersion:1,hierarchy:structuredClone(defaults.hierarchy)}),loaded=migrateAndMergeSettings({...old,ontologyDescriptions:{Parent:'Meaning <b>is literal</b>.',Child:'Independent inverse.','empty':'   ',bad:42}});
+ assert.deepEqual(old.ontologyDescriptions,{});assert.equal(loaded.ontologyDescriptions.Parent,'Meaning <b>is literal</b>.');assert.equal(loaded.ontologyDescriptions.Child,'Independent inverse.');assert(!Object.hasOwn(loaded.ontologyDescriptions,'empty'));assert(!Object.hasOwn(loaded.ontologyDescriptions,'bad'));
+ assert.deepEqual(loaded.hierarchy,old.hierarchy);assert.deepEqual(classifySettingsChange(captureSettingsPolicy(old),captureSettingsPolicy(loaded)).changedKeys,[]);
+ assert.deepEqual(migrateAndMergeSettings(JSON.parse(JSON.stringify(loaded))).ontologyDescriptions,loaded.ontologyDescriptions);
 });

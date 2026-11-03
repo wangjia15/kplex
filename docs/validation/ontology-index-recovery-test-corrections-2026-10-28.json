@@ -1,0 +1,126 @@
+{
+  "status": "passed",
+  "branch": "2026-10-28-investigate-ontology-index-recovery",
+  "head": "17e39bf",
+  "dirty": true,
+  "node": "v22.22.3",
+  "portable": {
+    "command": "npm run verify",
+    "lanes": {
+      "architecture tests": 9,
+      "core tests": 130,
+      "main tests": 1672,
+      "UI browser tests": 403,
+      "source tests": 357,
+      "source browser tests": 807
+    },
+    "failures": 0,
+    "build": "passed",
+    "scanner": "passed"
+  },
+  "nativeVerification": {
+    "schemaVersion": 1,
+    "status": "passed",
+    "startedAt": "2026-10-28T21:25:38.580Z",
+    "source": {
+      "revision": "17e39bf1dd5c964c84c69e82b1197c9b2ab5971d",
+      "dirty": true,
+      "node": "v22.22.3",
+      "os": "darwin 23.5.0"
+    },
+    "target": {
+      "vaultName": "kplex-test-small",
+      "vaultPath": "/Users/zsviczian/Obsidian/kplex-test-small",
+      "configDir": "/Users/zsviczian/Obsidian/kplex-test-small/.obsidian"
+    },
+    "capabilities": {
+      "version": "1.15.0 (installer 1.14.0)",
+      "commands": [
+        "version",
+        "vault",
+        "plugin:disable",
+        "plugin:enable",
+        "commands",
+        "command",
+        "dev:dom",
+        "dev:errors"
+      ]
+    },
+    "artifacts": {
+      "sourceHashes": {
+        "main.js": "71b6daf58764186f0c9d32d98910a2187d7077680688352b5763bb78d8164c11",
+        "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+        "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+      },
+      "pluginVersion": "0.3.0",
+      "stagedHashes": {
+        "main.js": "71b6daf58764186f0c9d32d98910a2187d7077680688352b5763bb78d8164c11",
+        "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+        "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+      }
+    },
+    "scenarios": [
+      {
+        "id": "open-kplex",
+        "status": "passed",
+        "assertions": [
+          "plugin command registered",
+          "rendered .kplex-app contains K-Plex",
+          "no captured JavaScript errors"
+        ],
+        "elapsedMs": 93
+      }
+    ],
+    "completedAt": "2026-10-28T21:54:37.339Z"
+  },
+  "nativeSlider": {
+    "name": "retired-native-settings-slider",
+    "status": "passed",
+    "node": "v22.22.3",
+    "startedAt": "2026-10-28T22:02:42.353Z",
+    "maximumMs": 180000,
+    "driver": {
+      "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+      "scenario": "bb1476f0dc13338b5ea85682ea1edb459dc48fcbd89b829a701105a5bb34c0c0",
+      "definitions": "11ef97d87f5a0009dd21e6f4a85dbc202819123f8dbfa746eabc2bd7a5036ce4"
+    },
+    "artifacts": {
+      "main.js": "71b6daf58764186f0c9d32d98910a2187d7077680688352b5763bb78d8164c11",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+      "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+    },
+    "source": {
+      "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+      "src/index/GraphIndex.ts": "0fc52b8170f462cfaeeec726bc531d61014ea31e9a64363e911f7fcc81fbd474",
+      "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+      "src/settings.ts": "a8d0db26715c951e5ebf772feb9b4fc10ae58c1a62ef1ca7ad2da1aec2309969",
+      "src/ui/numberSlider.ts": "a477efd0ffb1b22832917a5a350805b7746722535eb5f3b6c4656764bd8d0a1e"
+    },
+    "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+    "obsidian": "1.15.0 (installer 1.14.0)",
+    "result": {
+      "cases": [
+        "actual native scalar persists after owning row removal",
+        "native save completion does not repaint a retired range",
+        "retired native range cannot admit a new settings write"
+      ],
+      "writes": 1,
+      "completionTouches": 0,
+      "input": "trusted Electron key",
+      "fixture": "real native Setting and shared production Settings binder in an owned same-document test row"
+    },
+    "cleanup": "passed",
+    "completedAt": "2026-10-28T22:02:43.628Z"
+  },
+  "testSources": {
+    "tests/action-host-integration.test.mjs": "a256a4aaebbe137d3938d8adeb952e2be47139e62495de4ab452c136d0904c05",
+    "tests/plex-view-session.test.mjs": "9ecd596b481eebf69acc5c86b05ae5cf8a2db2c3493c58170f31354647d4f623",
+    "tests/predicate-conditions-browser.test.mjs": "a8f47fa7cf23547350be3129081196c232050b90378d699376ee17a183e315de",
+    "tests/ui-components.test.mjs": "84e5da003e54063e874729dae5d19ff5ea8454acf4c0542740b298193871287b",
+    "tests/view-interactions-browser.test.mjs": "3ffc3c0bf76a47376841fe84d9c758ef94c9b907c6d9078d04b58559fbbcf961",
+    "tests/wander-views.test.mjs": "8c3bced3162fdeb87acf6b9875cf0d3f073ef265924691a239ce5ee83dd4b5bd",
+    "tests/wuxing-browser.test.mjs": "6896d3f43718113dc03bc37da130bd61965b1bbd0d77c1f82d20ada5acd28203"
+  },
+  "restoration": "Original disposable-vault artifacts, settings bytes and layout restored; production data untouched.",
+  "limits": "Native slider check uses a real Obsidian Setting, shared production binder and trusted Electron key in an owned same-document row. It is not physical-device acceptance or a test of declarative Settings-window migration."
+}

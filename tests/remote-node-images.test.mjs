@@ -60,7 +60,7 @@ test('actual PlexGraph effects retire late metadata results and queued React upd
   visit(graph);assert.equal(effects.length,2);
   for(const effect of effects){
     let epoch=0,resolve,changed;const queued=[],timers=new Map(),requests=[];
-    const page={path:'Owned.md'},context={index:{getNodeVisualRevision:()=>epoch,invalidateNodeVisual(){},resolveNodeVisuals:()=>{const task=new Promise(done=>{resolve=done});requests.push(task);return task}},visualPages:[page],visualPageByPath:new Map([[page.path,page]]),visualRefreshTimers:{current:timers},setNodeVisuals:updater=>queued.push(updater),plugin:{app:{metadataCache:{on:(_name,callback)=>{changed=callback;return callback},offref(){changed=null}}}},window:{setTimeout:()=>1,clearTimeout(){}}};
+    const page={path:'Owned.md'},context={viewSession:undefined,index:{getNodeVisualRevision:()=>epoch,invalidateNodeVisual(){},resolveNodeVisuals:()=>{const task=new Promise(done=>{resolve=done});requests.push(task);return task}},visualPages:[page],visualPageByPath:new Map([[page.path,page]]),visualRefreshTimers:{current:timers},setNodeVisuals:updater=>queued.push(updater),plugin:{app:{metadataCache:{on:(_name,callback)=>{changed=callback;return callback},offref(){changed=null}}}},window:{setTimeout:()=>1,clearTimeout(){}}};
     const emitted=ts.transpileModule('const effect='+effect+';',{compilerOptions:{target:ts.ScriptTarget.ES2021}}).outputText;
     /** Instantiate the production callback in a finite host/effect context. */
     const install=()=>Function(...Object.keys(context),emitted+';return effect();')(...Object.values(context));
@@ -177,7 +177,7 @@ test('held optional refresh cannot undo immediate image revocation or trap a dur
   const refresh=index.refreshPresentationSettings.bind(index),gate=new Promise(resolve=>release=resolve),before=o.counts();
   index.refreshPresentationSettings=async()=>{await gate;return refresh()};
   try{const pending=setConsent(false);equal(settings.allowRemoteNodeImages,false,'Revocation is synchronous');await pending;
-   ok(window.imageSaveNotices.includes('settings.savedRefreshPending'),'Durable pending has truthful native feedback');
+   equal(window.imageSaveNotices,[],'Normal queued consent save must not emit a generic recovery notice');
    equal(o.counts().semanticRefreshes,before.semanticRefreshes,'No semantic refresh for consent');equal(o.counts().reads,before.reads,'No note reads');equal(o.counts().parses,before.parses,'No acquisition parsing');return true;
   }finally{release();index.refreshPresentationSettings=refresh}
  })()`),true);

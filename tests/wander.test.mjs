@@ -171,12 +171,21 @@ test('a rejected preflight target is discarded so another displayed destination 
  assert.deepEqual(h.moves.map(item=>item.center),['D']);assert.deepEqual(h.highlights,['B','D']);h.controller.stop();
 });
 
-test('native readiness uses rendered local center coverage rather than deferred layout placeholders',()=>{
- const renderedCenterGates={current:{identity:'A',stats:{top:{complete:false,coverage:'local'},bottom:{complete:false,coverage:'local'},left:{complete:false,coverage:'local'},right:{complete:false,coverage:'local'}}}};
+test('Wander readiness uses the current local certificate independently of physical gates and corpus counts',()=>{
+ const center={path:'A'},scope={coverage:'local',prepared:true,complete:false,pending:false},scene={failed:false};let canonical=center,reads=0;
  const candidates=[{node:{identity:'B'},occurrenceId:'B-tile'}];
- const read=graphCallback('readWanderScene',{viewport:{current:{isConnected:true}},persistentNeighborhood:{center:{path:'A'}},scene:{nodes:[{role:'center',gateStats:{top:{countUnavailable:true}}}]},renderedCenterGates,
- plugin:{isKplexLeafVisible:()=>true},hostLeaf:{},sceneTransitioning:false,pathChangedThisRender:false,sceneMotion:{isRunning:()=>false},nodeDrag:null,connectDrag:null,areaSettingsMode:false,relationshipUpdating:false,wanderCandidates:candidates});
+ const viewport={current:{isConnected:true}},plugin={isKplexLeafVisible:()=>true};let running=false;
+ const dependencies={viewport,persistentNeighborhood:{center},scene,index:{get:()=>canonical,viewScopeCoverage:()=>{reads++;return scope},gateStats:()=>{throw Error('Readiness must not request gate counts')}},activePath:'A',viewFailed:false,
+ plugin,hostLeaf:{},sceneTransitioning:false,pathChangedThisRender:false,sceneMotion:{isRunning:()=>running},nodeDrag:null,connectDrag:null,areaSettingsMode:false,relationshipUpdating:false,wanderCandidates:candidates};
+ const read=graphCallback('readWanderScene',dependencies);
  assert.equal(read().ready,true);assert.equal(read().candidates,candidates);
- renderedCenterGates.current.identity='retired';assert.equal(read().ready,false);
- renderedCenterGates.current.identity='A';renderedCenterGates.current.stats.top.countUnavailable=true;assert.equal(read().ready,false);
+ scope.prepared=false;scope.pending=true;assert.equal(read().ready,false,'Unprepared demand must wait, not fabricate local readiness');
+ scope.prepared=true;scope.pending=false;scope.coverage='local';assert.equal(read().ready,true,'Incomplete corpus/gate counts do not block local navigation');
+ canonical={path:'A'};assert.equal(read().center,null,'Replaced canonical incarnation is not the displayed center');assert.equal(read().ready,false);canonical=center;
+ running=true;assert.equal(read().ready,false);running=false;viewport.current.isConnected=false;assert.equal(read().ready,false);viewport.current.isConnected=true;
+ plugin.isKplexLeafVisible=()=>false;assert.equal(read().ready,false);plugin.isKplexLeafVisible=()=>true;
+ scene.failed=true;assert.equal(read().ready,false);scene.failed=false;
+ for(const field of ['viewFailed','sceneTransitioning','pathChangedThisRender','nodeDrag','connectDrag','areaSettingsMode','relationshipUpdating'])
+  assert.equal(graphCallback('readWanderScene',{...dependencies,[field]:true})().ready,false,field);
+ assert(reads>0,'Only the existing cache-only local certificate is consulted');
 });

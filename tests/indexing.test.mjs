@@ -48,7 +48,7 @@ assert(graphBuilderSource.includes("publishFileCommit?: PatchFilePublisher"), "I
 assert(graphIndexSource.includes("private publishIncrementalFile: PatchFilePublisher"), "GraphIndex must own the coherent graph/fingerprint/search/cache observer boundary");
 assert(graphBuilderSource.includes("async buildStructuralBaseline()"), "Cold startup must have a low-cost structure/link baseline before Markdown ingestion");
 assert(graphIndexSource.includes("async rebuildProgressively("), "GraphIndex must own progressive cold-start publication");
-assert(mainSource.includes("this.index.rebuildProgressively(this.startupGraphSeedPaths()"), "Initial cold startup must use the progressive index path");
+assert(mainSource.includes("rebuiltIndex.rebuildProgressively(this.startupGraphSeedPaths()"), "Initial cold startup must use the progressive index path on its captured index");
 assert(mainSource.includes('this.performRebuild(false, false, "startup:initial-index", true)'), "Cold startup must not accidentally set the force flag that bypasses progressive publication");
 assert(mainSource.includes("this.index.size > 0 && !structuralDirty && this.dirtyMarkdownPaths.size === 0"), "An empty cold index must not take the clean-index early return");
 const startupSeedSource = mainSource.slice(mainSource.indexOf("  private startupGraphSeedPaths()"), mainSource.indexOf("  /** Resolve a missing center", mainSource.indexOf("  private startupGraphSeedPaths()")));
@@ -173,7 +173,8 @@ const settingDefinitionsStart = settingsSource.indexOf("  getSettingDefinitions(
 const settingDefinitionsEnd = settingsSource.indexOf("  getControlValue(", settingDefinitionsStart);
 const settingDefinitionsSource = settingsSource.slice(settingDefinitionsStart, settingDefinitionsEnd);
 assert(!settingDefinitionsSource.includes('name: "Note tab link"'), "Live note-tab synchronization state must not be duplicated in Settings");
-assert(settingDefinitionsSource.includes('name: translate("settings.ui.sibling.relative.size")'));
+const compassSettingDefinitionsSource = readFileSync(join(root, "src/ui/plexViews/classic/settings.ts"), "utf8");
+assert(compassSettingDefinitionsSource.includes('name: translate("settings.ui.sibling.relative.size")'));
 assert(settingDefinitionsSource.includes('name: translate("settings.ui.cross.link.opacity")'));
 assert(settingDefinitionsSource.includes('name: translate("settings.ui.node.styling")'), "Node styling must be a localized Visual styling subpage");
 assert(settingDefinitionsSource.includes('name: translate("settings.ui.link.styling")'), "Link styling must be a localized Visual styling subpage");
@@ -413,6 +414,45 @@ for (const file of [
   "src/lang/index.ts",
   "src/types.ts",
   "src/application/PlexFootprints.ts",
+  "src/application/PublicApi.ts",
+  "src/application/PublicApiConfiguration.ts",
+  "src/application/PublicCanvasRegistry.ts",
+  "src/application/publicApiContracts.ts",
+  "src/application/publicApiMarkdown.ts",
+  "src/adapters/obsidian/publicApiGraph.ts",
+  "src/adapters/obsidian/publicApiGraphql.ts",
+  "src/adapters/obsidian/publicApiWindow.ts",
+  "src/publicApi/createPublicApi.ts",
+  "src/publicApi/ontologyCompletion.ts",
+  "src/editor/ontologyCompletionConfiguration.ts",
+  "src/application/PlexViewSession.ts",
+  "src/application/PlexEditorBindings.ts",
+  "src/ui/plexViews/occurrenceEditors.ts",
+  "src/core/plex/views/registry.ts",
+  "src/core/plex/views/presentation.ts",
+  "src/core/plex/views/decorations.ts",
+  "src/core/plex/views/facets/contracts.ts",
+  "src/core/contracts/areaGeometry.ts",
+  "src/core/contracts/markdownHelp.ts",
+  "src/core/plex/views/facets/presentation.ts",
+  "src/core/plex/views/facets/layoutStrategies.ts",
+  "src/core/plex/views/facets/flow.ts",
+  "src/core/plex/views/propertyAssignment.ts",
+  "src/core/plex/views/dropTargets.ts",
+  "src/core/plex/views/facets/assignment.ts",
+  "src/ui/CanvasPropertyAssignmentActions.ts",
+  "src/ui/CanvasPropertyAssignmentModal.ts",
+  "src/core/plex/views/facets/templates.ts",
+  "src/core/plex/views/facets/validation.ts",
+  "src/core/plex/views/facets/configuration.ts",
+  "src/core/plex/views/facets/state.ts",
+  "src/core/plex/views/facets/classification.ts",
+  "src/core/plex/views/facets/rules.ts",
+  "src/core/plex/views/sections.ts",
+  "src/core/plex/views/facets/labels.ts",
+  "src/core/plex/views/facets/projection.ts",
+  "src/core/plex/views/facets/layout.ts",
+  "src/ui/plexViews/builtins.ts",
   "src/ui/KplexDocumentSession.ts",
   "src/core/plex/viewPresentation.ts",
   "src/core/plex/internalHotkeys.ts",
@@ -421,6 +461,8 @@ for (const file of [
   "src/core/plex/shortcutPresentation.ts",
   "src/core/contracts/fieldName.ts",
   "src/core/contracts/ontologyConfiguration.ts",
+  "src/core/contracts/ontologyCompletion.ts",
+  "src/core/contracts/ontologyReadModel.ts",
   "src/core/graph/model.ts",
   "src/core/parser/metadata.ts",
   "src/core/parser/referenceValues.ts",
@@ -494,6 +536,8 @@ for (const file of [
   "src/ui/features/ontologyPresentation.ts",
   "src/ui/StyleColorControls.ts",
   "src/ui/styleNumberSlider.ts",
+  "src/ui/numberSlider.ts",
+  "src/ui/components/latestSliderValue.ts",
   "src/ui/StyleSwatchScope.ts",
   "src/adapters/obsidian/colorChanges.ts",
   "src/ui/ColorLiteralEditor.ts",
@@ -511,7 +555,11 @@ for (const file of [
   "src/util/perf.ts",
   "src/main.ts",
   "src/readAloud.ts",
+  "src/adapters/obsidian/fileMenu.ts",
+  "src/adapters/obsidian/drawingTemplates.ts",
+  "src/adapters/obsidian/nativeSubmenu.ts",
   "src/core/plex/startupIndexPreferences.ts",
+  "src/core/plex/createdNoteDestination.ts",
   "src/index/fieldParser.ts",
   "src/index/MetadataParser.ts",
   "src/index/RelationEvidence.ts",
@@ -545,10 +593,20 @@ for (const file of [
   "src/index/ForegroundWorkScheduler.ts",
   "src/index/HostMetadataPreview.ts",
   "src/index/SectionExpansion.ts",
+  "src/index/SectionPreview.ts",
   "src/index/style.ts",
   "src/lens/GraphPredicate.ts",
   "src/lens/GraphPredicateParser.ts",
   "src/lens/GraphLens.ts",
+  "src/core/plex/lensValidation.ts",
+  "src/core/plex/sharing/contracts.ts",
+  "src/core/plex/sharing/authoring.ts",
+  "src/ui/sharing/contracts.ts",
+  "src/ui/sharing/PortablePackageModal.ts",
+  "src/ui/sharing/portableTransfer.ts",
+  "src/ui/plexViews/facets/facetSharing.ts",
+  "src/core/plex/sharing/validation.ts",
+  "src/core/plex/sharing/transfer.ts",
   "src/lens/GraphLensSimple.ts",
   "src/lens/SimplePlexFilter.ts",
   "src/ui/PurgeIndexCacheModal.ts",
@@ -556,11 +614,46 @@ for (const file of [
   "src/core/plex/actions.ts",
   "src/core/plex/actionPreferences.ts",
   "src/core/plex/typographyPreferences.ts",
+  "src/core/plex/views/configuration.ts",
+  "src/core/plex/views/configurationContracts.ts",
+  "src/core/plex/views/configurationValues.ts",
+  "src/core/plex/views/configurationPaths.ts",
+  "src/core/plex/views/configurationMigrations.ts",
+  "src/ui/plexViews/settingsContributions.ts",
+  "src/ui/plexViews/managerContracts.ts",
+  "src/ui/plexViews/facets/FacetPresetManager.ts",
+  "src/ui/plexViews/facets/FacetPresetEditor.ts",
+  "src/ui/NativeMarkdownHelp.ts",
+  "src/ui/MarkdownHelpModal.ts",
+  "src/ui/plexViews/facets/diagnosticSettings.ts",
+  "src/ui/plexViews/facets/areaSizeSettings.ts",
+  "src/ui/plexViews/facets/layoutSettings.ts",
+  "src/ui/plexViews/facets/flowSettings.ts",
+  "src/ui/plexViews/facets/help.ts",
+  "src/ui/plexViews/facets/helpSettings.ts",
+  "src/ui/predicates/conditionChoices.ts",
+  "src/ui/predicates/PredicateConditions.tsx",
+  "src/ui/predicates/PredicateExpressionField.tsx",
+  "src/ui/ObsidianIcon.tsx",
+  "src/ui/predicates/PredicateRuleEditor.tsx",
+  "src/ui/predicates/predicateMessages.ts",
+  "src/ui/plexViews/sections.ts",
+  "src/ui/plexViews/scene.ts",
+  "src/ui/plexViews/areaVisibility.ts",
+  "src/ui/plexViews/facets/FacetPresetRemoval.ts",
+  "src/ui/plexViews/contributionContracts.ts",
+  "src/ui/plexViews/contributionValidation.ts",
+  "src/ui/plexViews/mindmap/settings.ts",
+  "src/ui/plexViews/labels.ts",
+  "src/ui/plexViews/classic/settings.ts",
+  "src/ui/plexViews/classic/occurrenceEditor.ts",
   "src/application/ActionManager.ts",
   "src/application/IndexingActivity.ts",
   "src/application/SessionEventRecorder.ts",
   "src/application/supportClipboard.ts",
   "src/application/ClipboardSession.ts",
+  "src/adapters/obsidian/nodeLinkClipboard.ts",
+  "src/core/plex/contentVisibility.ts",
   "src/application/supportReport.ts",
   "src/application/supportReportProjection.ts",
   "src/application/supportCustomizationProjection.ts",
@@ -573,6 +666,29 @@ for (const file of [
   "src/adapters/obsidian/placeholderRelocation.ts",
   "src/ui/actionPresentation.ts",
   "src/ui/layout.ts",
+  "src/ui/plexViews/measurement.ts",
+  "src/ui/plexViews/classic/layout.ts",
+  "src/core/plex/views/classic/projection.ts",
+  "src/core/plex/views/classic/geometry.ts",
+  "src/core/plex/views/classic/definition.ts",
+  "src/core/plex/views/state.ts",
+  "src/core/plex/views/hierarchy.ts",
+  "src/core/plex/views/mindmap/definition.ts",
+  "src/core/plex/views/mindmap/configuration.ts",
+  "src/core/plex/views/mindmap/state.ts",
+  "src/core/plex/views/mindmap/occurrences.ts",
+  "src/core/plex/views/mindmap/projection.ts",
+  "src/core/plex/views/mindmap/layout.ts",
+  "src/core/plex/views/areaLayout.ts",
+  "src/core/plex/views/mindmap/actions.ts",
+  "src/core/plex/views/contracts.ts",
+  "src/core/plex/noteProperties.ts",
+  "src/core/plex/views/wuxing/classification.ts",
+  "src/core/plex/views/wuxing/configuration.ts",
+  "src/core/plex/views/wuxing/projection.ts",
+  "src/core/plex/views/wuxing/layout.ts",
+  "src/core/plex/views/wuxing/definition.ts",
+  "src/ui/plexViews/wuxing/settings.ts",
   "src/ui/components/collectionWindow.ts",
 ]) compile(file);
 
@@ -582,6 +698,12 @@ compile("src/core/plex/viewPresentation.ts");
 compile("src/ui/viewProfile.ts", "src/ui/viewProfileUnderTest.ts");
 
 const obsidianModuleDir = join(temp, "node_modules/obsidian");
+// Native preset contributions now import shared React condition controls. Forward the real
+// installed dependencies from this owned emitted-module fixture; only Obsidian remains finite.
+for (const [name, entry] of [["react/index.js", "react"], ["react/jsx-runtime.js", "react/jsx-runtime"], ["react-dom/client.js", "react-dom/client"], ["graphql/index.js", "graphql"]]) {
+  const target = join(temp, "node_modules", name);mkdirSync(dirname(target), {recursive: true});
+  writeFileSync(target, `module.exports = require(${JSON.stringify(require.resolve(entry))});\n`);
+}
 mkdirSync(obsidianModuleDir, { recursive: true });
 writeFileSync(join(obsidianModuleDir, "index.js"), String.raw`
 class TAbstractFile {
@@ -994,6 +1116,23 @@ const indexingStatusContext = {
     return "Status: updating index";
   },
 };
+// Source recovery runs its progressive builder without the ordinary rebuildTask wrapper.
+// Its real published note count must still be visible as indexing progress, including percentage.
+{
+  const context={...indexingStatusContext,rebuildTask:null,cachedMarkdownFileCount:5,
+    index:{...indexingStatusContext.index,isBuilding:()=>true},
+    translator:(key,params)=>key==='index.startupSemantics'?'Applying relationships'
+      :key==='index.startupNotesProgress'?`${params.activity}: ${params.processed} / ${params.total} (${params.percent}%)`:key};
+  const status=KplexPlugin.prototype.getIndexStatus.call(context);
+  assert.equal(status.phase,'indexing','An active recovery builder cannot hide behind generic preparation');
+  assert.equal(status.label,'Applying relationships: 3 / 5 (60%)','Recovery shows actual completed notes and percentage');
+  context.index.indexedMarkdownFileCount=()=>4;
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label,'Applying relationships: 4 / 5 (80%)','Published build progress advances');
+  context.index.getBuildProgress=()=>({processed:5,total:5,stage:'relationships'});
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label,'index.startupResolution','Completed note inputs expose the next relationship phase');
+  context.index.getBuildProgress=()=>({processed:5,total:5,stage:'presentation'});
+  assert.equal(KplexPlugin.prototype.getIndexStatus.call(context).label,'index.startupSearch','Final presentation/search work cannot look stuck at 100% notes');
+}
 // Local readiness must not certify every physical note as semantically indexed.
 {
   const context = { ...indexingStatusContext, initialIndexComplete: true, indexDirty: false,
@@ -1781,6 +1920,8 @@ for (const { inventoryRevision, fresh, remainsDirty } of [
 ]) {
   const startup = new KplexPlugin();
   startup.index = { isOnDemandMode: () => false,
+    /** Optional URL discovery is outside this captured-inventory coordinator fixture. */
+    startBackgroundUrlIndex: async () => true,
     getRestoreInventorySourceRevision: () => inventoryRevision,
     hasPendingSnapshotHydration: () => false,
     size: 1,
@@ -1855,24 +1996,30 @@ for (const { visible, unloading, complete, dirty, expected } of [
   assert.deepEqual([...startup.dirtyMarkdownPaths], ["Note A.md"], "A newer source edit must remain queued");
 }
 
-// Source progress is a startup authority independently of optional full-graph hydration.
-for (const adopted of [true, false]) {
+// Eager source recovery owns batched graph completion; vocabulary alone cannot finish startup.
+for (const [adopted, completed] of [[true, true], [true, false], [false, false]]) {
   const startup = new KplexPlugin();
-  let fullBuilds = 0;
+  let fullBuilds = 0, progressiveBuilds = 0, optionalUrlStarts = 0;
   startup.index = { isOnDemandMode: () => false,
+    /** Count optional admission separately from primary source/graph completion. */
+    startBackgroundUrlIndex: async () => { optionalUrlStarts++; return true; },
     size: 1, hasPendingSnapshotHydration: () => false, hasPhysicalBaseline: () => true,
     hasSourceBackedStartup: () => true, adoptStartupSources: async () => adopted,
+    rebuild: async () => { progressiveBuilds++; return completed; },
     isFullSnapshotHydrated: () => false,
   };
   startup.app = app; startup.layoutReady = true; startup.indexPreparationAdmitted = true; startup.indexDirty = true;
   startup.indexBacklogReasons.add("startup:no-snapshot");
   startup.notifyIndexStatus = () => {};
+  startup.startupGraphSeedPaths = () => [];
   startup.hasVisibleKplexSurface = () => false;
   startup.performRebuild = async () => { fullBuilds++; };
   await startup.ensureInitialIndex();
-  assert.equal(fullBuilds, 0, "Source-backed startup does not route missing graph cache to a full build");
-  assert.equal(startup.initialIndexComplete, adopted, "Unavailable/incomplete source adoption remains explicit");
-  assert.equal(startup.indexDirty, !adopted, "Only completed source adoption retires the startup backlog");
+  assert.equal(fullBuilds, 0, "Source-backed startup retains its own coordinator instead of an unrelated fallback");
+  assert.equal(progressiveBuilds, adopted ? 1 : 0, "Only recovered sources admit eager relationship completion");
+  assert.equal(startup.initialIndexComplete, completed, "Unavailable/incomplete graph recovery remains explicit");
+  assert.equal(optionalUrlStarts, Number(completed), "Only completed primary Eager graph recovery admits independent URL inventory");
+  assert.equal(startup.indexDirty, !completed, "Only completed eager graph recovery retires the startup backlog");
 }
 
 function expectRole(sourcePath, role, targetPath, type) {
@@ -3477,7 +3624,7 @@ try {
       : section),
   };
   const contentOptions = { showHighlights: true, showFigures: true, collapsed: new Set() };
-  const contentScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, contentOptions);
+  const contentScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, contentOptions);
   const panel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id && item.kind === "highlights");
   const figuresPanel = contentScene.sectionPanels.find((item) => item.sectionId === rootOne.id && item.kind === "figures");
   assert(panel, "A section with highlights gets a content panel");
@@ -3493,10 +3640,10 @@ try {
   assert(figuresPanel.left > panel.left, "Figures are indented under their highlights panel");
   assert(childANode.y - childANode.height / 2 >= figuresPanel.top + figuresPanel.height, "Next section starts below both panels");
   // Hiding figures leaves the highlights panel attached to the card.
-  const highlightsOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, showFigures: false });
+  const highlightsOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, { ...contentOptions, showFigures: false });
   assert.equal(highlightsOnly.sectionPanels.length, 1);
   assert.equal(highlightsOnly.sectionPanels[0].kind, "highlights");
-  const figuresOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, showHighlights: false });
+  const figuresOnly = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, { ...contentOptions, showHighlights: false });
   assert.equal(figuresOnly.sectionPanels.length, 1);
   assert.equal(figuresOnly.sectionPanels[0].kind, "figures");
   assert.equal(figuresOnly.sectionPanels[0].left, panel.left, "Without highlights, figures hang off the card itself");
@@ -3515,7 +3662,7 @@ try {
 
   // A dragged panel keeps its offset, stays connected, and still pushes the next section down.
   const movedSizes = new Map([[rootOne.id, { panelDx: 40, panelDy: 24, figuresDx: -10, figuresDy: 60 }]]);
-  const movedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, contentOptions, movedSizes);
+  const movedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, contentOptions, movedSizes);
   const movedPanel = movedScene.sectionPanels.find((item) => item.kind === "highlights");
   const movedFigures = movedScene.sectionPanels.find((item) => item.kind === "figures");
   assert.equal(movedPanel.left, panel.left + 40);
@@ -3528,20 +3675,20 @@ try {
   const movedChildA = movedScene.nodes.find((node) => node.page.path === childA.page.path);
   assert(movedChildA.y - movedChildA.height / 2 >= movedFigures.top + movedFigures.height, "Next section clears dragged panels");
 
-  const collapsedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, collapsed: new Set([rootOne.id]) });
+  const collapsedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, { ...contentOptions, collapsed: new Set([rootOne.id]) });
   assert(collapsedScene.sectionPanels[0].height < panel.height, "A folded panel reserves only its header");
   // Each panel folds on its own.
-  const foldedFigures = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, collapsed: new Set([`${rootOne.id}#figures`]) });
+  const foldedFigures = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, { ...contentOptions, collapsed: new Set([`${rootOne.id}#figures`]) });
   assert.equal(foldedFigures.sectionPanels.find((item) => item.kind === "highlights").height, panel.height);
   assert(foldedFigures.sectionPanels.find((item) => item.kind === "figures").height < figuresPanel.height);
-  const hiddenHighlights = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, { ...contentOptions, showFigures: false, showHighlights: false });
+  const hiddenHighlights = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, { ...contentOptions, showFigures: false, showHighlights: false });
   assert.equal(hiddenHighlights.sectionPanels.length, 0, "Hiding highlights and figures removes the panel");
   assert.equal(fullTreeScene.sectionPanels.length, 0, "No content options means no panels");
 
   // User-resized cards and panels: sizes are honoured, the card keeps its top edge, and the
   // following section moves down to clear the larger panel.
   const sizes = new Map([[rootOne.id, { cardWidth: 400, cardHeight: 80, panelWidth: 520, panelHeight: 600, figuresWidth: 460, figuresHeight: 300 }]]);
-  const resizedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, contentOptions, sizes);
+  const resizedScene = buildSectionExpandedScene(withContent, index, settings, allExpandedIds, true, undefined, false, undefined, contentOptions, sizes);
   const resizedNode = resizedScene.nodes.find((node) => node.page.path === rootOne.page.path);
   const resizedPanel = resizedScene.sectionPanels.find((item) => item.kind === "highlights");
   const resizedFigures = resizedScene.sectionPanels.find((item) => item.kind === "figures");
@@ -3957,7 +4104,7 @@ try {
     } finally { index.get = originalGet; }
     index.dematerializeFile(preparedOnlyFile.path);
   }
-  assert(index.applyRelationshipEdit("Note A.md", immediateFile.path, "child", "Children"));
+  assert(index.applyRelationshipEdit("Note A.md", immediateFile.path, "child", "Children"), JSON.stringify({policy:index.fullSemanticPolicyRevision,currentPolicy:index.semanticPolicyRevision,maintenance:index.fullSemanticMaintenanceRevision,currentMaintenance:index.sourceAcquisition.getMaintenanceRevision(),pending:[...(index.sourceAcquisition.pendingGraphSources()??[])],sourceBacked:index.sourceBackedSemantics,source:index.fullSemanticSourceRevision,currentSource:plugin.getIndexSourceRevision()}));
   expectRole("Note A.md", "child", immediateFile.path, RelationType.DEFINED);
 
   // Placeholder creation is optimistic too: no TFile is required until the user materializes the
@@ -5210,12 +5357,15 @@ try {
     const edgeJs = ts.transpileModule(plexGraphSource.slice(markerStart, markerEnd) + plexGraphSource.slice(edgeStart, edgeEnd), {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.React },
     }).outputText;
-    const Edge = new Function("React", "LinkDirection", "gatesForEdge", "gatePoint", "edgeGeometry", "alphaHexToCss", "relationLabel", "NATIVE_LINK_STROKE", "NATIVE_LINK_TEXT", "DEFAULT_RENDERED_LINK_WIDTH", `${edgeJs}; return Edge;`)(
+    const Edge = new Function("React", "LinkDirection", "edgePhysicalOccurrence", "gatesForEdge", "gatePoint", "edgeGeometry", "alphaHexToCss", "relationLabel", "NATIVE_LINK_STROKE", "NATIVE_LINK_TEXT", "DEFAULT_RENDERED_LINK_WIDTH", "edgeViewportEndpoints", "edgeViewportClip", `${edgeJs}; return Edge;`)(
       { createElement: (type, props, ...children) => ({ type, props, children }) }, LinkDirection,
+      require(join(temp, "src/ui/plexViews/scene.js")).edgePhysicalOccurrence,
       () => ({ source: "left", target: "right" }), () => ({ x: 0, y: 0 }),
       () => ({ d: "M0 0L1 1", midpoint: { x: 0, y: 0 } }), value => value, value => value,
       require(join(temp, "src/index/style.js")).NATIVE_LINK_STROKE, require(join(temp, "src/index/style.js")).NATIVE_LINK_TEXT,
       require(join(temp, "src/index/style.js")).DEFAULT_RENDERED_LINK_WIDTH,
+      require(join(temp, "src/ui/plexViews/areaVisibility.js")).edgeViewportEndpoints,
+      require(join(temp, "src/ui/plexViews/areaVisibility.js")).edgeViewportClip,
     );
     try {
       assert.equal(await arrowIndex.rebuild(), true);
@@ -5232,8 +5382,9 @@ try {
           assert(edge, "Defined edge is projected from the selected center");
           assert.equal(edge.direction, center === 0 ? LinkDirection.FROM : LinkDirection.TO);
           const rendered = Edge({ edge, nodes: new Map(scene.nodes.map(node => [node.page.path, node])), inverseArrowDirection,
-            connectorStyle: "straight", crossLinkOpacity: 1, highlighted: false, dimmed: false });
-          const visiblePath = rendered.children.find(child => child?.props?.className === "kplex-edge-visible");
+            viewportForNode: () => undefined, connectorStyle: "straight", crossLinkOpacity: 1, highlighted: false, dimmed: false });
+          const paint = rendered.children.find(child => child?.props?.className === "kplex-edge-paint");
+          const visiblePath = paint.children.find(child => child?.props?.className === "kplex-edge-visible");
           const expectedStart = center === 0 ? !inverseArrowDirection : inverseArrowDirection;
           assert.equal(visiblePath.props.markerStart, expectedStart ? "url(#kplex-arrow)" : undefined);
           assert.equal(visiblePath.props.markerEnd, expectedStart ? undefined : "url(#kplex-arrow)");

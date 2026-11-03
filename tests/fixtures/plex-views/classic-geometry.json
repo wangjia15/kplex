@@ -1,0 +1,3394 @@
+[
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 1,
+    "compactingFactor": 1,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -89.75,
+        "y": -130.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 89.75,
+        "y": -130.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -380.75,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -380.75,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 380.75,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 380.75,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 701.75,
+        "y": -110.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 701.75,
+        "y": -59.85,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -169.75,
+        "top": -399.6,
+        "width": 339.5,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 169.8,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -495.75,
+        "top": -212.79999999999998,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 265.75,
+        "top": -212.79999999999998,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 591.75,
+        "top": -210,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 1,
+    "compactingFactor": 1,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -89.75,
+        "y": -274.1,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 89.75,
+        "y": -274.1,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -525,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -525,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 525,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 525,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 846,
+        "y": -25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 846,
+        "y": 25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -314,
+        "top": -543.1,
+        "width": 628,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 313.3,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -640,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 410,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 736,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 1,
+    "compactingFactor": 3,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -67.25,
+        "y": -71.2,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 67.25,
+        "y": -71.2,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -262.25,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -262.25,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 262.25,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 262.25,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 487.25,
+        "y": -131.85000000000002,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 487.25,
+        "y": -97.75000000000003,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -147.25,
+        "top": -340.2,
+        "width": 294.5,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 82.2,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -377.25,
+        "top": -281.8,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 147.25,
+        "top": -281.8,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 377.25,
+        "top": -239.8,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 1,
+    "compactingFactor": 3,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -67.25,
+        "y": -214.7,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 67.25,
+        "y": -214.7,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -429,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -429,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 429,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 429,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 654,
+        "y": -17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 654,
+        "y": 17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -314,
+        "top": -483.7,
+        "width": 628,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 225.7,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -544,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 314,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 544,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 2,
+    "compactingFactor": 1,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -253.74999999999997,
+        "y": -198.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 253.74999999999997,
+        "y": -198.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -708.75,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -708.75,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 708.75,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 708.75,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 1029.75,
+        "y": -110.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 1029.75,
+        "y": -59.85,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -497.74999999999994,
+        "top": -399.6,
+        "width": 995.4999999999999,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 169.8,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -823.75,
+        "top": -212.79999999999998,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 593.75,
+        "top": -212.79999999999998,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 919.75,
+        "top": -210,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 2,
+    "compactingFactor": 1,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -253.74999999999997,
+        "y": -342.1,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 253.74999999999997,
+        "y": -342.1,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -708.75,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -708.75,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 708.75,
+        "y": -27.15,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 708.75,
+        "y": 27.15,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 1029.75,
+        "y": -25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 1029.75,
+        "y": 25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -497.74999999999994,
+        "top": -543.1,
+        "width": 995.4999999999999,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 313.3,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -823.75,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 593.75,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 919.75,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 2,
+    "compactingFactor": 3,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -84.58333333333333,
+        "y": -104.53333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 84.58333333333333,
+        "y": -104.53333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -296.91666666666663,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -296.91666666666663,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 296.91666666666663,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 296.91666666666663,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 521.9166666666666,
+        "y": -131.85000000000002,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 521.9166666666666,
+        "y": -97.75000000000003,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -181.91666666666666,
+        "top": -340.2,
+        "width": 363.8333333333333,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 82.2,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -411.91666666666663,
+        "top": -281.8,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 181.91666666666663,
+        "top": -281.8,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 411.91666666666663,
+        "top": -239.8,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "split",
+    "graphDepth": 2,
+    "compactingFactor": 3,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -84.58333333333333,
+        "y": -248.0333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 84.58333333333333,
+        "y": -248.0333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -429,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -429,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": 429,
+        "y": -19.05,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": 429,
+        "y": 19.05,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 654,
+        "y": -17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 654,
+        "y": 17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -314,
+        "top": -483.69999999999993,
+        "width": 628,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 225.7,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -544,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "right": {
+        "key": "right",
+        "left": 314,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 544,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 1,
+    "compactingFactor": 1,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -89.75,
+        "y": -130.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 89.75,
+        "y": -130.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -380.75,
+        "y": -81.45,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -380.75,
+        "y": -27.150000000000006,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -380.75,
+        "y": 27.14999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -380.75,
+        "y": 81.45,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 375.75,
+        "y": -110.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 375.75,
+        "y": -59.85,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -169.75,
+        "top": -399.6,
+        "width": 339.5,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 169.8,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -495.75,
+        "top": -212.79999999999998,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 265.75,
+        "top": -210,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 1,
+    "compactingFactor": 1,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -89.75,
+        "y": -274.1,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 89.75,
+        "y": -274.1,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -525,
+        "y": -81.45,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -525,
+        "y": -27.150000000000006,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -525,
+        "y": 27.14999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -525,
+        "y": 81.45,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 520,
+        "y": -25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 520,
+        "y": 25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -314,
+        "top": -543.1,
+        "width": 628,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 313.3,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -640,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 410,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 1,
+    "compactingFactor": 3,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -67.25,
+        "y": -71.2,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 67.25,
+        "y": -71.2,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -262.25,
+        "y": -61.10000000000001,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -262.25,
+        "y": -23.000000000000007,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -262.25,
+        "y": 15.099999999999994,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -262.25,
+        "y": 53.19999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 257.25,
+        "y": -131.85000000000002,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 257.25,
+        "y": -97.75000000000003,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -147.25,
+        "top": -340.2,
+        "width": 294.5,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 82.2,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -377.25,
+        "top": -281.8,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 147.25,
+        "top": -239.8,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 1,
+    "compactingFactor": 3,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -67.25,
+        "y": -214.7,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 67.25,
+        "y": -214.7,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -429,
+        "y": -57.150000000000006,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -429,
+        "y": -19.050000000000004,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -429,
+        "y": 19.049999999999997,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -429,
+        "y": 57.14999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 424,
+        "y": -17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 424,
+        "y": 17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -314,
+        "top": -483.7,
+        "width": 628,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 225.7,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -544,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 314,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 2,
+    "compactingFactor": 1,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -253.74999999999997,
+        "y": -198.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 253.74999999999997,
+        "y": -198.60000000000002,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 200.8,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -708.75,
+        "y": -81.45,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -708.75,
+        "y": -27.150000000000006,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -708.75,
+        "y": 27.14999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -708.75,
+        "y": 81.45,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 703.75,
+        "y": -110.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 703.75,
+        "y": -59.85,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -497.74999999999994,
+        "top": -399.6,
+        "width": 995.4999999999999,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 169.8,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -823.75,
+        "top": -212.79999999999998,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 593.75,
+        "top": -210,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 2,
+    "compactingFactor": 1,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -253.74999999999997,
+        "y": -342.1,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 253.74999999999997,
+        "y": -342.1,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 89.75,
+        "y": 344.3,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -708.75,
+        "y": -81.45,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -708.75,
+        "y": -27.150000000000006,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -708.75,
+        "y": 27.14999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -708.75,
+        "y": 81.45,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 703.75,
+        "y": -25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 703.75,
+        "y": 25.15,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -497.74999999999994,
+        "top": -543.1,
+        "width": 995.4999999999999,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 313.3,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -823.75,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 593.75,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 2,
+    "compactingFactor": 3,
+    "editor": false,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 53,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -84.58333333333333,
+        "y": -104.53333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 84.58333333333333,
+        "y": -104.53333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 113.2,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -296.91666666666663,
+        "y": -61.10000000000001,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -296.91666666666663,
+        "y": -23.000000000000007,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -296.91666666666663,
+        "y": 15.099999999999994,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -296.91666666666663,
+        "y": 53.19999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 291.91666666666663,
+        "y": -131.85000000000002,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 291.91666666666663,
+        "y": -97.75000000000003,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -181.91666666666666,
+        "top": -340.2,
+        "width": 363.8333333333333,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 82.2,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -411.91666666666663,
+        "top": -281.8,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 181.91666666666663,
+        "top": -239.8,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  },
+  {
+    "lateralArrangement": "left",
+    "graphDepth": 2,
+    "compactingFactor": 3,
+    "editor": true,
+    "nodes": [
+      {
+        "path": "root",
+        "role": "center",
+        "x": 0,
+        "y": 0,
+        "width": 580,
+        "height": 340,
+        "label": "root"
+      },
+      {
+        "path": "p2",
+        "role": "parent",
+        "x": -84.58333333333333,
+        "y": -248.0333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p2"
+      },
+      {
+        "path": "p1",
+        "role": "parent",
+        "x": 84.58333333333333,
+        "y": -248.0333333333333,
+        "width": 112,
+        "height": 30,
+        "label": "p1"
+      },
+      {
+        "path": "c1",
+        "role": "child",
+        "x": -67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c1"
+      },
+      {
+        "path": "c2",
+        "role": "child",
+        "x": 67.25,
+        "y": 256.7,
+        "width": 112,
+        "height": 30,
+        "label": "c2"
+      },
+      {
+        "path": "l",
+        "role": "left",
+        "x": -429,
+        "y": -57.150000000000006,
+        "width": 112,
+        "height": 30,
+        "label": "l"
+      },
+      {
+        "path": "prev",
+        "role": "left",
+        "x": -429,
+        "y": -19.050000000000004,
+        "width": 112,
+        "height": 30,
+        "label": "prev"
+      },
+      {
+        "path": "r",
+        "role": "right",
+        "x": -429,
+        "y": 19.049999999999997,
+        "width": 112,
+        "height": 30,
+        "label": "r"
+      },
+      {
+        "path": "next",
+        "role": "right",
+        "x": -429,
+        "y": 57.14999999999999,
+        "width": 112,
+        "height": 30,
+        "label": "next"
+      },
+      {
+        "path": "s1",
+        "role": "sibling",
+        "x": 424,
+        "y": -17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s1"
+      },
+      {
+        "path": "s2",
+        "role": "sibling",
+        "x": 424,
+        "y": 17.05,
+        "width": 95.2,
+        "height": 26,
+        "label": "s2"
+      }
+    ],
+    "edges": [
+      {
+        "id": "parent:p2:0",
+        "sourcePath": "root",
+        "targetPath": "p2",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "parent:p1:1",
+        "sourcePath": "root",
+        "targetPath": "p1",
+        "role": "parent",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c1:0",
+        "sourcePath": "root",
+        "targetPath": "c1",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "child:c2:1",
+        "sourcePath": "root",
+        "targetPath": "c2",
+        "role": "child",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:l:0",
+        "sourcePath": "root",
+        "targetPath": "l",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "left:prev:1",
+        "sourcePath": "root",
+        "targetPath": "prev",
+        "role": "left",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:r:0",
+        "sourcePath": "root",
+        "targetPath": "r",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      },
+      {
+        "id": "right:next:1",
+        "sourcePath": "root",
+        "targetPath": "next",
+        "role": "right",
+        "relationType": 1,
+        "direction": 0
+      }
+    ],
+    "areas": {
+      "parent": {
+        "key": "parent",
+        "left": -314,
+        "top": -483.69999999999993,
+        "width": 628,
+        "height": 300,
+        "resizeEdge": "top"
+      },
+      "child": {
+        "key": "child",
+        "left": -220,
+        "top": 225.7,
+        "width": 440,
+        "height": 400,
+        "resizeEdge": "bottom"
+      },
+      "left": {
+        "key": "left",
+        "left": -544,
+        "top": -175,
+        "width": 230,
+        "height": 350,
+        "resizeEdge": "top"
+      },
+      "sibling": {
+        "key": "sibling",
+        "left": 314,
+        "top": -125,
+        "width": 220,
+        "height": 250,
+        "resizeEdge": "top"
+      }
+    },
+    "viewports": {}
+  }
+]

@@ -37,7 +37,7 @@ await build({
     `}));
     builder.onResolve({ filter: /^obsidian$/ }, () => ({ path: "obsidian", namespace: "double" }));
     builder.onLoad({ filter: /.*/, namespace: "double" }, () => ({ contents: `
-      export class App {}
+      export class Component {load(){} unload(){}} export const MarkdownRenderer={render:()=>{throw Error("Native Markdown is outside this finite fixture")}}; export class App {}
       export class ExtraButtonComponent {} export class Scope {} export class SecretComponent {}
       export const Platform = {};
       /** Narrow form-shell double: production modal fields, listeners and save callbacks remain real. */
@@ -84,7 +84,7 @@ await build({
         setDesc(value) { this.descEl.setText(value); return this; }
         addSlider(create) {
           const input = this.controlEl.createEl("input", {attr: {type: "range"}});
-          const api = {sliderEl: input, setLimits(min, max, step) {Object.assign(input, {min, max, step}); return api;}, setInstant() {return api;}, setValue(value) {input.value = String(value); return api;}, onChange(run) {input.addEventListener("input", () => run(Number(input.value))); return api;}};
+          const api = {sliderEl: input, setLimits(min, max, step) {Object.assign(input, {min, max, step}); return api;}, setInstant() {return api;}, setDisabled(value) {input.disabled = value; return api;}, setValue(value) {input.value = String(value); return api;}, onChange(run) {input.addEventListener("input", () => run(Number(input.value))); return api;}};
           create(api); return this;
         }
         addExtraButton(create) {
@@ -364,7 +364,7 @@ test("cross-link visibility persists across reload and uses a presentation-only 
     index: { unassignedOntologyFields: () => [], allPages: () => [] } };
   plugin.translator = createObsidianTranslator();
   const tab = new KplexSettingTab({}, plugin);
-  const page = tab.getSettingDefinitions().find(item => item.name === "Plex behavior");
+  const page = tab.getSettingDefinitions().find(item => item.name === "Canvas behavior");
   const row = page.items.flatMap(group => group.items ?? []).find(item => item.control?.key === "showCrossLinks");
   assert.equal(row.name, "Show cross-links");
   assert.equal(row.control.type, "toggle");
@@ -518,13 +518,13 @@ test("manual graph import preserves local UI, navigation, editor, command and sc
     documentSyncMode: "pinned", indexUpdateInterval: 120000, embedCentralNode: true,
     centralNodeMarkdownMode: "preview", sidecarOpen: true, sidecarPosition: "left", startInPopout: true,
     toolbarExpanded: true, confirmFileDelete: false, allowOntologySuggester: false,
-    ontologySuggesterTrigger: "local::", nodeTitleScript: "local value", newNodeDefaultType: "excalidraw",
+    ontologySuggesterTrigger: "local::", nodeTitleScript: "local value", newNodeDefaultType: "excalidraw",newNodeAfterSaving:"another",linkAfterSaving:"tab",
   });
   const legacy = { ...structuredClone(fixture),
     kplexInitialized: false, lastActivePath: "Legacy.md", pinnedNodes: ["Legacy pin.md"],
     documentSyncMode: "recent", sidecarOpen: false, sidecarPosition: "right", startInPopout: false,
     toolbarExpanded: false, centralNodeMarkdownMode: "source", confirmFileDelete: true,
-    nodeTitleScript: "foreign value", newNodeDefaultType: "markdown",
+    nodeTitleScript: "foreign value", newNodeDefaultType: "markdown",newNodeAfterSaving:"follow",linkAfterSaving:"window",
     hotkeys: { "excalibrain-start": "Mod+G" }, commandAliases: ["excalibrain-start"],
     css: ".excalibrain-app {}", unrelatedPreference: "must not import",
   };
@@ -1349,7 +1349,7 @@ test("native declarative hover controls expose both local preferences and persis
     index: {unassignedOntologyFields: () => [], allPages: () => []}};
   plugin.translator = createObsidianTranslator();
   const tab = new KplexSettingTab({}, plugin);
-  const behavior = tab.getSettingDefinitions().find(item => item.name === "Plex behavior");
+  const behavior = tab.getSettingDefinitions().find(item => item.name === "Canvas behavior");
   const navigation = behavior.items.find(item => item.heading === "Navigation & interaction");
   for (const key of ["hoverHighlightRequiresAlt", "areaOutlineRequiresAlt", "gateTooltipRequiresAlt"]) {
     const row = navigation.items.find(item => item.control?.key === key);
@@ -1363,3 +1363,43 @@ test("native declarative hover controls expose both local preferences and persis
 });
 
 test('partial legacy ontology import preserves an implicit former counterpart and escapes foreign slash fields',()=>{const current=migrateAndMergeSettings({ontologyPairingVersion:1,hierarchy:{previous:['replies to/replied by'],next:[]}});const partial=importExcaliBrainGraphSettings({hierarchy:{previous:['literal/a']}},current);assert(partial.hierarchy.next.includes('replied by'));assert.deepEqual(partial.hierarchy.previous,['literal\\/a']);const replaced=importExcaliBrainGraphSettings({hierarchy:{previous:['literal/a'],next:['Explicit next']}},current);assert.deepEqual(replaced.hierarchy.next,['Explicit next']);assert(!replaced.hierarchy.next.includes('replied by'));});
+
+
+test("trackpad and remembered drawing templates survive settings loading without semantic invalidation", () => {
+  const settings = migrateAndMergeSettings({...defaults, trackpadNavigation: true, lastDrawingTemplatePath: "Templates/Chosen.md", futureCreationPreference: {retained: true}});
+  assert.equal(settings.trackpadNavigation, true);
+  assert.equal(settings.lastDrawingTemplatePath, "Templates/Chosen.md");
+  assert.deepEqual(settings.futureCreationPreference, {retained: true});
+  const restored = migrateAndMergeSettings(JSON.parse(JSON.stringify(settings)));
+  assert.equal(restored.lastDrawingTemplatePath, "Templates/Chosen.md");
+  assert.deepEqual(restored.futureCreationPreference, {retained: true});
+  const effects = classifySettingsChange(captureSettingsPolicy(defaults), captureSettingsPolicy(settings));
+  assert.equal(effects.semanticInvalidation, false);
+  assert.equal(effects.render, true);
+  assert.deepEqual(effects.changedKeys, ["trackpadNavigation"]);
+  assert.equal(encodeIndexSettingsSignature(settings), encodeIndexSettingsSignature(defaults));
+  const invalid = migrateAndMergeSettings({trackpadNavigation: "true", lastDrawingTemplatePath: 42});
+  assert.equal(invalid.trackpadNavigation, false); assert.equal(invalid.lastDrawingTemplatePath, null);
+});
+
+/** Persisted opening preferences migrate once and preserve unrelated future settings. */
+test('new-file destination migration keeps legacy editing intent and saved unsupported-device preferences',()=>{
+ assert.equal(migrateAndMergeSettings({editNewNodeAfterCreate:true}).newNodeAfterSaving,'sidecar');
+ assert.equal(migrateAndMergeSettings({editNewNodeAfterCreate:false}).newNodeAfterSaving,'return');
+ for(const destination of ['return','another','follow','sidecar','tab','editor','editor-maximized','window']){
+  const value=migrateAndMergeSettings({newNodeAfterSaving:destination,editNewNodeAfterCreate:true,futureWorkflow:{retained:true}});
+  assert.equal(value.newNodeAfterSaving,destination);assert.deepEqual(value.futureWorkflow,{retained:true});
+  assert.equal(value.linkAfterSaving,destination,'Existing shared preference seeds linking');
+  assert.equal(migrateAndMergeSettings(JSON.parse(JSON.stringify(value))).newNodeAfterSaving,destination);
+ }
+});
+
+/** The former shared preference seeds linking once, then both choices survive reload independently. */
+test('link completion migration keeps independent choices through reload and rejects invalid values',()=>{
+ const migrated=migrateAndMergeSettings({newNodeAfterSaving:'another',linkAfterSaving:'tab',futureWorkflow:{keep:true}});
+ assert.equal(migrated.newNodeAfterSaving,'another');assert.equal(migrated.linkAfterSaving,'tab');
+ const reopened=migrateAndMergeSettings(JSON.parse(JSON.stringify(migrated)));
+ assert.equal(reopened.newNodeAfterSaving,'another');assert.equal(reopened.linkAfterSaving,'tab');assert.deepEqual(reopened.futureWorkflow,{keep:true});
+ assert.equal(migrateAndMergeSettings({editNewNodeAfterCreate:true}).linkAfterSaving,'sidecar');
+ assert.equal(migrateAndMergeSettings({linkAfterSaving:'run-script'}).linkAfterSaving,'return');
+});

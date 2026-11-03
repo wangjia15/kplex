@@ -1,0 +1,32 @@
+# PR222: centering, folding and touch targets
+
+Starting checkpoint `85b79b282058a8892d62215277f069f544c70e99` completed clean Node22.22.2 `verify:obsidian` and exact-head CI560: architecture7/core130/main1628/browser328/sources357/source-browser779 =3,229, zero failed/cancelled/skipped, real scanner/build/installation smoke; Windows native48. Final old-checkpoint restoration18:00:45.021Z. These receipts certify the hydration fix, not the interaction changes below.
+
+The maintainer then requested plain node click/Enter centering, separate disclosure or modified Enter folding, plain-arrow area traversal, and a small touch glyph with a larger active area. The maintainer explicitly deferred another full regression until final merge acceptance. Current checks are targeted; full CI is deferred on these checkpoint commits, and PR222 remains draft/open/unmerged.
+
+Implementation uses existing shared owners:
+
+- Mind Map declares additive `hierarchy.primary: center`. Normal click/tap and keyboard Enter use accepted destination/root/navigation admission. Existing editor-removing reroot guards remain. Enter on the current Compass center no longer renames; Rename remains its separate action. Placeholder Mod-click stays with native materialization.
+- `branch.toggle` remains the shared fold owner and composes existing supported Markdown-section actions. Control, Command, Alt/Option or Shift with Enter folds in graph focus. Native editor/search/control contexts keep their own keys. Default generation2 adds these inherited shortcuts without overriding explicit bindings or previously accepted conflicts.
+- Plain arrows reuse the established within-area movement, then area-boundary selection/reveal. The old stop-at-boundary option is hidden; its persisted value remains compatible and inert. Explicit area-jump shortcuts still work.
+- Optional `hierarchy.controls: measured` and `PlexMeasurement.controlReserve` provide shared touch clearance. The symbol stays16px; its transparent44px canvas-space button sits beyond a4px body/gate gap. Mind Map subtree/parent layout, shared filtered repacking and Fit reserve the footprint while retaining actual note/editor rectangles and canonical ports. Older view consumers omit the capability and keep their geometry.
+
+Actual checkpoint checks on Node22.22.2/real dependencies: **151 focused tests PASS** across action defaults/migration, internal keys, view API, Mind Map policy/measurement/scene, native-follow boundaries and actual shared-canvas browser interactions. Includes all three built-in views, plain Enter centering/no rename, disclosure-only folding, disjoint dense control envelopes and a real Chromium touch tap in the transparent target outside the glyph. Official Obsidian scanner and real production build PASS.
+
+Initial focused failures reflected the deliberately changed default generation/Enter mapping and two new fixture assumptions: missing required initialGenerations in the pure state fixture, and a CDP tap point below the default browser viewport. Expected defaults were updated to the accepted interaction; fixtures now supply valid state and an explicit visible viewport plus elementFromPoint precondition. No assertions or deadlines were weakened; existing native semantic button dispatch handled touch without a second gesture owner.
+
+Targeted exact-build Windows interaction checks follow this checkpoint. Physical phone/tablet, macOS and minimum-host acceptance remain separate. Full regression/CI is pending by maintainer instruction. No production-vault deployment or file/settings/workspace modification is authorized or performed.
+
+## Completed targeted Windows acceptance
+
+Runtime source23239ab, main SHA256 `e21a8697b45fa32aaf0458ed48a95755022cf9227f9b441e55a58217e1b09b4a`, styles `a475acaf8f25b500b04afffc26e76f69c8348014bd2819db18adf3970daddd41`. The final follow-up adds test/driver/receipt changes only; artifact and tested source hashes were checked unchanged before publication. Real Node22.22.2 driver, Obsidian1.14.5 (installer 1.14.0), Electron43.3.0.
+
+**13 native cases PASS** (2 setup and11 interaction checks): trusted disclosure/body clicks; plain arrows and Enter in all three views; Control/Alt/Shift+Enter folding without reroot; supported Compass central-section folding; no Rename on center Enter; actual native editor identity/content/caret/binding/root/attention preservation when reroot is refused, save and cleanup, then successful click reroot after closing. Command/Meta is covered by portable binding/browser tests, not a Windows-native Mac-key claim. Clipboard untouched.
+
+All controller cleanup PASS. Outer restoration PASS **2026-10-26T18:44:19.704Z**,9configuration files/117content files/original live workspace/window, digest `7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba`. [Sanitized native receipt](view-interactions-222-native-summary.json). No production vault observed or modified.
+
+Additional affected settings/action-surface/keyboard-help/localization/section-browser/Fit/Mind Map suite: **123 PASS** (17 Mind Map cases overlap the first151). Final targeted parent-column clearance check: **17 PASS**, exercising left/right/balanced projections,1/2/3parent columns and filtered subtrees, both mouse and touch envelopes. The complete forest is given an800px area for the geometry assertion; the normal300px viewport deliberately clips and scrolls overflow. No runtime correction was needed after23239ab.
+
+The first supplemental attempt was sandbox-blocked before real bundling. The authorized retry exposed two obsolete expectations for the intentionally retired boundary option; those now assert its absence and plain-arrow crossing, retaining selection retirement and control-lifetime assertions. The first native attempt passed the Mind Map/editor checks but asked Compass to move right when this fixture has children below; corrected to Down, then the complete narrow lane passed. Both native attempts restored all test resources. No assertion deadlines, semantic checks or scaling guards were weakened.
+
+Full regression and CI remain deferred per explicit maintainer instruction. Final review needs that acceptance run plus physical-device touch verification (glyph/hit area, zoom, long-press and adjacent gates); macOS/minimum-host remain unclaimed. No additional manual Windows check is needed for the tested interaction scope. PR222 remains draft/open/unmerged.

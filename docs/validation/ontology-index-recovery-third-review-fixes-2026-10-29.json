@@ -1,0 +1,172 @@
+{
+  "status": "passed",
+  "branch": "2026-10-28-investigate-ontology-index-recovery",
+  "head": "17e39bf1dd5c964c84c69e82b1197c9b2ab5971d",
+  "dirty": true,
+  "node": "v22.22.3",
+  "sourceHashes": {
+    "src/index/GraphIndex.ts": "0516b7ead112c7fa864c8ca2e3d5aa269280175cdba9c3ef6810a16ddba47a00",
+    "src/index/HostMetadataPreview.ts": "92dc38fbb17e1634ecea20c083ff84663503b35651bcd77fa3197d5ce2d1a921",
+    "src/adapters/obsidian/sourceAcquisition.ts": "b85f517282b59b45217aa40ac489d39be1387551ec3e337db4da46c596667391",
+    "src/settings.ts": "a8d0db26715c951e5ebf772feb9b4fc10ae58c1a62ef1ca7ad2da1aec2309969",
+    "src/ui/PlexGraph.tsx": "2d1c5f9f8644eeb78ef24ac85c1118035b33c1a9ee303790eb6dbb118a8ee7c9",
+    "src/ui/numberSlider.ts": "a477efd0ffb1b22832917a5a350805b7746722535eb5f3b6c4656764bd8d0a1e",
+    "tests/on-demand-indexing.test.mjs": "40bb2036bf20115b7f245d18122a558ff017c5b35dbd888af2d923b498ab7d33",
+    "tests/host-metadata-preview.test.mjs": "a307691be8e3e269f734178dc9e132ea57775d88665c09aa16c94d9f2b2e6681"
+  },
+  "focused": {
+    "indexSuitesBeforeExpandedCases": {
+      "passed": 194,
+      "failed": 0
+    },
+    "expandedRegressions": {
+      "passed": 14,
+      "failed": 0,
+      "cases": "13 combined focused cases plus the newly independent healthy subset regression; includes 3 presentation-only remount cycles per canvas variant"
+    },
+    "preparationCost": {
+      "before": [
+        {
+          "neighbors": 40,
+          "lookups": 252834
+        },
+        {
+          "neighbors": 160,
+          "lookups": 3887076
+        }
+      ],
+      "after": [
+        {
+          "neighbors": 40,
+          "lookups": 1395
+        },
+        {
+          "neighbors": 160,
+          "lookups": 5475
+        }
+      ],
+      "limits": "Real Chromium synthetic host fixture; counts measure preparation, not native elapsed time or paint.",
+      "fullRunAfter": [
+        {
+          "neighbors": 40,
+          "lookups": 1395
+        },
+        {
+          "neighbors": 160,
+          "lookups": 5475
+        }
+      ]
+    }
+  },
+  "productionVaultAccess": false,
+  "interruptedVerification": "Stopped during passing main lane to add input-group attempt certificate; disposable vault restored; not a completed pass.",
+  "portable": {
+    "command": "npm run verify (via scripts/testing/obsidian/verify.mjs)",
+    "lanes": {
+      "architecture tests": 9,
+      "core tests": 130,
+      "main tests": 1675,
+      "UI browser tests": 403,
+      "source tests": 357,
+      "source browser tests": 818
+    },
+    "failures": 0,
+    "build": "passed",
+    "scanner": "passed"
+  },
+  "nativeVerification": {
+    "schemaVersion": 1,
+    "status": "passed",
+    "startedAt": "2026-10-29T04:55:41.508Z",
+    "source": {
+      "revision": "17e39bf1dd5c964c84c69e82b1197c9b2ab5971d",
+      "dirty": true,
+      "node": "v22.22.3",
+      "os": "darwin 23.5.0"
+    },
+    "target": {
+      "vaultName": "kplex-test-small",
+      "vaultPath": "/Users/zsviczian/Obsidian/kplex-test-small",
+      "configDir": "/Users/zsviczian/Obsidian/kplex-test-small/.obsidian"
+    },
+    "capabilities": {
+      "version": "1.15.0 (installer 1.14.0)",
+      "commands": [
+        "version",
+        "vault",
+        "plugin:disable",
+        "plugin:enable",
+        "commands",
+        "command",
+        "dev:dom",
+        "dev:errors"
+      ]
+    },
+    "artifacts": {
+      "sourceHashes": {
+        "main.js": "9ce83755281da95cfd6c52702622702b616b4702317cd3433cb6fc8cc8ddc975",
+        "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+        "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+      },
+      "pluginVersion": "0.3.0",
+      "stagedHashes": {
+        "main.js": "9ce83755281da95cfd6c52702622702b616b4702317cd3433cb6fc8cc8ddc975",
+        "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+        "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+      }
+    },
+    "scenarios": [
+      {
+        "id": "open-kplex",
+        "status": "passed",
+        "assertions": [
+          "plugin command registered",
+          "rendered .kplex-app contains K-Plex",
+          "no captured JavaScript errors"
+        ],
+        "elapsedMs": 97
+      }
+    ],
+    "completedAt": "2026-10-29T05:20:12.114Z"
+  },
+  "nativeRegressions": {
+    "name": "three-fixes",
+    "status": "passed",
+    "node": "v22.22.3",
+    "startedAt": "2026-10-29T05:20:15.205Z",
+    "maximumMs": 180000,
+    "driver": {
+      "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+      "scenario": "a23def0b218e58ebb3746c1c17df5cd7a0f0397a5723c37a849bac32d03e8830",
+      "definitions": "d06f55c7d6d2014f88678c9a8f8e3b557043286a50166c90c46f0920ec91997a"
+    },
+    "artifacts": {
+      "main.js": "9ce83755281da95cfd6c52702622702b616b4702317cd3433cb6fc8cc8ddc975",
+      "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+      "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+    },
+    "source": {
+      "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+      "src/index/GraphIndex.ts": "0516b7ead112c7fa864c8ca2e3d5aa269280175cdba9c3ef6810a16ddba47a00",
+      "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+      "src/index/HostMetadataPreview.ts": "92dc38fbb17e1634ecea20c083ff84663503b35651bcd77fa3197d5ce2d1a921",
+      "src/adapters/obsidian/sourceAcquisition.ts": "b85f517282b59b45217aa40ac489d39be1387551ec3e337db4da46c596667391"
+    },
+    "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+    "obsidian": "1.15.0 (installer 1.14.0)",
+    "result": {
+      "cases": [
+        "same-center native input failure preserves healthy peer",
+        "successful native retry retains both surfaces",
+        "finite recovery retains canonical state and global authority fences",
+        "On-demand alias patch brings an omitted child into sorted folder cover"
+      ],
+      "markdown": 89
+    },
+    "cleanup": "passed",
+    "completedAt": "2026-10-29T05:20:18.270Z"
+  },
+  "restoration": "Original disposable-vault artifacts, settings bytes and workspace layout restored. Native fixture removed. Artifact restoration independently hash-checked. Production vaults not accessed.",
+  "trackedPatchSha256": "cb360a0a1bd5637eeebce3fee37be551bd9f4206a968a462dc712e0677c49226",
+  "limits": "Preparation API counts are from real Chromium with synthetic host inputs; native cases assert actual production method/publication behavior on native TFiles, not actual paint or physical touch."
+}

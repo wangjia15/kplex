@@ -1,0 +1,90 @@
+{
+  "status": "passed",
+  "command": "npm run verify:obsidian",
+  "startedAt": "2026-10-26T02:12:41.502Z",
+  "completedAt": "2026-10-26T02:43:18.564Z",
+  "source": {
+    "revision": "3afcd1d2dba3b62379561ce67fdd2cddf2720ddf",
+    "dirty": false,
+    "node": "v22.22.2",
+    "os": "win32 10.0.26200"
+  },
+  "host": "1.14.5 (installer 1.14.0)",
+  "suites": [
+    {
+      "name": "architecture",
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "name": "core",
+      "passed": 130,
+      "failed": 0
+    },
+    {
+      "name": "main",
+      "passed": 1617,
+      "failed": 0
+    },
+    {
+      "name": "browser",
+      "passed": 316,
+      "failed": 0
+    },
+    {
+      "name": "sources",
+      "passed": 357,
+      "failed": 0
+    },
+    {
+      "name": "source-browser",
+      "passed": 777,
+      "failed": 0
+    }
+  ],
+  "reportedTests": 3204,
+  "architecture": {
+    "migratedRoots": 209,
+    "reachableFiles": 382,
+    "violations": 0
+  },
+  "scanner": "passed",
+  "productionBuild": "passed",
+  "artifacts": {
+    "sourceHashes": {
+      "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+      "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+    },
+    "pluginVersion": "0.2.4",
+    "stagedHashes": {
+      "main.js": "f8ee2d161255bbf4ac5b856fef3ab418d5f8fb4b419c99ba83bb627550102303",
+      "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+      "styles.css": "af006e57a20562352a83a9a4e7a5c62002cc7666b6690f277d6266b8d13bfbb2"
+    }
+  },
+  "smoke": [
+    {
+      "id": "open-kplex",
+      "status": "passed",
+      "assertions": [
+        "plugin command registered",
+        "rendered .kplex-app contains K-Plex",
+        "no captured JavaScript errors"
+      ],
+      "elapsedMs": 319
+    }
+  ],
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-26T02:43:24.457Z"
+  },
+  "limits": [
+    "OS clipboard guarded/unverified",
+    "Mac, physical mobile and minimum host unrun",
+    "Known #215 fresh-popout Sidecar creation, simultaneous editor/Sidecar pairs and whole-app restart unverified"
+  ]
+}

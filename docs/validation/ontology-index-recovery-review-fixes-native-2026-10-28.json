@@ -1,0 +1,58 @@
+{
+  "name": "four-fixes",
+  "status": "passed",
+  "node": "v22.22.3",
+  "startedAt": "2026-10-28T20:40:41.331Z",
+  "maximumMs": 180000,
+  "driver": {
+    "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+    "scenario": "a983e53d14f4fbef99704b01d6f538486218ad92ea5eac912efde88f977c7eef",
+    "definitions": "d7833196adf1361cd016bb7b79302b485d2fcef6e7c9a81f15b6490223736dc3"
+  },
+  "artifacts": {
+    "main.js": "8c1f4a15dc1b075dc71b58403b700065e3e4b0624af46e1504890a0a88503387",
+    "manifest.json": "49596950b87caaf2fddaf0f58e826287c67d0e0998d3b69905c2ec298fd8b350",
+    "styles.css": "d7ed47e0720e607869e5cc40b94c32d9233272223d58d3e3b1bcb9c2dafa476e"
+  },
+  "source": {
+    "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+    "src/index/GraphIndex.ts": "3ba5d564a5704855bf964d88d7cc61147cd69caac2fba79df7f1c98cdeb466be",
+    "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+    "src/index/HostMetadataPreview.ts": "c698cf532e1a7ac8e2d0b7057cfa4b5bf8381a57001e2d09b4198ae108070d17",
+    "src/adapters/obsidian/sourceAcquisition.ts": "b85f517282b59b45217aa40ac489d39be1387551ec3e337db4da46c596667391"
+  },
+  "limitations": "Controlled native method observations, not actual paint or physical-device acceptance.",
+  "obsidian": "1.15.0 (installer 1.14.0)",
+  "result": {
+    "cases": [
+      "two native Plex views and production structural move action",
+      "destination children preserved through all observed publications",
+      "visible inline ontology refreshed while optional global inventory paused",
+      "each Markdown center recovered its own incoming owner",
+      "native folder selection matches complete sorted prefix",
+      "limit and attachment visibility changes replace native coverage",
+      "outside-cap canonical parent provenance survives"
+    ],
+    "nativeEvents": {
+      "changed": 1,
+      "resolve": 1,
+      "resolved": 3
+    },
+    "observations": 61,
+    "mode": "eager",
+    "markdown": 94,
+    "sourceCounterDelta": {
+      "checked": 85,
+      "reusedBodies": 230,
+      "legacyBodies": 0,
+      "vaultReads": 1,
+      "parses": 1,
+      "repaired": 3,
+      "resolutionRefreshes": 0,
+      "pendingMetadata": 0,
+      "failures": 0
+    }
+  },
+  "cleanup": "passed",
+  "completedAt": "2026-10-28T20:40:48.619Z"
+}

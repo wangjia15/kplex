@@ -1,16 +1,23 @@
 /**
+ * Public per-file resolve and exact native file-topology events attribute their following all-files
+ * resolver close without a timing guess. Unknown topology remains global; each close consumes once.
  * One transient empty-folder create can join a known file resolver wave only under a complete
  * physical owner's pre-insertion proof; bounded native membership never replaces source validation.
  * Obsidian-owned neutral acquisition and inventory reconciliation. Physical parser inputs and lexical
  * references have a different lifetime from host target resolution. This adapter uses the existing
  * parser/Date collector/host resolver, never semantic settings or custom path guessing. It owns its
  * event fence independently of graph no-op suppression, plus a single cooperative inventory task.
+ * Complete eager graphs consume its coalesced affected-owner journal through exact publication receipts.
+ * Fresh complete warm graphs authenticate persisted dependency headers once. Their local edits may
+ * then close through the same per-source owner at foreground priority while the metadata audit runs.
  * Its read-only cached semantic capability supplies missing host facts without changing live routing.
  * Requested semantic preparation uses the source-local dependency derivative. Historical SI4a
  * selected-source/catalog construction adapters live only in test fixtures. Host events retain the
  * durable legacy UNKNOWN-impact journal for storage compatibility; no inverse resolver is invented.
  * Restart resolver closes validate canonical output before rewriting sources. Exact-head body-read
  * certificates avoid duplicate decoding and weak ownership does not retain parsed bodies at rest.
+ * Restart host comparison shares a clean dependency/head observation, then independently pins
+ * authenticated metadata under that exact head/sequence; native and final inventory fences remain.
  * Uncertain resolver comparisons authenticate resolution once under their selected reader; partial
  * inspection never permits a host-current shortcut without complete family validation.
  * Source-backed search retains only bounded changed-owner endpoint incidence until publication;
@@ -19,6 +26,8 @@
  * equivalent alias storage failures preserve already-authenticated primary inventory and scopes.
  * A caller-owned before-owner capability gives requested readers a stable interval between optional
  * repairs without adding a scheduler, changing repository fences or retaining another work queue.
+ * Restart comparisons reacquire a newly observed revision of their current native owner without
+ * repeating validated unrelated owners; topology/global drift still retires the complete pass.
  * An explicit inventory pass consumes its queued debounce; newer events remain requested and are
  * scheduled by that pass's existing finally owner, avoiding duplicate unchanged readiness signals.
  * Readiness consumers run only after the awaited inventory releases ownership, so recovery cannot
@@ -75,7 +84,7 @@ import { mergeFileMetadata } from "../../index/fieldParser";
 import type { BodyCacheRequest, BodyCacheStamp, KplexIndexedDbCache } from "../../index/IndexedDbCache";
 import { SOURCE_BODY_PARSER_VERSION, SOURCE_DECODE_BUDGET_BYTES, SOURCE_FAMILIES, SOURCE_MAX_BATCH_RECORDS, SourceFactError, sourceFieldNames, sourceValueSteps, type SourceFamily, type SourceFamilyManifest,
   type SourceObservation, type SourcePhysical, type SourceReason, type StoredMetadataFact, type StoredSourceFact } from "../../index/SourceFacts";
-import type { SourceFamilyProducer, SourceInspection, SourceRepositoryDiagnostics, SourceLocalInventoryProjection } from "../../index/SourceRepository";
+import type { SourceFamilyProducer, SourceInspection, SourceRepositoryDiagnostics, SourceLocalInventoryProjection, SourceHeadExpectation } from "../../index/SourceRepository";
 import { sourceLocalDependencyKey, sourceLocalResolverDependencyKey, sourceLocalResolverPathDependencyKey } from "../../index/SourceLocalDependencies";
 import { createObsidianMetadataSourceHost, normalizedBodyUrl, ObsidianMetadataSourceCollector, type ObsidianMetadataSourceSettings } from "./metadataSourceCollector";
 import { entityFactForFile, entityFactForFolder, ObsidianStructuralPatchSourceCollector,
@@ -83,13 +92,15 @@ import { entityFactForFile, entityFactForFolder, ObsidianStructuralPatchSourceCo
 import { hostLinkRecord } from "./hostLinkSourceCollector";
 import { resolveObsidianReferenceTarget } from "./ontologySourceCollector";
 
-type FileObservation = { identity: string | null; observation?: SourceObservation; validatedHostRevision?: number; revision: number; dirty: boolean; bodyDirty: boolean; resolutionDirty: boolean; path: string; oldPath?: string; created: boolean; impact: Promise<void> | null };
+type FileObservation = { identity: string | null; observation?: SourceObservation; validatedHostRevision?: number; revision: number; dirty: boolean; bodyDirty: boolean; resolutionDirty: boolean; path: string; oldPath?: string; created: boolean; impact: Promise<void> | null; graphInputCurrent?: () => boolean };
 type SourceCoordinates = Readonly<{ order: number; markdownOrder: number }>;
 type Capture = { physical: SourcePhysical; revision: number; hostRevision: number; state: FileObservation; file: TFile };
 /** A tiny weak native receipt names an accepted optional cache record; it retains no parser body. */
 type BodyInputReceipt = { inputToken: string; parserVersion: number; physical: SourcePhysical; revision: number; retired: boolean };
 /** Caller completion accepts one full parse; later optional persistence retains only native validity. */
 export type SourceBodyInput = BodyCacheStamp & { accept(): boolean };
+/** One graph commit may acknowledge only the exact native/source observation it compiled. */
+export type SourceGraphPublication = Readonly<{ sourcePath: string; sequence: number; isCurrent: () => boolean; rememberNativeInput: () => void }>;
 /** One short native create wave; never a retained folder catalog or durable source certificate. */
 type EmptyFolderCreateWave = {
   folder: TFolder; path: string; parent: TFolder; parentPath: string; openedAt: number; lastCauseAt: number;
@@ -109,9 +120,9 @@ export type SourceAcquisitionCounters = Readonly<{
 export type SourceAcquisitionResult = Readonly<{ current: boolean; saved: boolean; reason: SourceReason }>;
 
 /**
- * Native Obsidian file events are followed by metadata:resolved within the same short resolver wave.
- * The timer is only a bounded stale-token retirement guard; coverage still requires an observed,
- * fully known TFile wave or a separately qualified empty-folder create, consumed by the first close.
+ * Raw modification witnesses retire quickly. Public per-file resolve and exact native file-topology
+ * observations supply stronger attribution for their next global close, independently of this timer.
+ * No witness covers unknown topology, and every global close consumes its witness exactly once.
  */
 const KNOWN_RESOLVER_WAVE_RETIRE_MS = 50;
 const EMPTY_FOLDER_CREATE_MAX_MEMBERS = 32;
@@ -184,6 +195,14 @@ export class ObsidianSourceAcquisition {
   private inventoryScopeRevision = 0;
   /** Monotonic host-maintenance fence consumed by demanded semantic publication. */
   private maintenanceRevision = 0;
+  /** Enabled by a complete eager build; coalesces graph work independently of source persistence. */
+  private graphChanges: Map<string, number> | null = null;
+  private graphChangeSequence = 0;
+  private graphMaintenanceRevision = 0;
+  /** A fresh complete graph may borrow physically current persisted dependency heads for urgent
+   * repair while the metadata audit continues. Unknown host drift retires this capability. */
+  private warmMaintenanceAuthority: object | null = null;
+  private warmMaintenanceRevision: number | null = null;
   /** One restart comparison discovers offline target/alias/path drift without rereading unchanged bodies. */
   private restartInventoryChecked = false;
   /** Derived legacy URL owner incidence, independent of primary semantic authority/readiness. */
@@ -211,6 +230,9 @@ export class ObsidianSourceAcquisition {
   private resolverCloseObserved = false;
   private resolverActivityReason: ActivityReason = "unscoped-resolved";
   private activityGlobalReason: ActivityReason | null = null;
+  private nativeResolvedWave = false;
+  private nativeTopologyWave = false;
+  private uncoveredResolverSinceClose = false;
   /** One coalesced retry clock keeps transient deferred local fan-out live without a per-event queue. */
   private deferredResolutionRetryTimer: number | null = null;
   private deferredResolutionRetryDelay = DEFERRED_RESOLUTION_RETRY_MIN_MS;
@@ -328,14 +350,23 @@ export class ObsidianSourceAcquisition {
         this.requestInventory();
         return;
       }
+      // Obsidian can reuse cached links after a pure file move and emit only `resolved`, with
+      // no per-file `resolve`. The exact Vault topology event already queues its old/new owner
+      // and resolution dependents; keep that one native receipt until its first global close.
+      // Folder events still require their separate complete membership proof below.
+      if (file && effectiveKind === "topology"
+        && (this.app.vault.getFileByPath(file.path) === file || this.app.vault.getFileByPath(file.path) === null)) this.nativeTopologyWave = true;
       const coveredFolder = createdFolder ? this.beginEmptyFolderCreateWave(createdFolder) : false;
       if (!createdFolder && !file) this.retireEmptyFolderCreateWave();
       if (file && created) this.observeEmptyFolderMember(file);
       this.noteResolverWaveCause(Boolean(file) || coveredFolder);
       const dependenciesWereReady = this.localDependencyAuthorityReady;
       this.markContributorHostChange(effectiveKind, false, "unknown", effectiveKind === "source"
-        && file?.extension === "md" && this.app.vault.getFileByPath(file.path) === file);
+        && file?.extension === "md" && this.app.vault.getFileByPath(file.path) === file,
+      file?.extension === "md" && (this.app.vault.getFileByPath(file.path) === file || this.app.vault.getFileByPath(file.path) === null));
       if (file) {
+        this.noteGraphSourceChange(file.path);
+        if (oldPath) this.noteGraphSourceChange(oldPath);
         const state = this.state(file);
         state.revision += 1; state.dirty = true; state.bodyDirty ||= bodyChanged || created;
         if (created) { state.identity = this.repository.createIdentity(); state.created = true; }
@@ -385,10 +416,22 @@ export class ObsidianSourceAcquisition {
       }
     });
     const metadata = this.app.metadataCache.on("changed", (file) => changed(file));
+    const resolve = this.app.metadataCache.on("resolve", /** The public per-file event identifies
+     * which owner's resolved/unresolved links actually changed, even after a slow native queue.
+     * Its following all-files close needs no timer-based guess. Unknown/replaced owners fail closed. */ file => {
+      if (file instanceof TFile && file.extension === "md" && this.app.vault.getFileByPath(file.path) === file) {
+        this.nativeResolvedWave = true;
+        this.state(file).resolutionDirty = true;
+        changed(file);
+      } else {
+        this.noteResolverWaveCause(false);
+        changed(undefined, false, undefined, false, "resolution");
+      }
+    });
     const resolved = this.app.metadataCache.on("resolved", () => changed(undefined, false, undefined, false, "resolution"));
     this.cleanup.push(() => this.app.vault.offref(create), () => this.app.vault.offref(modify),
       () => this.app.vault.offref(rename), () => this.app.vault.offref(remove),
-      () => this.app.metadataCache.offref(metadata), () => this.app.metadataCache.offref(resolved));
+      () => this.app.metadataCache.offref(metadata), () => this.app.metadataCache.offref(resolve), () => this.app.metadataCache.offref(resolved));
   }
   /**
    * Match only the already observed native create. The complete graph owner supplies a synchronous
@@ -424,6 +467,7 @@ export class ObsidianSourceAcquisition {
     this.emptyFolderCreateWave.invalidate?.();
     this.emptyFolderCreateWave = null;
     this.uncoveredResolverWave = true;
+    this.uncoveredResolverSinceClose = true;
   }
 
   /** Track only real direct native CREATE identities, bounded independently of vault size. */
@@ -483,7 +527,7 @@ export class ObsidianSourceAcquisition {
       else wave.lastCauseAt = observedAt;
     }
     if (covered) this.knownResolverWave = true;
-    else this.uncoveredResolverWave = true;
+    else { this.uncoveredResolverWave = true; this.uncoveredResolverSinceClose = true; }
     const generation = ++this.resolverWaveGeneration;
     if (this.resolverWaveTimer !== null) window.clearTimeout(this.resolverWaveTimer);
     this.resolverWaveTimer = window.setTimeout(() => {
@@ -493,7 +537,10 @@ export class ObsidianSourceAcquisition {
       this.knownResolverWave = false;
       this.uncoveredResolverWave = false;
       const wave = this.emptyFolderCreateWave;
-      if (wave && !this.emptyFolderMembershipComplete(wave)) wave.invalidate?.();
+      if (wave && !this.emptyFolderMembershipComplete(wave)) {
+        wave.invalidate?.();
+        this.uncoveredResolverSinceClose = true;
+      }
       this.emptyFolderCreateWave = null;
     }, KNOWN_RESOLVER_WAVE_RETIRE_MS);
   }
@@ -501,16 +548,18 @@ export class ObsidianSourceAcquisition {
   /** Consume a known native wave only after its optional bounded folder witness also closes. */
   private consumeKnownResolverWave(): boolean {
     const folderCovered = !this.emptyFolderCreateWave || this.emptyFolderWaveComplete(this.emptyFolderCreateWave);
-    const covered = this.knownResolverWave && !this.uncoveredResolverWave && folderCovered;
+    const covered = (this.knownResolverWave || this.nativeResolvedWave || this.nativeTopologyWave)
+      && !this.uncoveredResolverWave && !this.uncoveredResolverSinceClose && folderCovered;
     if (!folderCovered) this.uncoveredResolverWave = true;
     this.resolverActivityReason = covered ? (this.emptyFolderCreateWave ? "qualified-folder" : "known-resolver")
-      : this.uncoveredResolverWave ? "uncovered-non-file"
+      : this.uncoveredResolverWave || this.uncoveredResolverSinceClose ? "uncovered-non-file"
       : this.resolverWaveExpired ? "expired-resolver" : this.resolverCloseObserved ? "extra-resolved" : "unscoped-resolved";
     if (covered && this.emptyFolderCreateWave) {
       try { this.startupDiagnostics?.activityCause?.("qualified-folder"); }
       catch { /* Successful native coverage never depends on optional accounting. */ }
     }
     this.resolverCloseObserved = true;
+    this.nativeResolvedWave = false; this.nativeTopologyWave = false; this.uncoveredResolverSinceClose = false;
     this.resolverWaveExpired = false;
     this.resolverWaveGeneration += 1;
     if (this.resolverWaveTimer !== null) window.clearTimeout(this.resolverWaveTimer);
@@ -525,7 +574,10 @@ export class ObsidianSourceAcquisition {
    * Markdown source event can retain unrelated broad work; topology and unknown inputs retire it.
    * This qualification grants neither source validity nor completed inventory authority.
    */
-  private markContributorHostChange(kind: ContributorHostChange["kind"], global = kind === "resolution", activityReason: ActivityReason = "unknown", knownSource = false): void {
+  private markContributorHostChange(kind: ContributorHostChange["kind"], global = kind === "resolution", activityReason: ActivityReason = "unknown", knownSource = false, knownFile = knownSource): void {
+    if (global || kind === "environment" || !knownFile) {
+      this.warmMaintenanceAuthority = null; this.warmMaintenanceRevision = null;
+    }
     // Known source events fence only their source plus proven referrers. Unscoped resolver and
     // environment observations are coalesced until reconciliation starts, so a native burst causes
     // one cached-fact pass rather than a per-event vault scan.
@@ -555,6 +607,8 @@ export class ObsidianSourceAcquisition {
   /** Cancel every continuation and release event/timer ownership; unload does not await persistence. */
   close(): void {
     this.closed = true; this.inventoryRevision += 1; this.inventoryScopeRevision += 1;
+    this.warmMaintenanceAuthority = null; this.warmMaintenanceRevision = null;
+    this.graphChanges?.clear(); this.graphChanges = null;
     this.knownFanoutTasks.clear();
     this.nodeImpacts.clear(); this.nodeImpactBytes = 0;
     this.pendingUrlAliasSources.clear(); this.urlAliasInventoryComplete = false;
@@ -565,6 +619,7 @@ export class ObsidianSourceAcquisition {
     if (this.deferredResolutionRetryTimer !== null) window.clearTimeout(this.deferredResolutionRetryTimer);
     this.timer = null; this.pollTimer = null; this.resolverWaveTimer = null; this.deferredResolutionRetryTimer = null;
     this.knownResolverWave = false; this.uncoveredResolverWave = false;
+    this.nativeResolvedWave = false; this.nativeTopologyWave = false; this.uncoveredResolverSinceClose = false;
     this.emptyFolderCreateWave = null;
   }
   /** Allocate an incarnation lazily; a matching restart head can supply its already durable identity. */
@@ -584,13 +639,14 @@ export class ObsidianSourceAcquisition {
       record.kind === "alias" || record.kind === "tag" || record.kind === "file-parent" || record.kind === "host-literal");
   }
 
-  /** Read only one selected source's durable host-significant metadata family. */
-  private async durableHostInventory(sourceId: string, current: () => boolean): Promise<Readonly<{ reason: SourceReason; facts: StoredMetadataFact[] }>> {
+  /** Read one protected host-significant metadata family, optionally bound to an earlier head observation. */
+  private async durableHostInventory(sourceId: string, current: () => boolean,
+    expected?: SourceHeadExpectation): Promise<Readonly<{ reason: SourceReason; facts: StoredMetadataFact[] }>> {
     const facts: StoredMetadataFact[] = [];
     const reason = await this.repository.visit(sourceId, "metadata", (records) => {
       for (const record of records) if (record.kind === "alias" || record.kind === "tag" || record.kind === "file-parent" || record.kind === "host-literal") facts.push(record);
       return current();
-    }, current);
+    }, current, expected);
     return { reason, facts };
   }
 
@@ -636,6 +692,7 @@ export class ObsidianSourceAcquisition {
         const state = this.state(file);
         if (!state.resolutionDirty) {
           state.resolutionDirty = true; state.revision += 1; this.repository.cancelSource(sourceId);
+          if (!state.graphInputCurrent?.()) this.noteGraphSourceChange(sourceId);
         }
         this.pendingKnownFiles.add(file);
         if (++marked % SOURCE_MAX_BATCH_RECORDS === 0) {
@@ -650,6 +707,7 @@ export class ObsidianSourceAcquisition {
 
   /** Escalate an unauthenticated local fan-out to one coalesced cached-fact host reconciliation. */
   private promoteUnknownFanout(): void {
+    this.warmMaintenanceAuthority = null; this.warmMaintenanceRevision = null;
     this.clearDeferredResolutionRetry(true);
     if (this.uncertainResolution) return;
     this.activityGlobalReason ??= "dependency-repair";
@@ -753,25 +811,37 @@ export class ObsidianSourceAcquisition {
     this.startupDiagnostics?.phase("source", "host-metadata-comparison", markdown.length);
     const keys = new Set<string>(), changedPaths = new Set<string>();
     const checkpoint = inventoryCheckpoint();
-    for (const [markdownOrder, file] of markdown.entries()) {
+    for (let markdownOrder = 0; markdownOrder < markdown.length; markdownOrder++) {
+      const file = markdown[markdownOrder];
       await this.backgroundCheckpoint?.();
       if (!current()) return false;
       const order = structuralOrder.get(file.path);
       if (order === undefined) return false;
       const capture = this.capture(file);
+      /** Retry an observed owner revision, but retain rejection of equal-stat raw-body edits. */
+      const retryKnownOwner = (): boolean => current() && this.app.vault.getFileByPath(file.path) === file
+        && this.state(file).revision !== capture.revision && this.pendingKnownFiles.has(file)
+        && (!this.state(file).bodyDirty || file.stat.mtime !== capture.physical.mtime
+          || file.stat.size !== capture.physical.size || file.stat.ctime !== capture.physical.ctime);
       /** A local event retires this owner's result even when unrelated inventory work remains valid. */
       const ownerCurrent = (): boolean => this.current(capture, current);
-      // Share the top-level inspection between dependency upgrade and host comparison. Dependencies
-      // must also be upgraded for owners whose MetadataCache is not available yet, and all upgrades
-      // must finish before the deferred resolution fan-out below can query their memberships.
-      const inspection = await this.repository.inspect(file.path, [], ownerCurrent);
-      if (!ownerCurrent()) return false;
+      // A clean dependency check already selects this head. Exceptional/legacy owners retain normal
+      // inspection and repair; metadata still acquires its own protected, exact-head family read.
+      // Dependency upgrades also precede missing MetadataCache and deferred referrer fan-out.
+      const selected = await this.repository.inspectWithLocalDependencies(file.path, order, markdownOrder, ownerCurrent);
+      if (!ownerCurrent()) {
+        if (retryKnownOwner()) { markdownOrder--; continue; }
+        return false;
+      }
+      const inspection = selected.inspection;
       const head = inspection.head;
       if (inspection.saved && head?.state === "complete") {
-        const reason = await this.repository.ensureLocalDependencies(file.path, order, markdownOrder, ownerCurrent);
-        if (!ownerCurrent() || reason !== "ready") return false;
+        if (selected.dependencyReason !== "ready") return false;
         await checkpoint();
-        if (!ownerCurrent()) return false;
+        if (!ownerCurrent()) {
+          if (retryKnownOwner()) { markdownOrder--; continue; }
+          return false;
+        }
       }
       const cache = this.app.metadataCache.getFileCache(file);
       if (!cache) {
@@ -809,9 +879,13 @@ export class ObsidianSourceAcquisition {
         this.startupDiagnostics?.processed("source", file.path);
         continue;
       }
-      const durable = await this.durableHostInventory(file.path, ownerCurrent);
+      const durable = await this.durableHostInventory(file.path, ownerCurrent, inspection.saved ? inspection.expected : undefined);
       await this.backgroundCheckpoint?.();
-      if (!ownerCurrent() || this.app.metadataCache.getFileCache(file) !== cache) return false;
+      if (!ownerCurrent() || this.app.metadataCache.getFileCache(file) !== cache) {
+        if (retryKnownOwner()) { markdownOrder--; continue; }
+        return false;
+      }
+      if (durable.reason === "superseded") return false;
       this.inventoryProgress?.();
       const sameFacts = durable.reason === "ready" && JSON.stringify(durable.facts) === JSON.stringify(now);
       this.startupDiagnostics?.count("source", "physicalRevisionComparisons");
@@ -852,6 +926,7 @@ export class ObsidianSourceAcquisition {
       await yieldToHostTask();
     }
     if (changedPaths.size) {
+      this.warmMaintenanceAuthority = null; this.warmMaintenanceRevision = null;
       this.maintenanceRevision += 1; this.localDependenciesReady = false;
       const reason = await this.markResolutionDependents([...keys], changedPaths, current);
       if (reason !== "ready" && reason !== "cancelled" && current()) this.deferResolutionImpact([...keys], changedPaths, reason);
@@ -951,17 +1026,22 @@ export class ObsidianSourceAcquisition {
    * newly proven referrers are acquired in the next iteration before any readiness publication.
    * A broad caller defers readiness to its final exact event/projection fence; local lookup scope
    * may close earlier, but cannot expose semantic readiness during that final awaited proof.
+   * A foreground checkpoint borrows only the authenticated warm projection and leaves both broad
+   * readiness flags untouched; body misses keep the caller's lane instead of joining paused P4.
    */
-  private async reconcileKnownImpacts(current: () => boolean, publishReady = true): Promise<boolean> {
+  private async reconcileKnownImpacts(current: () => boolean, publishReady = true, foregroundCheckpoint?: () => Promise<void>): Promise<boolean> {
     let complete = true;
+    /** Urgent warm repair borrows its own proof without changing the broad audit's readiness. */
+    const authorityCurrent = (): boolean => this.localDependencyAuthorityReady
+      || foregroundCheckpoint !== undefined && this.canPrepareWarmMaintenance();
     while (current()) {
-      if (this.uncertainResolution || this.environmentMaintenancePending || !this.localDependencyAuthorityReady) return false;
+      if (this.uncertainResolution || this.environmentMaintenancePending || !authorityCurrent()) return false;
       const files = [...this.pendingKnownFiles];
       if (!files.length && !this.localInventoryCompletionPending && !this.pendingResolutionKeys.size) break;
       if (files.length) this.localInventoryCompletionPending = true;
       let retryPendingMetadata = false;
       for (const file of files) {
-        await this.backgroundCheckpoint?.();
+        if (foregroundCheckpoint) await foregroundCheckpoint(); else await this.backgroundCheckpoint?.();
         if (!current()) return false;
         // Delete before work: a concurrent event for this same TFile re-adds it and cannot be erased
         // by successful completion of the older observation. Unvisited snapshot entries stay queued.
@@ -982,7 +1062,7 @@ export class ObsidianSourceAcquisition {
           complete = false;
           continue;
         }
-        const body = await this.loadBody(file, current, false, true);
+        const body = await this.loadBody(file, current, false, foregroundCheckpoint === undefined);
         if (!body || !current()) { this.pendingKnownFiles.add(file); return false; }
         const acquired = await this.acquire(file, body, current);
         if (!acquired.current) { this.pendingKnownFiles.add(file); return false; }
@@ -1023,15 +1103,17 @@ export class ObsidianSourceAcquisition {
       // authority is granted until lookup and every subsequently discovered referrer have closed.
       const deferred = await this.retryDeferredResolutionImpacts(current);
       if (deferred !== "ready") return false;
-      if (this.uncertainResolution || this.environmentMaintenancePending || !this.localDependencyAuthorityReady) return false;
+      if (this.uncertainResolution || this.environmentMaintenancePending || !authorityCurrent()) return false;
       // Fan-out lookup can discover more referrers; iterate only that newly proven set.
       if (!this.pendingKnownFiles.size && !this.pendingResolutionKeys.size) break;
     }
     const ready = current() && complete && !this.resolutionBackpressure && !this.uncertainResolution
       && !this.environmentMaintenancePending && this.pendingKnownFiles.size === 0 && this.pendingResolutionKeys.size === 0
       && !this.localInventoryCompletionPending;
-    this.localDependenciesReady = publishReady && ready;
-    this.localDependencyAuthorityReady = ready || this.localDependencyAuthorityReady && !this.uncertainResolution && !this.environmentMaintenancePending;
+    if (!foregroundCheckpoint) {
+      this.localDependenciesReady = publishReady && ready;
+      this.localDependencyAuthorityReady = ready || this.localDependencyAuthorityReady && !this.uncertainResolution && !this.environmentMaintenancePending;
+    }
     return ready;
   }
 
@@ -1254,8 +1336,138 @@ export class ObsidianSourceAcquisition {
     };
   }
 
-  /** Whether settings-only semantic preparation has a closed current source-local dependency inventory. */
-  hasSemanticDependencies(): boolean { return this.localDependenciesReady && !this.closed; }
+  /** Current source dependencies come from the closed audit or a verified warm projection after
+   * all observed local edits/referrers close. Warm repair never declares the audit complete. */
+  hasSemanticDependencies(): boolean {
+    return !this.closed && (this.localDependenciesReady || this.canPrepareWarmMaintenance()
+      && this.warmMaintenanceRevision === this.maintenanceRevision);
+  }
+  /** Authenticate the existing closed dependency projection using bounded header pages, not body
+   * replay or another metadata sweep. Only a caller with a fresh complete graph may admit this
+   * path. Native identity/stat drift, unsupported/missing heads, open count journals and
+   * concurrent source activation reject it; the normal audit remains the conservative fallback. */
+  async admitWarmMaintenance(files: ReadonlyMap<string, TFile>, caller: () => boolean): Promise<boolean> {
+    const observation = this.contributorObservation, revision = this.inventoryRevision;
+    const current = (): boolean => caller() && !this.closed && observation === this.contributorObservation
+      && revision === this.inventoryRevision && !this.uncertainResolution && !this.environmentMaintenancePending;
+    let total = 0, first: string | undefined;
+    for (const file of files.values()) if (file.extension === "md") { total++; first ??= file.path; }
+    if (!first || !current()) return false;
+    const keys = [sourceLocalDependencyKey("node", first)];
+    const before = await this.repository.lookupLocalDependencyCounts(keys, current, true);
+    if (before.outcome !== "ready" || !current()) return false;
+    let after: string | null = null, matched = 0;
+    do {
+      await this.backgroundCheckpoint?.();
+      if (!current()) return false;
+      const page = await this.repository.headPage(after);
+      if (!page.available || page.invalid || !current()) return false;
+      for (const head of page.heads) if (head.state === "complete") {
+        const file = files.get(head.physical.path);
+        if (!file || file.extension !== "md" || this.app.vault.getFileByPath(file.path) !== file
+          || !physicalMatches(head.physical, {identity: head.physical.identity, path: file.path,
+            mtime: file.stat.mtime, size: file.stat.size, ctime: file.stat.ctime})) return false;
+        matched++;
+      }
+      after = page.next;
+    } while (after !== null);
+    if (matched !== total) return false;
+    const final = await this.repository.lookupLocalDependencyCounts(keys, current, true);
+    if (final.outcome !== "ready" || !current() || final.value.fence.revision !== before.value.fence.revision
+      || final.value.fence.sequence !== before.value.fence.sequence) return false;
+    this.warmMaintenanceAuthority = {};
+    return true;
+  }
+  /** This capability grants only a finite source-maintenance attempt, never completed audit progress. */
+  canPrepareWarmMaintenance(): boolean {
+    return this.warmMaintenanceAuthority !== null && !this.closed && this.enabled
+      && !this.uncertainResolution && !this.environmentMaintenancePending;
+  }
+  /** Retire an optional warm proof when its graph candidate or native/host basis is abandoned. */
+  retireWarmMaintenance(): void { this.warmMaintenanceAuthority = null; this.warmMaintenanceRevision = null; }
+  /** Close observed edits and their authenticated referrers ahead of the held global audit.
+   * The caller owns foreground priority. Finite native fan-out never joins inventory; every
+   * source/count/host observation and the final event revision retains its normal fence. */
+  async prepareWarmMaintenance(caller: () => boolean, checkpoint: () => Promise<void>): Promise<boolean> {
+    if (!this.canPrepareWarmMaintenance()) return false;
+    const authority = this.warmMaintenanceAuthority, revision = this.inventoryRevision;
+    const current = (): boolean => caller() && this.canPrepareWarmMaintenance()
+      && this.warmMaintenanceAuthority === authority && revision === this.inventoryRevision;
+    const admitted = [...this.knownFanoutTasks.values()];
+    for (const file of this.pendingKnownFiles) { const impact = this.states.get(file)?.impact; if (impact) admitted.push(impact); }
+    if (admitted.length) await Promise.all(admitted);
+    if (!current()) return false;
+    const next = this.pendingKnownFiles.values().next();
+    if (next.done) return false;
+    const closed = await this.repository.lookupLocalDependencyCounts([sourceLocalDependencyKey("node", next.value.path)], current, true);
+    if (closed.outcome !== "ready" || !current()) return false;
+    const ready = await this.reconcileKnownImpacts(current, false, checkpoint);
+    if (!ready || !current()) return false;
+    this.warmMaintenanceRevision = this.maintenanceRevision;
+    return true;
+  }
+  /** Graph catch-up shares the existing visible-demand lifetime of source inventory. */
+  isInventoryEnabled(): boolean { return this.enabled && !this.closed; }
+
+  /** Capture before a full build; later events survive its eventual baseline acknowledgement. */
+  beginGraphPublication(): number {
+    if (!this.graphChanges) {
+      this.graphChanges = new Map();
+      this.graphMaintenanceRevision = this.maintenanceRevision;
+      // A warm graph may be admitted after a same-stat native edit was already observed. Carry
+      // those coalesced owners forward; a cache signature cannot cover their newer input.
+      for (const file of this.pendingKnownFiles) this.noteGraphSourceChange(file.path);
+    }
+    return this.graphChangeSequence;
+  }
+
+  /** Existing source discovery owns this coalesced set; graph consumers never enumerate the vault. */
+  pendingGraphSources(): ReadonlyMap<string, number> | null { return this.graphChanges; }
+
+  /** A full graph covers its captured prefix, never events observed while it was being built. */
+  acknowledgeGraphPublication(sequence: number, maintenanceRevision: number): void {
+    for (const [path, observed] of this.graphChanges ?? []) if (observed <= sequence) this.graphChanges!.delete(path);
+    this.graphMaintenanceRevision = maintenanceRevision;
+  }
+
+  /** Preserve the exact metadata object, native incarnation and source generation across staging. */
+  captureGraphSource(file: TFile): SourceGraphPublication {
+    const capture = this.capture(file), metadata = this.app.metadataCache.getFileCache(file);
+    const observation = this.contributorObservation, environment = metadata ? this.environment(metadata) : null;
+    const input = this.bodyInputs.get(file), inputEpoch = this.bodyInputEpochs.get(file) ?? 0;
+    /** A repair can select newer lexical input before a native notification or stat change. */
+    const inputCurrent = (): boolean => this.bodyInputs.get(file) === input && !input?.retired
+      && (this.bodyInputEpochs.get(file) ?? 0) === inputEpoch;
+    /** Storage-only resolution refreshes may advance the source revision after compilation. Native
+     * edits/topology, replacement, cache changes and environment drift still retire this input. */
+    const nativeCurrent = (): boolean => !this.closed && inputCurrent() && observation === this.contributorObservation
+      && capture.hostRevision === this.hostRevision && this.app.vault.getFileByPath(capture.physical.path) === file
+      && file.path === capture.physical.path && file.stat.mtime === capture.physical.mtime
+      && file.stat.size === capture.physical.size && file.stat.ctime === capture.physical.ctime
+      && this.app.metadataCache.getFileCache(file) === metadata && (metadata ? this.environment(metadata) : null) === environment;
+    return { sourcePath: file.path, sequence: this.graphChangeSequence,
+      isCurrent: () => inputCurrent() && this.current(capture, () => true) && this.app.metadataCache.getFileCache(file) === metadata,
+      /** Install only after graph publication; failed private compilation establishes no coverage. */
+      rememberNativeInput: () => { if (nativeCurrent()) capture.state.graphInputCurrent = nativeCurrent; } };
+  }
+
+  /** Completing an older observation cannot remove a later edit to the same source. */
+  acknowledgeGraphSource(receipt: SourceGraphPublication): void {
+    receipt.rememberNativeInput();
+    const pending = this.graphChanges?.get(receipt.sourcePath);
+    if (pending !== undefined && pending <= receipt.sequence && receipt.isCurrent()
+      && this.graphChanges?.get(receipt.sourcePath) === pending) this.graphChanges.delete(receipt.sourcePath);
+  }
+
+  /** Deleted owners are acknowledged only after the graph removes their declarations. */
+  acknowledgeGraphDeletion(path: string, sequence: number): void {
+    if (this.graphChanges?.get(path) === sequence && this.app.vault.getFileByPath(path) === null) this.graphChanges.delete(path);
+  }
+
+  /** One entry per affected owner, including resolution dependents discovered after the event. */
+  private noteGraphSourceChange(path: string): void {
+    if (this.graphChanges && path.toLowerCase().endsWith(".md")) this.graphChanges.set(path, ++this.graphChangeSequence);
+  }
 
   /** Queue the exact damaged replay owner without reopening or invalidating unrelated durable heads. */
   private requestReplayRepair(result: Readonly<{ outcome: string; reason?: SourceReason; sourceId?: string }>): void {
@@ -1268,6 +1480,7 @@ export class ObsidianSourceAcquisition {
     state.dirty = true; state.resolutionDirty = true; state.revision += 1;
     this.replayRepairRevisions.set(file, state.revision);
     this.maintenanceRevision += 1; this.localDependenciesReady = false;
+    this.noteGraphSourceChange(file.path);
     this.pendingKnownFiles.add(file);
     this.requestInventory();
   }
@@ -1278,7 +1491,7 @@ export class ObsidianSourceAcquisition {
     const revision = this.hostRevision;
     const observation = this.contributorObservation;
     const maintenance = this.maintenanceRevision;
-    const current = (): boolean => !this.closed && runtime.isCurrent() && this.localDependenciesReady
+    const current = (): boolean => !this.closed && runtime.isCurrent() && this.hasSemanticDependencies()
       && this.hostRevision === revision && this.contributorObservation === observation && this.maintenanceRevision === maintenance;
     return new SourceLocalContributorDiscovery(this.repository, this.app,
       { epoch: this.epoch, revision, token: `${this.epoch}:${revision}:${observation}:${maintenance}` }, current, () => {
@@ -1922,6 +2135,10 @@ export class ObsidianSourceAcquisition {
       }
       if (!observationCurrent()) return { current: false, saved: false, reason: result.reason };
       if ((result.outcome === "activated" || result.outcome === "unsaved") && result.live) {
+        // Existing heads may change through resolver/environment repair without metadata:changed.
+        // Missing initial heads are already represented by the full build's actual host inputs.
+        if (head && !optionalAliasesOnly && this.maintenanceRevision !== this.graphMaintenanceRevision
+          && !capture.state.graphInputCurrent?.()) this.noteGraphSourceChange(file.path);
         capture.state.observation = optionalAliasesOnly && head ? { ...head.observation } : { epoch: this.epoch, revision: capture.hostRevision, environment };
         capture.state.dirty = false; capture.state.bodyDirty = false; capture.state.resolutionDirty = false; capture.state.created = false;
         if (intrinsic && !upgradeUrls) this.counters.resolutionRefreshes += 1; else this.counters.repaired += 1;
@@ -2004,6 +2221,8 @@ export class ObsidianSourceAcquisition {
   /** Coalesce target/source changes into one task; no per-file write-promise queue is retained. */
   requestInventory(): void {
     this.requested = true;
+    // The existing graph owner can admit urgent local work without joining this broad task.
+    if (this.canPrepareWarmMaintenance() && this.pendingKnownFiles.size) this.inventoryProgress?.();
     if (!this.enabled || this.closed || this.inventory || this.timer !== null) return;
     this.timer = window.setTimeout(() => { this.timer = null; void this.reconcile(); }, 350);
   }
@@ -2120,6 +2339,7 @@ export class ObsidianSourceAcquisition {
             // cached-fact inventory is therefore the first authoritative observation for this drift.
             // Close semantic writes immediately, but do not globalize hostRevision: sources whose
             // environment digest is unchanged remain reusable in this same bounded pass.
+            this.warmMaintenanceAuthority = null; this.warmMaintenanceRevision = null;
             this.maintenanceRevision += 1; this.localDependenciesReady = false;
             environmentMaintenanceFenced = true;
           }

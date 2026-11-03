@@ -6,6 +6,87 @@ import { chromiumHarness } from './support/browserTypeScript.mjs';
 
 const bundle = await contributorBrowserBundle();
 
+/** A native sync edit invalidates its selected head, not the already checked inventory prefix. */
+test('restart host comparison retains its prefix when the selected owner changes',async()=>{
+ const browser=await chromiumHarness(bundle);
+ try{
+  await browser.evaluate(contributorBrowserInitialize);
+  const result=await browser.evaluate(`(async()=>{
+   const f=await fixture('sync-selected-owner'),M=sourceModules;let restarted;
+   try{
+    for(let i=0;i<8;i++)f.add('Owner'+i+'.md','Value:: original');await f.acquire();ok(await f.acquisition.reconcile(),'Seed closed sources');f.acquisition.close();
+    restarted=new M.ObsidianSourceAcquisition(f.app,f.cache,async text=>M.parseBodyMetadata(text));restarted.start();
+    const inspect=f.repository.inspectWithLocalDependencies,visits=[];let delivered=false;
+    f.repository.inspectWithLocalDependencies=async function(...args){
+     const value=await inspect.apply(this,args);visits.push(args[0]);
+     if(!delivered&&args[0]==='Owner6.md'){
+      delivered=true;const file=f.files.get(args[0]);f.texts.set(file.path,'Value:: synced');file.stat.mtime++;
+      f.app.vault.trigger('modify',file);f.app.metadataCache.trigger('changed',file);f.app.metadataCache.trigger('resolved');
+     }
+     return value;
+    };
+    let ready=await restarted.reconcile();if(!ready)ready=await restarted.reconcile();
+    ok(ready&&restarted.hasSemanticDependencies(),'Real current source closure');
+    const rows=[];equal(await f.repository.visit('Owner6.md','values',batch=>{rows.push(...batch);return true}),'ready','Authenticated current facts');
+    return{prefix:visits.filter(path=>path==='Owner0.md').length,selected:visits.filter(path=>path==='Owner6.md').length,values:rows.filter(row=>row.kind==='inline-payload').map(row=>row.text)};
+   }finally{restarted?.close();f.close();}
+  })()`);
+  assert.equal(result.prefix,1,'A source-local sync event must not restart unrelated comparisons');
+  assert.deepEqual(result.values,['synced']);assert(result.selected>=2,'The changed head is reacquired');
+ }finally{await browser.cleanup();}
+});
+
+test('a delayed native move close needs no per-file resolve and retains exact local maintenance', async () => {
+  const browser = await chromiumHarness(bundle);
+  try {
+    assert.equal(await browser.evaluate(contributorBrowserInitialize), true);
+    assert.equal(await browser.evaluate(`(async()=>{
+      const f=await fixture('native-pure-move-delayed');
+      try{
+        for(let i=0;i<24;i++)f.add('Owner'+i+'.md','');await f.acquire();ok(await f.acquisition.reconcile(),'Initial source authority');
+        f.work.reset();const file=f.files.get('Owner0.md'),old=file.path,text=f.texts.get(old),cache=f.metadata.get(old);
+        f.files.delete(old);f.texts.delete(old);f.metadata.delete(old);file.path='Moved.md';file.name='Moved.md';file.basename='Moved';
+        f.files.set(file.path,file);f.texts.set(file.path,text);f.metadata.set(file.path,cache);f.app.vault.trigger('rename',file,old);
+        await new Promise(done=>setTimeout(done,100));const revision=f.acquisition.getMaintenanceRevision();f.app.metadataCache.trigger('resolved');
+        equal(f.acquisition.getMaintenanceRevision(),revision,'Exact native move receipt survives a delayed close without resolve');
+        ok(await f.acquisition.reconcile(),'Ordinary local owner/dependent validation closes');
+        equal(f.work.markdownEnumerations,0,'No global inventory after a known native move');
+        equal((await f.repository.inspect(old,[])).reason,'tombstone','Old source coordinates retired');
+        const after=f.acquisition.getMaintenanceRevision();f.app.metadataCache.trigger('resolved');
+        ok(f.acquisition.getMaintenanceRevision()>after,'Extra unknown close cannot reuse topology receipt');return true;
+      }finally{f.close();}
+    })()`),true);
+  }finally{await browser.cleanup();}
+});
+
+for (const unknown of [false, true]) test('delayed native per-file resolve closes only its attributed wave (unknown='+unknown+')', async () => {
+  const browser = await chromiumHarness(bundle);
+  try {
+    assert.equal(await browser.evaluate(contributorBrowserInitialize), true);
+    assert.equal(await browser.evaluate(`(async()=>{
+      const f=await fixture('native-resolve-delayed-${unknown}');
+      try{
+        for(let i=0;i<24;i++)f.add('Owner'+i+'.md','Related:: [[Owner1]]');
+        await f.acquire();ok(await f.acquisition.reconcile(),'Initial source authority');f.work.reset();
+        const file=f.files.get('Owner0.md');file.stat.mtime++;
+        f.texts.set(file.path,'Related:: [[Owner2]]');
+        f.app.vault.trigger('modify',file);f.app.metadataCache.trigger('changed',file);
+        await new Promise(done=>setTimeout(done,75));
+        if(${unknown})f.app.vault.trigger('modify',new window.ContributorFolder());
+        f.app.metadataCache.trigger('resolve',file);
+        await new Promise(done=>setTimeout(done,75));
+        const revision=f.acquisition.getMaintenanceRevision();f.app.metadataCache.trigger('resolved');
+        equal(f.acquisition.getMaintenanceRevision()===revision,!${unknown},'Only attributed close remains local');
+        ok(await f.acquisition.reconcile(),'Current local/global authority recovers');
+        equal(f.work.markdownEnumerations,${unknown}?1:0,'Delayed file receipt avoids a whole-vault sweep');
+        const after=f.acquisition.getMaintenanceRevision();f.app.metadataCache.trigger('resolved');
+        ok(f.acquisition.getMaintenanceRevision()>after,'Receipt consumed once; extra close stays conservative');
+        return true;
+      }finally{f.close();}
+    })()`),true);
+  }finally{await browser.cleanup();}
+});
+
 for (const seeded of [false, true]) test(`${seeded ? 'warm revalidation' : 'fresh incomplete inventory'} retains unrelated work through finite native edits and reaches actual dependency closure`, /** Deliver all fixed edits in either implementation, independent of its repeated-work count. */ async () => {
   const browser = await chromiumHarness(bundle);
   try {

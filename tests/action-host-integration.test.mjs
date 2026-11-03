@@ -1,4 +1,6 @@
-/** Host workflow persistence, menu/surface lifetimes and delayed physical identity use actual production callbacks. */
+/** Host workflow persistence, menu/surface lifetimes and delayed physical identity use actual
+ * production callbacks. Shortcut saves target default generation3; generations1/2 remain migratable,
+ * while genuinely newer generations must fail before storage, publication or semantic work. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import ts from 'typescript';
@@ -271,7 +273,7 @@ test('explicit overlap with inherited defaults saves both and survives marked re
   const writes=[],current=host(async data=>writes.push(structuredClone(data)));
   const next=draft(current);delete next.defaultBindingsVersion;next.localBindings['pin.toggle']=[{match:'code',value:'KeyR',modifiers:['alt']}];
   await current.updateActionPreferences(next);
-  assert.equal(writes.length,1);assert.equal(current.settings.actionPreferences.defaultBindingsVersion,1);
+  assert.equal(writes.length,1);assert.equal(current.settings.actionPreferences.defaultBindingsVersion,3);
   assert.equal(current.settings.actionPreferences.localBindings['node.rename'],undefined,'Inherited default is retained rather than disabled');
   const reloaded=contracts.migrateActionPreferences(writes[0]).preferences;
   assert.equal(contracts.compileActionBindings(reloaded,'windows').resolve({key:'r',code:'KeyR',altKey:true,ctrlKey:false,metaKey:false,shiftKey:false},'graph').state,'ambiguous');
@@ -288,12 +290,33 @@ test('explicit overlap with inherited defaults saves both and survives marked re
   assert.equal(contracts.compileActionBindings(resetReload,'windows').resolve({key:'r',code:'KeyR',altKey:true,ctrlKey:false,metaKey:false,shiftKey:false},'graph').state,'ambiguous');
 });
 
-test('malformed and future-generation workflow preferences reject before persistence or publication', async () => {
-  const writes=[],current=host(async data=>writes.push(data));
+test('malformed and future-generation workflow preferences reject before persistence or publication', /** Invalid input must leave both memory and downstream publication untouched. */ async () => {
+  let publications=0,notifications=0;
+  const writes=[],current=host(/** Record storage attempts so rejection cannot hide a partial save. */ async data=>writes.push(data));
+  const previous=current.settings.actionPreferences;
+  current.actionPublisher.sync=/** Record forbidden publication of an invalid draft. */ ()=>{publications++;return {failures:[]}};
+  current.actionPreferenceListeners.add(/** Record forbidden notification of an invalid draft. */ ()=>notifications++);
   const invalid=draft(current);invalid.localBindings['pin.toggle']=[{match:'code',value:'UnknownCode',modifiers:['alt']}];
   await assert.rejects(current.updateActionPreferences(invalid),/actions.invalidPreferences/);
-  const future=draft(current);future.defaultBindingsVersion=2;await assert.rejects(current.updateActionPreferences(future),/actions.invalidPreferences/);
-  assert.equal(writes.length,0);
+  for(const defaultBindingsVersion of [4,Number.MAX_SAFE_INTEGER]){
+    const future=draft(current);future.defaultBindingsVersion=defaultBindingsVersion;
+    await assert.rejects(current.updateActionPreferences(future),/actions.invalidPreferences/);
+  }
+  assert.equal(current.settings.actionPreferences,previous);
+  assert.deepEqual([writes.length,publications,notifications],[0,0,0]);
+});
+
+for(const defaultBindingsVersion of [1,2])test('explicit shortcut save accepts supported default generation '+defaultBindingsVersion, /** Older supported drafts migrate without discarding an intentionally overlapping shortcut. */ async()=>{
+  const writes=[],current=host(/** Capture the actual serialized settings for reload validation. */ async data=>writes.push(structuredClone(data)));
+  const next=draft(current);next.defaultBindingsVersion=defaultBindingsVersion;
+  next.localBindings['pin.toggle']=[{match:'code',value:'KeyR',modifiers:['alt']}];
+  const before=structuredClone(next);await current.updateActionPreferences(next);
+  assert.deepEqual(next,before,'Saving cannot mutate the caller draft');assert.equal(writes.length,1);
+  assert.equal(current.settings.actionPreferences.defaultBindingsVersion,3);
+  const reloaded=contracts.migrateActionPreferences(writes[0]).preferences;
+  assert.deepEqual(reloaded.localBindings['pin.toggle'],next.localBindings['pin.toggle']);
+  assert.equal(reloaded.localBindings['node.rename'],undefined,'Explicit overlaps retain the inherited shortcut');
+  assert.equal(contracts.compileActionBindings(reloaded,'windows').resolve({key:'r',code:'KeyR',altKey:true,ctrlKey:false,metaKey:false,shiftKey:false},'graph').state,'ambiguous');
 });
 
 test('host file incarnation rejects delayed delete/recreate despite identical path and kind', () => {
@@ -591,6 +614,56 @@ test("delete preview aggregate budget refuses two individually admissible source
   assert.equal(f.files.get(f.nativeTarget.path),f.nativeTarget);assert.equal(f.target.file,f.nativeTarget);assert.equal(f.patches.length,0);
 });
 
+/** Pair-local provenance supplements a partial incoming inventory without broad source discovery. */
+test('placeholder reference discovery includes incoming evidence from a displayed neighbor pair',()=>{
+ const f=deleteFixture({});f.dematerialize();f.target.neighbours=new Map([[f.source.path,{target:{path:f.source.path,file:f.source}}]]);
+ f.context.index.evidenceFrom=()=>[];
+ f.context.index.evidenceBetween=(source,target)=>source===f.source.path&&target===f.target.path?[{declaredByPath:f.source.path,declaredTargetPath:f.target.path}]:[];
+ const files=method('referencingMarkdownFiles').call(f.context,f.target);
+ assert.deepEqual(files,[f.source],'A partial target-wide incidence list must not hide a known incoming pair source');
+});
+
+/** A source-authority refusal always explains retention; newly discovered links receive manual-edit actions only. */
+test('unreadable placeholder preview offers known source notes without deletion or metadata writes',async()=>{
+ const f=deleteFixture({});f.dematerialize();const target=f.target,index=f.context.index;let report;
+ index.pages=new Map([[target.path,target]]);index.get=()=>target;
+ f.context.captureDeleteNodePreview=async()=>{throw Error('preview too large')};
+ f.context.confirmDeleteNode=()=>assert.fail('An incomplete source preview cannot authorize deletion');
+ f.context.saveSettings=()=>assert.fail('Failed inspection must not change navigation preferences');
+ const before=f.body(),run=method('deleteNode',{...contracts,Notice:class{},RemainingNodeReferencesModal:class{constructor(...args){report={args}}open(){report.visible=true}}});
+ const outcome=await run.call(f.context,target);
+ assert.equal(outcome.status,'unavailable');assert(report?.visible,'Explain the failed source inspection');
+ assert.equal(report.args[2][0].path,f.source.path);assert(report.args[4].length);assert.equal(f.body(),before);assert.deepEqual(f.patches,[]);
+});
+
+/** A source-authority refusal always explains retention; newly discovered links receive manual-edit actions only. */
+for(const discovered of [false,true])test('retained placeholder explains '+(discovered?'late body references':'incomplete source discovery'),async()=>{
+ const f=deleteFixture({});f.dematerialize();const canonical=f.target,index=f.context.index;let reports,captures=0;
+ index.pages=new Map([[canonical.path,canonical]]);index.get=()=>canonical;index.removeVirtualPageIfUnreferencedFromSources=async()=>false;
+ const capture=f.context.captureDeleteNodePreview;f.context.captureDeleteNodePreview=async target=>{captures++;return captures===1||!discovered?{sources:[],hiddenFields:[],hiddenField:''}:capture(target)};
+ Object.assign(f.context.settings,{pinnedNodes:[],navigationHistory:[]});Object.assign(f.context,{confirmDeleteNode:async()=>true,removeFromNavigationHistory(){},saveSettings:async()=>{}});
+ const before=f.body(),run=method('deleteNode',{...contracts,Notice:class{},RemainingNodeReferencesModal:class{constructor(...args){reports={args}}open(){reports.visible=true}}});
+ const result=await run.call(f.context,canonical);assert.equal(result.status,'committed');assert(reports?.visible,'A retained placeholder must never produce a silent successful action');
+ if(discovered)assert(reports.args[2].some(reference=>reference.path===f.source.path),'Offer the known note for manual source editing');
+ else assert(reports.args[4].length,'Incomplete discovery must explain why no source list is available');
+ assert.equal(captures,2);assert.deepEqual(f.patches,[]);assert.equal(f.body(),before);assert.deepEqual(f.frontmatter,{});
+});
+
+/** Body-only placeholder deletion reviews source notes even when a read refresh replaces its display facade. */
+test('delete placeholder opens surviving body links after preview refresh without editing note text',async()=>{
+ const f=deleteFixture({});f.dematerialize();const canonical=f.target,index=f.context.index,host={view:{}};
+ let facade={...canonical},confirmations=0,report;index.pages=new Map([[canonical.path,canonical]]);index.get=()=>facade;
+ index.removeVirtualPageIfUnreferencedFromSources=()=>assert.fail('Body-linked placeholder must remain for manual source editing');
+ const capture=f.context.captureDeleteNodePreview;f.context.captureDeleteNodePreview=async target=>{const preview=await capture(target);facade={...canonical};return preview};
+ Object.assign(f.context.settings,{pinnedNodes:[],navigationHistory:[]});Object.assign(f.context,{confirmDeleteNode:async()=>{confirmations++;return true},removeFromNavigationHistory(){},saveSettings:async()=>{},openRelationshipEvidenceLocation:(...args)=>{report.opened=args}});
+ const before=f.body(),run=method('deleteNode',{...contracts,Notice:class{},RemainingNodeReferencesModal:class{constructor(...args){report={args}}open(){report.visible=true}}});
+ const result=await run.call(f.context,facade,host);
+ assert.equal(result.status,'committed');assert.equal(confirmations,1);assert(report?.visible,'The blocked deletion must open its explanation');
+ assert(report.args[2].some(reference=>reference.path===f.source.path&&reference.sourceKind==='obsidian-link'));
+ await report.args[3](report.args[2][0]);assert.equal(report.opened[1],host,'Manual source editing retains the originating native pane');
+ assert.equal(f.body(),before);assert.deepEqual(f.frontmatter,{});assert.equal(facade.file,null);
+});
+
 /** Exact pair publication replaces a read facade without replacing the approved canonical endpoint. */
 for(const replaceCanonical of [false,true])test('delete cleanup '+(replaceCanonical?'rejects a replaced canonical ghost':'survives refreshed ghost pair facades'),async()=>{
  const f=deleteFixture({Children:'[[B]]',arbitrary:'[[B]]'}),index=f.context.index,canonical=f.target;
@@ -646,7 +719,7 @@ function foldFixture() {
     leafIsAttached:leaf=>leaf.attached,leafGroupElement:leaf=>leaf.group,splitAxis:()=>owner.axis??'width',adjacentPosition:()=>owner.geometry===false?null:'right',leafTabIsActive:leaf=>!!leaf.selected,translator:key=>key,notifySidecar:()=>calls.push('notify'),onKplexVisibilityMayHaveChanged:()=>calls.push('visibility'),
     app:{workspace:{getLeavesOfType:type=>type==='kplex'?[host]:[],activeLeaf:host,getActiveViewOfType(){return {leaf:this.activeLeaf}},iterateAllLeaves(fn){[host,sidecar,sibling].forEach(fn)},setActiveLeaf(leaf){calls.push(['focus',leaf]);this.activeLeaf=leaf},async revealLeaf(leaf){calls.push(['reveal',leaf])}}}};
   documentSessions(owner);
-  for(const name of ['advancePlexFoldRevision','setSidecarOwner','deleteSidecarOwner','restoreCollapsedPlex','restorePlexFoldBeforeReveal','isPlexFoldedForSidecar','readPlexFoldCandidate','plexFoldToken','readPlexFoldCandidates','readPlexFoldUnavailableReason','isPlexFoldCandidateCurrent','isPlexFoldSessionValid','reconcilePlexFolds','togglePlexFold','expandPlexFromSidecar'])owner[name]=method(name,{KplexView,ItemView:class{},PlexFoldSession,plexFoldIdentity,KPLEX_VIEW_TYPE:'kplex',KPLEX_SIDEPANEL_VIEW_TYPE:'sidepanel'});
+  for(const name of ['advancePlexFoldRevision','setSidecarOwner','deleteSidecarOwner','restoreCollapsedPlex','restorePlexFoldBeforeReveal','isPlexFoldedForSidecar','readPlexFoldCandidate','plexFoldToken','readPlexFoldCandidates','readPlexFoldUnavailableReason','isPlexFoldCandidateCurrent','isPlexFoldSessionValid','reconcilePlexFolds','togglePlexFold','expandPlexFromSidecar','closeSidecar','collapsePlexForSidecar'])owner[name]=method(name,{KplexView,ItemView:class{},PlexFoldSession,plexFoldIdentity,Notice:class{},KPLEX_VIEW_TYPE:'kplex',KPLEX_SIDEPANEL_VIEW_TYPE:'sidepanel'});
   return {owner,host,sidecar,sibling,root,split,hostGroup,sidecarGroup,recovery,doc,events,observers,calls,Element,KplexView};
 }
 
@@ -880,4 +953,66 @@ test('fold routing picker cancellation is inert and selection keeps the exact ca
     f.owner.restorePlexFoldBeforeReveal(b.host);f.unrelated();
     const route={state:'ambiguous',targets:[f.target(f.host),f.target(b.host)]};f.owner.executePlexFoldAction({sidecarFold:route});const stale=f.pickers[2];f.owner.deleteSidecarOwner(b.host);f.owner.setSidecarOwner(b.host,b.sidecar);stale.select(1);await new Promise(resolve=>setImmediate(resolve));assert.equal(f.owner.collapsedPlexHosts.size,0);
   }finally{f.dispose()}
+});
+
+/** Modifier recovery composes the actual restore/close owners without detaching unrelated tabs. */
+test('native recovery accepts every modifier combination and ordinary recovery keeps the companion',async()=>{
+ for(let mask=0;mask<16;mask++){
+  const f=foldFixture();let detached=0;f.sidecar.detach=()=>{detached++;f.sidecar.attached=false};
+  await f.owner.togglePlexFold(f.owner.readPlexFoldCandidate(f.host));
+  const button=f.owner.collapsedPlexHosts.get(f.host).unfoldButton;
+  button.listeners.get('click')({altKey:!!(mask&1),ctrlKey:!!(mask&2),metaKey:!!(mask&4),shiftKey:!!(mask&8)});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.owner.collapsedPlexHosts.size,0);assert.equal(f.doc.leases,0);
+  assert.equal(detached,mask?1:0);assert.equal(f.owner.sidecarLeaves.has(f.host),!mask);
+  assert.equal(f.owner.app.workspace.activeLeaf,f.host);assert(f.sibling.attached,'Unrelated native tabs remain open');
+ }
+});
+
+/** Superseded native reveal never closes a replacement companion or overrides newer selection. */
+test('modifier recovery rejects held-reveal ownership, generation and focus changes',async()=>{
+ for(const change of [f=>f.owner.setSidecarOwner(f.host,{...f.sidecar}),f=>f.host.view.generation++,f=>f.owner.app.workspace.setActiveLeaf(f.sidecar,{focus:true})]){
+  const f=foldFixture();let closed=0,finish;f.sidecar.detach=()=>{closed++};
+  await f.owner.togglePlexFold(f.owner.readPlexFoldCandidate(f.host));
+  f.owner.app.workspace.revealLeaf=()=>new Promise(resolve=>{finish=resolve});
+  const pending=f.owner.expandPlexFromSidecar(f.host,true);change(f);finish();await pending;
+  assert.equal(closed,0);assert(f.owner.sidecarLeaves.has(f.host));assert.equal(f.doc.leases,0);
+ }
+});
+
+/** Native focus listeners may synchronously replace the same leaf's ownership before close. */
+test('modifier recovery rechecks synchronous focus callbacks before closing a companion',async()=>{
+ for(const change of [f=>f.owner.setSidecarOwner(f.host,f.sidecar),f=>f.host.view.generation++,f=>{f.owner.app.workspace.activeLeaf=f.sibling}]){
+  const f=foldFixture();let closed=0;f.sidecar.detach=()=>{closed++};
+  await f.owner.togglePlexFold(f.owner.readPlexFoldCandidate(f.host));
+  const workspace=f.owner.app.workspace,select=workspace.setActiveLeaf;
+  workspace.setActiveLeaf=function(leaf,...args){select.call(this,leaf,...args);if(leaf===f.host)change(f)};
+  await f.owner.expandPlexFromSidecar(f.host,true);
+  assert.equal(closed,0,'A focus callback superseded the captured close intent');
+  assert(f.owner.sidecarLeaves.has(f.host));assert.equal(f.doc.leases,0);
+ }
+});
+
+/** Maximize opens only after normal layout completion and the captured view/session still match. */
+test('modifier open waits for the moving lease and rejects superseded native pairs',async()=>{
+ for(const kind of ['valid','ordinary','generation','owner','source','unsafe','already-moving']){
+  const f=foldFixture(),owner=f.owner;let finish,entered;
+  const admitted=new Promise(resolve=>{entered=resolve});let layouts=0;
+  owner.ensureSidecarLeaf=()=>f.sidecar;owner.openPageInSidecarLeaf=async()=>{};
+  owner.ensureAdjacentFileLeafSize=()=>{assert(owner.sidecarMovingHosts.has(f.host))};
+  owner.waitForWorkspaceLayout=()=>++layouts===1?new Promise(resolve=>{finish=resolve;entered()}):Promise.resolve();
+  if(kind==='already-moving')owner.sidecarMovingHosts.add(f.host);
+  const open=method('openSidecar',{KplexView:f.KplexView});
+  const pending=open.call(owner,f.host,{},kind!=='ordinary');await admitted;
+  assert(owner.sidecarMovingHosts.has(f.host));assert.equal(owner.collapsedPlexHosts.size,0);
+  if(kind==='generation')f.host.view.generation++;
+  if(kind==='owner')owner.setSidecarOwner(f.host,{...f.sidecar});
+  if(kind==='source')owner.documentSession(f.host).retire();
+  if(kind==='unsafe')f.split.appendChild(new f.Element(f.doc,'workspace-tabs'));
+  finish();await pending;
+  assert.equal(owner.collapsedPlexHosts.size,kind==='valid'?1:0,kind);
+  assert.equal(owner.sidecarMovingHosts.has(f.host),kind==='already-moving',kind);
+  if(kind==='valid')owner.restorePlexFoldBeforeReveal(f.host);
+  assert.equal(f.doc.leases,0);
+ }
 });

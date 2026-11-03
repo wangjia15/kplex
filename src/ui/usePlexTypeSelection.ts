@@ -10,6 +10,7 @@ import type { PlexKeyboardNode, PlexKeyboardSelection } from "./usePlexKeyboardN
 type TypeSelectionOptions = Readonly<{
   normalMode: boolean;
   activePath: string;
+  scopeKey?: string;
   nodes: readonly PlexKeyboardNode[];
   selection: PlexKeyboardSelection;
 }>;
@@ -54,18 +55,18 @@ export function nextTypeSelection(nodes: readonly PlexKeyboardNode[], matches: r
 /** Keep text selection separate from Vault search and Plex Find, using their shared occurrence reveal boundary. */
 export function usePlexTypeSelection(options: TypeSelectionOptions): PlexTypeSelection {
   const [state, setState] = useState<{ center: string; query: string } | null>(null);
-  const query = options.normalMode && state?.center === options.activePath ? state.query : "";
+  const query = options.normalMode && state?.center === (options.scopeKey ?? options.activePath) ? state.query : "";
   const current = useRef({ options, query });
   current.current = { options, query };
   useEffect(/** A later return to a center or normal mode must not resurrect a retired query. */ () => {
-    if (state && (state.center !== options.activePath || !options.normalMode)) setState(null);
-  }, [state, options.activePath, options.normalMode]);
+    if (state && (state.center !== (options.scopeKey ?? options.activePath) || !options.normalMode)) setState(null);
+  }, [state, options.activePath, options.scopeKey, options.normalMode]);
 
   /** Update synchronous ownership first so immediate Scope and DOM deliveries use the same query generation. */
   const update = (value: string): void => {
     const latest = current.current;
     latest.query = value;
-    setState(value ? { center: latest.options.activePath, query: value } : null);
+    setState(value ? { center: latest.options.scopeKey ?? latest.options.activePath, query: value } : null);
   };
   /** Reveal through the existing selection owner; zero hits retain the prior selected occurrence. */
   const choose = (value: string, direction: 1 | -1): void => {

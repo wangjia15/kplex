@@ -1,0 +1,155 @@
+{
+  "runtimeSourceCommit": "c77fa0c06df606316d0ae54246cfe251abdc3165",
+  "scope": "Focused parent overflow connector/reveal acceptance plus existing native editor/keyboard/view-switch guard cases; full regression deferred",
+  "status": "passed",
+  "driverNode": "v22.22.2",
+  "obsidian": "1.14.5 (installer 1.14.0)",
+  "driver": {
+    "transport": "beb7677649f8ae6ae390c0df25b4a025a48777b5fbfc5e36c25f7fe252b8a0d3",
+    "scenario": "00be62d994b6438b2b1367af4b2dc189bc23e42bea3c2200adfb6c135fd312ce",
+    "definitions": "cdd6d9c3c71fd0e6771458747c9a4bd54edbb083e485e0ef79e3a467f1f1c55b"
+  },
+  "artifacts": {
+    "main.js": "a20329178be464967f510a9b4ad7ad4787413b11e7e6d60dbac7693f6a939541",
+    "manifest.json": "c28f61576adfe73800994c8fd47671fcd5880c21809cac63595cfbe3715c7a01",
+    "styles.css": "cbb5af8aa1cf8b66d95e93e5f39a70f8df8283617e20aa402fdfc6d4b8dbef9b"
+  },
+  "source": {
+    "src/index/GraphBuilder.ts": "b4ff3bc6298c1d30c58aa15a47d2636b8e32a33f1ff4c225ce2848534567cab8",
+    "src/index/GraphIndex.ts": "c0a921ab4f65185400da1536432cee257a97d21574b764273a56f0dd991c68fa",
+    "src/core/graph/compiler.ts": "ee403bd86870137e7ea769dfb5c5c7cfa27e08ad768b1815bef47eab9732bd4f",
+    "src/ui/PlexGraph.tsx": "47e9c1fad29d51c311cc60ac8f8036ff049d8127117000bcbc91054ad87a4bd6",
+    "src/ui/plexViews/areaVisibility.ts": "b755a9bb1c92503f6605517562067c43c5dab2556c548f273a618108d305cb21",
+    "src/ui/plexViews/prepareScene.ts": "8c257773f454998044ca52bc6103bd9a40c731b29256c8c0ecfd31e1a0e7b4be",
+    "src/core/plex/views/contracts.ts": "e1ca2f3606ad5f7378044c20926d4396133c08e244b613931f46590ad1a50b97",
+    "src/core/plex/views/hierarchy.ts": "eabf11a0ec8d3acff87dab7d78a06601611ec3236a18f54b3d4adac3b2498ed7",
+    "src/core/plex/views/registry.ts": "0a71e0c44bee06ae8b9c65ece285f1cba70364ed5e005e7104a73a977efde67a",
+    "src/core/plex/views/mindmap/definition.ts": "18ef7c507e8144d7bf5e1b85136652ca7dd63948891f899c82fa74ea7785db71",
+    "src/core/plex/views/mindmap/projection.ts": "6d1185efb47b9f635d28e5037a7404954411f07901431669cf8bd9ab2ba4178d",
+    "src/core/plex/views/mindmap/layout.ts": "4a77dda1416843473af4d6d674ee6884edbb1ea6d7aa4cde0f1dd5e460a1b755",
+    "src/core/plex/views/wuxing/definition.ts": "1d3e8b9db72978b6097eaad3df2d6d409d4f7e44b978322267a09691292b4885",
+    "src/core/plex/views/facets/projection.ts": "b78a6c38806e895933ba56dd522678a14b4b00b6152e68f18478db9e2272d3b5",
+    "src/core/plex/views/facets/layout.ts": "7ba987cb8678365c82f4113d2aa3dbf7eb2680ae83ac87998fd716a301437559",
+    "src/core/plex/views/facets/rules.ts": "9f6a6cb6260424166e353567021e3a2748a5322fd9cef7170e3adb8db7d5f5e4",
+    "src/core/plex/predicate.ts": "1385f7eeaa80a8a22813a1dd71ad436784eec626261a2ce8eb39a48ee9f3d9da",
+    "src/ui/plexViews/facets/FacetPresetEditor.ts": "5cde206795032048ef1461cdbcf328382229c36edd71f9c0ff752d4d23e8e616",
+    "src/ui/CanvasPropertyAssignmentActions.ts": "7c9d038187c439a255d53691caf46a0a633e0d810c0bb73088187c35d56a2c8c",
+    "src/adapters/obsidian/predicateContracts.ts": "a880ddf39add8ca9adacc2dc0bce2937d17207f2bebeeec26e0a13c1c000b955",
+    "src/ui/NativeMarkdownHelp.ts": "5ffc0b5a5af0a091bfa622ebd75bc2c928159d817e981d2684797ae74a44fdc7",
+    "src/ui/MarkdownHelpModal.ts": "6fec2222d055dde51231cb05030514fb092e62bf63458490114a37da9f70ce76",
+    "src/core/contracts/markdownHelp.ts": "9034e70ea66566c0c81bc0360fb722e55d9051df28e769e4ad4d60c773d120c1",
+    "src/ui/plexViews/facets/helpSettings.ts": "4ef188ea9ad4d22b2bccaa1981e1508a078308d5ed01812ed6704eac5ba09d7f",
+    "src/core/plex/views/facets/templates.ts": "917a1c562ba1810688deaa0410908f7c7499470ca25693ca11b2f00155041f12"
+  },
+  "completedAt": "2026-10-26T21:31:50.123Z",
+  "cases": [
+    {
+      "id": "requested-local-cache-proof",
+      "current": true,
+      "coverage": "cached",
+      "globalSemanticPending": false
+    },
+    {
+      "id": "production-registry-five-phases-canonical-links",
+      "regions": 7,
+      "semanticConnectors": 7
+    },
+    {
+      "id": "native-disclosure-only-folds-without-root-or-attention-change"
+    },
+    {
+      "id": "native-plain-body-click-uses-accepted-root-navigation"
+    },
+    {
+      "id": "native-modified-enter-folds-without-centering",
+      "modifier": "alt"
+    },
+    {
+      "id": "native-control-enter-new-tab-through-shared-destination-owner"
+    },
+    {
+      "id": "native-plain-arrows-and-enter-center-no-rename"
+    },
+    {
+      "id": "native-click-reroot-editor-identity-content-caret-save-guard-and-cleanup",
+      "facts": {
+        "sameEditor": true,
+        "sameContent": true,
+        "sameCursor": true,
+        "sameBinding": true,
+        "sameRoot": true,
+        "sameAttention": true
+      }
+    },
+    {
+      "id": "native-plain-arrow-and-enter-center-view",
+      "view": "classic"
+    },
+    {
+      "id": "native-plain-arrow-and-enter-center-view",
+      "view": "wuxing"
+    },
+    {
+      "id": "native-modified-enter-reuses-central-markdown-section-owner"
+    },
+    {
+      "id": "native-current-compass-center-enter-no-rename"
+    },
+    {
+      "id": "native-editor-switch-save-failure-retains-binding-content-and-caret"
+    },
+    {
+      "id": "native-occurrence-editor-button-switch-saves-closes-and-opens-one-host"
+    },
+    {
+      "id": "native-parent-editor-toolbar-reachable-at140-and220-area-height-and-real-close"
+    },
+    {
+      "id": "native-compass-editor-opens-and-switches-in-area-without-centering",
+      "view": "classic"
+    },
+    {
+      "id": "native-all-note-editor-icons-and-save-close-switch-via-attention-owner",
+      "view": "wuxing"
+    },
+    {
+      "id": "native-compass-tint-retains-center-and-explicit-navigation-saves-bound-occurrence"
+    },
+    {
+      "id": "native-selector-auto-saves-closes-central-compass-editor-before-mindmap"
+    },
+    {
+      "id": "native-selector-save-failure-retains-view-editor-and-successful-retry"
+    },
+    {
+      "id": "native-compass-occurrence-workspace-restoration-exact-note-size-and-center"
+    },
+    {
+      "id": "native-main-selector-save-close-transition-keeps-popout-view-attention-camera-focus"
+    },
+    {
+      "id": "native-parent-overflow-connectors-retained-clipped-and-expansion-row-revealed",
+      "descendants": 28
+    }
+  ],
+  "host": {
+    "node": "v24.18.1",
+    "electron": "43.3.0",
+    "chrome": "150.0.7871.212",
+    "hidden": false
+  },
+  "cleanup": "passed",
+  "restoration": {
+    "restored": true,
+    "configurationFiles": 9,
+    "contentFiles": 117,
+    "contentDigest": "7bdaf015f88c6ee1945410755a5aaccf7e04408fe597e729cafca24c5bc332ba",
+    "completedAt": "2026-10-26T21:31:55.623Z"
+  },
+  "limits": [
+    "Multiple native editors and focused-editor Properties targeting are assessed follow-ups, not implemented or verified here.",
+    "Windows native automation does not certify macOS/minimum-host/physical mobile.",
+    "Owned view recreation is not whole-application restart; main/popout isolation is not two simultaneous editor/Sidecar pairs.",
+    "Known #215 baseline limits retained. Clipboard/production untouched. Full regression/CI deferred."
+  ]
+}

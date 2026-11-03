@@ -121,6 +121,7 @@ test("App menus capture native identity before canonical pages mutate, while fol
 
 /** Compile the graph's actual target reacquisition callback rather than approximating section validity. */
 function productionGraphTarget(dependencies) {
+  dependencies = {sectionExpansion: null, ...dependencies};
   const filename = "src/ui/PlexGraph.tsx";
   const source = ts.createSourceFile(filename, readFileSync(new URL(`../${filename}`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression;
@@ -129,6 +130,15 @@ function productionGraphTarget(dependencies) {
   const code = ts.transpileModule(`const resolve=${expression};`, { compilerOptions: { target: ts.ScriptTarget.ES2021 } }).outputText;
   return Function(...Object.keys(dependencies), `${code}\nreturn resolve;`)(...Object.values(dependencies));
 }
+
+test("section actions reject a stale heading source revision without opening or reacquiring it",()=>{
+  const file={path:"A.md",stat:{mtime:1,size:20}},cache={},page={path:"section:A:Second",file,transient:{kind:"section"}},node={page};let currentCache=cache;
+  const resolve=productionGraphTarget({scene:{nodes:[node]},sceneNodeKeys:new Map([[node,"second"]]),index:{},
+    sectionExpansion:{sourceRevision:{file,path:file.path,mtime:1,size:20,cache}},plugin:{app:{vault:{getFileByPath:()=>file},metadataCache:{getFileCache:()=>currentCache}}},
+    actionNodeRef:()=>({fileIdentity:"original"}),resolveActionPage:()=>assert.fail("No source acquisition for transient actions")});
+  const context={target:{kind:"node",node:{identity:page.path,kind:"section",fileIdentity:"original"},occurrenceId:"second"}};
+  assert.equal(resolve(context),page);file.stat.mtime=2;assert.equal(resolve(context),null);file.stat.mtime=1;currentCache={};assert.equal(resolve(context),null);
+});
 
 test("section actions require the captured occurrence and original native source-file incarnation", () => {
   const original = { path: "A.md" }, replacement = { path: "A.md" }, page = { path: "kplex-section:A.md:H1", file: original, transient: { kind: "section" } }, node = { page };
@@ -167,6 +177,7 @@ async function bundle() {
     import {focusEmbeddedMarkdown,focusEmbeddedMarkdownView,registerEmbeddedMarkdownFocusTarget} from './src/adapters/obsidian/embeddedMarkdownFocus';
     export {focusEmbeddedMarkdown,focusEmbeddedMarkdownView,registerEmbeddedMarkdownFocusTarget};
     export {CreateFolderNoteModal} from './src/ui/CreateFolderNoteModal';
+    export {creationAfterSavingActions,effectiveCreationAfterSaving,sanitizeCreationAfterSaving} from './src/core/plex/createdNoteDestination';
     ${productionAppFocusActions()}
     ${productionToolbarMenus()}
     ${productionEmbeddedActivation()}
@@ -421,7 +432,8 @@ test("folder creation retains original native folder, continuation and post-clos
       const root=document.createElement('div'),invoker=document.createElement('button');root.append(invoker);document.body.append(root);invoker.focus();
       const folder={path:'Folder'},vaultRoot={path:'/'},page={path:'Created.md',file:{path:'Created.md'}},renameListeners=new Set();let currentFolder=folder,writes=0,closed=0,follow=0,edit=0,current=true,release;
       let pending=new Promise(r=>release=r),writtenPath;
-      const plugin={app:{vault:{getRoot:()=>vaultRoot,getFolderByPath:()=>currentFolder,on:(_name,callback)=>{renameListeners.add(callback);return callback},offref:callback=>renameListeners.delete(callback)}},translator:(key,params)=>key==='folderNote.help'?'Create inside '+params.folder:key,settings:{editNewNodeAfterCreate:false,newNodeDefaultType:'markdown',lastActivePath:'A'},isExcalidrawAvailable:()=>false,saveSettings:async()=>{},
+      let preferenceWrites=0;
+      const plugin={createdNoteCompletionControl(_host,options={}){const M=window.sourceModules,context={desktop:true,sidepanel:false,another:options.another!==false,editable:options.editable!==false,follow:options.follow!==false};return{choices:M.creationAfterSavingActions(context),value:M.effectiveCreationAfterSaving(M.sanitizeCreationAfterSaving(this.settings.newNodeAfterSaving,this.settings.editNewNodeAfterCreate),context),onChange:value=>{this.settings.newNodeAfterSaving=value;preferenceWrites++}}},app:{vault:{getRoot:()=>vaultRoot,getFolderByPath:()=>currentFolder,on:(_name,callback)=>{renameListeners.add(callback);return callback},offref:callback=>renameListeners.delete(callback)}},translator:(key,params)=>key==='folderNote.help'?'Create inside '+params.folder:key,settings:{editNewNodeAfterCreate:false,newNodeDefaultType:'markdown',lastActivePath:'A'},drawingTemplateOptions:()=>null,isExcalidrawAvailable:()=>false,saveSettings:async()=>{},
         validateRelatedNoteName:name=>({valid:Boolean(name),existing:false,stem:name}),rememberNewNodeDefaultType:async()=>{},
         createNewNodeInFolder:async(target,name,kind,native)=>{writes++;writtenPath=target.path;if(native!==folder)throw Error('lost native folder');await pending;return page},
         finishNewRelatedNode:async(target,host,editing,stillValid)=>{if(stillValid()){follow++;if(editing)edit++}}};
@@ -429,14 +441,13 @@ test("folder creation retains original native folder, continuation and post-clos
         {current:()=>current,onClosed:()=>closed++,focusGraph:()=>root.focus()});flushSync(()=>modal.open());return modal};
       let modal=makeModal();await new Promise(r=>setTimeout(r,0));
       const choices=()=>modal.contentEl.querySelector('select[data-kplex-control="creation-completion"]');
-      const sharedChoice=choices()?.value==='return'&&![...choices().options].some(option=>option.value==='configured')&&modal.continuation==='configured';
+      const sharedChoice=choices()?.value==='return'&&![...choices().options].some(option=>option.value==='configured')&&modal.continuation==='return';
       const select=async value=>{const control=choices();flushSync(()=>{control.value=value;control.dispatchEvent(new Event('change',{bubbles:true}))});await new Promise(r=>setTimeout(r,0))};
-      await select('follow');const explicitChoice=modal.continuation==='follow'&&!plugin.settings.editNewNodeAfterCreate;
-      await select('edit');const editingChoice=modal.contentEl.querySelector('input[type="checkbox"]').checked&&!plugin.settings.editNewNodeAfterCreate;
-      const toggle=modal.contentEl.querySelector('input[type="checkbox"]');flushSync(()=>{toggle.checked=false;toggle.dispatchEvent(new Event('change',{bubbles:true}))});await new Promise(r=>setTimeout(r,0));
-      const toggleSynchronized=choices().value==='return'&&modal.continuation==='configured';
-      plugin.settings.editNewNodeAfterCreate=true;flushSync(()=>modal.renderCompletionControls());await new Promise(r=>setTimeout(r,0));
-      const configuredEdit=choices().value==='edit';plugin.settings.editNewNodeAfterCreate=false;
+      await select('follow');const explicitChoice=modal.continuation==='follow'&&plugin.settings.newNodeAfterSaving==='follow';
+      await select('editor-maximized');const editingChoice=choices().value==='editor-maximized'&&plugin.settings.newNodeAfterSaving==='editor-maximized';
+      const singleControl=modal.contentEl.querySelectorAll('select').length===1&&!modal.contentEl.querySelector('input[type="checkbox"]');
+      const beforeWrites=preferenceWrites;flushSync(()=>modal.renderCompletionControls());await new Promise(r=>setTimeout(r,0));
+      const renderingDidNotSave=preferenceWrites===beforeWrites;
       modal.noteName='First';folder.path='Renamed';for(const callback of renameListeners)callback(folder,'Folder');
       const displayedOrigin=modal.contentEl.querySelector('p').textContent==='Create inside Renamed';
       let task;flushSync(()=>{task=modal.create('markdown','another')});await modal.create('markdown','another');const busyChoice=choices().disabled;const singleflight=writes===1;release();await task;
@@ -454,9 +465,9 @@ test("folder creation retains original native folder, continuation and post-clos
       let liveRoot=root,snapshot={mounted:true,center:{identity:'A',fileIdentity:'one'},interactionRevision:1};
       const guard=captureSurfaceContinuation(()=>liveRoot,()=>snapshot);const initiallyValid=guard();snapshot={...snapshot,interactionRevision:2};const interactionRetired=!guard();
       const newer=captureSurfaceContinuation(()=>liveRoot,()=>snapshot);liveRoot=document.createElement('div');const remountRetired=!newer();
-      const renameCleanup=renameListeners.size===0,choiceCleanup=modal.completionRoot===null;root.remove();return{sharedChoice,explicitChoice,editingChoice,toggleSynchronized,configuredEdit,busyChoice,choiceCleanup,displayedOrigin,renameCleanup,singleflight,another,returned,replacement,noLateFocus,outsideNotificationFence,navigationFence,initiallyValid,interactionRetired,remountRetired};
+      const renameCleanup=renameListeners.size===0,choiceCleanup=modal.completionRoot===null;root.remove();return{sharedChoice,explicitChoice,editingChoice,singleControl,renderingDidNotSave,busyChoice,choiceCleanup,displayedOrigin,renameCleanup,singleflight,another,returned,replacement,noLateFocus,outsideNotificationFence,navigationFence,initiallyValid,interactionRetired,remountRetired};
     })()`);
-    assert.deepEqual(result, { sharedChoice:true,explicitChoice:true,editingChoice:true,toggleSynchronized:true,configuredEdit:true,busyChoice:true,choiceCleanup:true,displayedOrigin:true,renameCleanup:true,singleflight:true,another:true,returned:true,replacement:true,noLateFocus:true,outsideNotificationFence:true,navigationFence:true,initiallyValid:true,interactionRetired:true,remountRetired:true });
+    assert.deepEqual(result, { sharedChoice:true,explicitChoice:true,editingChoice:true,singleControl:true,renderingDidNotSave:true,busyChoice:true,choiceCleanup:true,displayedOrigin:true,renameCleanup:true,singleflight:true,another:true,returned:true,replacement:true,noLateFocus:true,outsideNotificationFence:true,navigationFence:true,initiallyValid:true,interactionRetired:true,remountRetired:true });
   } finally { await browser.cleanup(); }
 });
 
@@ -674,7 +685,7 @@ test("explicit modified physical Dead shortcuts dispatch once on graph while log
   } finally { await browser.cleanup(); }
 });
 
-test("selection crosses only opted-in boundaries and permanently retires filtered or inactive occurrences", async () => {
+test("plain arrows cross boundaries regardless of the retired preference and permanently retire filtered or inactive occurrences", async () => {
   const browser = await chromiumHarness(await bundle());
   try {
     const result = await browser.evaluate(`(async()=>{
@@ -684,16 +695,17 @@ test("selection crosses only opted-in boundaries and permanently retires filtere
       function Harness(){selection=usePlexKeyboardNavigation(options);return h('div',null,selection.selectedId)}
       const mount=document.createElement('div');document.body.append(mount);const root=createRoot(mount);
       const render=()=>flushSync(()=>root.render(h(Harness)));render();
-      flushSync(()=>selection.move('up',false));const preserved=selection.selectedId==='center';
+      flushSync(()=>selection.move('up',false));const crossedLegacyFalse=selection.selectedId==='parent';
+      flushSync(()=>selection.select('center'));
       options={...options,crossSections:true};render();flushSync(()=>selection.move('up',false));const crossed=selection.selectedId==='parent';
       flushSync(()=>selection.move('up',false));const within=selection.selectedId==='parent2';
       options={...options,nodes:nodes.filter(node=>node.id!=='parent2')};render();await new Promise(r=>setTimeout(r,0));const filtered=selection.readSelected()===null;
       options={...options,nodes};render();const notResurrected=selection.readSelected()===null;
       flushSync(()=>selection.select('parent'));options={...options,normalMode:false};render();const inactive=selection.readSelected()===null;
       options={...options,normalMode:true};render();await new Promise(r=>setTimeout(r,0));const retiredMode=selection.readSelected()===null;
-      flushSync(()=>root.unmount());mount.remove();return{preserved,crossed,within,filtered,notResurrected,inactive,retiredMode};
+      flushSync(()=>root.unmount());mount.remove();return{crossedLegacyFalse,crossed,within,filtered,notResurrected,inactive,retiredMode};
     })()`);
-    assert.deepEqual(result, { preserved: true, crossed: true, within: true, filtered: true, notResurrected: true, inactive: true, retiredMode: true });
+    assert.deepEqual(result, { crossedLegacyFalse: true, crossed: true, within: true, filtered: true, notResurrected: true, inactive: true, retiredMode: true });
   } finally { await browser.cleanup(); }
 });
 

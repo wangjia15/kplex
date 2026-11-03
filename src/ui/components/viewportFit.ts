@@ -6,6 +6,15 @@
 export type FitCamera = Readonly<{ x: number; y: number; scale: number }>;
 export type FitBounds = Readonly<{ left: number; top: number; right: number; bottom: number }>;
 
+/** Preserve the world point underneath a caller-selected viewport point while changing scale.
+ * Manual translation and off-origin geometry remain intact; callers retain platform clamps and
+ * automatic/manual camera ownership. Invalid input leaves the current camera unchanged. */
+export function zoomedViewportCamera(camera: FitCamera, point: {x: number; y: number}, scale: number): FitCamera {
+  if (![camera.x, camera.y, camera.scale, point.x, point.y, scale].every(Number.isFinite) || camera.scale <= 0 || scale <= 0) return {...camera};
+  const ratio = scale / camera.scale;
+  return {scale, x: point.x - (point.x - camera.x) * ratio, y: point.y - (point.y - camera.y) * ratio};
+}
+
 /** Fit all supplied bounds around the focus, retaining the scale ceiling and viewport padding. */
 export function centeredViewportFit(width: number, height: number, focus: { x: number; y: number },
   bounds: FitBounds, maxScale: number, padding = 46): FitCamera {

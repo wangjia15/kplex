@@ -181,3 +181,13 @@ export function tryParseGraphLensSimpleExpression(source: string): GraphLensSimp
   const condition = simpleConditionFromExpression(expression);
   return condition ? { combinator: "all", conditions: [condition] } : null;
 }
+
+/** New rule editors require a lossless mode switch. Legacy lens conversion remains unchanged:
+ * strict equality and numeric literals must not silently become case-insensitive text tests. */
+export function tryParseLosslessGraphLensSimpleExpression(source: string): GraphLensSimpleModel | null {
+  const model = tryParseGraphLensSimpleExpression(source);
+  if (!model) return null;
+  const original = tryParseGraphPredicateExpression(source).expression;
+  const rebuilt = tryParseGraphPredicateExpression(buildGraphLensSimpleExpression(model)).expression;
+  return original && rebuilt && JSON.stringify(original) === JSON.stringify(rebuilt) ? model : null;
+}

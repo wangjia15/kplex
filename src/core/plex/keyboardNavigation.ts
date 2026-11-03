@@ -30,8 +30,8 @@ function nearest<T extends Pick<KeyboardNode, "x" | "y">>(origin: Pick<KeyboardN
  * The center is a one-node section; only section jumps leave it.
  * Section jumps use supplied area anchors (bounds as fallback), then choose the closest entry.
  */
-export function moveKeyboardSelection(nodes: readonly KeyboardNode[], selectedId: string | null, direction: NavigationDirection, betweenSections: boolean): string | null {
-  const current = nodes.find(node => node.id === selectedId) ?? nodes.find(node => node.section === "center") ?? nodes[0];
+export function moveKeyboardSelection(nodes: readonly KeyboardNode[], selectedId: string | null, direction: NavigationDirection, betweenSections: boolean, entryId?: string): string | null {
+  const current = nodes.find(node => node.id === selectedId) ?? nodes.find(node => node.id === entryId) ?? nodes.find(node => node.section === "center") ?? nodes[0];
   if (!current) return null;
   if (!betweenSections) {
     return nearest(current, nodes.filter(node => node.section === current.section && node.id !== current.id), direction)?.id ?? current.id;

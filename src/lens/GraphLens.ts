@@ -2,6 +2,8 @@
  * Legacy host composition for persisted Graph Lenses, sanitation and portable predicate compilation. Validation returns structured issues; UI consumers own names and error copy.
  * Shared color sanitation preserves typed theme/palette references through portable lens layering.
  */
+import {graphLensSemanticError, type PortableLensValidationIssue as GraphLensValidationIssue} from "../core/plex/lensValidation";
+export {validateGraphLensExpression} from "../core/plex/lensValidation";
 import type { GraphPage, LinkStyle, NodeStyle, StrokeStyle, FillStyle } from "../types";
 import { createLegacyEvidenceProvider, lensCandidateFromLegacy, type LegacyEvidenceSource } from "../adapters/obsidian/predicateContracts";
 import { matchesPortableLenses, portableLensStyle } from "../core/plex/lens";
@@ -11,10 +13,9 @@ import {
   type CompiledGraphPredicate,
   type GraphPredicateEdgeContext,
   type GraphPredicateEngine,
-  type GraphPredicateExpression,
   type GraphPredicateValue,
 } from "./GraphPredicate";
-import { tryParseGraphPredicateExpression, type PredicateParseIssue } from "./GraphPredicateParser";
+import { tryParseGraphPredicateExpression } from "./GraphPredicateParser";
 
 export type GraphLensScope = "node" | "edge" | "evidence";
 export type GraphLensMode = "include" | "exclude" | "style";
@@ -40,12 +41,7 @@ export type CompiledGraphLens = GraphLensDefinition & {
   predicate: CompiledGraphPredicate;
 };
 
-export type GraphLensValidationIssue =
-  | { code: "parse"; issue: PredicateParseIssue }
-  | { code: "selector-reference-required" }
-  | { code: "unknown-edge-role"; value: string }
-  | { code: "unknown-edge-kind"; value: string }
-  | { code: "unknown-edge-direction"; value: string };
+export type {PortableLensValidationIssue as GraphLensValidationIssue} from "../core/plex/lensValidation";
 
 export type GraphLensCompileError = { id: string; name: string; error: GraphLensValidationIssue };
 
@@ -64,8 +60,6 @@ export const EMPTY_GRAPH_LENS_SET: CompiledGraphLensSet = {
 };
 
 const VALID_EDGE_ROLES = new Set(["parent", "child", "left", "right", "previous", "next", "sibling"]);
-const VALID_EDGE_KINDS = new Set(["defined", "inferred"]);
-const VALID_EDGE_DIRECTIONS = new Set(["from", "to", "both"]);
 
 function literalString(value: GraphPredicateValue | undefined): string | null {
   return value?.kind === "literal" && typeof value.value === "string" ? value.value : null;
@@ -87,38 +81,6 @@ function migrateEarlyCheckpointLensExpression(scope: GraphLensScope, source: str
   const value = literalString(expression.right);
   if (value === null || VALID_EDGE_ROLES.has(value.trim().toLocaleLowerCase())) return source;
   return `edge.definition.equals(${JSON.stringify(value)})`;
-}
-
-/** Validate enum-valued relationship selectors recursively and return the first structured issue without formatting English. */
-function graphLensSemanticError(expression: GraphPredicateExpression): GraphLensValidationIssue | null {
-  const inspect = (item: GraphPredicateExpression): GraphLensValidationIssue | null => {
-    if (item.kind === "all" || item.kind === "any") {
-      for (const child of item.expressions) {
-        const error = inspect(child);
-        if (error) return error;
-      }
-      return null;
-    }
-    if (item.kind === "not") return inspect(item.expression);
-    let property: string | null = null;
-    let value: string | null = null;
-    if (item.kind === "compare") {
-      property = propertyKey(item.left);
-      value = literalString(item.right);
-    } else if (item.functionName === "text.equals" || item.functionName === "collection.contains") {
-      property = propertyKey(item.args[0]);
-      value = literalString(item.args[1]);
-    }
-    if (!property || value === null) return null;
-    const normalized = value.trim().toLocaleLowerCase();
-    if (property === "edge.role" && !VALID_EDGE_ROLES.has(normalized)) {
-      return { code: "unknown-edge-role", value };
-    }
-    if (property === "edge.kind" && !VALID_EDGE_KINDS.has(normalized)) return { code: "unknown-edge-kind", value };
-    if (property === "edge.direction" && !VALID_EDGE_DIRECTIONS.has(normalized)) return { code: "unknown-edge-direction", value };
-    return null;
-  };
-  return inspect(expression);
 }
 
 const VALID_STROKE_STYLES = new Set<StrokeStyle>(["solid", "dashed", "dotted"]);
@@ -223,15 +185,6 @@ export function compileGraphLensDefinitions(definitions: readonly GraphLensDefin
     lenses.push({ ...lens, predicate });
   }
   return { lenses, errors, usesFrontmatter, noteProperties };
-}
-
-/** Validate syntax, selector dependencies and relationship enum values for editor feedback without producing UI text. */
-export function validateGraphLensExpression(expression: string): GraphLensValidationIssue | null {
-  const parsed = tryParseGraphPredicateExpression(expression);
-  if (!parsed.expression) return { code: "parse", issue: parsed.error ?? { code: "invalid-expression", position: 1 } };
-  const predicate = compileGraphPredicate(parsed.expression);
-  if (predicate.dependencies.namespaces.size === 0) return { code: "selector-reference-required" };
-  return graphLensSemanticError(parsed.expression);
 }
 
 export type GraphLensCandidate = {

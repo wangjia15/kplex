@@ -11,6 +11,10 @@ tags:
 - kplex/<released-or-unreleased>
 Guide:
 - '[[11 Release notes/Release notes]]'
+Previous:
+- '[[11 Release notes/<previous release page>]]'
+Next:
+- '[[11 Release notes/<next release page>]]'
 Explains:
 - '[[<existing feature guide>]]'
 - '[[07 Use cases/<evergreen use case>]]'
@@ -38,6 +42,10 @@ Explains:
 ## Original published notes (historical archive only)
 <Exact published release text when importing older history; attribute and link source.>
 ```
+
+Replace sequence placeholders with the actual adjacent release pages in version order. Omit `Previous` if there is no earlier page and `Next` if there is no later page; never create a link to a nonexistent page. Explicitly labeled drafts participate in the sequence without changing their release status. Update the previous page's `Next` and, when inserting between existing pages, the next page's `Previous` in the same edit. Chronological release links belong only in `Previous`/`Next`, never `Related`/`Friend`.
+
+Validate the entire archive's reciprocal sequence and endpoints, YAML and link targets before finishing. See [Release sequence navigation](README.md#release-sequence-navigation) for the rules and a 0.2.4 ↔ 0.3.0 example. Preserve historical body text when fixing navigation metadata.
 
 Before publishing: confirm exact numeric version/tag/date and actual shipped scope, links to real help pages, image display, and whether source release text is reproduced or editorially condensed. `Explains` connects the release to the guides and real-life use cases it makes possible; individual evergreen use cases should **not** carry "shipped next release" banners. Maintain an indexed Release notes hub. Use the existing `kplex-help/release-notes` tag so styling can be applied without inventing a separate ontology.
 

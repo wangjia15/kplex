@@ -121,3 +121,12 @@ settings persistence/presentation refresh. No graph policy, storage schema or re
 introduced.
 
 The finite `relationship.hide` action is shared by connector context menus, Connection details and configurable graph commands. It always confirms an exact Markdown source and configured Hidden field, adds evidence through the existing metadata writer, preserves original source links and publishes one canonical source. File-delete confirmation preferences do not grant Hidden write consent.
+
+
+## Rooted hierarchy actions (#219)
+
+`branch.toggle` addresses an exact selected occurrence and its current canonical node. `branches.expand-generation` and `branches.collapse-generation` operate only on the currently displayed bounded frontier; they are not recursive scanners. `view.root.selected` explicitly adopts the selected/current note as root. These actions are configurable and initially unpublished, with no new default shortcut. The node disclosure, native menu, generation buttons and current-note root button dispatch through the same existing action owner.
+
+Branch expansion is separate from `editor.expand`/`editor.collapse`. A fold or different root that would remove a live occurrence editor is refused with a localized explanation. Primary unmodified Mind Map pointer activation requests the exact eligible occurrence's editor after accepted navigation; keyboard/Find selection never does so. A retired originating view cannot issue the delayed editor request. Unsupported targets and modifier opening keep existing behavior. Capacity remains one per canvas.
+
+Attention-following definitions remain compatible with one another. A live attention-following editor cannot switch into occurrence hosting merely because both definitions advertise editor capability: close it first. Existing Compass/Wu Xing attention-host consumers need no API changes. Rooted maps permit one initial current-prepared-root fit, then preserve manual/restored camera intent across attention/editor/geometry changes; explicit Fit/reroot remain deliberate.

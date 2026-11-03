@@ -1,4 +1,6 @@
-/**
+/** Native numeric rows fence their shared slider against removal/adoption while accepted saves
+ * retain persistence ownership.
+ *
  * Obsidian settings persistence, bounded legacy graph import, declarative controls and style/ontology
  * managers. Foreign imports cannot change plugin workflow preferences; own persisted K-Plex keys
  * remain stable. Sparse device typography inherits shared defaults and native scope-qualified rows never write on initial render. Per-surface density preserves the legacy vertical key and migrates horizontal
@@ -12,6 +14,7 @@
  * keyboard bindings are additive workflow preferences; recorder controls own only transient capture.
  * Sparse per-note Markdown zoom overrides are durable local workflow data, independent of graph imports.
  * Cross-link visibility is shared persisted presentation state for the filter panel and Plex settings.
+ * Bulk visibility retains each section's boolean inventory and one durable render-only writer.
  * Remote node imagery requires explicit local opt-in; absent or malformed persisted consent stays off.
  * Style editors publish only durable queued drafts, exclude duplicate operations and distinguish
  * storage failure from saved changes whose presentation/manager refresh still needs recovery.
@@ -25,11 +28,17 @@
  * appearance themes and semantic indexing; omitted preferences preserve split placement.
  * Ontology text uses bounded local drafts, native row cleanup and the existing atomic field writer;
  * typing/composition never publishes transient hierarchy values or queues per-character graph work.
+ * Fresh installations receive editable English descriptions for their English factory vocabulary;
+ * saved dictionaries, including explicit clears, never inherit replacement wording on reload.
+ * Creation and linking remember separate after-saving actions, retaining the former shared choice on upgrade.
  */
 import {STARTUP_INDEX_DEFAULTS, sanitizeStartupIndexPreferences, type IndexingMode, type StartupIndexPreferences} from './core/plex/startupIndexPreferences';
 import { readObsidianPresentationEnvironment } from "./adapters/obsidian/presentationEnvironment";
+import {contentVisibilityPatch} from "./core/plex/contentVisibility";
+import {sanitizeCreationAfterSaving, type CreationAfterSavingAction} from "./core/plex/createdNoteDestination";
 import {OntologyManagerModal} from "./ui/OntologyManagerModal";
 import {ontologyFieldViews,type OntologyFilter} from "./ui/features/ontologyPresentation";
+import {normalizeOntologyDescriptions,type OntologyDescriptions} from "./core/contracts/ontologyReadModel";
 import {ontologyConfiguration, escapeLegacyOntology, escapeOntologyField, retainOntologyCounterparts, ONTOLOGY_GROUPS, ONTOLOGY_ROLE_GROUP} from "./core/contracts/ontologyConfiguration";
 import { formatShortcut } from "./core/plex/shortcutPresentation";
 import {AppearanceThemesManagerModal} from "./ui/AppearanceThemesModal";
@@ -50,6 +59,7 @@ import { standardColorSlots, adoptStandardThemeColors, withoutStyleColorOverride
 import { NOTE_TYPE_TAG_LINK_STYLE } from "./core/graph/presentation";
 import { noteTypeTagDefaultStyle } from "./index/style";
 import { styleNumberSlider } from "./ui/styleNumberSlider";
+import {numberSlider} from "./ui/numberSlider";
 import {COMPASS_DIRECTIONS, SEMANTIC_COLOR_DEFAULTS} from "./core/plex/colorPreferences";
 import { ColorSourceModal } from "./ui/ColorSourceModal";
 import {
@@ -64,6 +74,8 @@ import {
   type Setting,
 } from "obsidian";
 import type KplexPlugin from "./main";
+import {builtInCanvasViewSettings, canvasViewControl, type CanvasViewSettingsRegistry} from "./ui/plexViews/settingsContributions";
+import {readViewConfiguration, readViewConfigurationAt, viewConfigurationUpdateDomain} from "./core/plex/views/configuration";
 import { RelationType, type Arrowhead, type Hierarchy, type LinkStyle, type NodeStyle, type Role, type SectionSizeOverride } from "./types";
 import { sanitizeGraphLensDefinitions, type GraphLensDefinition } from "./lens/GraphLens";
 import { TRANSLATION_LANGUAGES } from "./paper/translation/TranslationTypes";
@@ -146,6 +158,35 @@ export const DEFAULT_HIERARCHY_DEFINITION: Hierarchy = {
   parents: ["Parent/Child", "Parents/Children", "up/down", "u/d", "North/South", "origin", "inception", "source", "parent domain"],
   previous: ["Previous/Next", "Prev", "West/East", "w/e", "Before/After"],
 };
+
+/** Editable factory vocabulary, keyed by exact physical field names rather than pair declarations.
+ * Alias fields share meaning; reciprocal endpoints describe the link from this note's perspective.
+ * This is starter content, not translated UI or a fallback for missing saved descriptions. */
+export const DEFAULT_ONTOLOGY_DESCRIPTIONS: OntologyDescriptions = Object.fromEntries<string>(([
+    [['Parent', 'Parents', 'up', 'u', 'North'], 'Broader topics, containing concepts, or parent notes that this note belongs to.'],
+    [['Child', 'Children', 'down', 'd', 'South'], 'Narrower topics, component ideas, or child notes contained within this note.'],
+    [['origin'], 'The starting point or earlier idea from which this note developed.'],
+    [['inception'], 'Notes describing how this idea began or first took shape.'],
+    [['source'], 'Source material that this note draws on or uses as evidence.'],
+    [['parent domain'], 'The broader subject area or domain that contains this note.'],
+    [['leads to'], 'Outcomes, consequences, or next developments that follow from this note.'],
+    [['contributes to'], 'Ideas, goals, or results that this note helps bring about.'],
+    [['nurtures'], 'Ideas or projects that this note helps grow or develop.'],
+    [['Friend', 'Friends'], 'Related notes that complement this note without a parent-child relationship.'],
+    [['Jump', 'Jumps', 'j'], 'Useful connections to explore from this note across topics or contexts.'],
+    [['similar'], 'Notes with comparable ideas, patterns, or characteristics.'],
+    [['supports'], 'Ideas or claims that this note provides evidence or reasoning for.'],
+    [['alternatives'], 'Other approaches or options to consider alongside this note.'],
+    [['advantages', 'pros'], 'Benefits or arguments in favor of this note or its subject.'],
+    [['Challenger'], 'Notes that challenge this note with objections, counterexamples, or competing explanations.'],
+    [['opposes'], 'Ideas or positions that this note argues against or conflicts with.'],
+    [['disadvantages', 'cons'], 'Drawbacks, costs, or arguments against this note or its subject.'],
+    [['missing'], 'Gaps, unanswered questions, or absent pieces needed to complete this idea.'],
+    [['Previous', 'Prev', 'West', 'w', 'Before'], 'Notes that come before this note in a sequence, process, or timeline.'],
+    [['Next', 'n', 'East', 'e', 'After'], 'Notes that come after this note in a sequence, process, or timeline.'],
+    [['hidden'], 'Linked notes to keep out of the visible Plex while retaining their relationship.'],
+    [LEGACY_HIERARCHY_DEFINITION.exclusions, 'Plugin configuration metadata; links in this property do not create K-Plex relationships.'],
+  ] satisfies [string[], string][]).flatMap(/** Every alias receives its own editable physical-name entry. */ ([fields, description]) => fields.map(/** Pair syntax is never used as a description key. */ field => [field, description] as const)));
 
 export type KplexViewSurface = "leaf" | "sidepanel" | "popout";
 export type KplexDeviceClass = "desktop" | "tablet" | "mobile";
@@ -276,6 +317,8 @@ export interface KplexSettings extends StartupIndexPreferences {
   hierarchy: Hierarchy;
   /** Versioned settings grammar; pre-syntax literal slashes/backslashes are escaped losslessly. */
   ontologyPairingVersion: 1;
+  /** Optional literal descriptions keyed by exact physical property name. */
+  ontologyDescriptions: OntologyDescriptions;
   inferAllLinksAsFriends: boolean;
   inverseInfer: boolean;
   /** Fallback native Date role; configured field ontology always takes precedence. */
@@ -352,6 +395,8 @@ export interface KplexSettings extends StartupIndexPreferences {
   ontologySuggesterMidSentenceTrigger: string;
   boldFields: boolean;
   allowAutozoom: boolean;
+  /** Canvas-style trackpad navigation; false preserves wheel zoom. */
+  trackpadNavigation: boolean;
   allowAutofocuOnSearch: boolean;
   defaultAlwaysOnTop: boolean;
   embedCentralNode: boolean;
@@ -384,6 +429,8 @@ export interface KplexSettings extends StartupIndexPreferences {
   lastActivePath: string;
   pinnedNodes: string[];
   layoutProfiles: Record<string, KplexLayoutProfile>;
+  /** Bounded effective reads validate registered schemas; unsupported persisted payloads remain inert and round-trip unchanged. */
+  canvasViewSettings: unknown;
   /** Effective-view projection of the active profile; shared persisted settings leave this absent. */
   lateralArrangement?: LateralArrangement;
   mouseInteractionMode: MouseInteractionMode;
@@ -422,8 +469,14 @@ export interface KplexSettings extends StartupIndexPreferences {
   allowRemoteNodeImages: boolean;
   /** Remember the Create Note dialog toggle between invocations. */
   editNewNodeAfterCreate: boolean;
+  /** Note-creation destination; the old toggle is retained solely for migration compatibility. */
+  newNodeAfterSaving: CreationAfterSavingAction;
+  /** Existing-note/web-link completion is remembered independently from creation. */
+  linkAfterSaving: CreationAfterSavingAction;
   /** Remember which create button Ctrl/Cmd+Enter should invoke next time. */
   newNodeDefaultType: NewNodeType;
+  /** Null uses the first configured template; empty explicitly selects a blank drawing. */
+  lastDrawingTemplatePath: string | null;
   /** Whether the one-time startup indexing guidance bubble has already been shown. */
   startupIndexInfoBubbleSeen: boolean;
   /** Whether K-Plex has already shown the first-use delete confirmation/preferences prompt. */
@@ -519,6 +572,7 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   indexingThrottle: "responsive",
   hierarchy: LEGACY_HIERARCHY_DEFINITION,
   ontologyPairingVersion: 1,
+  ontologyDescriptions: {},
   inferAllLinksAsFriends: false,
   inverseInfer: false,
   datePropertyRelations: "parent",
@@ -581,6 +635,7 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   ontologySuggesterMidSentenceTrigger: "(",
   boldFields: false,
   allowAutozoom: false,
+  trackpadNavigation: false,
   allowAutofocuOnSearch: true,
   defaultAlwaysOnTop: false,
   embedCentralNode: false,
@@ -609,6 +664,7 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   lastActivePath: "",
   pinnedNodes: [],
   layoutProfiles: DEFAULT_LAYOUT_PROFILES,
+  canvasViewSettings: {},
   mouseInteractionMode: "smart",
   hoverHighlightRequiresAlt: true,
   areaOutlineRequiresAlt: true,
@@ -630,7 +686,10 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   attachmentImageDisplay: "thumbnail-label",
   allowRemoteNodeImages: false,
   editNewNodeAfterCreate: false,
+  newNodeAfterSaving: "return",
+  linkAfterSaving: "return",
   newNodeDefaultType: "markdown",
+  lastDrawingTemplatePath: null,
   startupIndexInfoBubbleSeen: false,
   deletePromptInitialized: false,
   confirmFileDelete: true,
@@ -671,6 +730,7 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
 export const DEFAULT_SETTINGS: KplexSettings = (() => {
   const settings = structuredClone(LEGACY_DEFAULT_SETTINGS);
   settings.hierarchy = structuredClone(DEFAULT_HIERARCHY_DEFINITION);
+  settings.ontologyDescriptions = structuredClone(DEFAULT_ONTOLOGY_DESCRIPTIONS);
   adoptStandardThemeColors(settings);
   return settings;
 })();
@@ -863,6 +923,7 @@ export function migrateAndMergeSettings(raw: unknown): KplexSettings {
     datePropertyRelations: sanitizeDatePropertyRelations(old.datePropertyRelations),
     hierarchy,
     ontologyPairingVersion: 1,
+    ontologyDescriptions: normalizeOntologyDescriptions(freshInstall ? DEFAULT_ONTOLOGY_DESCRIPTIONS : old.ontologyDescriptions),
     baseNodeStyle: { ...defaults.baseNodeStyle, ...(old.baseNodeStyle ?? {}) },
     baseLinkStyle: { ...defaults.baseLinkStyle, ...(old.baseLinkStyle ?? {}) },
     centralNodeStyle: { ...defaults.centralNodeStyle, ...(old.centralNodeStyle ?? {}) },
@@ -944,6 +1005,10 @@ export function migrateAndMergeSettings(raw: unknown): KplexSettings {
     attachmentImageDisplay: old.attachmentImageDisplay === "label" || old.attachmentImageDisplay === "image" ? old.attachmentImageDisplay : "thumbnail-label",
     allowRemoteNodeImages: old.allowRemoteNodeImages === true,
     editNewNodeAfterCreate: Boolean(old.editNewNodeAfterCreate),
+    newNodeAfterSaving: sanitizeCreationAfterSaving(old.newNodeAfterSaving, old.editNewNodeAfterCreate === true),
+    linkAfterSaving: sanitizeCreationAfterSaving(old.linkAfterSaving ?? old.newNodeAfterSaving, old.editNewNodeAfterCreate === true),
+    trackpadNavigation: old.trackpadNavigation === true,
+    lastDrawingTemplatePath: typeof old.lastDrawingTemplatePath === "string" ? old.lastDrawingTemplatePath : null,
     newNodeDefaultType: old.newNodeDefaultType === "excalidraw" ? "excalidraw" : "markdown",
     startupIndexInfoBubbleSeen: Boolean(old.startupIndexInfoBubbleSeen),
     deletePromptInitialized: Boolean(old.deletePromptInitialized),
@@ -1757,7 +1822,8 @@ class LegacySettingsImportModal extends StyleEditorModal {
   onClose(): void {super.onClose(); this.readGeneration++; this.contentEl.empty(); this.onClosed?.();}
 }
 
-type DeclarativeSettingKey =
+export type DeclarativeSettingKey =
+  | `canvasView:${string}:${string}`
   | `received:${number}:${string}`
   | keyof KplexSettings
   | `layout.${PersistedLayoutDeviceClass}.${"leaf" | "sidepanel"}.lateralArrangement`
@@ -1813,9 +1879,11 @@ export class KplexSettingTab extends PluginSettingTab {
   private readonly colorSwatchPages = new WeakMap<HTMLElement, ColorSwatchList>();
   private readonly colorSwatchOwners = new Set<ColorSwatchList>();
   private ontologyFields?: Map<EditableHierarchyKey, OntologyFieldControl>;
+  /** Failed immediate type writes retire only that native field's optimistic component, never its saved value. */
+  private readonly viewControlRecoveries = new Map<string, number>();
 
   /** Keep shortcut editing in the native settings hierarchy with lazy rendered resource ownership. */
-  constructor(app: App, private kplexPlugin: KplexPlugin) {
+  constructor(app: App, private kplexPlugin: KplexPlugin, private readonly viewSettings: CanvasViewSettingsRegistry = kplexPlugin.viewSettingsRegistry ?? builtInCanvasViewSettings) {
     super(app, kplexPlugin);
     this.containerEl.addClass("kplex-settings");
   }
@@ -1998,6 +2066,12 @@ export class KplexSettingTab extends PluginSettingTab {
       subscribeCss: changed => {const ref = this.app.workspace.on("css-change", changed); return () => this.app.workspace.offref(ref);}};
   }
 
+  /** Compass contributes its existing appearance action without copying color/theme storage. */
+  private compassTintDefinition(): SettingDefinition<DeclarativeSettingKey> {
+    const translate = this.kplexPlugin.translator;
+    return this.colorAction(translate("compass.title"), () => COMPASS_DIRECTIONS.map(direction => compassSwatchItem(translate(`compass.${direction}`), direction, this.kplexPlugin.settings.colorPreferences.compass.fills[direction])), () => {void this.openCompassSettings();});
+  }
+
   /** Lazily open a native Compass draft; teardown/migration supersedes loading, and only edited fields enter the existing queue. */
   private async openCompassSettings(): Promise<void> {
     const owner = this.kplexPlugin.captureAppearanceOwner();
@@ -2022,6 +2096,7 @@ export class KplexSettingTab extends PluginSettingTab {
     const owner = this.kplexPlugin.captureAppearanceOwner();
     const plugin = this.kplexPlugin;
     const dialog = new ColorPaletteModal(this.app, {...this.styleColorContext(owner), read: () => plugin.settings,
+      protectedUsage: () => this.viewSettings.paletteUsage(plugin.settings.canvasViewSettings),
       readOnly: () => plugin.settings.colorPreferencesFuture !== undefined || plugin.settings.appearanceThemesFuture !== undefined || !plugin.isAppearanceOwnerCurrent(owner),
       canDelete: () => plugin.settings.graphLensesColorFuture === undefined && !appearanceHasUnsupportedColors(plugin.settings),
       write: edit => plugin.updateStyleSettings(edit, owner), subscribe: changed => subscribeAppearanceSources(listener => plugin.index.subscribePresentation(listener), () => plugin.settings, changed),
@@ -2222,6 +2297,37 @@ export class KplexSettingTab extends PluginSettingTab {
       create: /** Creating selects only after the same queued snapshot succeeds. */ (name, defaults, _current) => plugin.createAppearanceTheme(name, defaults, owner),
       closed: /** Unload/settings replacement releases precisely this manager and its children. */ () => this.colorDialogs.delete(dialog)});
     this.colorDialogs.add(dialog); dialog.open();
+  }
+
+  /** Instantiate one registered native manager with its own sparse settings and existing queue.
+   * The opening definition, appearance, incoming-entry epochs and modal lifetime stay captured. */
+  openCanvasViewManager(id: string, target?: string): boolean {
+    const plugin = this.kplexPlugin, definition = this.viewSettings.definition(id);
+    const factory = definition && this.viewSettings.contribution(definition)?.manager;
+    if (!definition || !factory || plugin.readCanvasViewConfiguration(id).status !== "available") return false;
+    const appearance = plugin.captureAppearanceOwner();
+    const registered = (): boolean => this.viewSettings.definition(id) === definition && plugin.isAppearanceOwnerCurrent(appearance);
+    const dialog = factory(this.app, {
+      colors: this.styleColorContext(appearance), configuration: () => plugin.readCanvasViewConfiguration(id),
+      sharing: {read: () => plugin.readPortableSharingState(), current: registered, sourceScope: this.colorSourceScope(),
+        preview: plan => {if (!registered()) throw new Error("Retired sharing preview");plugin.previewPortableSharing(plan);},
+        bindEditor: editor => plugin.bindAppearanceEditor(editor, appearance),
+        save: (plan, current) => plugin.importPortableSharing(plan, () => registered() && current(), appearance)},
+      read: address => readViewConfigurationAt(definition, plugin.settings.canvasViewSettings, address),
+      capture: address => {const incoming = plugin.receivedSettingsOwner(viewConfigurationUpdateDomain(definition, address));return () => registered() && incoming();},
+      subscribe: changed => plugin.index?.subscribePresentation(changed) ?? (() => {}),
+      suggestions: () => {
+        const catalogue = registered() ? plugin.index?.suggestionCatalog?.() : undefined;
+        return {properties: catalogue?.properties.slice(0, 512) ?? [], tags: catalogue?.tags.slice(0, 512) ?? [],
+          folders: catalogue?.folders.slice(0, 512) ?? [], noteTypes: catalogue?.noteTypes.slice(0, 512) ?? []};
+      },
+      save: async (address, edit, expected, current) => {
+        await plugin.updateCanvasViewConfiguration(id, address, edit, expected, () => registered() && current());
+        return {refreshPending: false};
+      }, closed: () => this.colorDialogs.delete(dialog),
+    }, target);
+    this.colorDialogs.add(dialog); dialog.open();
+    return true;
   }
 
   /** Enumerate the exact reviewed sources; palette definitions and non-color styling are never reset slots. */
@@ -2464,6 +2570,33 @@ export class KplexSettingTab extends PluginSettingTab {
     return `${(bytes / 1024 ** unit).toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
   }
 
+  /** Mount section-wide native actions with one queued write and truthful failure recovery. */
+  private mountContentVisibility(setting: Setting): () => void {
+    const plugin = this.kplexPlugin;
+    let active = true, pending = false;
+    const buttons: {enabled: boolean; refresh: () => void}[] = [];
+    /** Keep no-op actions disabled after local or incoming presentation updates. */
+    const refresh = (): void => {for (const button of buttons) button.refresh();};
+    for (const enabled of [true, false]) setting.addButton(/** Native buttons keep focus, keyboard and theme behavior. */ button => {
+      const label = plugin.translator(enabled ? "visibility.enableAll" : "visibility.disableAll");
+      button.setButtonText(label);button.buttonEl.setAttribute("aria-label", label);
+      buttons.push({enabled, refresh: /** Read current settings, never the opening mixed-state snapshot. */ () => {
+        button.setDisabled(pending || !Object.keys(contentVisibilityPatch(plugin.settings, "settings", enabled)).length);
+      }});
+      button.onClick(/** Native Settings may adopt a constructed row into its popout before activation. */ async event => {
+        const document = button.buttonEl.ownerDocument;
+        if (!active || pending || !setting.settingEl.isConnected || setting.settingEl.ownerDocument !== document
+          || event.view && event.view.document !== document) return;
+        pending = true;refresh();
+        try {await plugin.setContentVisibility("settings", enabled);if (active && setting.settingEl.ownerDocument === document) this.update();}
+        catch (error) {console.error("K-Plex visibility settings were not saved", error);if (active) new Notice(plugin.translator("visibility.saveFailed"));}
+        finally {pending = false;if (active) refresh();}
+      });
+    });
+    const unsubscribe = plugin.index.subscribePresentation(refresh);refresh();
+    return /** Retire removed controls while allowing an already accepted disk write to settle. */ () => {active = false;unsubscribe();};
+  }
+
   /** Build localized native settings and subpages, including shared persisted Plex visibility controls. */
   getSettingDefinitions(): SettingDefinitionItem<DeclarativeSettingKey>[] {
     const translate = createObsidianTranslator();
@@ -2510,6 +2643,7 @@ export class KplexSettingTab extends PluginSettingTab {
               { name: translate("settings.gateTooltip.name"), desc: translate("settings.gateTooltip.help", {key: hoverModifier}), control: {type: "toggle", key: "gateTooltipRequiresAlt"} },
               { name: translate("settings.areaOutline.name"), desc: translate("settings.areaOutline.help", {key: hoverModifier}), control: {type: "toggle", key: "areaOutlineRequiresAlt"} },
               { name: translate("settings.ui.animation.speed"), desc: translate("settings.ui.speed.multiplier.0.off.0.5.slow.1.normal.1.5.fast.2.very"), control: { type: "slider", key: "animationSpeed", min: 0, max: 2, step: 0.1 } },
+              { name: translate("settings.trackpad"), desc: translate("settings.trackpad.help"), control: {type: "toggle", key: "trackpadNavigation"} },
               { name: translate("settings.ui.auto.fit.on.navigation"), control: { type: "toggle", key: "allowAutozoom" } },
               { name: translate("settings.ui.open.k.plex.in.a.pop.out.window"), desc: translate("settings.ui.when.k.plex.is.opened.and.no.k.plex.view.already.exists"), control: { type: "toggle", key: "startInPopout" } },
               { name: translate("settings.ui.confirm.before.deleting.files"), desc: translate("settings.ui.ask.before.a.node.context.menu.action.deletes.a.note.usi"), control: { type: "toggle", key: "confirmFileDelete" } },
@@ -2539,24 +2673,10 @@ export class KplexSettingTab extends PluginSettingTab {
           },
           {
             type: "group",
-            heading: translate("settings.ui.layout.sizing"),
-            items: [
-              { type: "page", name: translate("layout.simplifiedTitle"), desc: translate("layout.simplifiedHelp"), items: this.lateralArrangementDefinitions() },
-              { name: translate("settings.ui.parent.maximum.height"), desc: translate("settings.ui.parent.rows.become.vertically.scrollable.above.this.heig"), control: { type: "slider", key: "parentMaxHeight", min: 140, max: 800, step: 20 } },
-              { name: translate("settings.ui.friend.challenger.maximum.height"), desc: translate("settings.ui.friend.and.challenger.lists.become.vertically.scrollable"), control: { type: "slider", key: "friendMaxHeight", min: 140, max: 800, step: 20 } },
-              { name: translate("settings.ui.sibling.maximum.height"), desc: translate("settings.ui.sibling.lists.become.vertically.scrollable.above.this.he"), control: { type: "slider", key: "siblingMaxHeight", min: 120, max: 700, step: 10 } },
-              { name: translate("settings.ui.sibling.relative.size"), desc: translate("settings.ui.scale.sibling.nodes.and.their.expanded.descendants.relat"), control: { type: "slider", key: "siblingRelativeSize", min: 30, max: 85, step: 5 } },
-              { name: translate("settings.ui.child.maximum.height"), desc: translate("settings.ui.child.rows.become.vertically.scrollable.above.this.heigh"), control: { type: "slider", key: "childMaxHeight", min: 160, max: 900, step: 20 } },
-              { name: translate("settings.ui.maximum.nodes.per.zone"), control: { type: "slider", key: "maxItemCount", min: 10, max: 300, step: 10 } },
-              { name: translate("settings.ui.compact.view"), control: { type: "toggle", key: "compactView" } },
-              { name: translate("settings.ui.minimum.link.length"), desc: translate("settings.ui.minimum.spacing.target.for.connected.nodes"), control: { type: "slider", key: "minLinkLength", min: 6, max: 40, step: 1 } },
-            ]
-          },
-          {
-            type: "group",
             heading: translate("settings.ui.content.visibility"),
             items: [
-              { name: translate("settings.ui.show.siblings"), control: { type: "toggle", key: "renderSiblings" } },
+              {name: translate("filter.visibility"), render: /** Searchable native row, mounted only on the displayed section. */ setting => this.mountContentVisibility(setting)},
+              { name: translate("settings.ui.maximum.nodes.per.zone"), desc: translate("view.sharedLimitHelp"), control: { type: "slider", key: "maxItemCount", min: 10, max: 300, step: 10 } },
               { name: translate("filter.showCrossLinks"), desc: translate("filter.crossLinksHelp"), control: { type: "toggle", key: "showCrossLinks" } },
               { name: translate("settings.ui.show.inferred.relationships"), control: { type: "toggle", key: "showInferredNodes" } },
               { name: translate("settings.ui.ghost.unresolved.nodes"), control: { type: "toggle", key: "showVirtualNodes" } },
@@ -2570,6 +2690,14 @@ export class KplexSettingTab extends PluginSettingTab {
               { name: translate("settings.ui.gate.counts"), desc: translate("settings.ui.show.the.number.of.currently.visible.relationships.besid"), control: { type: "toggle", key: "showNeighborCount" } },
             ]
           },
+          {type: "group", heading: translate("view.settingsViews"), items: this.viewSettings.pages({translate, areaTint: () => this.compassTintDefinition(), openManager: id => this.openCanvasViewManager(id)})},
+        ]
+      },
+      {
+        type: "page",
+        name: translate("settings.ui.ontology"),
+        desc: translate("settings.ui.define.which.note.properties.create.relationships.and.ho"),
+        items: [
           {
             type: "group",
             heading: translate("sections.settings.heading"),
@@ -2591,16 +2719,8 @@ export class KplexSettingTab extends PluginSettingTab {
                   parent: translate("role.parent"), left: translate("role.friend"), child: translate("role.child"),
                   right: translate("role.challenger"), previous: translate("role.previous"), next: translate("role.next"),
                 } } },
-              { name: translate("settings.ui.reverse.displayed.arrow.direction"), desc: translate("settings.ui.reverse.the.displayed.link.arrow.direction.without.chang"), control: { type: "toggle", key: "inverseArrowDirection" } },
             ]
           },
-        ]
-      },
-      {
-        type: "page",
-        name: translate("settings.ui.ontology"),
-        desc: translate("settings.ui.define.which.note.properties.create.relationships.and.ho"),
-        items: [
           {name:translate("ontology.manager.title"),desc:translate("ontology.manager.summary",{
             fields:ontologyFieldViews(ontologyConfiguration(this.kplexPlugin.settings)).length,
             pairs:ontologyConfiguration(this.kplexPlugin.settings).pairs.size/2,
@@ -2673,7 +2793,6 @@ export class KplexSettingTab extends PluginSettingTab {
             ))}]},
             {type: "group", items: [
               this.colorAction(translate("settings.ui.plex.background"), () => [{label: translate("settings.ui.plex.background"), value: this.kplexPlugin.settings.backgroundColor, fallback: NATIVE_CANVAS_FILL}], () => this.openCanvasColorEditor()),
-              this.colorAction(translate("compass.title"), () => COMPASS_DIRECTIONS.map(/** Reuse the exact directional source chain shown inside its editor. */ direction => compassSwatchItem(translate(`compass.${direction}`), direction, this.kplexPlugin.settings.colorPreferences.compass.fills[direction])), () => {void this.openCompassSettings();}),
               {name: translate("colors.namedColors"), action: () => this.openColorPalette()},
               {name: translate("colors.adopt"), desc: translate("colors.adoptHelp"), action: () => this.openColorAdoption()},
             ]},
@@ -2735,6 +2854,7 @@ export class KplexSettingTab extends PluginSettingTab {
                 type: "group",
                 heading: translate("settings.ui.link.appearance"),
                 items: [
+                  { name: translate("settings.ui.reverse.displayed.arrow.direction"), desc: translate("settings.ui.reverse.the.displayed.link.arrow.direction.without.chang"), control: { type: "toggle", key: "inverseArrowDirection" } },
                   { name: translate("settings.ui.link.shape"), control: { type: "dropdown", key: "connectorStyle", defaultValue: "bezier", options: { bezier: translate("settings.ui.curved"), straight: translate("settings.ui.straight") } } },
                   this.colorAction(translate("settings.ui.default.line.color"), () => this.standardSwatchItems("baseLinkStyle").filter(item => item.id === "strokeColor"), () => this.openStandardColor("baseLinkStyle", "strokeColor")),
                   { name: translate("settings.ui.default.line.width"), control: { type: "slider", key: "baseLinkStyle.strokeWidth", min: 0.5, max: 8, step: 0.5 } },
@@ -2975,10 +3095,18 @@ export class KplexSettingTab extends PluginSettingTab {
     });
   }
 
-  /** Bind the finite theme-owned native scalar types without changing global control ownership. */
+  /** Bind the finite theme-owned native scalar types without changing global control ownership.
+   * Numeric delivery shares the row's document/generation guard, including its deferred completion. */
   private bindThemeScalar(item: SettingDefinition<DeclarativeSettingKey>): SettingDefinition<DeclarativeSettingKey> {
       if (!("control" in item) || !item.control) return item;
       const control = item.control;
+      const view = canvasViewControl(control.key), definition = view && this.viewSettings.definition(view.id);
+      if (view) {
+        const available = definition && readViewConfiguration(definition, this.kplexPlugin.settings.canvasViewSettings).status === "available";
+        if (control.type === "slider") return this.numberControl(item, control, !available);
+        return {...item, ...(!available ? {desc: this.kplexPlugin.translator("view.settingsUnavailable")} : {}),
+          control: {...control, key: this.receivedControlKey(control.key) as DeclarativeSettingKey, disabled: !available || control.disabled}};
+      }
       const hierarchyField = HIERARCHY_KEY_MAP[control.key];
       if (hierarchyField && control.type === "textarea") return {
         name: item.name, desc: item.desc ?? (hierarchyField === "parents" ? this.kplexPlugin.translator("settings.ontology.draftHelp") : undefined),
@@ -2987,15 +3115,16 @@ export class KplexSettingTab extends PluginSettingTab {
       };
       if (!/^(baseNodeStyle\.|centralNodeStyle\.|baseLinkStyle\.|backgroundColorHex$)/.test(control.key)
         || (control.type !== "slider" && control.type !== "toggle" && control.type !== "dropdown"))
-        return {...item, control: {...control, key: this.receivedControlKey(control.key) as DeclarativeSettingKey}};
+        return control.type === "slider" ? this.numberControl(item, control) : {...item, control: {...control, key: this.receivedControlKey(control.key) as DeclarativeSettingKey}};
       return {name: item.name, desc: item.desc, searchable: item.searchable, visible: item.visible, render: /** Recreate a scalar on activation; retired handlers cannot save into its replacement. */ (setting: Setting) => {
         let active = true, owner = this.kplexPlugin.captureAppearanceOwner(), generation = 0;
-        let mounted: {pending: number; refresh: () => void} | null = null;
+        let mounted: {pending: number; refresh: () => void; dispose: () => void} | null = null;
         /** The scalar has no unsubmitted draft: a switch replaces its native control with the new effective value. */
         const mount = (): void => {
+          mounted?.dispose();
           for (const input of Array.from(setting.controlEl.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select"))) input.disabled = true;
           setting.clear(); owner = this.kplexPlugin.captureAppearanceOwner();
-          const opening = owner, mount = ++generation, state = {pending: 0, refresh: (): void => {}}; mounted = state;
+          const opening = owner, mount = ++generation, state = {pending: 0, refresh: (): void => {}, dispose: (): void => {}}; mounted = state;
           const document = setting.settingEl.ownerDocument;
           /** An accepted write may outlive Settings. Never touch a retired/adopted window's native control. */
           const currentControl = (): boolean => active && mount === generation && setting.settingEl.isConnected
@@ -3011,11 +3140,11 @@ export class KplexSettingTab extends PluginSettingTab {
             finally {state.pending--; if (currentControl() && mounted === state && !state.pending) state.refresh();}
           };
           const value = this.getControlValue(control.key) ?? control.defaultValue;
-          if (control.type === "slider") setting.addSlider(/** Retain native bounds, tooltip and keyboard gestures. */ slider => {
-            slider.setLimits(control.min, control.max, control.step).setValue(Number(value)).setDynamicTooltip().setDisabled(disabled).onChange(change);
-            slider.sliderEl.setAttribute("aria-label", item.name);
+          if (control.type === "slider") {
+            const slider = numberSlider(setting, {isCurrent: currentControl, label: item.name, value: Number(value), min: control.min, max: control.max, step: control.step, disabled, onChange: change});
+            state.dispose = () => slider.dispose();
             state.refresh = /** Same-activation edits update peers without replacing a live slider or emitting another change. */ () => {if (currentControl()) slider.setValue(Number(this.getControlValue(control.key) ?? control.defaultValue));};
-          });
+          }
           else if (control.type === "toggle") setting.addToggle(/** Initial seeding never submits a save. */ toggle => {
             toggle.setValue(Boolean(value)).setDisabled(disabled).onChange(change); toggle.toggleEl.setAttribute("aria-label", item.name);
             state.refresh = /** Restore the committed value after another surface or a failed immediate save. */ () => {if (currentControl()) toggle.setValue(Boolean(this.getControlValue(control.key) ?? control.defaultValue));};
@@ -3029,8 +3158,35 @@ export class KplexSettingTab extends PluginSettingTab {
         const release = this.subscribeThemeRow(setting, /** Activation or native adoption replaces this immediate scalar's handlers. */ migrated => {
           if (active && setting.settingEl.isConnected && (migrated || !this.kplexPlugin.isAppearanceOwnerCurrent(owner))) mount();
           else if (active && mounted && !mounted.pending) mounted.refresh();
-        }, /** A closed/migrated settings window cannot retain scalar handlers. */ () => {active = false;});
+        }, /** A closed/migrated settings window cannot retain scalar handlers. */ () => {active = false;mounted?.dispose();});
         return release;
+      }};
+  }
+
+  /** Adapt every declarative numeric preference to the shared visible-value native slider.
+   * Captured keys and the existing scalar writer retain view/settings reconciliation authority.
+   * Row retirement also fences the shared slider's deferred display and incoming native events. */
+  private numberControl(item: SettingDefinition<DeclarativeSettingKey>, control: Extract<NonNullable<SettingDefinition<DeclarativeSettingKey>["control"]>, {type: "slider"}>, unavailable = false): SettingDefinition<DeclarativeSettingKey> {
+    const key = this.receivedControlKey(control.key) as DeclarativeSettingKey;
+    const plugin = this.kplexPlugin;
+    const readValue = (key: DeclarativeSettingKey) => this.getControlValue(key);
+    const writeValue = (key: DeclarativeSettingKey, value: number) => this.setControlValue(key, value);
+    return {name: item.name, desc: unavailable ? plugin.translator("view.settingsUnavailable") : item.desc,
+      searchable: item.searchable, visible: item.visible, render: function renderNumberSetting(setting) {
+        let active = true;const doc = setting.settingEl.ownerDocument;
+        const current = (): boolean => active && setting.settingEl.isConnected && setting.settingEl.ownerDocument === doc && !doc.defaultView?.closed;
+        setting.settingEl.dataset.kplexSettingKey = key;
+        const read = (): number => Number(readValue(key) ?? control.defaultValue ?? control.min);
+        const slider = numberSlider(setting, {isCurrent: current, label: item.name, value: read(), min: control.min, max: control.max, step: control.step,
+          disabled: unavailable || (typeof control.disabled === "function" ? control.disabled() : control.disabled),
+          onChange: async value => {
+            if (!current()) return;
+            try {await writeValue(key, value);}
+            catch (error) {console.error("K-Plex numeric setting was not saved", error);if (current()) new Notice(plugin.translator("view.settingsSaveFailed"));}
+            finally {if (current()) slider.setValue(read());}
+          }});
+        const release = plugin.index.subscribePresentation(() => {if (current()) slider.setValue(read());});
+        return () => {active = false;slider.dispose();release();};
       }};
   }
 
@@ -3066,6 +3222,7 @@ export class KplexSettingTab extends PluginSettingTab {
           desc: translate(field === "maxWidth" ? "typography.deviceWidthHelp" : "typography.deviceHelp"),
           render: /** Mount native controls without first-render writes, and update same-scope peers after live edits/reset. */ (setting: Setting) => {
             const key = this.receivedControlKey(`typography.${device}.${field}`);
+            let active = true, disposeControl = (): void => {}, resetControl = (): void => {};
             let refreshControl: () => void;
             if (field === "wrapNodeLabels") {
               setting.addToggle(/** Set the initial inherited value before installing the user-change callback. */ toggle => {
@@ -3074,16 +3231,16 @@ export class KplexSettingTab extends PluginSettingTab {
               });
             } else {
               const limits = TYPOGRAPHY_LIMITS[field];
-              setting.addSlider(/** Reuse canonical shared/device bounds and native slider affordances. */ slider => {
-                slider.setLimits(limits.min, limits.max, limits.step).setValue(Number(this.getControlValue(key))).setDynamicTooltip()
-                  .onChange(/** Persist this captured device rather than a mutable active settings scope. */ value => { void this.setControlValue(key, value); });
+              const slider = numberSlider(setting, {label: translate("typography.deviceField", {device: translate(`typography.${device}`), field: names[field]}), value: Number(this.getControlValue(key)), min: limits.min, max: limits.max, step: limits.step,
+                onChange: async value => {if (active) await this.setControlValue(key, value);}});
+                disposeControl = () => slider.dispose();
+                resetControl = () => slider.resetValue(Number(this.getControlValue(key)));
                 refreshControl = /** Keep mounted rows current when another surface changes this device. */ () => { slider.setValue(Number(this.getControlValue(key))); };
-              });
             }
             setting.addExtraButton(/** Delete only this supported override, preserving the other values/devices. */ button => {
               button.setIcon("rotate-ccw").setTooltip(translate("typography.resetField"))
                   .onClick(/** A retired native reset must not remove a newly received override. */ () => {
-                    if (this.receivedControlCurrent(key)) void this.kplexPlugin.resetTypographyOverride(device, field);
+                    if (active && this.receivedControlCurrent(key)) {void this.kplexPlugin.resetTypographyOverride(device, field);resetControl();}
                   });
             });
             /** Explain state independently of the displayed number, including equal-to-default customization. */
@@ -3093,7 +3250,8 @@ export class KplexSettingTab extends PluginSettingTab {
               refreshControl?.();
             };
             refresh();
-            return this.kplexPlugin.index.subscribePresentation(refresh);
+            const release = this.kplexPlugin.index.subscribePresentation(refresh);
+            return () => {active = false;disposeControl();release();};
           },
         })),
         { name: translate("typography.deviceReset", { device: translate(`typography.${device}`) }),
@@ -3112,19 +3270,13 @@ export class KplexSettingTab extends PluginSettingTab {
     return `${device}:${surface}`;
   }
 
-  /** Reuse native declarative toggles with captured device/surface identities, including Settings search. */
-  private lateralArrangementDefinitions(): SettingDefinitionItem<DeclarativeSettingKey>[] {
-    const translate = this.kplexPlugin.translator;
-    return (["desktop", "tablet", "mobile"] as const).flatMap(/** Keep all device preferences editable from any host device. */ device =>
-      (["leaf", "sidepanel"] as const).map(/** Each row has an explicit scope rather than following the active Plex. */ surface => ({
-        name: translate("layout.arrangementScope", { device: translate(`typography.${device}`),
-          surface: translate(surface === "leaf" ? "layout.mainTab" : "layout.sidepanel") }),
-        control: { type: "toggle", key: `layout.${device}.${surface}.lateralArrangement` as const },
-      })));
-  }
-
   /** Map native control aliases to their established coherent settings owner. */
   private receivedControlDomain(key: string): string {
+    const view = canvasViewControl(key);
+    if (view) {
+      const definition = this.viewSettings.definition(view.id);
+      return definition ? viewConfigurationUpdateDomain(definition, view) : `canvasViewSettings:${view.id}:${view.field}`;
+    }
     if (key.startsWith("hierarchy.")) return "hierarchy";
     if (key.startsWith("typography.")) return "typographyProfiles";
     if (key.startsWith("layout.")) return "layoutProfiles";
@@ -3134,20 +3286,31 @@ export class KplexSettingTab extends PluginSettingTab {
 
   /** Keep Obsidian's renderer/components while fencing delayed events from a replaced native row. */
   private receivedControlKey(key: string): string {
-    const revision = this.kplexPlugin.receivedSettingsRevision?.(this.receivedControlDomain(key));
+    const revision = this.controlRevision(key);
     return revision === undefined ? key : `received:${revision}:${key}`;
+  }
+
+  /** Reuse native row identity epochs for failed type writes; remote-owner epochs retain their existing authority. */
+  private controlRevision(key: string): number | undefined {
+    const received = this.kplexPlugin.receivedSettingsRevision?.(this.receivedControlDomain(key));
+    return canvasViewControl(key) ? (received ?? 0) + (this.viewControlRecoveries.get(key) ?? 0) : received;
   }
 
   /** Stale native handlers explain reapplication without mutating live state or rejecting an unobserved event promise. */
   private receivedControlCurrent(key: string): boolean {
     const alias = /^received:(\d+):(.+)$/.exec(key);
-    if (!alias || Number(alias[1]) === this.kplexPlugin.receivedSettingsRevision?.(this.receivedControlDomain(alias[2]))) return true;
+    if (!alias || Number(alias[1]) === this.controlRevision(alias[2])) return true;
     new Notice(this.kplexPlugin.translator("settingsSync.conflict")); return false;
   }
 
   /** Read shared controls or device overrides without turning an inherited value into a saved customization. */
   getControlValue(key: string): unknown {
     key = key.replace(/^received:\d+:/, "");
+    const view = canvasViewControl(key);
+    if (view) {
+      const definition = this.viewSettings.definition(view.id);
+      return definition ? readViewConfigurationAt(definition, this.kplexPlugin.settings.canvasViewSettings, view).value : undefined;
+    }
     const arrangementKey = this.lateralArrangementKey(key);
     if (arrangementKey) return this.kplexPlugin.settings.layoutProfiles[arrangementKey]?.lateralArrangement === "left";
     const typography = this.typographyKey(key);
@@ -3179,6 +3342,23 @@ export class KplexSettingTab extends PluginSettingTab {
   async setControlValue(key: string, value: unknown, owner?: AppearanceOwner): Promise<void> {
     if (!this.receivedControlCurrent(key)) return;
     key = key.replace(/^received:\d+:/, "");
+    const view = canvasViewControl(key);
+    if (view) {
+      try {if (view.path?.length) await this.kplexPlugin.updateCanvasViewConfiguration(view.id, view, {kind: "set", value});
+        else await this.kplexPlugin.updateCanvasViewSetting(view.id, view.field, value);}
+      catch (error) {
+        console.error("K-Plex view setting was not saved", error);
+        // Native Settings deliberately preserves focused controls with an unchanged key.
+        // Retire only this known field through the existing alias/update lifecycle so its
+        // replacement reads the committed value and delayed old handlers cannot save again.
+        const definition = this.viewSettings.definition(view.id);
+        if (definition?.configuration && Object.prototype.hasOwnProperty.call(definition.configuration.fields, view.field))
+          this.viewControlRecoveries.set(key, (this.viewControlRecoveries.get(key) ?? 0) + 1);
+        this.update();
+        new Notice(this.kplexPlugin.translator("styles.operation.notSaved"));
+      }
+      return;
+    }
     const arrangementKey = this.lateralArrangementKey(key);
     if (arrangementKey) {
       const current = this.kplexPlugin.settings.layoutProfiles[arrangementKey] ?? DEFAULT_LAYOUT_PROFILES[arrangementKey];

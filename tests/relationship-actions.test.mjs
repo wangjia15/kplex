@@ -48,7 +48,8 @@ test("connector evidence tooltip shares semantic reference quoting without quoti
   const RelationType={DEFINED:1,INFERRED:2},translate=createTranslator("en");
   const roleLabels=productionFunction("src/ui/PlexGraph.tsx","EVIDENCE_ROLE_LABEL",{}),sourceLabels=productionFunction("src/ui/PlexGraph.tsx","EVIDENCE_SOURCE_LABEL",{});
   const relationTypeText=productionFunction("src/ui/PlexGraph.tsx","relationTypeText",{RelationType});
-  const tooltip=productionFunction("src/ui/PlexGraph.tsx","edgeEvidenceTooltipText",{EVIDENCE_ROLE_LABEL:roleLabels,EVIDENCE_SOURCE_LABEL:sourceLabels,relationTypeText});
+  const semanticSceneEdge=productionFunction("src/ui/plexViews/scene.ts","semanticSceneEdge",{});
+  const tooltip=productionFunction("src/ui/PlexGraph.tsx","edgeEvidenceTooltipText",{semanticSceneEdge,EVIDENCE_ROLE_LABEL:roleLabels,EVIDENCE_SOURCE_LABEL:sourceLabels,relationTypeText});
   const decisions=[
     {active:true,evidence:{fieldName:'Child "reference"',sourceKind:"frontmatter-ontology",role:"child",relationType:1}},
     {active:true,evidence:{sourceKind:"obsidian-link",role:"child",relationType:2}},
@@ -304,6 +305,7 @@ for(const rejection of ["self","duplicate","attachment-tag"]){
 test("reactive startup backlog cannot rebuild a partial cache preview before hydration settles", async () => {
   let hydrating = true, closeHydration; const events = [];
   const closed = new Promise((resolve) => { closeHydration = resolve; });
+  let optionalUrlStarts=0;
   const context = {
     unloading: false, layoutReady: true, initialIndexTask: null, initialIndexComplete: false,
     indexDirty: true, indexDirtyRevision: 1, preRestoreUncoveredChanges: false,
@@ -311,6 +313,8 @@ test("reactive startup backlog cannot rebuild a partial cache preview before hyd
     rebuildTask: null, rebuildTimer: null,
     index: {
       isOnDemandMode: () => false,
+      /** Optional work is admitted only after this primary hydration/delta owner completes. */
+      startBackgroundUrlIndex: async () => { assert.equal(context.initialIndexComplete,true);assert.equal(hydrating,false);optionalUrlStarts++;return true; },
       size: 3, hasPendingStructuralMaintenance: () => false, hasPendingSnapshotHydration: () => hydrating,
       waitForSnapshotHydration: async () => { events.push("wait"); await closed; hydrating = false; return { restored: true, fresh: false }; },
       hasSourceBackedStartup: () => false, isFullSnapshotHydrated: () => !hydrating, hasIncrementalRestorePatch: () => true,
@@ -328,6 +332,7 @@ test("reactive startup backlog cannot rebuild a partial cache preview before hyd
   closeHydration(); await task;
   assert.deepEqual(events, ["wait", "patch-real-delta"]); assert.equal(context.initialIndexComplete, true);
   assert.equal(context.indexDirty, false); assert.equal(context.indexBacklogReasons.size, 0);
+  assert.equal(optionalUrlStarts,1,'Optional URL work starts once after primary startup completes');
 });
 
 /** A view may own cold startup before the cooperative physical catalog installs warm hydration. */
@@ -336,7 +341,7 @@ for (const outcome of ["fresh", "stale", "failed", "sources", "sources-pending"]
     let releaseMetadata, releaseHydration, hydrating = false, hydrated = false, sourceBacked = false;
     const metadata = new Promise(resolve => { releaseMetadata = resolve; });
     const hydration = new Promise(resolve => { releaseHydration = resolve; });
-    const events = [];
+    const events = [];let optionalUrlStarts=0;
     const context = {
       unloading: false, layoutReady: true, initialIndexTask: null, initialIndexComplete: false,
       indexDirty: true, indexDirtyRevision: 0, preRestoreUncoveredChanges: false,
@@ -344,8 +349,10 @@ for (const outcome of ["fresh", "stale", "failed", "sources", "sources-pending"]
       metadataStabilityPromise: null, rebuildTask: null, rebuildTimer: null,
       index: {
         isOnDemandMode: () => false,
+        /** Primary pending/failure cannot prematurely admit the optional inventory. */
+        startBackgroundUrlIndex: async () => {assert.equal(context.initialIndexComplete,true);optionalUrlStarts++;return true;},
         size: 0, hasPendingStructuralMaintenance: () => false, hasPendingSnapshotHydration: () => hydrating,
-        hasSourceBackedStartup: () => sourceBacked, isFullSnapshotHydrated: () => hydrated,
+        hasSourceBackedStartup: () => sourceBacked, isFullSnapshotHydrated: () => hydrated, hasReusableSourceInventory: () => false,
         hasPhysicalBaseline: () => hydrated || sourceBacked, hasRestoredCheckpoint: () => false,
         hasIncrementalRestorePatch: () => false,
         waitForSnapshotHydration: async () => {
@@ -366,7 +373,7 @@ for (const outcome of ["fresh", "stale", "failed", "sources", "sources-pending"]
       scheduleRebuild: () => assert.fail("This settled startup needs no additional rebuild"),
       pruneMissingDirtyMarkdownPaths: () => {}, startupGraphSeedPaths: () => [],
     };
-    for (const name of ["ensureInitialIndex", "performRebuild", "adoptInitialSourceIndex"]) {
+    for (const name of ["ensureInitialIndex", "performRebuild", "adoptInitialSourceIndex", "retireCoveredCreateReason"]) {
       context[name] = productionFunction("src/main.ts", name, { Platform: { isIosApp: false } });
     }
     const task = context.ensureInitialIndex();
@@ -378,11 +385,12 @@ for (const outcome of ["fresh", "stale", "failed", "sources", "sources-pending"]
     assert.equal(context.rebuildTask, null); assert.equal(context.initialIndexComplete, false);
     releaseHydration(); await task;
     const expected = outcome === "fresh" ? [] : outcome === "stale" ? ["full"]
-      : outcome === "failed" ? ["progressive"] : ["adopt"];
+      : outcome === "failed" ? ["progressive"] : outcome === "sources" ? ["adopt", "full"] : ["adopt"];
     assert.deepEqual(events, ["metadata", "hydrate", ...expected]);
     assert.equal(context.initialIndexComplete, outcome !== "sources-pending");
+    assert.equal(optionalUrlStarts,Number(outcome!=='sources-pending'),'Only completed primary startup admits optional URL work');
     assert.equal(context.indexDirty, outcome === "sources-pending");
-    if (outcome.startsWith("sources")) assert.equal(hydrated, false, "Source adoption cannot claim full graph hydration");
+    if (outcome.startsWith("sources")) assert.equal(hydrated, outcome === "sources", "Only completed eager relationships can claim full graph hydration");
     if (outcome === "sources-pending") {
       assert.equal(context.initialIndexTask, null, "Failed adoption must release startup for a later real attempt");
       assert(context.indexBacklogReasons.has("startup:partial-restore-incomplete"));
@@ -406,6 +414,29 @@ test("settled semantic failure exposes incomplete status while real active work 
   assert.deepEqual(await facts.call(context, 2), { upToDate: false, phase: "incomplete", indexedFiles: 2, totalFiles: 2 });
   active = true;
   assert.deepEqual(await facts.call(context, 2), { upToDate: false, phase: "updating", indexedFiles: 2, totalFiles: 2 });
+});
+
+/** An active source audit retains measured counts instead of looking like a settled failure. */
+test("a pending relationship update exposes an active source audit and its measured progress", async () => {
+  let sourceActive=true, processed=27;
+  const context={initialIndexComplete:true,indexDirty:false,rebuildTask:null,rebuildTimer:null,cachedMarkdownFileCount:11819,
+    translator:(key,params)=>JSON.stringify({key,params}),
+    startupDiagnostics:{progress:()=>({phase:"host-metadata-comparison",pass:1,processed,total:11819})},
+    index:{isOnDemandMode:()=>false,hasPendingSnapshotHydration:()=>false,hasPendingSemanticPreparation:()=>true,
+      hasActiveSemanticPreparation:()=>false,hasActiveSourcePreparation:()=>sourceActive,hasPendingSearchVocabulary:()=>false,
+      isCheckpointSaving:()=>false,indexedMarkdownFileCount:()=>11819,getSemanticPreparationFailure:()=>null,
+      getSearchVocabularyFailure:()=>null,getUrlAliasUpgradeProgress:()=>null,getSnapshotHydrationDiagnostics:()=>null,
+      getUrlIndexProgress:()=>({active:false,failed:false,processed:11819,total:11819})}};
+  const compute=productionFunction("src/main.ts","computeIndexStatusFacts",{}),status=productionFunction("src/main.ts","getIndexStatus",{});
+  let facts=await compute.call(context,11819);context.computeIndexStatusFacts=()=>facts;
+  assert.equal(facts.phase,"updating");assert.equal(facts.upToDate,false);
+  let label=JSON.parse((await status.call(context)).label);
+  assert.equal(label.key,"index.startupNotesProgress");assert.equal(label.params.processed,"27");assert.equal(label.params.total,"11,819");assert.equal(label.params.percent,0);
+  processed=11818;label=JSON.parse((await status.call(context)).label);
+  assert.equal(label.params.processed,"11,818");assert.equal(label.params.percent,99);
+  sourceActive=false;facts=await compute.call(context,11819);
+  assert.equal(facts.phase,"incomplete");assert.equal(facts.upToDate,false);
+  assert.equal(JSON.parse((await status.call(context)).label).key,"index.statusRelationshipIncomplete");
 });
 
 /** Alias maintenance reports search work/failure without masquerading as relationship loading or readiness. */
@@ -594,9 +625,10 @@ test("navigation with autofit disabled recenters without resetting manual scale"
     centralEditorAvailabilityRef: { current: false }, centralEditorAvailable: false, centralEditorSize: null,
     incomingCenter: { current: null }, centralEditorSizeKeyRef: { current: "" }, previousNodeRects: { current: new Map([["prior", {}]]) },
     pathChangedThisRender: true, settings: { allowAutozoom: false, animationSpeed: 0 },
-    automaticFit: { current: null }, activePath: "Center.md", centralEditorMaximized: false,
+    automaticFit: { current: null }, activePath: "Center.md", sceneScope: "Center.md", rooted: false, centralEditorMaximized: false,
     camera: { current: camera }, sameFitCamera: (a, b) => a.x === b.x && a.y === b.y && a.scale === b.scale,
-    cameraIntentPlaced: { current: true },
+    cameraIntentPlaced: { current: true }, framingOccurrence: () => null,
+    previousCameraViewport: { current: null }, boundEditorBinding: undefined,
     fit: () => { calls.push("fit"); Object.assign(camera, { scale: 0.4, x: 90, y: 120 }); },
     applyCamera: update => Object.assign(camera, typeof update === "function" ? update(camera) : update),
     flushCameraTransform: () => calls.push("flush"), syncCentralEditorOverlay: () => {},
@@ -611,6 +643,9 @@ test("navigation with autofit disabled recenters without resetting manual scale"
   dependencies.settings.allowAutozoom = false; dependencies.pathChangedThisRender = false;
   dependencies.previousNodeRects.current = new Map([["prior", {}]]); dependencies.preserveCameraOnNextLayout.current = false;
   cameraLayoutEffect(dependencies)(); assert.deepEqual(camera, { x: 99, y: 88, scale: 2.1 }, "Metadata layout updates retain the full camera");
+  dependencies.pathChangedThisRender = true; dependencies.framingOccurrence = () => ({x: 145, y: -92});
+  cameraLayoutEffect(dependencies)();
+  assert.deepEqual(camera, {x: 400 - 145 * 2.1, y: 300 + 92 * 2.1, scale: 2.1}, "Off-origin navigation centers its actual occurrence and retains manual scale");
 });
 
 
@@ -647,6 +682,13 @@ function createdMetadataFixture({ extension = "md", displayField = "aliases", in
     },
     writeRelationship: async () => { assert(pairCaptured); events.push("write-relation"); },
     publishSavedRelationship: async () => events.push("publish-relation"),
+  };
+  // Materialization now defaults to Return. Opening-order cases below explicitly select Tab
+  // and retain the real shared completion owner rather than assuming an implicit document open.
+  context.finishNewRelatedNode = productionFunction("src/main.ts", "finishNewRelatedNode", {});
+  context.openCreatedNote = async (created, hostLeaf, destination, current) => {
+    assert.equal(destination, "tab"); assert(current());
+    await context.openInDocumentLeaf(created.file, hostLeaf);
   };
   for (const method of ["newRelatedNoteFolder", "validateNoteFolderPath", "mutateCreatedNodeMetadata", "writeCreatedNodeDisplayName", "writeCreatedNodeAlias", "createNewRelatedFileForOrigin", "linkNewRelatedFile", "appendRelationshipReference"])
     context[method] = productionFunction("src/main.ts", method, { writeRelationshipMetadata, normalizeFieldName: actualNormalizeFieldName,
@@ -724,7 +766,7 @@ for (const consumer of ["folder", "ghost"]) test(`${consumer} creation also awai
       f.context.index.materializeFile = (oldPath, file) => { f.events.push(["materialize", oldPath, file.path]); return true; };
       f.context.openInDocumentLeaf = async file => f.events.push(["open", file.path]);
       const materialize = productionFunction("src/main.ts", "materializeGhostPage", {});
-      operation = materialize.call(f.context, { path: "Ghost", name: "Ghost display" }, "Created", "markdown", "").then(value => { finished = true; return value; });
+      operation = materialize.call(f.context, { path: "Ghost", name: "Ghost display" }, "Created", "markdown", "", undefined, undefined, {}, () => true, false, undefined, undefined, "tab").then(value => { finished = true; return value; });
     }
     await nextCreatedStep(); assert.equal(finished, false); assert.deepEqual(f.events, ["native-write"]);
     f.observe(); const result = await operation; assert(result); f.clean();
@@ -750,7 +792,7 @@ for (const central of [true, false]) test(`ghost promotion remaps saved navigati
     f.context.notifyNavigation = (path,owner) => {assert.equal(owner,host); assert.equal(path, f.file.path); assert.equal(f.context.settings.lastActivePath, path); f.events.push("navigated"); };
     f.context.saveSettings = async (...args) => { assert.deepEqual(args, [false, false]); f.events.push("saved"); };
     f.context.openInDocumentLeaf = async file => { assert.equal(file, f.file); f.events.push("opened"); };
-    operation = productionFunction("src/main.ts", "materializeGhostPage", {}).call(f.context, ghost, "Created", "markdown", "",undefined,undefined,{},()=>true,false,host);
+    operation = productionFunction("src/main.ts", "materializeGhostPage", {}).call(f.context, ghost, "Created", "markdown", "",undefined,undefined,{},()=>true,false,host,undefined,"tab");
     await nextCreatedStep(); f.observe(); assert.equal(await operation, true);
     assert.deepEqual(f.events, ["native-write", "cache-body-observed", "materialized", "remapped", ...(central ? ["navigated"] : []), "saved", "opened"]);
     assert.equal(f.context.settings.lastActivePath, central ? f.file.path : "Other.md");
@@ -790,3 +832,34 @@ for (const mode of ["refreshing", "preview-failed", "source-replaced", "target-r
     }
   });
 }
+
+/** A native import without removal authority must stay additive through the real canonical writer, not merely select a create-shaped dialog. */
+test('additive-only existing-target commit preserves other ontology declarations and bodies',async()=>{
+ const origin=page('R.md'),target=page('B.md'),other=page('C.md');origin.neighbours=new Map([[target.path,{direction:1}]]);
+ const frontmatter={children:['[[B]]','[[Unrelated]]'],parent:['[[OtherParent]]'],untouched:'keep'},otherSource={children:['[[B]]']},beforeOther=JSON.stringify(otherSource),events=[];
+ const context={app:{vault:{getFileByPath:path=>[origin,target,other].find(page=>page.path===path)?.file??null}},translator:key=>key,index:{withForegroundPriority:async work=>work(),prepareRelationshipPair:async()=>{events.push('prepare');return true},isSemanticWriteReady:()=>true,get:path=>[origin,target,other].find(page=>page.path===path),gateNeighbourPaths:()=>new Set(),isConnected:()=>true},
+  managedMetadataWrites:new Map(),pruneManagedMetadataWrites(){},referenceForPage:()=> '[[B]]',valueContainsTarget:value=>JSON.stringify(value).includes('[[B]]'),
+  mutateRelationshipMetadata:async(file,fields,update)=>{assert.equal(file,origin.file);assert.deepEqual([...fields],['parent']);events.push('append');update(frontmatter)},
+  relinkCentralNeighbour:()=>assert.fail('Additive import cannot acquire implicit relink authority'),writeRelationship:()=>assert.fail('Additive import cannot clear other ontology fields'),removeTargetFromValue:()=>assert.fail('Other declarations must not be removed')};
+ for(const name of ['prepareRelationshipMutation','publishSavedRelationship','addRelationshipOntology','appendRelationshipReference'])context[name]=productionFunction('src/main.ts',name,{normalizeFieldName:actualNormalizeFieldName,SavedRelationshipPendingError:class extends Error{}});
+ const commit=productionFunction('src/main.ts','createRelationToPage',{Notice:class{}});
+ const result=await commit.call(context,origin,'parent',target,'parent',undefined,true);
+ assert.equal(result.state,'saved-published');assert.deepEqual(frontmatter,{children:['[[B]]','[[Unrelated]]'],parent:['[[OtherParent]]','[[B]]'],untouched:'keep'});assert.equal(JSON.stringify(otherSource),beforeOther);assert.deepEqual(events,['prepare','append','prepare']);
+});
+
+/** Existing Compass/explorer callers retain the accepted connected-pair policy unless they explicitly request non-removal. */
+test('legacy existing-target creation retains automatic relink by default',async()=>{
+ const origin=page('R.md'),target=page('B.md'),calls=[];origin.neighbours=new Map([[target.path,{direction:1}]]);
+ const context={translator:key=>key,index:{withForegroundPriority:async work=>work(),gateNeighbourPaths:()=>new Set(),isConnected:()=>true},prepareRelationshipMutation:async()=>[origin,target],relinkCentralNeighbour:async(...args)=>{calls.push(args);return{state:'saved-published',page:target}},addRelationshipOntology:()=>assert.fail('Legacy caller unexpectedly became additive'),writeRelationship:()=>assert.fail('Connected legacy pair must use its canonical relink owner')};
+ const result=await productionFunction('src/main.ts','createRelationToPage',{Notice:class{}}).call(context,origin,'parent',target,'parents');assert.equal(result.state,'saved-published');assert.deepEqual(calls,[[origin,target,'parent','parents',1]]);
+});
+
+/** Non-Markdown origins use the existing inverse-storage owner without clearing the Markdown target's other declarations. */
+test('additive-only inverse endpoint storage preserves the target ontology',async()=>{
+ const origin=page('https://example.com/source'),target=page('B.md');origin.file=null;origin.url=origin.path;origin.neighbours=new Map([[target.path,{direction:1}]]);
+ const frontmatter={children:['[[OtherChild]]'],parents:['[[OtherParent]]']},events=[];
+ const context={translator:key=>key,app:{vault:{getFileByPath:path=>path===target.path?target.file:null}},index:{withForegroundPriority:async work=>work(),prepareRelationshipPair:async(...paths)=>{events.push(['prepare',...paths]);return true},isSemanticWriteReady:()=>true,get:path=>path===origin.path?origin:path===target.path?target:undefined,gateNeighbourPaths:()=>new Set(),isConnected:()=>true},managedMetadataWrites:new Map(),pruneManagedMetadataWrites(){},inverseOntologyField:()=> 'children',referenceForPage:(page,file)=>{assert.equal(page,origin);assert.equal(file,target.file);return origin.url},valueContainsTarget:()=>false,mutateRelationshipMetadata:async(file,fields,update)=>{assert.equal(file,target.file);assert.deepEqual([...fields],['children']);update(frontmatter)},relinkCentralNeighbour:()=>assert.fail('Inverse import must not relink'),writeRelationship:()=>assert.fail('Inverse import must not clear other properties')};
+ for(const name of ['prepareRelationshipMutation','publishSavedRelationship','addRelationshipOntology','appendRelationshipReference'])context[name]=productionFunction('src/main.ts',name,{normalizeFieldName:actualNormalizeFieldName,SavedRelationshipPendingError:class extends Error{}});
+ const result=await productionFunction('src/main.ts','createRelationToPage',{Notice:class{}}).call(context,origin,'parent',target,'parents',undefined,true);
+ assert.equal(result.state,'saved-published');assert.deepEqual(frontmatter,{children:['[[OtherChild]]',origin.url],parents:['[[OtherParent]]']});assert.deepEqual(events,[['prepare',origin.path,target.path],['prepare',target.path,origin.path]]);
+});

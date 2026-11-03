@@ -196,6 +196,8 @@ try {
   baseline = evaluate('JSON.stringify((()=>{const w=require("@electron/remote").getCurrentWindow();return {mobile:app.isMobile,bounds:w.getBounds(),minimum:w.getMinimumSize()}})())');
   originalSettings = evaluate('JSON.stringify(app.plugins.plugins["k-plex"].settings)'); report.baseline = baseline;
   assert(!evaluate('JSON.stringify(Boolean(window.__kplexActionTest||window.__kplexActionWorkflows||window.__kplexUxRegression||window.__kplexUxDevice||window.__kplexActionDevice||document.querySelector(".modal-container .modal,.modal-container .prompt")))'), "Another native controller or unowned dialog is active");
+  assert(evaluate('JSON.stringify([...document.querySelectorAll(".kplex-app input.kplex-search")].some(input=>input.isConnected&&input.getBoundingClientRect().width>0))'),
+    "Open a visible main Plex before the device matrix; Settings cleanup must restore a real graph focus target");
   mutatedHost = true;
   if (baseline.mobile) { cli("eval", "code=app.emulateMobile(false)"); await ready(); }
   await probe(1200, 900, "desktop");

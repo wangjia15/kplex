@@ -327,7 +327,7 @@ test("actual declarative rows remain globally searchable while native group filt
       const migratedDocumentClears=s.input.value===''&&s.list.querySelectorAll('.kplex-action-filtered').length===0;
       const sourceRealmRetained=migratedSearch instanceof window.Element&&!(migratedSearch instanceof frame.contentWindow.Element);
       const publication=s.list.querySelector('[data-action-id="search.focus"] [data-kplex-action-control=publication]');publication.focus();const originalSave=s.plugin.updateActionPreferences;let finish;s.plugin.updateActionPreferences=async value=>{await new Promise(done=>finish=done);await originalSave.call(s.plugin,value)};publication.click();finish();for(let turn=0;s.controller.saving&&turn<20;turn++)await Promise.resolve();
-      const stableToggle=s.rows[1].controlEl.querySelector('input')===originalToggle&&s.rows[1].components.length===1&&s.rows[2].components.length===1;const migratedEquivalentFocus=targetDocument.activeElement===s.list.querySelector('[data-action-id="search.focus"] [data-kplex-action-control=publication]')&&targetDocument.activeElement!==publication;s.plugin.updateActionPreferences=originalSave;
+      const stableToggle=s.rows[1].controlEl.querySelector('input')===originalToggle&&s.rows[1].components.length===1&&!s.definition.items.some(item=>item.aliases?.includes('crossSectionAtBoundary'));const migratedEquivalentFocus=targetDocument.activeElement===s.list.querySelector('[data-action-id="search.focus"] [data-kplex-action-control=publication]')&&targetDocument.activeElement!==publication;s.plugin.updateActionPreferences=originalSave;
 
 
 
@@ -616,7 +616,7 @@ test("row-local publication guidance refreshes independent native keys in place 
       const s=makeSettings(),c=s.controller,action=sourceModules.ACTION_BY_ID.get('graph.focus'),id='k-plex:'+action.command.id;const style=document.head.createEl('style',{text:${JSON.stringify(readFileSync(new URL("../styles.css", import.meta.url), "utf8"))}});document.body.style.setProperty('--text-warning','rgb(1, 2, 3)');document.body.style.setProperty('--text-muted','rgb(4, 5, 6)');
       const definition=s.definition.items.find(item=>item.aliases?.includes('graph.focus')),outside=document.body.createDiv(),setting=new sourceModules.Setting(outside),release=definition.render(setting,{listEl:outside});
       const row=setting.settingEl,status=()=>row.querySelector('.kplex-action-publication-state').textContent,local=JSON.stringify(s.plugin.settings.actionPreferences.localBindings);
-      const guidance=row.querySelector('.kplex-action-scope').textContent.includes('focused Plex')&&row.querySelector('.setting-command-hotkeys').getAttribute('aria-label')==='Local shortcuts';
+      const guidance=row.querySelector('.kplex-action-scope').textContent.includes('focused canvas')&&row.querySelector('.setting-command-hotkeys').getAttribute('aria-label')==='Local shortcuts';
       const unknown=status().includes('Global shortcut not checked');s.nativeCommands[id]={name:'Localized focus graph'};s.defaultHotkeys[id]=[];c.refresh();const absent=status().includes('No global shortcut');
       const button=row.querySelector('[data-kplex-action-control=publication]');button.focus();s.customHotkeys[id]=[{key:'F9',modifiers:['Mod']}];c.refresh();
       const updated=status().includes('Global shortcut: ⌘ F9')&&row.querySelector('[data-kplex-action-control=publication]')===button&&document.activeElement===button;
