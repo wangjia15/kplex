@@ -31,7 +31,9 @@
  * Fresh installations receive editable English descriptions for their English factory vocabulary;
  * saved dictionaries, including explicit clears, never inherit replacement wording on reload.
  * Creation and linking remember separate after-saving actions, retaining the former shared choice on upgrade.
+ * Built-in read-aloud preferences remain local workflow choices and never invalidate semantic data.
  */
+import { READ_ALOUD_LANGUAGES, readAloudLanguagePreference, sanitizeReadAloudEdgeVoice, sanitizeReadAloudRate, sanitizeReadAloudSystemVoice, type ReadAloudEngine } from "./readAloudPreferences";
 import {STARTUP_INDEX_DEFAULTS, sanitizeStartupIndexPreferences, type IndexingMode, type StartupIndexPreferences} from './core/plex/startupIndexPreferences';
 import { readObsidianPresentationEnvironment } from "./adapters/obsidian/presentationEnvironment";
 import {contentVisibilityPatch} from "./core/plex/contentVisibility";
@@ -535,6 +537,16 @@ export interface KplexSettings extends StartupIndexPreferences {
   sectionShowFigures: boolean;
   /** Visual theme of the highlight/figure panels under note sections. */
   sectionReadingTheme: SectionReadingTheme;
+  /** Built-in reader engine; Edge contacts Microsoft only after explicit playback. */
+  readAloudEngine: ReadAloudEngine;
+  /** Bounded voice language or local automatic script/host-language detection. */
+  readAloudLanguage: string;
+  /** Inventoried Edge voice ID, or automatic selection from the resolved language. */
+  readAloudEdgeVoice: string;
+  /** Bounded native system voice name/URI, or automatic selection; never scanned remotely. */
+  readAloudSystemVoice: string;
+  /** Reader playback rate bounded between 0.5 and 2; normal speed is 1. Presentation only. */
+  readAloudRate: number;
   /** Resized section cards/panels: note path -> section key -> size. */
   sectionSizes: Record<string, Record<string, SectionSizeOverride>>;
   /** Default ontology-property cleanup when deleting a physical Markdown file through K-Plex. */
@@ -722,6 +734,11 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   sectionShowHighlights: true,
   sectionShowFigures: true,
   sectionReadingTheme: "default",
+  readAloudEngine: "edge",
+  readAloudLanguage: "auto",
+  readAloudEdgeVoice: "auto",
+  readAloudSystemVoice: "auto",
+  readAloudRate: 1,
   sectionSizes: {},
   removeOntologyLinksOnDelete: true,
 };
@@ -1042,6 +1059,11 @@ export function migrateAndMergeSettings(raw: unknown): KplexSettings {
     sectionShowHighlights: old.sectionShowHighlights !== false,
     sectionShowFigures: old.sectionShowFigures !== false,
     sectionReadingTheme: isSectionReadingTheme(old.sectionReadingTheme) ? old.sectionReadingTheme : DEFAULT_SETTINGS.sectionReadingTheme,
+    readAloudEngine: old.readAloudEngine === "system" ? "system" : "edge",
+    readAloudLanguage: readAloudLanguagePreference(old.readAloudLanguage),
+    readAloudEdgeVoice: sanitizeReadAloudEdgeVoice(old.readAloudEdgeVoice),
+    readAloudSystemVoice: sanitizeReadAloudSystemVoice(old.readAloudSystemVoice),
+    readAloudRate: sanitizeReadAloudRate(old.readAloudRate),
     sectionSizes: sanitizeSectionSizes(old.sectionSizes),
     removeOntologyLinksOnDelete: old.removeOntologyLinksOnDelete !== false,
     internalHotkeys: sanitizeInternalHotkeys(old.internalHotkeys),
@@ -2689,6 +2711,20 @@ export class KplexSettingTab extends PluginSettingTab {
               { name: translate("settings.ui.excluded.path.prefixes"), desc: translate("settings.ui.comma.separated.path.prefixes.that.stay.hidden.from.the"), control: { type: "textarea", key: "excludeFilepathsCsv", rows: 4 } },
               { name: translate("settings.ui.gate.counts"), desc: translate("settings.ui.show.the.number.of.currently.visible.relationships.besid"), control: { type: "toggle", key: "showNeighborCount" } },
             ]
+          },
+          {
+            type: "group",
+            heading: translate("speech.title"),
+            items: [
+              { name: translate("speech.engine"), desc: translate("speech.edgeDisclosure"), control: {
+                type: "dropdown", key: "readAloudEngine", defaultValue: "edge",
+                options: { edge: translate("speech.edge"), system: translate("speech.system") },
+              } },
+              { name: translate("speech.language"), desc: translate("speech.languageHelp"), control: {
+                type: "dropdown", key: "readAloudLanguage", defaultValue: "auto",
+                options: Object.fromEntries(READ_ALOUD_LANGUAGES.map(/** Locale codes are stable voice identifiers. */ language => [language, language === "auto" ? translate("speech.auto") : language])),
+              } },
+            ],
           },
           {type: "group", heading: translate("view.settingsViews"), items: this.viewSettings.pages({translate, areaTint: () => this.compassTintDefinition(), openManager: id => this.openCanvasViewManager(id)})},
         ]

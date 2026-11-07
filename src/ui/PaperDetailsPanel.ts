@@ -1,3 +1,7 @@
+/**
+ * Host-owned paper details content shared by native dialogs and sidecar views. Reading and navigation
+ * actions retain their invoking document; closing this surface cancels its paper acquisition work.
+ */
 import { Notice, setIcon, type TFile } from "obsidian";
 import type KplexPlugin from "../main";
 import type { GraphPage } from "../types";
@@ -491,7 +495,7 @@ export class PaperDetailsPanel {
       speak.addEventListener("click", () => {
         const text = record.abstract || record.tldr || "";
         const note = this.notePage();
-        this.plugin.readAloud(text, record.title, note?.file?.path);
+        this.plugin.readAloud(text, record.title, note?.file?.path, undefined, this.containerEl.ownerDocument);
       });
     };
 

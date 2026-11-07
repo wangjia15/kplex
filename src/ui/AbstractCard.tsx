@@ -1,3 +1,7 @@
+/**
+ * Host-bound abstract cards show lazily acquired paper text/imagery and delegate native actions to
+ * their plugin. Speech follows the activating button's document, including cards in popout windows.
+ */
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { WorkspaceLeaf } from "obsidian";
 import type KplexPlugin from "../main";
@@ -106,7 +110,7 @@ export function AbstractCard({ plugin, card, hostLeaf, onPin, onClose, onMove, o
           aria-label={plugin.translator("paper.card.readAloud")}
           onClick={(event) => {
             event.stopPropagation();
-            plugin.readAloud(preview.text, title, page.file?.path, hostLeaf);
+            plugin.readAloud(preview.text, title, page.file?.path, hostLeaf, event.currentTarget.ownerDocument);
           }}
         >
           <ObsidianIcon name="volume-2" size={14} />

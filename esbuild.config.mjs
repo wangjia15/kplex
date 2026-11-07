@@ -1,10 +1,11 @@
 /**
  * Builds the K-Plex entry point, hardens unused React script-element branches and copies the
- * installable manifest/styles into dist. The build owns its watch context and artifact writes.
+ * installable manifest/styles into dist. Desktop speech bundles a lazy header-capable transport
+ * and embeds its third-party license notices. The build owns its watch context and artifact writes.
  */
 import esbuild from "esbuild";
 import process from "process";
-import { builtinModules } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 
@@ -28,6 +29,9 @@ async function publicBuildIdentity() {
 }
 
 const buildId = await publicBuildIdentity();
+const speechLicenseFiles = ["docs/licenses/ws-MIT.txt", "docs/licenses/edge-tts-LGPL-3.0.txt", "docs/licenses/GPL-3.0.txt"];
+const speechLicenseTexts = await Promise.all(speechLicenseFiles.map(/** Read vendored legal text at build time; runtime performs no license/network lookup. */ path => readFile(path, "utf8")));
+const speechNotices = `/*! Built-in speech: ws (MIT) and edge-tts token adaptation (LGPL-3.0-only).\nCorresponding source and build instructions accompany the K-Plex source repository.\n${speechLicenseTexts.join("\n\n")}\n*/`;
 
 const hardenReactBundle = async () => {
   const path = "dist/main.js";
@@ -54,7 +58,7 @@ const copyArtifacts = async () => {
 };
 
 const context = await esbuild.context({
-  banner: { js: "/* K-Plex - generated bundle */" },
+  banner: { js: `/* K-Plex - generated bundle */\n${speechNotices}` },
   define: { __KPLEX_BUILD_ID__: JSON.stringify(buildId) },
   entryPoints: ["src/main.ts"],
   bundle: true,
@@ -85,6 +89,12 @@ const context = await esbuild.context({
   outfile: "dist/main.js",
   minify: prod,
   plugins: [{
+    name: "desktop-speech-websocket",
+    /** Bundle the Node transport inside its lazy desktop branch rather than ws's browser error stub. */
+    setup(build) {
+      build.onResolve({ filter: /^ws$/ }, /** Resolve the installed, locked transport without runtime package discovery. */ () => ({ path: createRequire(import.meta.url).resolve("ws") }));
+    },
+  }, {
     name: "copy-plugin-artifacts",
     setup(build) {
       build.onEnd(async (result) => {

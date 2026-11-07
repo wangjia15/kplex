@@ -1,6 +1,66 @@
 /* Native theme fallbacks are consumed at each surface. Public K-Plex variables are deliberately
    not declared on view roots: body and view-local theme/snippet overrides must both inherit. */
 
+/* Modeless reader leaves the workspace interactive; shared dialog mechanics own dragged coordinates. */
+.kplex-read-aloud {
+  position: fixed;
+  z-index: var(--layer-popover, 1000);
+  right: 24px;
+  bottom: 24px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: var(--shadow-l);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-small);
+}
+.kplex-read-aloud.is-positioned { max-height: calc(100vh - var(--kplex-dialog-top) - 16px); }
+.kplex-read-aloud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.kplex-read-aloud-heading { font-weight: var(--font-semibold); }
+.kplex-read-aloud-content { padding: 12px 14px; }
+.kplex-read-aloud-title { font-weight: var(--font-semibold); overflow-wrap: anywhere; }
+.kplex-read-aloud-progress { margin: 6px 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.kplex-read-aloud-preview {
+  max-height: 110px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+.kplex-read-aloud-disclosure { color: var(--text-muted); font-size: var(--font-ui-smaller); margin: 10px 0 6px; }
+.kplex-read-aloud-status { min-height: 1.5em; margin: 6px 0 10px; color: var(--text-muted); }
+.kplex-read-aloud-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.kplex-read-aloud button { min-height: 30px; gap: 4px; }
+.kplex-read-aloud-controls button { flex: 1 0 auto; }
+.kplex-read-aloud-settings-toggle { margin-top: 10px; }
+.kplex-read-aloud-settings[hidden] { display: none; }
+.kplex-read-aloud-settings { margin-top: 10px; border-top: 1px solid var(--background-modifier-border); }
+.kplex-read-aloud-settings .setting-item { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; }
+.kplex-read-aloud-settings .setting-item-info { min-width: 90px; }
+.kplex-read-aloud-settings .setting-item-control { min-width: 0; flex: 1 1 200px; }
+.kplex-read-aloud-settings select { width: 100%; min-width: 0; max-width: 100%; }
+.kplex-read-aloud-settings input[type="range"] { min-width: 0; flex: 1; }
+@media (max-width: 480px) {
+  .kplex-read-aloud { right: 16px; bottom: 16px; }
+  .kplex-read-aloud button { min-height: 36px; }
+}
+
+
 .kplex-view-host,
 .kplex-view-host > div,
 .kplex-app {

@@ -1,3 +1,4 @@
+/** Host-bound section reading panels; content and controls reuse the built-in reader without owning audio or semantic state. */
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { sectionPanelSpeechText } from "../index/SectionContent";
 import type { SectionContent, SectionFigure } from "../index/SectionExpansion";
@@ -41,7 +42,7 @@ export function SectionContentPanel({ panel, content, crops, canvasScale, onTogg
   onContextMenu: (panelId: string, event: MouseEvent<HTMLDivElement>) => void;
   theme: SectionReadingTheme;
   onThemeMenu: (position: { x: number; y: number }) => void;
-  /** Speaks the panel's own text (quotes + comments, or figure captions) through obtts. */
+  /** Opens the built-in reader for the panel's own quotes/comments or figure captions. */
   onReadAloud: (text: string) => void;
 }) {
   const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
