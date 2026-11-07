@@ -1,4 +1,6 @@
 /**
+ * The built-in modeless read-aloud shell (ReadAloudModal type retained for compatibility) owns
+ * remote/system speech and releases playback before plugin teardown.
  * Captured section opens retain exact native request identities. Explicit node copies use the
  * revocable host clipboard owner; section-scoped bulk visibility uses the existing settings queue.
  * Related-note completion keeps link and creation preferences independent through that same writer.
@@ -76,7 +78,7 @@ import {ontologyConfiguration, assignOntologyField, applyOntologyEdit, ontologyE
 import type {StyleEditorModal} from "./ui/StyleEditorModal";
 import {NotificationModal} from "./ui/NotificationModal";
 
-import { FileView, ItemView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, TFolder, apiVersion, getLanguage, getAllTags, normalizePath, parseLinktext, type Editor, type HoverParent, type WorkspaceLeaf } from "obsidian";
+import { FileView, ItemView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, TFolder, apiVersion, getFrontMatterInfo, getLanguage, getAllTags, normalizePath, parseLinktext, type Editor, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { captureSettingsPolicy, classifySettingsChange, isStyleOnlySettingsChange, type SettingsPolicy } from "./core/graph/settingsPolicy";
 import {builtInCanvasViewSettings} from "./ui/plexViews/settingsContributions";
 import {editViewConfigurationAt, migrateViewConfiguration, readViewConfiguration, readViewConfigurationAt, resetViewConfiguration,
@@ -101,7 +103,9 @@ import { HiddenFieldSetupModal, type HiddenFieldSetupChoice } from "./ui/HiddenF
 import { navigatePluginSettings } from "./adapters/obsidian/settingsNavigation";
 import { suggestHiddenProperty } from "./adapters/obsidian/hiddenPropertyName";
 import { LinkDirection, type GateRole, type GraphPage, type RelationshipRole } from "./types";
-import { obttsReadApi } from "./readAloud";
+import { ReadAloudModal } from "./ui/ReadAloudModal";
+import { plainCommentText } from "./index/SectionContent";
+import { readAloudLanguagePreference, sanitizeReadAloudEdgeVoice, sanitizeReadAloudRate, sanitizeReadAloudSystemVoice, type ReadAloudPreferences } from "./readAloudPreferences";
 import { OntologySuggester } from "./editor/OntologySuggester";
 import { isWebViewerAvailable, openExternalUrl } from "./adapters/obsidian/externalUrl";
 import { normalizeFieldName, parseBodyMetadata, iterateLinkReferencesFromValue } from "./core/parser/metadata";
@@ -222,6 +226,11 @@ type StyleCommitOptions = Readonly<{themeAction?: appearanceThemes.AppearanceThe
 export default class KplexPlugin extends Plugin {
   /** Clipboard receipts live only as long as this native plugin instance. */
   nodeLinkClipboard?: NodeLinkClipboard;
+  /** One native reader owns playback; replacement and plugin unload cancel its network/audio work. */
+  /** Retained compatibility name; the field holds the current modeless floating read-aloud shell. */
+  private readAloudModal: ReadAloudModal | null = null;
+  /** Counts requested reads; a stale async file read must not replace a newer reader request. */
+  private readAloudRequestToken = 0;
   /** Versioned trusted automation surface; settings-based reads precede graph hydration. */
   api:KplexPublicApi|null=null;
   /** Public discovery leases contain callbacks only; native sessions retain actual canvas state. */
@@ -590,6 +599,7 @@ export default class KplexPlugin extends Plugin {
         this.layoutReadyWaiters.clear();
         this.startupDiagnostics.mark("layout-ready");
         this.registerOntologyContextMenu();
+        this.registerReadAloudEntryPoints();
         registerFileMenus(this);
         this.prepareIndexIfRequested();
 
@@ -678,6 +688,7 @@ export default class KplexPlugin extends Plugin {
     for (const resolve of this.layoutReadyWaiters) resolve();
     this.layoutReadyWaiters.clear();
     this.unloading = true;
+    this.readAloudModal?.close(); this.readAloudModal = null;
     this.nodeLinkClipboard?.dispose();this.nodeLinkClipboard = undefined;
     for (const [timer, resolve] of this.createdEditorWaits) {window.clearTimeout(timer); resolve();}
     this.createdEditorWaits.clear();
@@ -5567,23 +5578,168 @@ export default class KplexPlugin extends Plugin {
   }
 
   /**
-   * Speaks a reading panel's text through the Markdown Read Aloud (obtts) plugin.
-   * `sourcePath` grounds the reader's jump-back-to-source on the panel's note; when the K-Plex
-   * sidecar companion is available the reader opens there, exactly like provenance navigation
-   * temporarily reuses that pane — ordinary sidecar sync resumes on the next navigation.
+   * Open the built-in reader for the supplied text. Edge is preferred with a system fallback;
+   * explicit Play authorizes synthesis after the network disclosure. The retained optional source
+   * arguments preserve caller compatibility; playback does not navigate or replace document leaves.
+   * All persisted speech preferences are copied into the shell, which can save validated engine,
+   * language, voice and rate edits through the supplied callback; nothing here re-reads files or
+   * touches the index. Callers without a host leaf may pass the exact owning document so pop-out
+   * paper readers stay in their own window; otherwise the host leaf's document is used.
    */
-  readAloud(text: string, title: string, sourcePath?: string, hostLeaf?: WorkspaceLeaf): void {
-    if (!text.trim()) return;
-    const api = obttsReadApi(this.app);
-    if (!api) {
-      new Notice(this.translator("paper.notice.readAloudMissing"), 3000);
+  readAloud(text: string, title: string, _sourcePath?: string, hostLeaf?: WorkspaceLeaf, ownerDocument?: Document): void {
+    if (!text.trim() || this.unloading) return;
+    // Any newly requested read supersedes an in-flight async file read for an older request.
+    this.readAloudRequestToken++;
+    this.readAloudModal?.close();
+    const reader = new ReadAloudModal(this.app, text, title, {
+      readAloudEngine: Platform.isDesktop ? this.settings.readAloudEngine : "system",
+      readAloudLanguage: this.settings.readAloudLanguage,
+      readAloudEdgeVoice: this.settings.readAloudEdgeVoice,
+      readAloudSystemVoice: this.settings.readAloudSystemVoice,
+      readAloudRate: this.settings.readAloudRate,
+    }, getLanguage(), this.translator, /** Closed shells must not retain private reading content. */ () => {
+      if (this.readAloudModal === reader) this.readAloudModal = null;
+    }, /** Modeless shells render in the exact invoking window, including pop-outs. */ ownerDocument ?? hostLeaf?.view.containerEl.ownerDocument, /** Only sanitized speech values may reach persisted settings. */ async (next: ReadAloudPreferences) => {
+      this.settings.readAloudEngine = next.readAloudEngine === "system" ? "system" : "edge";
+      this.settings.readAloudLanguage = readAloudLanguagePreference(next.readAloudLanguage);
+      this.settings.readAloudEdgeVoice = sanitizeReadAloudEdgeVoice(next.readAloudEdgeVoice);
+      this.settings.readAloudSystemVoice = sanitizeReadAloudSystemVoice(next.readAloudSystemVoice);
+      this.settings.readAloudRate = sanitizeReadAloudRate(next.readAloudRate);
+      await this.saveSettings(false, false);
+    });
+    this.readAloudModal = reader;
+    reader.open();
+  }
+
+  /** Body text for whole-note reading: Obsidian's own frontmatter bounds, never a new Markdown grammar. */
+  private readAloudDocumentText(value: string): string {
+    try {
+      const info = getFrontMatterInfo(value);
+      return info.exists ? value.slice(info.contentStart) : value;
+    } catch {
+      // A malformed document must still be readable; fall back to the raw captured text.
+      return value;
+    }
+  }
+
+  /** Open the reader for editor-sourced text; the owning Markdown view supplies title, path and window. */
+  private readFromEditorView(text: string, view: MarkdownView): void {
+    this.readAloud(text, view.file?.basename ?? view.file?.name ?? this.translator("speech.title"), view.file?.path, view.leaf);
+  }
+
+  /**
+   * Raw selection for the active Markdown view: the editor selection in source mode; otherwise the
+   * native selection, but only when its anchor and focus both lie inside that exact view container,
+   * so selections from other panes, pop-outs or the app chrome are never read.
+   */
+  private readAloudSelectionText(view: MarkdownView): string {
+    if (view.getMode() === "source") return view.editor.getSelection();
+    const document = view.containerEl.ownerDocument;
+    const selection = document.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return "";
+    if (!view.containerEl.contains(selection.anchorNode) || !view.containerEl.contains(selection.focusNode)) return "";
+    return selection.toString();
+  }
+
+  /**
+   * Convert a captured selection by mode. Source-mode selections are Markdown and go through the
+   * existing plain-text helper; reading-mode selections are already rendered plain text, so only
+   * trimming is applied and literal "<value>" or bracket text survives unchanged.
+   */
+  private readAloudViewSelection(view: MarkdownView): void {
+    const raw = this.readAloudSelectionText(view);
+    if (!raw.trim()) return;
+    const text = view.getMode() === "source" ? plainCommentText(raw) : raw.trim();
+    if (text.trim()) this.readFromEditorView(text, view);
+  }
+
+  /** Capture and read the editor selection at invocation time, including unsaved text. */
+  private readAloudEditorSelection(editor: Editor, view: MarkdownView): void {
+    const text = plainCommentText(editor.getSelection());
+    if (text.trim()) this.readFromEditorView(text, view);
+  }
+
+  /** Capture and read the whole editor content at invocation time, including unsaved text. */
+  private readAloudEditorDocument(editor: Editor, view: MarkdownView): void {
+    const text = plainCommentText(this.readAloudDocumentText(editor.getValue()));
+    if (text.trim()) this.readFromEditorView(text, view);
+  }
+
+  /**
+   * Read the active note. Source mode reads the editor so unsaved text is included; reading mode has
+   * no editor, so it performs one bounded cachedRead. Both capture the view mode at invocation: after
+   * the await the read is fenced against supersession and drift — a newer requested read (token) or
+   * unload, a mode switch whose editor may now hold unsaved text, a view navigated to another file or
+   * with a disconnected container, a moved/replaced/stale Vault file, or a modified mtime/size never
+   * publish stale speech. Read failures surface as a localized notice instead of an unhandled
+   * rejection from the void command invocation. Presentation only: no navigation and no index work.
+   */
+  private async readAloudActiveNote(view: MarkdownView): Promise<void> {
+    const file = view.file;
+    if (!file) return;
+    const token = ++this.readAloudRequestToken;
+    const mode = view.getMode();
+    const path = file.path;
+    const mtime = file.stat.mtime;
+    const size = file.stat.size;
+    let raw: string;
+    try {
+      raw = mode === "source" ? view.editor.getValue() : await this.app.vault.cachedRead(file);
+    } catch {
+      // A stale request's failure must not surface; only the newest read reports.
+      if (token !== this.readAloudRequestToken || this.unloading) return;
+      new Notice(this.translator("speech.failed"));
       return;
     }
-    const docUri = sourcePath ? this.app.vault.getFileByPath(sourcePath) ?? undefined : undefined;
-    // A paper-details pane is never sacrificed for the reader; reading opens as its own tab then.
-    const sidecar = hostLeaf ? this.availableSidecarLeaf(hostLeaf) : null;
-    const leaf = sidecar && sidecar.view.getViewType() !== KPLEX_PAPER_VIEW_TYPE ? sidecar : undefined;
-    void api.readText(text, title, { docUri, leaf });
+    if (token !== this.readAloudRequestToken || this.unloading) return;
+    if (view.getMode() !== mode) return;
+    const current = this.app.vault.getFileByPath(path);
+    if (!current || current !== file || current.stat.mtime !== mtime || current.stat.size !== size) return;
+    if (view.file !== file || !view.containerEl.isConnected) return;
+    const text = plainCommentText(this.readAloudDocumentText(raw));
+    if (text.trim()) this.readFromEditorView(text, view);
+  }
+
+  /**
+   * Register palette/hotkey commands and the editor context menu for the built-in reader. Whole-note
+   * text is converted only when the action actually runs, never while a context menu opens, so a
+   * right-click on a large note does not parse the document. Both commands work in source and
+   * reading mode; the shell never starts playback before its disclosure and an explicit Play.
+   */
+  private registerReadAloudEntryPoints(): void {
+    this.addCommand({
+      id: "kplex-read-aloud-selection",
+      name: this.translator("speech.readSelection"),
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return false;
+        // Gate on the cheap raw trim; the mode-aware conversion happens once in the execute branch.
+        if (!this.readAloudSelectionText(view).trim()) return false;
+        if (!checking) this.readAloudViewSelection(view);
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "kplex-read-aloud-note",
+      name: this.translator("speech.readDocument"),
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view?.file) return false;
+        if (!checking) void this.readAloudActiveNote(view);
+        return true;
+      },
+    });
+    this.registerEvent(this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
+      if (!(view instanceof MarkdownView)) return;
+      if (editor.somethingSelected()) menu.addItem((item) => item
+        .setTitle(this.translator("speech.readSelection"))
+        .setIcon("volume-2")
+        .onClick(() => this.readAloudEditorSelection(editor, view)));
+      menu.addItem((item) => item
+        .setTitle(this.translator("speech.readDocument"))
+        .setIcon("file-audio")
+        .onClick(() => this.readAloudEditorDocument(editor, view)));
+    }));
   }
 
   ontologyFieldsForRole(role: RelationshipRole): string[] {

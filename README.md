@@ -169,6 +169,18 @@ Select **Editor node** to expand a file or URL inside the central node. Images f
 For Markdown notes in a normal editor node, select **Scale text with canvas zoom** to make text grow or shrink with the graph. Select **Keep text size** to retain the native font size as the frame changes. K-Plex remembers this choice for each note. Fullscreen editors use the native text size.
 
 
+## Read aloud
+
+Use the speaker button on an abstract card, in Paper details, or on a section reading panel to open the built-in reader. Choose **Play**, **Pause / Resume**, or **Stop**; closing the reader stops playback. No additional speech plugin or Python installation is needed.
+
+You can also read Markdown notes from the editor: right-click the editor and choose **Read selection aloud** or **Read entire note aloud**, or run the same commands from the Command Palette and give them hotkeys. Reading a whole note uses the text currently in the editor, including unsaved changes, skips the frontmatter, and works in reading view as well. The reader opens without starting playback; playback begins only after you choose **Play**.
+
+**Edge TTS** is preferred on desktop. Pressing **Play** sends the displayed text to Microsoft's speech service. If Edge TTS cannot connect or play audio, K-Plex continues with your system's speech service. Mobile uses system speech. Available system voices and offline support depend on your device.
+
+Choose **System speech** to use it directly, or set a **Voice language**, under **Settings → K-Plex → Canvas behavior → Read aloud**. Automatic language selection uses the text's script and Obsidian's language; select a language explicitly if pronunciation is incorrect.
+
+In the reader, **Voice and speed** picks the Edge or system voice and adjusts the reading speed (from half to double speed). Your choices are saved automatically and reused the next time.
+
 ## Creating and editing relationships
 
 K-Plex lets you create Parent, Child, Friend, Challenger, Previous and Next relationships directly from the canvas. You can start from a gate, use the Command Palette, or use node/connector context menus.
@@ -295,7 +307,7 @@ A Markdown note can be expanded from the center into its heading hierarchy. This
 - Relationships found inside a section attach to that section. Their nodes show the full note or paper title, wrapping onto more lines when needed, and can be dragged anywhere; each note remembers where you put them (**Move back to its place** in the node's context menu resets one). With paper reading on, hovering one shows its abstract and figures in a card you can pin.
 - YAML/frontmatter and content before the first heading stay attached to the central note.
 - Folded sections project hidden descendant relationships onto the nearest visible section while retaining their original source for explanation.
-- With paper reading on, the abstract card you get by hovering a node gets a speaker button next to **Paper details** that reads the abstract aloud — into the sidecar reader when the Markdown Read Aloud plugin is enabled.
+- With paper reading on, the abstract card you get by hovering a node gets a speaker button next to **Paper details** that reads the abstract aloud in the built-in reader.
 - Section cards are wide enough for their whole heading by default.
 - Use **Fold all sections** and **Unfold all sections** for larger documents.
 
@@ -306,7 +318,7 @@ Each section can show what you marked while reading, right under its heading:
 - **Highlight quotes**: text highlighted with `==text==` or `<mark>` (as written by the [Sidebar Highlights](https://github.com/trevware/obsidian-sidebar-highlights) plugin), in its highlight color, with any comments attached to it. Click a quote to jump to it in the note. PDF highlights made with [PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus) jump to the exact passage in the PDF, opened in the Sidecar. When a highlight wraps an image, or a PDF++ callout marks a page region or quotes an image, the image is shown inside the quote. Paragraph breaks in a quote, such as between an original sentence and its translation, are kept.
 - **Formulas**: LaTeX written between dollar signs is typeset inside quotes and comments, so a highlighted equation reads the way it does in the note.
 - **Figures**: embedded images with their captions (alt text, or a "Figure 1: …" / italic line directly below the image), shown in a panel of their own that branches off the highlights. A rectangular PDF++ annotation is shown as the region of the page it marks. Hover a figure to see it in full; click it, or use the pin button, to keep it open. Pinned figures can be moved and resized.
-- **Read aloud**: with the Markdown Read Aloud plugin enabled, every highlight panel gets a speaker button next to the palette button. It reads the panel's quotes with their comments aloud — a figures panel reads its captions. When the Sidecar companion is open, the reader opens there; otherwise it opens as its own tab.
+- **Read aloud**: every highlight panel gets a speaker button next to the palette button. It reads the panel's quotes with their comments aloud — a figures panel reads its captions — in the built-in reader.
 - Click a panel's header to fold it. Right-click a section or the center note to hide or show all highlights and figures, or only the highlight quotes or only the figures. The same options are under **Settings → Plex behavior → Note sections**.
 - Drag a panel by its header to move it, and drag the bottom-right corner of a section or panel to resize it. Each note remembers where you put things. Use **Move back to its place**, **Reset size**, **Reset panel size** or **Reset all section sizes and positions** in the context menu to go back to the default.
 
@@ -412,7 +424,7 @@ Turn on **Settings → Paper reading → Enable paper reading** to use K-Plex as
 - Right-click a paper node (a note with a DOI or arXiv id, or a doi.org / arxiv.org link) and choose **Paper details…**. Details open in the sidecar beside the Plex.
 - Browse its **References** and **Cited by** lists. Click a paper to read its details in the sidecar, then use **Back** to return.
 - Every paper opens in its **own pane** instead of replacing what you are looking at: an empty sidecar hosts the first paper, a sidecar showing a document (or the reader) keeps it and the paper opens beside it, further papers stack their own panes, and opening the same paper again reuses its existing pane.
-- **Paper details** has a speaker button in its abstract bar that reads the abstract (or the TL;DR) aloud through the Markdown Read Aloud plugin.
+- **Paper details** has a speaker button in its abstract bar that reads the abstract (or the TL;DR) aloud in the built-in reader.
 - Switch abstracts between **Original**, **Bilingual** (sentence by sentence) and translation only, using Google Translate or Bing Translator.
 - **Add to vault** creates a paper note with its metadata and abstract, including for the paper you are viewing; **Link** connects a paper you already have. Cited papers appear above a paper and papers citing it appear below.
 - **Import full text** saves an arXiv article as Markdown (formulas kept, figures optionally downloaded to an images folder), or opens it for Obsidian Web Clipper.

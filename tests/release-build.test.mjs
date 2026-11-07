@@ -19,6 +19,10 @@ test("production artifacts are identical with clean, dirty and absent Git metada
     await mkdir(join(root, "src"));
     await mkdir(join(root, "empty-hooks"));
     await copyFile(new URL("../esbuild.config.mjs", import.meta.url), join(root, "esbuild.config.mjs"));
+    await mkdir(join(root, "docs/licenses"), {recursive: true});
+    for (const name of ["ws-MIT.txt", "edge-tts-LGPL-3.0.txt", "GPL-3.0.txt"]) {
+      await copyFile(new URL(`../docs/licenses/${name}`, import.meta.url), join(root, "docs/licenses", name));
+    }
     await writeFile(join(root, "manifest.json"), JSON.stringify({id: "k-plex", version: "3.2.1"}));
     await writeFile(join(root, "styles.css"), ".test { display: block; }\n");
     await writeFile(join(root, ".gitignore"), "node_modules/\ndist/\n");
@@ -31,6 +35,9 @@ test("production artifacts are identical with clean, dirty and absent Git metada
     run(root, process.execPath, ["esbuild.config.mjs", "production"]);
     const clean = await readFile(join(root, "dist/main.js"));
     assert.match(clean.toString(), /3\.2\.1/);
+    for (const name of ["ws-MIT.txt", "edge-tts-LGPL-3.0.txt", "GPL-3.0.txt"]) {
+      assert(clean.toString().includes(await readFile(join(root, "docs/licenses", name), "utf8")), `${name} must ship in the normal plugin bundle`);
+    }
     assert.doesNotMatch(clean.toString(), /source-archive|\.dirty|createElement\(["']script["']\)/);
     assert.match(clean.toString(), /createElement\("template"\)/, "Reproducibility must preserve React script hardening");
     await writeFile(join(root, "untracked.txt"), "Unrelated checkout change\n");
