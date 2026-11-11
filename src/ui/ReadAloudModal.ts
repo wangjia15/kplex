@@ -3,7 +3,8 @@
  * Play follows the engine disclosure; close, replacement, popout teardown and unload cancel playback.
  * The retained class name preserves the plugin's existing reader entry point without a modal overlay.
  */
-import { ButtonComponent, Notice, Platform, Setting, type App, type DropdownComponent } from "obsidian";
+import { ButtonComponent, Notice, Platform, type App, type DropdownComponent } from "obsidian";
+import { FormSetting } from "../adapters/obsidian/KplexModal";
 import type { PlainTranslationKey, Translator } from "../lang";
 import { browserReadAloudHost, ReadAloudPlayer, speechLanguage, speechParagraphs, type ReadAloudPreferences, type ReadAloudState } from "../readAloud";
 import { EDGE_READ_ALOUD_VOICES, READ_ALOUD_LANGUAGES, sanitizeReadAloudRate } from "../readAloudPreferences";
@@ -152,16 +153,16 @@ export class ReadAloudModal {
   /** Mount native engine/language/voice selects and the shared bounded, permanently labelled rate slider. */
   private mountSettings(container: HTMLElement): void {
     const t = this.translate;
-    new Setting(container).setName(t("speech.engine")).addDropdown(/** Mobile has no Edge transport. */ control => {
+    new FormSetting(container).setName(t("speech.engine")).addDropdown(/** Mobile has no Edge transport. */ control => {
       if (Platform.isDesktop) control.addOption("edge", t("speech.edge"));
       control.addOption("system", t("speech.system")).setValue(this.preferences.readAloudEngine)
         .onChange(/** An engine switch stops playback until Play follows the updated disclosure. */ value => { void this.changePreferences({ readAloudEngine: value === "edge" ? "edge" : "system" }); });
     });
-    new Setting(container).setName(t("speech.language")).addDropdown(/** Reuse the finite persisted language inventory. */ control => {
+    new FormSetting(container).setName(t("speech.language")).addDropdown(/** Reuse the finite persisted language inventory. */ control => {
       for (const language of READ_ALOUD_LANGUAGES) control.addOption(language, language === "auto" ? t("speech.auto") : language);
       control.setValue(this.preferences.readAloudLanguage).onChange(/** Apply the chosen language from the current paragraph. */ value => { void this.changePreferences({ readAloudLanguage: value }); });
     });
-    if (Platform.isDesktop) new Setting(container).setName(t("speech.voice")).addDropdown(/** Voice IDs are protocol data, never arbitrary SSML. */ control => {
+    if (Platform.isDesktop) new FormSetting(container).setName(t("speech.voice")).addDropdown(/** Voice IDs are protocol data, never arbitrary SSML. */ control => {
       control.addOption("auto", t("speech.auto"));
       for (const voice of EDGE_READ_ALOUD_VOICES) control.addOption(voice.id, `${voice.displayName} · ${voice.locale}`);
       control.setValue(this.preferences.readAloudEdgeVoice ?? "auto").onChange(/** A selected timbre applies at the current paragraph boundary. */ value => { void this.changePreferences({ readAloudEdgeVoice: value }); });
@@ -184,7 +185,7 @@ export class ReadAloudModal {
       if (selected !== "auto" && !options.has(selected)) systemControl.addOption(selected, selected);
       systemControl.setValue(selected);
     };
-    new Setting(container).setName(t("speech.systemVoice")).addDropdown(/** Only this device's installed voices are enumerated. */ control => {
+    new FormSetting(container).setName(t("speech.systemVoice")).addDropdown(/** Only this device's installed voices are enumerated. */ control => {
       systemControl = control;
       refreshVoices();
       control.onChange(/** Local voice selection also applies to Edge fallback. */ value => { void this.changePreferences({ readAloudSystemVoice: value }); });
@@ -192,7 +193,7 @@ export class ReadAloudModal {
     const speech = window.speechSynthesis;
     speech?.addEventListener("voiceschanged", refreshVoices);
     this.voicesCleanup = /** Remove the exact native inventory listener on retirement. */ () => speech?.removeEventListener("voiceschanged", refreshVoices);
-    const slider = numberSlider(new Setting(container).setName(t("speech.rate")), {
+    const slider = numberSlider(new FormSetting(container).setName(t("speech.rate")), {
       label: t("speech.rate"), value: sanitizeReadAloudRate(this.preferences.readAloudRate), min: 0.5, max: 2, step: 0.05,
       format: /** Keep the multiplier visible beside the native control. */ value => `${value.toFixed(2)}×`,
       isCurrent: /** Retained events cannot persist settings after close. */ () => !this.retired,

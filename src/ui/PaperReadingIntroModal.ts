@@ -1,11 +1,12 @@
-import { Modal, Setting, type App } from "obsidian";
+import type { App } from "obsidian";
+import { KplexModal, formActions } from "../adapters/obsidian/KplexModal";
 import { createObsidianTranslator } from "../adapters/obsidian/localization";
 
 /**
  * One-time explanation shown when paper reading mode is first enabled. It lists the external
  * services involved and the property K-Plex will use, and resolves with the user's decision.
  */
-export class PaperReadingIntroModal extends Modal {
+export class PaperReadingIntroModal extends KplexModal {
   private readonly translate = createObsidianTranslator();
   private decided = false;
 
@@ -25,7 +26,7 @@ export class PaperReadingIntroModal extends Modal {
     contentEl.createEl("p", {
       text: this.translate("paper.intro.property", { field: this.referenceField }),
     });
-    new Setting(contentEl)
+    formActions(contentEl)
       .addButton((button) => button.setButtonText(this.translate("paper.intro.cancel")).onClick(() => this.finish(false)))
       .addButton((button) => button.setButtonText(this.translate("paper.intro.enable")).setCta().onClick(() => this.finish(true)));
   }

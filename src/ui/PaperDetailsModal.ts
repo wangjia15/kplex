@@ -1,10 +1,10 @@
-import { Modal } from "obsidian";
+import { KplexModal } from "../adapters/obsidian/KplexModal";
 import type KplexPlugin from "../main";
 import type { GraphPage } from "../types";
 import { PaperDetailsPanel, type PaperTarget } from "./PaperDetailsPanel";
 
 /** Dialog host for Paper details, used when no K-Plex sidecar is available. */
-export class PaperDetailsModal extends Modal {
+export class PaperDetailsModal extends KplexModal {
   private panel: PaperDetailsPanel | null = null;
 
   constructor(
