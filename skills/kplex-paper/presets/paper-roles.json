@@ -1,0 +1,32 @@
+{
+  "format": "kplex-preset",
+  "version": 1,
+  "kind": "facets",
+  "id": "kplex-paper-roles",
+  "aiContext": "Data-only Paper role property preset. Uses the canonical K-Plex portable package validator. No fallback from Note type; missing roles stay unassigned and multiple role categories conflict. Import does not activate a view or modify notes or ontology.",
+  "preset": {
+    "version": 1,
+    "name": "Paper roles 论文角色",
+    "source": "property",
+    "field": "Paper role",
+    "order": ["method", "theory", "benchmark", "dataset", "survey", "application"],
+    "start": "method",
+    "spacing": 56,
+    "regionWidth": 320,
+    "regionHeight": 280,
+    "guides": false,
+    "tints": true,
+    "conflictingColor": {"kind": "theme", "variable": "--color-orange"},
+    "unassignedColor": {"kind": "theme", "variable": "--background-secondary"},
+    "helpSourceLocale": "zh-CN",
+    "helpMarkdown": "# 论文角色\n\n按 Paper role 属性整理当前 Plex 的论文。六个类别：method/方法、theory/理论、benchmark/基准、dataset/数据集、survey/综述、application/应用。英文和中文值均可识别，匹配区分大小写，忽略首尾空白。\n\n示例 YAML：\n```yaml\nPaper role: method\n```\n\n导入后在 Facets 中选择本预设。角色按论文主要贡献人工核实；分类不代表引用方向或论文质量。缺失或未知角色进入 Unassigned；两个类别的数组值进入 Conflicting；元数据不可用保持 Checking 或 Cannot classify，不自动归 application。\n\n原生属性分配预览使用规范英文值，确认后才写入；导入本身不会修改笔记、ontology 或启用视图。仅分类当前 Plex 候选，不扫描整库，不用 Note type 作为兜底。",
+    "categories": {
+      "method": {"label": "Method 方法", "color": {"kind": "theme", "variable": "--color-blue"}, "values": ["method", "方法"], "assignment": "method"},
+      "theory": {"label": "Theory 理论", "color": {"kind": "theme", "variable": "--color-purple"}, "values": ["theory", "理论"], "assignment": "theory"},
+      "benchmark": {"label": "Benchmark 基准", "color": {"kind": "theme", "variable": "--color-green"}, "values": ["benchmark", "基准"], "assignment": "benchmark"},
+      "dataset": {"label": "Dataset 数据集", "color": {"kind": "theme", "variable": "--color-cyan"}, "values": ["dataset", "数据集"], "assignment": "dataset"},
+      "survey": {"label": "Survey 综述", "color": {"kind": "theme", "variable": "--color-yellow"}, "values": ["survey", "综述"], "assignment": "survey"},
+      "application": {"label": "Application 应用", "color": {"kind": "theme", "variable": "--color-red"}, "values": ["application", "应用"], "assignment": "application"}
+    }
+  }
+}

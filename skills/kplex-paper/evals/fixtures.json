@@ -1,0 +1,34 @@
+{
+  "notice": "Synthetic contract fixtures only. No real paper, image file, vault or author claim is represented. The section image paths deliberately exercise parsing without filesystem resolution. The metadata-only record has no invented identifiers or abstract.",
+  "metadataOnly": {
+    "record": {
+      "ids": [],
+      "title": "Synthetic title-only reference for testing",
+      "authors": [],
+      "year": null,
+      "venue": "",
+      "abstract": "",
+      "tldr": "",
+      "url": "",
+      "pdfUrl": "",
+      "citationCount": null
+    }
+  },
+  "customOntology": {
+    "styleField": "文献类型",
+    "paperReferenceField": "引用文献",
+    "hierarchy": {"parents": ["引用文献", "基础"], "children": ["后续"], "leftFriends": ["同路"], "rightFriends": ["反证"]},
+    "expected": "Use configured fields; do not create default Parents/Friends/Children or edit ontology; one explicit graph role per pair."
+  },
+  "rerun": {
+    "existing": {
+      "title": "Reader-curated title",
+      "aliases": ["Reader alias"],
+      "DOI": "10.1000/existing",
+      "custom-reader-field": "preserve",
+      "同路": ["[[Existing baseline]]"]
+    },
+    "expected": "Reuse the known file, preserve user metadata and text, add no duplicate abstract section or reciprocal Children."
+  },
+  "sectionMarkdown": "## Synthetic method\n\n==Synthetic quoted passage.==^[读者评论：仅用于语法验证]\nSource: synthetic fixture, no actual paper.\n\n![[fixture/fig-1.png]]\n*Figure 1: Synthetic caption for parser testing.*\n\n![[fixture/table-1.png]]\n*Table 1: Synthetic table caption.*\n\n```mermaid\nmindmap\n  root((Synthetic))\n```\n"
+}

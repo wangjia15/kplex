@@ -1,0 +1,42 @@
+{
+  "skill_name": "kplex-paper",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "用 K-Plex 读我提供的全文 PDF 和 References 清单。测试环境使用 fixtures.json 的 customOntology：文献类型、引用文献、基础、同路、反证。请先用已有 vault/config，主笔记逐节解释方法和实验，嵌入实际图表并说明；清点所有被引文献，为每篇被引论文建立独立摘要笔记，其中最关键几篇补充详解，使用原生 Mind Map、Section 和 Facets。不改我的设置。",
+      "expected_output": "Discovers configured vault and custom ontology; detailed sourced reading and real figure/table inventory; complete citation inventory separate from key-reference deep treatment; no competing explicit roles per new pair; native feature instructions reflect prerequisites.",
+      "files": ["evals/fixtures.json"],
+      "assertions": [
+        "Uses 文献类型 and 引用文献 where configured and does not silently edit settings or add default ontology fields.",
+        "Creates or reuses a separate note for each referenced paper, distinguishes acquired abstracts from metadata-only stubs, and identifies key references for deeper interpretation without recursive citation expansion.",
+        "Each embedded original figure/table has a verified caption, page/source and separate reader interpretation; omissions are explicit.",
+        "Does not add both References-equivalent parent and 同路/反证 roles to the same new pair or batch reciprocal Children.",
+        "Explains native Mind Map and Section/pinned figure cards separately from Mermaid, Pins and pinned note leaves."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "用 K-Plex 整理一个旧会议论文。现在只有题名和一段我粘贴的真实摘要，没有 DOI/arXiv，网页和 PDF 都打不开。目标 vault 已指定。请尽量完成笔记，不要编造元数据或图表，也别把任务全部停住。可参考 fixtures.json 的 metadataOnly 缺失字段情形。",
+      "expected_output": "Produces an explicitly abstract-only note and translation from the supplied abstract; omits unverified identifiers and bibliometrics, records provenance, leaves unavailable full-text, figures and references work incomplete with reasons.",
+      "files": ["evals/fixtures.json"],
+      "assertions": [
+        "Omits unknown DOI/arXiv/year/citation count rather than requiring or synthesizing them.",
+        "Labels the note abstract-only and does not invent methods, experiments, captions, reference list or figures.",
+        "Preserves original abstract and distinguishes its translation from the reader's TL;DR.",
+        "Reports missing full-text work and does not claim native UI or speech acceptance."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "昨天已经导入这篇论文，今天继续用 kplex-paper 完善。我把标题、别名和评论改过，还加了自定义字段及 同路 关系；相同 arXiv URL 今天带 v7。请复用原笔记、补缺失摘要和图表，再运行一次检查是否重复。已有字段示意见 fixtures.json 的 rerun；不得删除我的内容或批量反写 Children。",
+      "expected_output": "Resolves canonical identifier to existing note, preserves user edits and existing roles, merges owned missing content/assets by stable identity; second pass has no duplicate notes, headings, references or images; conflicts reported instead of silently rewritten.",
+      "files": ["evals/fixtures.json"],
+      "assertions": [
+        "Normalizes versioned arXiv identity and reuses the existing file instead of creating a (2) copy.",
+        "Preserves user title, aliases, unknown frontmatter, comments and existing ontology.",
+        "Checks unchanged input on second pass and adds no duplicate abstract sections, citation relationships or figure assets.",
+        "Reports identity/role conflicts, and re-reads files changed during processing before merging."
+      ]
+    }
+  ]
+}
