@@ -1,6 +1,7 @@
 /** Detached native preset draft. Categories retain stable IDs through rename/reorder; source
  * values, assignment and colors are explicit. Save commits one atomic entry through the host. */
-import {Setting, type App, type ButtonComponent} from "obsidian";
+import {FormSetting as Setting, formActions, formOptionGroup} from "../../../adapters/obsidian/KplexModal";
+import {type App, type ButtonComponent} from "obsidian";
 import {StyleEditorModal, labelIconButton} from "../../StyleEditorModal";
 import {StyleColorControls} from "../../StyleColorControls";
 import type {CanvasViewManagerContext} from "../managerContracts";
@@ -51,9 +52,9 @@ export class FacetPresetEditor extends StyleEditorModal {
     this.beginEditor(this.options.colors.sourceScope, this.options.colors.bindEditor);const t = this.translate;
     this.modalEl.addClass("kplex-facet-preset-editor");
     this.titleEl.setText(t(this.existing ? "facets.edit" : "facets.create"));
-    const {body, actions} = this.scrollableContent();this.body = body;
+    const {body, actions} = this.scrollableContent();this.body = body;formOptionGroup(body);
     this.validation = actions.createDiv({cls: "setting-item-description", attr: {role: "status", "aria-live": "polite"}});
-    const row = new Setting(actions);row.settingEl.addClass("kplex-modal-action-row");
+    const row = formActions(actions);row.settingEl.addClass("kplex-modal-action-row");
     if (this.options.sharing) for (const action of ["copy", "download"] as const) row.addButton(/** Export the visible unsaved draft without committing it. */ button => {
       labelIconButton(button.buttonEl, t(action === "copy" ? "sharing.copyJson" : "sharing.download"), action === "copy" ? "copy" : "download");
       button.onClick(/** Shared canonical export and transfer owners handle the requested gesture. */ () => this.exportDraft(action));
@@ -102,6 +103,12 @@ export class FacetPresetEditor extends StyleEditorModal {
     renderFacetLayoutSettings(body, /** Keep sibling settings current through structural rerenders. */ () => this.draft, /** Only this detached preset's structure changes. */ preset => {
       if (!this.canEdit()) return;this.draft = preset;this.render();
     }, t);
+    for (const [field, label, help] of [["focusInCategory", "facets.focusInCategory", "facets.focusInCategoryHelp"],
+      ["centerAnchoredLinks", "facets.centerAnchoredLinks", "facets.centerAnchoredLinksHelp"]] as const)
+      new Setting(body).setName(t(label)).setDesc(t(help)).addToggle(/** Optional values stay inside the captured detached preset. */ input => input
+        .setValue(this.draft[field] === true).onChange(/** Save/Cancel/stale-entry guards are shared with every other preset field. */ value => {
+          if (this.canEdit() && this.owner()) {this.draft = {...this.draft, [field]: value};this.validate();}
+        }));
     new Setting(body).setName(t("facets.start")).addDropdown(input => input.addOptions(Object.fromEntries(this.draft.order.map(id => [id, canvasViewText(facetCategoryLabel(this.draft.categories[id], id), t)])))
       .setValue(this.draft.start).onChange(start => {this.draft = {...this.draft, start};this.render();}));
     for (const [field, label, minimum, maximum, step] of [["spacing", "wuxing.spacing", 24, 200, 8],

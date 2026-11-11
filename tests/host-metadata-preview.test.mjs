@@ -195,6 +195,36 @@ test("startup availability retains native file/folder events and late metadata t
 });
 
 /** Early Find and tag navigation use only already-loaded host metadata while semantic startup is held. */
+for (const change of ['unrelated','membership','metadata','membership-aba']) test(`tag preview closes local publication inputs (${change})`, async () => {
+ const f=fixture(),originalWindow=globalThis.window;
+ globalThis.window={performance,setTimeout,clearTimeout,setInterval,clearInterval};
+ Object.assign(f.app.vault,{getName:()=> 'tag-local-observation',getAllLoadedFiles:()=>[...f.files.values()]});
+ const config={...settings,indexingMode:'eager',pinnedNodes:[],lastActivePath:'tag:project',nameFields:'aliases',renderAlias:false,nodeTitleScript:'',excludeFilepaths:[],showFolderNodes:true,showTagNodes:true,showPageNodes:true,showAttachments:true,showVirtualNodes:true,showURLNodes:true,showInferredNodes:true,maxItemCount:100};
+ const index=new GraphIndex({app:f.app,settings:config,getIndexSourceRevision:()=>0},f.app,true);
+ try {
+  index.preparationDeferred=false;await index.primePhysicalSearchCatalog();
+  const build=index.hostPreview.build.bind(index.hostPreview);
+  const revision=index.hostPreview.tagObservationRevision('tag:project');
+  index.hostPreview.build=async(...args)=>{
+   const result=await build(...args);index.publicationRevision++;
+   if(change==='unrelated')index.hostPreview.refreshSource('Notes/Ordinary.md');
+   if(change==='metadata')f.cache.set(f.centerPath,{...f.cache.get(f.centerPath)});
+   if(change==='membership'||change==='membership-aba'){
+    f.cache.get(f.centerPath).tags=[];index.hostPreview.refreshSource(f.centerPath);
+    assert.equal(index.hostPreview.tagRevisions.has('tag:project'),false,'Removed tag tokens must not accumulate');
+    if(change==='membership-aba'){
+     f.cache.get(f.centerPath).tags=[{tag:'#project/nested'}];index.hostPreview.refreshSource(f.centerPath);
+     assert.notEqual(index.hostPreview.tagObservationRevision('tag:project'),revision,'A recreated tag cannot revive an old token');
+    }
+   }
+   return result;
+  };
+  await index.publishHostMetadataPreview('tag:project');
+  assert.equal(Boolean(index.getNeighborhood('tag:project')?.children.some(item=>item.page.path==='tag:project/nested')),change==='unrelated','Only unchanged selected tag inputs may publish');
+  assert.equal(index.state.pages.size,0,'Tag reads cannot certify the global graph');
+ } finally {index.destroy();f.preview.dispose();globalThis.window=originalWindow;}
+});
+
 test("early host Find discovers tags and empty folders, and selected tag children update without semantic indexing", async () => {
   const f = fixture(), originalWindow = globalThis.window;
   globalThis.window = { performance, setTimeout, clearTimeout, setInterval, clearInterval };
@@ -1216,5 +1246,30 @@ test('bounded placeholder preview survives release of its original native center
   assert.equal(index.state.pages.size,0,'A provisional preview does not publish global authority');
   assert.equal(await f.preview.build('Unknown'),null,'An arbitrary missing identity is not fabricated');
   releaseNew();assert.equal(index.get(placeholder),undefined,'Releasing the last owner retires the preview');
+ }finally{index.destroy();f.preview.dispose();globalThis.window=originalWindow}
+});
+
+/** A foreground owner must retain surviving inbound evidence when its center is deleted. */
+test('deletion dematerializes prepared centers without disconnecting their surviving parent',async()=>{
+ const f=fixture(),originalWindow=globalThis.window;
+ globalThis.window={performance,setTimeout,clearTimeout,setInterval,clearInterval};
+ f.app.vault.getName=()=> 'prepared-center-deletion';
+ const plugin={settings:{...settings,excludeFilepaths:[],showVirtualNodes:true},getIndexSourceRevision:()=>0};
+ const index=new GraphIndex(plugin,f.app);index.scheduleSnapshotPersist=()=>{};
+ try{
+  const path='Notes/Child.md';
+  const canonical=await f.preview.build(f.centerPath),prepared=await f.preview.build(path);
+  assert(canonical&&prepared);index.state=canonical.state;
+  const center=prepared.state.pages.get(path);
+  assert(center.neighbours.has(f.centerPath),'Prepared child starts with its incoming parent');
+  index.semanticScopes.set(path,{centerPath:path,policyRevision:index.semanticPolicyRevision,
+   maintenanceRevision:index.sourceAcquisition.getMaintenanceRevision(),sourceRevision:0,
+   completePaths:new Set([path]),pagesByPath:prepared.state.pages,suppressedPaths:new Set(),
+   settings:prepared.settings,evidence:prepared.state.evidence,coverageSignature:index.semanticCoverageSignature()});
+  f.files.delete(path);index.dematerializeFile(path);
+  assert.equal(center.file,null,'The already published center becomes a placeholder');
+  assert(center.neighbours.has(f.centerPath),'Surviving incoming declaration stays visible from the deleted center');
+  assert(prepared.state.pages.get(f.centerPath).neighbours.has(path),'The same declaration stays visible from its parent');
+  assert.equal(prepared.state.evidence.declarationsTouching(path).some(item=>item.declaredByPath===path),false,'Deleted owner declarations are removed');
  }finally{index.destroy();f.preview.dispose();globalThis.window=originalWindow}
 });

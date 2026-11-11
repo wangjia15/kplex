@@ -17,9 +17,9 @@
  * only storage port can release them after a failed/closed normal connection, without new authority.
  * Clean dependency checks select the owner/journal and durable head in one readonly transaction;
  * overlays and exceptional heads retain ordinary inspection, and repair writes require a reread.
- * Restart comparison may return that clean head as a call-local observation; its later protected
- * metadata pin and original-connection retirement match the same revision/sequence. An observation
- * never replaces family protection, and final matching adds no separate transaction or coordinator.
+ * Restart comparison may atomically copy one bounded current metadata chunk and its complete
+ * posting page with that exact head, authenticate privately, then close the revision/sequence fence.
+ * Dense/legacy metadata retains normal persistent leases and original-connection retirement.
  * Ordinary replacements may preserve selected dependency counts only after bounded old-row/ledger
  * authentication, recomputed projection equality and a final activation fence. Their inactive
  * rows use the existing durable private reclaim owner; source facts and primary journals still advance.
@@ -54,7 +54,7 @@ import {
   SOURCE_BODY_PARSER_VERSION, SOURCE_CHUNK_TARGET_BYTES, SOURCE_DECODE_BUDGET_BYTES, SOURCE_FACT_COMPILER_VERSION,
   SOURCE_FACT_FORMAT_VERSION, SOURCE_FAMILIES, SOURCE_FLUSH_INTERVAL_MS, SOURCE_MAX_BATCH_RECORDS,
   SOURCE_MAX_RECORD_BYTES, SOURCE_REASONS, SOURCE_RESOLUTION_VERSION, SourceBodyDecoder, SourceFactError,
-  SourceFrameValidator, decodeSourceHead, legacyPrimaryGrammarCandidate, sourceCount, sourceHeadReason, sourceObject,
+  SourceFrameValidator, decodeSourceHead, decodeSourceRetirementHead, legacyPrimaryGrammarCandidate, sourceCount, sourceHeadReason, sourceObject,
   sourcePostingKeys, validSourceChunk, validSourcePhysical, validSourcePosting,
   type SourceChunk, type SourceFamily, type SourceFamilyManifest, type SourceHead, type SourceManifest,
   type SourceObservation, type SourcePhysical, type SourcePosting, type SourcePostingKind, type SourceReason,
@@ -84,6 +84,10 @@ export const SOURCE_FAMILY_INDEX = "sourceFamilyRevision";
 export const SOURCE_LOOKUP_INDEX = "lookup";
 export const SOURCE_LEASE_INDEX = "sourceLease";
 const META_STORE = "meta";
+const HOST_OBSERVATION_PREFIX = "source-host-observation:";
+/** Local cached-host equality, tied to an exact source activation; never source-family authority. */
+export type SourceHostObservation = Readonly<{sourceId: string; sourceRevision: string; sequence: number; digest: string}>;
+type SourceHostObservationReceipt = SourceHostObservation & Readonly<{order: number; markdownOrder: number}>;
 const SOURCE_SEQUENCE_KEY = "source-sequence";
 const MAX_UNSAVED_BYTES = 16 * 1024 * 1024;
 const MAX_WRITERS = 2;
@@ -144,6 +148,7 @@ export type SourceReplacement = Readonly<{
   sourceId: string;
   physical: SourcePhysical;
   observation: SourceObservation;
+  hostObservationDigest?: string;
   /** Grammar of the supplied/retained parser body; compatibility never restamps old URL inputs. */
   bodyParserVersion?: number;
   /** Optional alias maintenance alone may retain a proven identical authenticated primary selection. */
@@ -224,6 +229,7 @@ type SourceView = {
   release?: Promise<void>;
   releaseSelection?: { expected: SourceHeadExpectation; reason: SourceReason };
   prepared?: Readonly<{ family: SourceFamily; chunk: PrefetchedSourceChunk }>;
+  copiedMetadata?: boolean;
 };
 type MemorySource = {
   head: SourceManifest;
@@ -246,6 +252,7 @@ type PrefetchedSourceChunk = Readonly<{
   raw: unknown;
   decoded?: readonly StoredSourceFact[];
   firstPostings?: unknown[];
+  complete?: boolean;
   release?: () => void;
 }>;
 /** A write-local streamed equality receipt, never persisted or shared as source authority. */
@@ -286,6 +293,8 @@ export type SourceRepositoryDiagnostics = {
   sequenceMax: number;
   peakDecodeBytes: number;
   lastReason: SourceReason;
+  /** Successful later reads/activations must not erase the last fixed reader-failure category. */
+  lastReadFailure: SourceReason | null;
   familyFailures: Record<SourceFamily, number>;
 };
 /** Sanitize reports independently of private state; extra fields and arbitrary reasons disappear. */
@@ -296,7 +305,7 @@ export function sanitizeSourceRepositoryDiagnostics(value: unknown): SourceRepos
     factCompilerVersion: SOURCE_FACT_COMPILER_VERSION, bodyParserVersion: SOURCE_BODY_PARSER_VERSION,
     resolutionVersion: SOURCE_RESOLUTION_VERSION, storage: "unchecked", activated: 0, unsaved: 0,
     empty: 0, chunksWritten: 0, bytesWritten: 0, familiesReused: 0, readFailures: 0,
-    sequenceMin: 0, sequenceMax: 0, peakDecodeBytes: 0, lastReason: "missing",
+    sequenceMin: 0, sequenceMax: 0, peakDecodeBytes: 0, lastReason: "missing", lastReadFailure: null,
     familyFailures: { values: 0, "body-urls": 0, metadata: 0, resolution: 0 },
   };
   if (input.storage === "available" || input.storage === "unavailable") result.storage = input.storage;
@@ -305,6 +314,7 @@ export function sanitizeSourceRepositoryDiagnostics(value: unknown): SourceRepos
   }
   const reason = SOURCE_REASONS.find((reason) => reason === input.lastReason);
   if (reason) result.lastReason = reason;
+  result.lastReadFailure = SOURCE_REASONS.find(reason => reason === input.lastReadFailure) ?? null;
   if (sourceObject(input.familyFailures)) {
     for (const family of SOURCE_FAMILIES) if (sourceCount(input.familyFailures[family])) result.familyFailures[family] = input.familyFailures[family];
   }
@@ -375,6 +385,10 @@ function* postingBatches(sourceId: string, revision: string, family: SourceFamil
 /** Repository-owned receipt for one existing all-owner inventory pass; no source facts are retained. */
 export type SourceLocalInventoryProjection = Readonly<{ ownerVersion: typeof SOURCE_LOCAL_DEPENDENCY_VERSION }>;
 
+/** One copied head/owner observation may bridge the inventory's adjacent inspect/ensure calls.
+ * It is single-use and never replaces the projection's final durable sequence fence. */
+type LocalInventorySelection = Readonly<{sourceId: string; selected: LocalDependencySelection; activationRevision: number}>;
+
 /**
  * Settings-neutral source store with at most two active source lanes and one replaceable pending
  * writer per lane. Callers producing multiple files await each result; excess independent writers
@@ -382,7 +396,7 @@ export type SourceLocalInventoryProjection = Readonly<{ ownerVersion: typeof SOU
  */
 export class NeutralSourceRepository {
   private closed = false;
-  private readonly localInventoryProjections = new WeakMap<SourceLocalInventoryProjection, { total: number; next: number; sequence: number; activations: number; current: () => boolean }>();
+  private readonly localInventoryProjections = new WeakMap<SourceLocalInventoryProjection, { total: number; next: number; sequence: number; activations: number; current: () => boolean; selection?: LocalInventorySelection }>();
   private owner = "";
   private ticket = 0;
   private readonly lanes = new Map<string, SourceWriteLane>();
@@ -399,6 +413,8 @@ export class NeutralSourceRepository {
   private deleteTask: Promise<SourceWriteResult> | null = null;
   private readonly knownHeads = new Map<string, number>();
   private sourceActivationRevision = 0;
+  /** Retire explicit posting cursors when unsaved/masked source ownership changes. */
+  private sourcePostingEpoch = 0;
   private memoryBytes = 0;
   private retryTimer: number | null = null;
   private retryFailures = 0;
@@ -935,6 +951,7 @@ export class NeutralSourceRepository {
   /** Record only finite family/reason counters; corruption never clears another source's head. */
   private fail(reason: SourceReason, family?: SourceFamily): SourceReason {
     this.diagnostics.lastReason = reason;
+    this.diagnostics.lastReadFailure = reason;
     this.diagnostics.readFailures += 1;
     if (family) this.diagnostics.familyFailures[family] += 1;
     return reason;
@@ -1013,7 +1030,7 @@ export class NeutralSourceRepository {
    * transaction. Its decode reservation belongs to the registered view before commit completion.
    */
   private async pin(sourceId: string, includeTombstone = false, deletion?: PendingSourceDeletion, leaseFamilies = true, current: () => boolean = () => true,
-    prepareMetadata = false): Promise<{ view: SourceView | null; expected: SourceHeadExpectation; reason: SourceReason }> {
+    prepareMetadata = false,acceptHead?:(head:SourceManifest)=>boolean): Promise<{ view: SourceView | null; expected: SourceHeadExpectation; reason: SourceReason }> {
     /** Match this request by identity after every asynchronous boundary; retention is not authority. */
     const deleting = (): boolean => deletion !== undefined && this.pendingDeletes.get(sourceId) === deletion
       && deletion.current() && !this.closed;
@@ -1024,6 +1041,7 @@ export class NeutralSourceRepository {
     if (memory && (includeTombstone || memory.head.state !== "tombstone")) {
       const reason = sourceHeadReason({ ...memory.head, sequence: 1 });
       if (reason !== "ready" && !(includeTombstone && reason === "tombstone")) return { view: null, expected: memory.expected, reason };
+      if(acceptHead&&!acceptHead(memory.head))return {view:null,expected:memory.expected,reason:'decode-budget'};
       const view: SourceView = { head: memory.head, sequence: null, saved: false, expected: memory.expected, leases: [], memory };
       if (legacyPrimaryGrammarCandidate(view.head)) {
         const validated = await this.visitFamily(view, "body-urls", /** Authenticate the primary grammar family without publishing facts. */
@@ -1051,8 +1069,10 @@ export class NeutralSourceRepository {
         if (deletion && !deleting()) throw new SourceFactError("cancelled");
         const raw = await unknownValue(transaction.objectStore(SOURCE_HEAD_STORE).get(sourceId));
         if (deletion && !deleting()) throw new SourceFactError("cancelled");
-        const expected = expectation(raw); const reason = sourceHeadReason(raw); const head = decodeSourceHead(raw);
+        const expected = expectation(raw); const reason = sourceHeadReason(raw);
+        const head = decodeSourceHead(raw) ?? (deletion ? decodeSourceRetirementHead(raw) : null);
         if (!head || head.sourceId !== sourceId || head.state === "tombstone" && !includeTombstone) return { view: null, expected, reason: head?.sourceId !== sourceId && head ? "invalid-head" as const : reason };
+        if(acceptHead&&!acceptHead(head))return {view:null,expected,reason:'decode-budget' as const};
         const leases: string[] = [];
         for (const revision of leaseFamilies ? new Set(Object.values(head.families).map((family) => family.revision)) : []) {
           const lease: SourceLease = { key: `source-lease:${this.runtime.uniqueId()}`, sourceId, revision, owner: this.owner };
@@ -1078,7 +1098,7 @@ export class NeutralSourceRepository {
       }
       if (selected.view && legacyPrimaryGrammarCandidate(selected.view.head)) {
         // A head-only candidate must acquire the same immutable family lease before authentication.
-        if (!leaseFamilies) return this.pin(sourceId, includeTombstone, deletion, true, current);
+        if (!leaseFamilies) return this.pin(sourceId, includeTombstone, deletion, true, current,false,acceptHead);
         const validated = await this.visitFamily(selected.view, "body-urls", /** Validate actual primary URL facts/digests/postings without changing stored bytes. */
           () => true, current);
         if (validated !== "ready") {
@@ -1245,11 +1265,19 @@ export class NeutralSourceRepository {
    * Read any required families under ONE selected head/pin. Every callback is private and fenced;
    * family failure poisons the result even if a consumer ignores its visit return. Head/host checks
    * occur before work, between families and after work. Pins are released on every terminal path.
+   * An optional family budget rejects exceptional manifests and legacy compatibility work before
+   * leases or decoding; existing readers retain their unchanged compatibility path by default.
    */
   async readSelected<T>(sourceId: string, matches: (stamp: SelectedSourceStamp) => SourceReason,
-    work: (reader: SelectedSourceReader) => Promise<T>, current: () => boolean = () => true): Promise<SelectedSourceResult<T>> {
+    work: (reader: SelectedSourceReader) => Promise<T>, current: () => boolean = () => true,
+    budget?:Readonly<{family:SourceFamily;records:number;bytes:number;chunks:number;allowLegacyGrammar?:boolean}>): Promise<SelectedSourceResult<T>> {
     if (this.closed || !current()) return selectedSourceFailure("cancelled");
-    const pinned = await this.pin(sourceId, false, undefined, true, current);
+    const pinned = await this.pin(sourceId, false, undefined, true, current,false,budget?
+      /** Reject exceptional/legacy facts from the manifest before pinning or decoding any family. */ head=>{
+        const family=head.families[budget.family];
+        return (budget.allowLegacyGrammar===true||!legacyPrimaryGrammarCandidate(head))
+          &&!!family&&family.records<=budget.records&&family.bytes<=budget.bytes&&family.chunks<=budget.chunks;
+      }:undefined);
     if (!pinned.view) return selectedSourceFailure(this.closed || !current() ? "cancelled" : pinned.reason);
     const view = pinned.view;
     const stamp: SelectedSourceStamp = { head: view.head, sequence: view.sequence, saved: view.saved };
@@ -1361,7 +1389,7 @@ export class NeutralSourceRepository {
    * @throws Request/cancellation/decode failures after releasing any private reservation.
    */
   private async readSingleFamilyChunk(transaction: IDBTransaction, view: SourceView, family: SourceFamily,
-    manifest: SourceFamilyManifest, current: () => boolean, boundedPreview = false): Promise<PrefetchedSourceChunk> {
+    manifest: SourceFamilyManifest, current: () => boolean, boundedPreview = false, completePreview = false): Promise<PrefetchedSourceChunk> {
     let release: (() => void) | undefined;
     try {
       const raw = await unknownValue(transaction.objectStore(SOURCE_CHUNK_STORE).get([view.head.sourceId, manifest.revision, family, 0]));
@@ -1371,7 +1399,7 @@ export class NeutralSourceRepository {
       if (boundedPreview && (raw.bytes > manifest.bytes || raw.records > manifest.records
         || raw.data.length > SOURCE_CHUNK_TARGET_BYTES)) return { raw };
       release = this.reserveDecode(raw.data.length * 4 + raw.bytes);
-      let facts: StoredSourceFact[], first: SourcePosting[] | undefined;
+      let facts: StoredSourceFact[], first: SourcePosting[] | undefined, complete = true;
       try {
         if (encodedBytes(raw.data) !== raw.bytes) throw new SourceFactError("invalid-chunk", family);
         const decoded: unknown = JSON.parse(raw.data);
@@ -1380,9 +1408,11 @@ export class NeutralSourceRepository {
         facts = [];
         for (const record of decoded) { preview.accept(record); facts.push(record); }
         preview.finish();
-        // Breaking a typed iteration closes the generator without reading its untyped return value.
+        // A second bounded page disqualifies atomic-copy readers; ordinary leased readers retain it.
         for (const batch of postingBatches(view.head.sourceId, manifest.revision, family, facts, 0)) {
-          first = batch; break;
+          if (first) { complete = false; break; }
+          first = batch;
+          if (!completePreview) { complete = false; break; }
         }
       } catch {
         release(); release = undefined;
@@ -1390,13 +1420,13 @@ export class NeutralSourceRepository {
       }
       // Only the first byte/record-bounded page travels with this chunk. The preview page is
       // discarded on return; canonical validation regenerates it after the SHA/frame checks.
-      if (!first) return { raw, decoded: facts, release };
+      if (!first) return { raw, decoded: facts, release, complete };
       const lower = first[0], upper = first[first.length - 1];
       const range = IDBKeyRange.bound([lower.sourceId, lower.revision, lower.family, lower.index],
         [upper.sourceId, upper.revision, upper.family, upper.index]);
       const firstPostings = await requestValue<unknown[]>(transaction.objectStore(SOURCE_POSTING_STORE).getAll(range, first.length));
       if (!current()) throw new SourceFactError("cancelled", family);
-      return { raw, decoded: facts, firstPostings, release };
+      return { raw, decoded: facts, firstPostings, release, complete };
     } catch (error) { release?.(); throw error; }
   }
 
@@ -1420,7 +1450,8 @@ export class NeutralSourceRepository {
             view.prepared = undefined;
             raw = prepared.raw; release = prepared.release;
             prefetchedDecoded = prepared.decoded; firstPostings = prepared.firstPostings;
-          } else if (view.memory) raw = view.memory.chunks.get(memoryKey(family, index));
+          } else if (view.copiedMetadata) return "cancelled";
+          else if (view.memory) raw = view.memory.chunks.get(memoryKey(family, index));
           else {
             const db = await this.open(); if (!db || !current()) return "storage-unavailable";
             if (manifest.chunks === 1) {
@@ -1455,6 +1486,7 @@ export class NeutralSourceRepository {
               stored = firstPostings;
               firstPostings = undefined;
             } else {
+              if (view.copiedMetadata) return this.fail("invalid-posting", family);
               const db = await this.open(); if (!db || !current()) return "storage-unavailable";
               const first = batch[0], last = batch[batch.length - 1];
               // The primary key orders one immutable family by posting index. Keep the existing
@@ -1610,6 +1642,46 @@ export class NeutralSourceRepository {
     return pinned.view.releaseSelection?.reason ?? "read-error";
   }
   /**
+   * Copy a small current-grammar metadata family and its complete bounded posting page atomically
+   * with the exact expected head. Copied bytes need no persistent cleanup lease: validation never
+   * reads storage again except for its closing head/sequence fence. Consumers retain facts privately
+   * until ready. Null requests the ordinary leased path for legacy, dense or local-overlay owners.
+   */
+  async visitCopiedMetadata(sourceId: string, expected: SourceHeadExpectation,
+    consume: (records: readonly StoredSourceFact[]) => Promise<boolean> | boolean,
+    current: () => boolean): Promise<SourceReason | null> {
+    if (this.closed || !current()) return "cancelled";
+    if (expected.kind !== "head" || this.memory.has(sourceId) || this.unsaved.has(sourceId) || this.pendingDeletes.has(sourceId)) return null;
+    const db = await this.open();
+    if (!db) return this.storage.unavailableReason?.() ?? "storage-unavailable";
+    let view: SourceView | undefined;
+    try {
+      const selected = await this.transaction(db, [SOURCE_HEAD_STORE, SOURCE_CHUNK_STORE, SOURCE_POSTING_STORE], "readonly", sourceId,
+        async transaction => {
+          const raw = await unknownValue(transaction.objectStore(SOURCE_HEAD_STORE).get(sourceId));
+          if (!expectedHeadMatches(expected, raw)) return "superseded" as const;
+          const head = decodeSourceHead(raw);
+          if (!head || head.sourceId !== sourceId || sourceHeadReason(raw) !== "ready") return "invalid-head" as const;
+          const metadata = head.families.metadata;
+          if (!metadata || legacyPrimaryGrammarCandidate(head) || metadata.chunks !== 1 || metadata.bytes > SOURCE_CHUNK_TARGET_BYTES
+            || metadata.records > SOURCE_MAX_BATCH_RECORDS) return null;
+          view = { head, sequence: head.sequence, saved: true, expected, leases: [], copiedMetadata: true };
+          this.readers.add(view);
+          const chunk = await this.readSingleFamilyChunk(transaction, view, "metadata", metadata,
+            /** Native close and caller cancellation retire a copied selection before delivery. */ () => !this.closed && current(), true, true);
+          view.prepared = { family: "metadata", chunk };
+          return chunk.complete ? "ready" as const : null;
+        });
+      if (this.closed || !current()) return "cancelled";
+      if (selected !== "ready" || !view) return selected;
+      if (this.memory.has(sourceId) || this.unsaved.has(sourceId) || this.pendingDeletes.has(sourceId)) return "superseded";
+      const reason = await this.visitFamily(view, "metadata", consume, current);
+      if (reason !== "ready") return reason;
+      return await this.selectionReason({ head: view.head, sequence: view.sequence, saved: true }, current);
+    } catch (error) { return this.fail(errorReason(error, "read-error"), "metadata"); }
+    finally { if (view) void this.releaseLeases(view); }
+  }
+  /**
    * Restore immutable parser inputs without reading note text or reparsing Markdown. An optional
    * consumer receives the exact validated body-family selection; reuse requires a later identical
    * durable head/sequence, not just matching physical statistics. It never grants resolution validity.
@@ -1633,6 +1705,7 @@ export class NeutralSourceRepository {
     const view = pinned.view; const decoder = new SourceBodyDecoder();
     try {
       if (!matches(view.head.physical) || !current()) return null;
+      if (view.head.compilerVersion !== SOURCE_FACT_COMPILER_VERSION) return null;
       if (requireCurrentParser && view.head.bodyParserVersion !== SOURCE_BODY_PARSER_VERSION
         && (view.head.families["body-urls"]?.records ?? 0) > 0) return null;
       for (const family of ["values", "body-urls"] as const) {
@@ -2131,6 +2204,7 @@ export class NeutralSourceRepository {
 
   /** Retain bounded identical encoded facts for storage-degraded operation, never a second graph. */
   private rememberMemory(source: MemorySource): void {
+    this.sourcePostingEpoch++;
     const previous = this.memory.get(source.head.sourceId);
     if (previous) { this.memoryBytes -= previous.bytes; this.memory.delete(source.head.sourceId); }
     this.unsaved.add(source.head.sourceId);
@@ -2146,6 +2220,7 @@ export class NeutralSourceRepository {
   }
   /** Release only the saved source's unsaved facts; failure in another source remains independent. */
   private forgetMemory(sourceId: string): void {
+    this.sourcePostingEpoch++;
     const previous = this.memory.get(sourceId);
     if (previous) this.memoryBytes -= previous.bytes;
     this.memory.delete(sourceId); this.unsaved.delete(sourceId);
@@ -2411,7 +2486,7 @@ export class NeutralSourceRepository {
           if (localReuse && localReuse.owner.records === local.records && localReuse.owner.digest === local.digest) {
             await this.authenticateLocalCountReuse(db, localReuse, current);
           }
-          const result = await this.activate(db, head, input.expected, current, dependencyTicket, local, input.aliasUpgradeFrom);
+          const result = await this.activate(db, head, input.expected, current, dependencyTicket, local, input.aliasUpgradeFrom, input.hostObservationDigest);
           if (result.outcome === "activated") {
             localSelected = true;
             // An activation that is no longer live must not erase a newer deletion/unsaved mask.
@@ -2427,7 +2502,7 @@ export class NeutralSourceRepository {
       memoryBytes += JSON.stringify(head).length * 2 + 256;
       if (memoryBytes > MAX_UNSAVED_BYTES) memoryComplete = false;
       if (memoryComplete) this.rememberMemory({ head, expected: input.expected, chunks, postings, bytes: memoryBytes, current });
-      else { this.unsaved.add(input.sourceId); this.scheduleRetry(); }
+      else { this.sourcePostingEpoch++;this.unsaved.add(input.sourceId); this.scheduleRetry(); }
       return this.result("unsaved", memoryComplete ? storageReason : "memory-budget", null, true);
     } catch (error) {
       return !current() || this.closed ? this.result("cancelled", "cancelled") : this.result("rejected", errorReason(error, "write-error"));
@@ -2451,7 +2526,8 @@ export class NeutralSourceRepository {
    * mutation ticket, journal and source publication; only old/new count churn changes to private reclaim.
    */
   private async activate(db: IDBDatabase, head: SourceManifest, expected: SourceHeadExpectation,
-    current: () => boolean, dependencyTicket?: string, local?: PreparedLocalDependencies, aliasUpgrade?: SelectedSourceStamp): Promise<SourceWriteResult> {
+    current: () => boolean, dependencyTicket?: string, local?: PreparedLocalDependencies, aliasUpgrade?: SelectedSourceStamp,
+    hostObservationDigest?: string): Promise<SourceWriteResult> {
     if (!current() || this.closed) return this.result("cancelled", "cancelled");
     try {
       let countsReused = false;
@@ -2549,6 +2625,10 @@ export class NeutralSourceRepository {
         await this.finishDependencyMutation(transaction, head.sourceId, { kind: "head", head: activated }, dependencyTicket);
         meta.put({ key: SOURCE_SEQUENCE_KEY, value: activated.sequence });
         await requestValue(heads.put(activated));
+        const observationKey = HOST_OBSERVATION_PREFIX + head.sourceId;
+        if (head.state === "complete" && hostObservationDigest && /^[a-f0-9]{64}$/.test(hostObservationDigest))
+          meta.put({key: observationKey, version: 1, sourceRevision: head.sourceRevision, sequence: activated.sequence, digest: hostObservationDigest});
+        else meta.delete(observationKey);
         if (!current() || this.closed) throw new SourceFactError("cancelled");
         return activated;
       });
@@ -2593,7 +2673,7 @@ export class NeutralSourceRepository {
     const prerequisite = previous?.ready && ready ? Promise.all([previous.ready, ready]).then(() => undefined) : ready ?? previous?.ready;
     const pending: PendingSourceDeletion = { current: caller, retain: retainFamilies && canRetain,
       ready: prerequisite, observe: observe ?? previous?.observe };
-    this.pendingDeletes.set(sourceId, pending); this.unsaved.add(sourceId); this.knownHeads.delete(sourceId);
+    this.sourcePostingEpoch++;this.pendingDeletes.set(sourceId, pending); this.unsaved.add(sourceId); this.knownHeads.delete(sourceId);
     if (this.deleteTask) { this.scheduleRetry(); return Promise.resolve(this.result("unsaved", "backpressure", null, true)); }
     /** Fence every continuation against the exact coalesced absence request. */
     const current = (): boolean => !this.closed && caller() && this.pendingDeletes.get(sourceId) === pending;
@@ -2634,6 +2714,7 @@ export class NeutralSourceRepository {
       }
       const view = pinned.view;
       try {
+        const retainFamilies = pending.retain && view.head.compilerVersion === SOURCE_FACT_COMPILER_VERSION;
         if (pending.observe && view.head.state !== "tombstone") {
           let active = true, visiting = false;
           /** A retiring reader belongs to this exact absence request, never to live source selection. */
@@ -2656,7 +2737,7 @@ export class NeutralSourceRepository {
           if (!current()) return this.result("cancelled", "cancelled");
         }
         const head: SourceManifest = { ...view.head, sourceRevision: this.runtime.uniqueId(), state: "tombstone",
-          families: pending.retain ? view.head.families : {} };
+          families: retainFamilies ? view.head.families : {} };
         const db = await this.open();
         if (!current()) return this.result("cancelled", "cancelled");
         if (db) {
@@ -2669,9 +2750,9 @@ export class NeutralSourceRepository {
             // Commit completion can race a new request/recreation. A retiring capability may not
             // erase another request's mask or install old retained memory over a newer source.
             if (!current()) return result;
-            if (!pending.retain) retired = [...new Set(Object.values(view.head.families).map(family => family.revision))];
+            if (!retainFamilies) retired = [...new Set(Object.values(view.head.families).map(family => family.revision))];
             this.pendingDeletes.delete(sourceId);
-            if (pending.retain && view.memory) {
+            if (retainFamilies && view.memory) {
               this.rememberMemory({ ...view.memory, head, current: () => false });
               this.unsaved.delete(sourceId);
             } else this.forgetMemory(sourceId);
@@ -2695,24 +2776,66 @@ export class NeutralSourceRepository {
     void task.finally(() => { if (this.deleteTask === task) this.deleteTask = null; this.scheduleRetry(); });
     return task;
   }
-  /** Read a bounded catalog page for inventory reconciliation; no whole-vault manifest is rewritten. */
-  async headPage(after: string | null = null, limit = SOURCE_MAX_BATCH_RECORDS): Promise<Readonly<{ available: boolean; heads: SourceHead[]; invalid: number; next: string | null }>> {
+  /** Read a bounded catalog page; only an explicit absence scan admits known old headers for
+   * retirement. Current graph/warm-authority readers retain strict compiler/parser validation.
+   * Independent certificate reads share the same readonly snapshot in sixteen-owner waves:
+   * storage round trips are bounded without retaining a page of unvalidated receipt payloads.
+   * An exact sourceId query reuses that validation for one owner, without a range successor. */
+  async headPage(after: string | null = null, limit = SOURCE_MAX_BATCH_RECORDS, options?: Readonly<{retirementOnly?: boolean; hostObservations?: boolean; sourceId?: string}>): Promise<Readonly<{ available: boolean; heads: SourceHead[]; invalid: number; next: string | null; hostObservations?: readonly SourceHostObservationReceipt[] }>> {
+    if (options?.sourceId !== undefined && (typeof options.sourceId !== "string" || !options.sourceId || after !== null || limit !== 1))
+      return {available: false, heads: [], invalid: 0, next: null};
     const db = await this.open();
     if (!db) return { available: false, heads: [], invalid: 0, next: null };
     try {
-      return await this.transaction(db, [SOURCE_HEAD_STORE], "readonly", "", async (transaction) => {
-        const range = after === null ? undefined : IDBKeyRange.lowerBound(after, true);
-        const entries: unknown[] = await requestValue(transaction.objectStore(SOURCE_HEAD_STORE).getAll(range, Math.max(1, Math.min(limit, SOURCE_MAX_BATCH_RECORDS))));
-        const keys = await requestValue(transaction.objectStore(SOURCE_HEAD_STORE).getAllKeys(range, Math.max(1, Math.min(limit, SOURCE_MAX_BATCH_RECORDS))));
+      return await this.transaction(db, options?.hostObservations ? [SOURCE_HEAD_STORE, SOURCE_LOCAL_OWNER_STORE, META_STORE] : [SOURCE_HEAD_STORE], "readonly", "", async (transaction) => {
+        const range = options?.sourceId !== undefined ? IDBKeyRange.only(options.sourceId)
+          : after === null ? undefined : IDBKeyRange.lowerBound(after, true);
+        const store = transaction.objectStore(SOURCE_HEAD_STORE), count = Math.max(1, Math.min(limit, SOURCE_MAX_BATCH_RECORDS));
+        const [entries, keys] = await Promise.all([requestValue<unknown[]>(store.getAll(range, count)), requestValue(store.getAllKeys(range, count))]);
         const heads: SourceHead[] = []; let invalid = 0;
         for (let index = 0; index < entries.length; index += 1) {
-          const head = decodeSourceHead(entries[index]);
+          const head = options?.retirementOnly ? decodeSourceRetirementHead(entries[index]) : decodeSourceHead(entries[index]);
           if (head && head.sourceId === keys[index]) heads.push(head); else invalid += 1;
         }
         const last = keys[keys.length - 1];
-        return { available: true, heads, invalid, next: typeof last === "string" ? last : null };
+        const hostObservations: SourceHostObservationReceipt[] = [];
+        if (options?.hostObservations) for (let offset = 0; offset < heads.length; offset += 16) {
+          const receipts = await Promise.all(heads.slice(offset, offset + 16).map(/** Decode promptly; only compact validated receipts survive the request wave. */ async head => {
+            const key = HOST_OBSERVATION_PREFIX + head.sourceId;
+            const [raw, owner] = await Promise.all([unknownValue(transaction.objectStore(META_STORE).get(key)),
+              unknownValue(transaction.objectStore(SOURCE_LOCAL_OWNER_STORE).get(head.sourceId))]);
+            if (validSourceLocalDependencyOwner(owner) && owner.version === SOURCE_LOCAL_DEPENDENCY_VERSION
+              && owner.sourceId === head.sourceId && owner.sourceRevision === head.sourceRevision && owner.sequence === head.sequence
+              && sourceObject(raw) && Object.keys(raw).length === 5 && raw.key === key && raw.version === 1
+              && raw.sourceRevision === head.sourceRevision && raw.sequence === head.sequence
+              && typeof raw.digest === "string" && /^[a-f0-9]{64}$/.test(raw.digest))
+              return {sourceId: head.sourceId, sourceRevision: head.sourceRevision, sequence: head.sequence, digest: raw.digest,
+                order: owner.order, markdownOrder: owner.markdownOrder};
+            return null;
+          }));
+          for (const receipt of receipts) if (receipt) hostObservations.push(receipt);
+        }
+        return { available: true, heads, invalid, next: options?.sourceId !== undefined ? null : typeof last === "string" ? last : null,
+          ...(options?.hostObservations ? {hostObservations} : {}) };
       });
     } catch { return { available: false, heads: [], invalid: 0, next: null }; }
+  }
+  /** Seed old unchanged activations after their ordinary authenticated inventory. Bounded batches
+   * alter only optional metadata; a changed head is skipped, never restamped or rewritten. */
+  async saveHostObservations(rows: readonly SourceHostObservation[], current: () => boolean): Promise<boolean> {
+    if (rows.length > SOURCE_MAX_BATCH_RECORDS || rows.some(row => !/^[a-f0-9]{64}$/.test(row.digest))
+      || rows.reduce((bytes, row) => bytes + 2 * (row.sourceId.length + row.sourceRevision.length) + 192, 0) > SOURCE_DECODE_BUDGET_BYTES) return false;
+    const db = await this.open(); if (!db || !current() || this.closed) return false;
+    try { return await this.transaction(db, [SOURCE_HEAD_STORE, META_STORE], "readwrite", "", async transaction => {
+      for (const row of rows) {
+        if (!current() || this.closed) throw new SourceFactError("cancelled");
+        const head = decodeSourceHead(await unknownValue(transaction.objectStore(SOURCE_HEAD_STORE).get(row.sourceId)));
+        if (head?.state !== "complete" || head.sourceRevision !== row.sourceRevision || head.sequence !== row.sequence) continue;
+        transaction.objectStore(META_STORE).put({key: HOST_OBSERVATION_PREFIX + row.sourceId, version: 1,
+          sourceRevision: row.sourceRevision, sequence: row.sequence, digest: row.digest});
+      }
+      return current() && !this.closed;
+    }); } catch { return false; }
   }
   /**
    * Upgrade an accepted historical owner by appending resolver, tag-ancestor and canonical URL memberships. The source
@@ -2818,9 +2941,13 @@ export class NeutralSourceRepository {
    * The returned head is a copied observation, not a family-read or publication certificate. The
    * caller must retain native/host fences and correlate its later protected metadata pin exactly.
    * Legacy authentication precedes normal dependency repair/backfill on the conservative fallback.
+   * A captured broad pass may consume this same clean selection in its adjacent ensure call;
+   * ordinary restart callers retain no selection and gain no additional authority.
    */
   async inspectWithLocalDependencies(sourceId: string, order: number, markdownOrder: number,
-    current: () => boolean = () => true): Promise<SourceLocalDependencyInspection> {
+    current: () => boolean = () => true, projection?: SourceLocalInventoryProjection): Promise<SourceLocalDependencyInspection> {
+    const pass = projection ? this.localInventoryProjections.get(projection) : undefined;
+    if (pass) pass.selection = undefined;
     let probeFailure: SourceReason | undefined;
     if (sourceCount(order) && sourceCount(markdownOrder) && !this.closed && current()) {
       try {
@@ -2828,8 +2955,15 @@ export class NeutralSourceRepository {
         if (db) {
           const activationRevision = this.sourceActivationRevision;
           const selected = await this.localDependencySelection(db, sourceId, current, true);
-          const inspection = this.cleanLocalDependencyInspection(sourceId, selected, activationRevision, order, markdownOrder, current);
-          if (inspection) return { inspection, dependencyReason: "ready" };
+          // A broad pass may observe a sound owner whose ordinals need changing. Reuse its copied
+          // head, then let ensure perform the original durable coordinate CAS. Only the captured
+          // projection's final proof may publish readiness after a shifted native enumeration.
+          const inspection = this.cleanLocalDependencyInspection(sourceId, selected, activationRevision,
+            pass ? selected.owner?.order ?? order : order, pass ? selected.owner?.markdownOrder ?? markdownOrder : markdownOrder, current);
+          if (inspection) {
+            if (pass?.current() && pass.next === markdownOrder) pass.selection = {sourceId, selected, activationRevision};
+            return { inspection, dependencyReason: "ready" };
+          }
         }
       } catch (error) {
         // A failed optional selection cannot become a ready dependency proof after fallback IO.
@@ -2851,11 +2985,24 @@ export class NeutralSourceRepository {
   async ensureLocalDependencies(sourceId: string, order: number, markdownOrder: number, current: () => boolean = () => true,
     projection?: SourceLocalInventoryProjection): Promise<SourceReason> {
     if (!sourceCount(order) || !sourceCount(markdownOrder) || this.closed || !current()) return "cancelled";
+    const pass = projection ? this.localInventoryProjections.get(projection) : undefined;
+    const observed = pass?.selection;
+    if (pass) pass.selection = undefined;
+    // Recheck native lifetime, repository activations and memory/deletion masks after the caller's
+    // await. Another connection is still fenced by completeLocalDependencyInventory's sequence CAS.
+    if (observed?.sourceId === sourceId && pass?.current()
+      && this.cleanLocalDependencyInspection(sourceId, observed.selected, observed.activationRevision, order, markdownOrder, current)) {
+      this.recordLocalDependencyProjection(projection, markdownOrder);
+      return "ready";
+    }
     const db = await this.open(); if (!db) return this.storage.unavailableReason?.() ?? "storage-unavailable";
     let stagingRevision: string | null = null;
     try {
       const activationRevision = this.sourceActivationRevision;
-      let selected = await this.localDependencySelection(db, sourceId, current, true);
+      let selected = observed?.sourceId === sourceId && pass?.current()
+        && this.cleanLocalDependencyInspection(sourceId, observed.selected, observed.activationRevision,
+          observed.selected.owner?.order ?? order, observed.selected.owner?.markdownOrder ?? markdownOrder, current)
+        ? observed.selected : await this.localDependencySelection(db, sourceId, current, true);
       if (this.cleanLocalDependencyInspection(sourceId, selected, activationRevision, order, markdownOrder, current)) {
         this.recordLocalDependencyProjection(projection, markdownOrder);
         return "ready";
@@ -3361,6 +3508,106 @@ export class NeutralSourceRepository {
       }
       return false;
     } catch { return false; }
+  }
+  /** Resume a cache-only posting traversal without recollecting previous pages or retaining an
+   * unbounded seen set. Disk lookup keys group source IDs, allowing constant-space deduplication.
+   * Every yield bounds examined postings/overlay steps, including pages containing no matches.
+   * The caller must fence source/configuration revisions between requests and close the iterator.
+   * Exhaustion proves only this posting's observed completeness, never whole-vault coverage. */
+  async *sourcePostingPages(kind: SourcePostingKind, key: string, current: () => boolean):
+    AsyncGenerator<Readonly<{ids:readonly string[];exhausted:boolean;complete:boolean;scanned:number;changed?:boolean;validate:()=>Promise<boolean>}>,void> {
+    const openingEpoch=this.sourcePostingEpoch,openingActivation=this.sourceActivationRevision;
+    /** A resumed cursor cannot continue across an in-process source-mask or durable activation. */
+    const unchanged=():boolean=>openingEpoch===this.sourcePostingEpoch&&openingActivation===this.sourceActivationRevision;
+    if(!current()||this.closed)return;
+    const db=await this.open();
+    /** Observe one durable source coordinate without acquiring sources or retaining a transaction. */
+    const readSequence=async():Promise<number|null>=>!db?null:this.transaction(db,[META_STORE],'readonly','',async transaction=>{
+      const raw=await unknownValue(transaction.objectStore(META_STORE).get(SOURCE_SEQUENCE_KEY));
+      return raw===undefined?0:sourceObject(raw)&&sourceCount(raw.value)?raw.value:null;
+    });
+    let sequence:number|null=null;
+    try{sequence=await readSequence();}catch{sequence=null;}
+    /** Validate after selected metadata awaits and pending-only continuations. Public publication
+     * coordinates alone do not observe background source activation or another storage owner.
+     * No closure escapes the internal repository/pager boundary or requests missing source work. */
+    const validate=async():Promise<boolean>=>{
+      if(!current()||this.closed||!unchanged())return false;
+      if(!db)return true;
+      try{const observed=await readSequence();return sequence!==null&&observed===sequence&&current()&&!this.closed&&unchanged();}catch{return false;}
+    };
+    let incomplete=false,steps=0;
+    for(const id of this.unsaved){
+      if(!current()||this.closed)return;
+      if(!unchanged()){yield {ids:[],exhausted:true,complete:false,scanned:0,changed:true,validate};return;}
+      if(!this.memory.has(id)&&!this.pendingDeletes.has(id))incomplete=true;
+      if(++steps>=128){yield {ids:[],exhausted:false,complete:false,scanned:steps,validate};steps=0;}
+    }
+    for(const source of this.memory.values()){
+      if(!current()||this.closed)return;
+      if(!unchanged()){yield {ids:[],exhausted:true,complete:false,scanned:0,changed:true,validate};return;}
+      if(++steps>=128){yield {ids:[],exhausted:false,complete:false,scanned:steps,validate};steps=0;}
+      if(!source.current()){incomplete=true;continue;}
+      if(source.head.state!=='complete'||this.pendingDeletes.has(source.head.sourceId))continue;
+      let matched=false;
+      for(const posting of source.postings.values()){
+        if(!current()||this.closed)return;
+        if(!unchanged()){yield {ids:[],exhausted:true,complete:false,scanned:0,changed:true,validate};return;}
+        matched=posting.kind===kind&&posting.key===key;
+        steps++;
+        if(matched||steps>=128){
+          const valid=this.memory.get(source.head.sourceId)===source&&source.current();
+          if(!valid)incomplete=true;
+          yield {ids:matched&&valid?[source.head.sourceId]:[],exhausted:false,complete:false,scanned:steps,validate};steps=0;
+        }
+        if(matched)break;
+      }
+    }
+    if(steps){yield {ids:[],exhausted:false,complete:false,scanned:steps,validate};steps=0;}
+    if(!unchanged()){yield {ids:[],exhausted:true,complete:false,scanned:0,changed:true,validate};return;}
+    if(!db){yield {ids:[],exhausted:true,complete:false,scanned:0,validate};return;}
+    let after:IDBValidKey|null=null,lastSource:string|null=null;
+    try {
+      while(current()&&!this.closed){
+        const page=await this.transaction(db,[SOURCE_POSTING_STORE,SOURCE_HEAD_STORE,META_STORE],'readonly','',async transaction=>{
+          const raw=await unknownValue(transaction.objectStore(META_STORE).get(SOURCE_SEQUENCE_KEY));
+          const observed=raw===undefined?0:sourceObject(raw)&&sourceCount(raw.value)?raw.value:null;
+          if(observed===null||sequence!==observed)return {ids:[],next:null,scanned:0,ended:true,changed:true};
+          return new Promise<{ids:string[];next:IDBValidKey|null;scanned:number;ended:boolean;changed?:boolean}>((resolve,reject)=>{
+            const ids:string[]=[];let scanned=0,next:IDBValidKey|null=null;
+            const request=transaction.objectStore(SOURCE_POSTING_STORE).index(SOURCE_LOOKUP_INDEX)
+              .openCursor(IDBKeyRange.bound(after??[kind,key],[kind,key,[]],after!==null,true));
+            request.onerror=()=>reject(request.error??new SourceFactError('read-error'));
+            request.onsuccess=()=>{
+              const cursor=request.result;
+              if(!cursor){resolve({ids,next,scanned,ended:true});return;}
+              next=cursor.key;scanned++;
+              /** Stop before the next record; the opaque IDB key resumes in the same lookup order. */
+              const advance=():void=>{if(scanned>=128)resolve({ids,next,scanned,ended:false});else cursor.continue();};
+              const raw:unknown=cursor.value;
+              if(!validSourcePosting(raw)||raw.kind!==kind||raw.key!==key){incomplete=true;advance();return;}
+              if(raw.sourceId===lastSource||this.memory.has(raw.sourceId)||this.unsaved.has(raw.sourceId)||this.pendingDeletes.has(raw.sourceId)){advance();return;}
+              const headRequest=transaction.objectStore(SOURCE_HEAD_STORE).get(raw.sourceId);
+              headRequest.onerror=()=>reject(headRequest.error??new SourceFactError('read-error'));
+              headRequest.onsuccess=()=>{
+                const head=decodeSourceHead(headRequest.result),manifest=head?.families[raw.family];
+                if(!head&&headRequest.result!==undefined)incomplete=true;
+                if(head?.state==='complete'&&manifest?.revision===raw.revision&&raw.index<manifest.postings){lastSource=raw.sourceId;ids.push(raw.sourceId);}
+                advance();
+              };
+            };
+          });});
+        if(!current()||this.closed)return;
+        if(page.changed||!unchanged()){yield {ids:[],exhausted:true,complete:false,scanned:0,changed:true,validate};return;}
+        yield {ids:page.ids,exhausted:false,complete:false,scanned:page.scanned,validate};
+        if(page.ended){
+          const changed=!(await validate());
+          yield {ids:[],exhausted:true,complete:!changed&&!incomplete,scanned:0,...changed?{changed:true}:{},validate};return;
+        }
+        after=page.next;
+        await this.runtime.yield();
+      }
+    }catch{if(current()&&!this.closed)yield {ids:[],exhausted:true,complete:false,scanned:0,validate};}
   }
   /**
    * Reclaim one explicitly known retired or abandoned revision. Source-local rows are removed in

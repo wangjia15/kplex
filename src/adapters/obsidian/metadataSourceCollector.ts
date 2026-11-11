@@ -3,9 +3,12 @@
  * acquisition belongs to the neutral reference collector; this owner never selects image fields.
  * GraphBuilder owns parser/cache acquisition and publication; reads retain per-source revision fences.
  * Live and durable raw body facts share canonical web identities without changing lexical provenance.
+ * Supplemental frontmatter URL labels reuse current native metadata during live and cached reads;
+ * the neutral source format and its strict persisted lexical facts remain unchanged.
  */
 import { TFile, type App } from "obsidian";
 import { canonicalWebUrl, webUrlOrigin } from "./urlIdentity";
+import {readDailyNotesSettings} from "./dailyNotes";
 import { nodeId, type GraphNodeKind } from "../../core/graph/model";
 import {
   MAX_NORMALIZED_SOURCE_RECORDS_PER_BATCH,
@@ -27,6 +30,7 @@ import {
 } from "../../core/graph/source";
 import {
   normalizeFieldName,
+  iterateMarkdownLinkSteps,
   type ParsedFileMetadata,
 } from "../../core/parser/metadata";
 
@@ -51,7 +55,8 @@ export type ObsidianMetadataSourceHost = Readonly<{
   getFileByPath(path: string): TFile | null;
   resolveLinkpath(linkpath: string, sourcePath: string): TFile | null;
   resolvedLinkCount(sourcePath: string, targetPath: string): number;
-  isDateProperty(fieldName: string): boolean;
+  /** Without a value, observe global assignments; with a value, include source-local inference. */
+  isDateProperty(fieldName: string, value?: unknown): boolean;
   dailyNotesSettings(): DailyNotesSourceSettings | null;
   formatDailyDate(isoDate: string, format: string): string | null;
 }>;
@@ -69,13 +74,7 @@ type AppWithMetadataTypes = App & Readonly<{
   metadataTypeManager?: Readonly<{
     getPropertyInfo?: (name: string) => Readonly<{ widget?: string }> | null;
     getAssignedWidget?: (name: string) => string | null;
-  }>;
-}>;
-
-type AppWithInternalPlugins = App & Readonly<{
-  internalPlugins?: Readonly<{
-    getPluginById?: (id: string) => unknown;
-    plugins?: Readonly<Record<string, unknown>>;
+    getTypeInfo?: (name: string, value: unknown) => Readonly<{ inferred?: Readonly<{ type?: string }> }>;
   }>;
 }>;
 
@@ -96,29 +95,33 @@ function normalizePath(path: string): string {
  * Explicit Obsidian-only runtime service used by C12c. Private property-registry/Daily Notes
  * compatibility reads and host Moment stay here; normalized records never retain the App/window.
  */
-export function createObsidianMetadataSourceHost(app: App): ObsidianMetadataSourceHost {
+export function createObsidianMetadataSourceHost(app: App): ObsidianMetadataSourceHost & Readonly<{
+  /** Null means source-local inference, distinct from an explicit non-Date assignment. */
+  datePropertyAssignment(fieldName: string): boolean | null;
+}> {
+  /** Read live native assignments; per-note hints must never become global registry changes. */
+  const datePropertyAssignment = (fieldName: string): boolean | null => {
+    const manager = (app as AppWithMetadataTypes).metadataTypeManager;
+    if (manager?.getAssignedWidget && manager.getTypeInfo) {
+      const assigned = manager.getAssignedWidget(fieldName);
+      return assigned == null ? null : assigned === "date";
+    }
+    const widget = manager?.getAssignedWidget?.(fieldName) ?? manager?.getPropertyInfo?.(fieldName)?.widget;
+    return widget === "date";
+  };
   return {
     getFileByPath: (path) => app.vault.getFileByPath(path),
     resolveLinkpath: (linkpath, sourcePath) => app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath),
     resolvedLinkCount: (sourcePath, targetPath) => app.metadataCache.resolvedLinks[sourcePath]?.[targetPath] ?? 0,
-    isDateProperty: (fieldName) => {
+    datePropertyAssignment,
+    isDateProperty: (fieldName, value) => {
       const manager = (app as AppWithMetadataTypes).metadataTypeManager;
-      const info = manager?.getPropertyInfo?.(fieldName);
-      const widget = info?.widget ?? manager?.getAssignedWidget?.(fieldName);
-      return widget === "date";
+      const assignment = datePropertyAssignment(fieldName);
+      if (assignment !== null) return assignment;
+      // Native inference belongs to this value, not the last note parsed with this field name.
+      return value != null && manager?.getTypeInfo?.(fieldName, value).inferred?.type === "date";
     },
-    dailyNotesSettings: () => {
-      const registry = (app as AppWithInternalPlugins).internalPlugins;
-      const candidate = registry?.getPluginById?.("daily-notes") ?? registry?.plugins?.["daily-notes"];
-      if (!candidate || typeof candidate !== "object") return null;
-      const record = candidate as Record<string, unknown>;
-      if (record.enabled === false) return null;
-      const instance = record.instance && typeof record.instance === "object" ? record.instance as Record<string, unknown> : record;
-      const options = instance.options && typeof instance.options === "object" ? instance.options as Record<string, unknown> : instance;
-      const folder = typeof options.folder === "string" ? options.folder : "";
-      const format = typeof options.format === "string" && options.format.trim() ? options.format : "YYYY-MM-DD";
-      return { folder: normalizePath(folder), format };
-    },
+    dailyNotesSettings: /** Shared optional host capability retains the source adapter's exact rules. */ () => readDailyNotesSettings(app),
     formatDailyDate: (isoDate, format) => {
       const obsidianMoment = (window as unknown as { moment: ObsidianMomentFactory }).moment;
       const parsed = obsidianMoment(isoDate, "YYYY-MM-DD", true);
@@ -211,6 +214,22 @@ export function normalizedBodyUrl(source: SourceEntityRef, revision: SourceRevis
       ...(reference.line === undefined ? {} : { location: { line: reference.line } }),
     },
   };
+}
+
+/**
+ * Reuse literal property grammar for current native frontmatter and cached URL-owner payloads.
+ * No host resolution, relationship classification, body parsing or source-cache migration occurs.
+ */
+export function* frontmatterUrlLabelSteps(frontmatter: Readonly<Record<string, unknown>>): IterableIterator<Readonly<{ url: string; label: string }> | null> {
+  for (const fieldName in frontmatter) {
+    if (!Object.prototype.hasOwnProperty.call(frontmatter, fieldName) || fieldName === "position" || !normalizeFieldName(fieldName)) continue;
+    for (const reference of iterateMarkdownLinkSteps(frontmatter[fieldName])) {
+      if (!reference || !reference.label || !/^(?:https?|obsidian):\/\//i.test(reference.rawTarget)) { yield null; continue; }
+      const url = canonicalWebUrl(reference.rawTarget);
+      if (reference.label === reference.rawTarget || reference.label === url) { yield null; continue; }
+      yield { url, label: reference.label };
+    }
+  }
 }
 
 /**
@@ -366,7 +385,7 @@ export class ObsidianMetadataSourceCollector {
     return this.collectPresentationMetadata(emit, touch);
   }
 
-  /** Emit only selector-dependent metadata from cached frontmatter/inline values, without parsing. */
+  /** Emit selector-dependent metadata and literal URL labels from already available property values. */
   private async collectPresentationMetadata(
     emit: (record: NormalizedSourceRecord) => Promise<boolean>,
     touch: () => Promise<boolean>,
@@ -413,6 +432,12 @@ export class ObsidianMetadataSourceCollector {
         }))) return false;
       }
     }
+    for (const reference of frontmatterUrlLabelSteps(this.metadata.frontmatter)) {
+      if (!reference) { if (!(await touch())) return false; continue; }
+      if (!(await emit({ kind: "url-label", source: this.source, sourceRevision: this.sourceRevision,
+        target: { entity: urlRef(reference.url), rawTarget: reference.url, resolvedBy: "url" },
+        label: reference.label, provenance: { surface: "frontmatter" } }))) return false;
+    }
     return this.isCurrent();
   }
 
@@ -424,7 +449,7 @@ export class ObsidianMetadataSourceCollector {
     const daily = this.host.dailyNotesSettings();
     if (daily) {
       for (const [fieldName, rawValue] of Object.entries(this.metadata.frontmatter)) {
-        if (!this.host.isDateProperty(fieldName)) {
+        if (!this.host.isDateProperty(fieldName, rawValue)) {
           if (!(await touch())) return false;
           continue;
         }

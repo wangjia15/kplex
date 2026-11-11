@@ -3,6 +3,26 @@ import assert from 'node:assert/strict';import test from 'node:test';import {col
 import {readFileSync} from 'node:fs';
 const setup=`const p=await createAppearanceHost({ontologyPairingVersion:1,hierarchy:{parents:['Parent'],children:['Child'],leftFriends:['Friend','Ally'],rightFriends:['Challenger'],previous:['replies to','precedes'],next:['replied by','succeeds'],hidden:['Hidden'],exclusions:[]}}),t=p.translator,check=(value,message)=>{if(!value)throw Error(message)},open=field=>{const modal=new sourceModules.AddToOntologyModal(p,field);modal.open();return modal},button=(modal,key)=>[...modal.contentEl.querySelectorAll('button')].find(b=>b.textContent===t(key)),save=modal=>button(modal,'common.save').click(),partner=modal=>modal.contentEl.querySelector('input[aria-label="'+t('ontology.pairWith')+'"]'),role=modal=>modal.roleControl.selectEl;`;
 
+test('expanded manager coalesces indexing notifications and preserves unchanged rows',async()=>{
+ assert.equal(await scenario(`(async()=>{${setup}
+ const catalog=Array.from({length:600},(_,i)=>({normalized:'field'+i,name:'Field '+i,count:1}));
+ p.index.unassignedOntologyFields=()=>catalog;
+ const modal=new sourceModules.OntologyManagerModal(p,'unassigned');modal.open();
+ modal.manager.list.querySelector('.kplex-style-manager-more').click();
+ check(modal.manager.list.querySelectorAll('.kplex-style-manager-row').length===32,'Show more did not expand');
+ const first=modal.manager.list.firstElementChild;let renders=0;const render=modal.renderList.bind(modal);
+ modal.renderList=()=>{renders++;render()};
+ for(let i=0;i<200;i++)p.index.notifyPresentation();
+ check(renders===0,'Index publications synchronously rebuilt the expanded manager');
+ await new Promise(done=>setTimeout(done,160));
+ check(renders===1&&modal.manager.list.firstElementChild===first,'Unchanged rows were replaced or the burst was not coalesced');
+ catalog[0]={...catalog[0],count:7};p.index.notifyPresentation();await new Promise(done=>setTimeout(done,160));
+ check(modal.manager.list.textContent.includes(t('settings.occurrenceMany',{count:7})),'Changed discovery count was not rendered');
+ p.index.notifyPresentation();modal.close();const retired=renders;await new Promise(done=>setTimeout(done,160));
+ check(renders===retired&&!modal.modalEl.isConnected,'Retired manager timer ran');return true;
+ })()`),true);
+});
+
 /** Production CSS must keep both labels above their editors across desktop and narrow dialogs. */
 test('both description editors span the modal content below their labels and help',async()=>{
  const css=readFileSync('styles.css','utf8');
@@ -32,8 +52,8 @@ p.index.get=path=>pages.find(page=>page.path===path);p.index.titleFor=page=>page
 p.index.relationshipStorageCandidates=()=>pages.map(page=>page.path);p.index.evidenceBetween=()=>[];
 p.index.invalidateSemanticPolicy=()=>{};p.index.refreshSemanticSettings=async()=>{};
 p.addOntologyToConnection=async(...args)=>{connectionWrites.push(args);return {state:'saved-published',page:pages[1]}};
-const openConnection=(purpose='ontology-add',storage=pages[0].path)=>{const modal=new sourceModules.RelationModal(p,{mode:'relink',purpose,origin:pages[0],fixedTarget:pages[1],semanticRole:'child',initialField:'Child',initialStoragePath:storage});modal.open();return modal};
-const fieldPicker=modal=>modal.contentEl.querySelector('#kplex-relation-modal-field'),createField=modal=>{input(fieldPicker(modal),'','change');return modal.ontologyDialog},fieldName=modal=>modal.contentEl.querySelector('input[aria-label="'+t('ontology.manager.fieldName')+'"]');`;
+const openConnection=async(purpose='ontology-add',storage=pages[0].path)=>{const modal=new sourceModules.RelationModal(p,{mode:'relink',purpose,origin:pages[0],fixedTarget:pages[1],semanticRole:'child',initialField:'Child',initialStoragePath:storage});modal.open();await waitFor(()=>fieldPicker(modal));return modal};
+const fieldPicker=modal=>modal.contentEl.querySelector('.kplex-add-related-ontology-search input'),createField=modal=>{button(modal,'ontology.createField').click();return modal.ontologyDialog},fieldName=modal=>modal.contentEl.querySelector('input[aria-label="'+t('ontology.manager.fieldName')+'"]');`;
 
 test('paired-field suggestions explicitly create a reciprocal property in one Save and Cancel writes nothing',async()=>{
  assert.equal(await scenario(`(async()=>{${setup}p.index.invalidateSemanticPolicy=()=>{};p.index.refreshSemanticSettings=async()=>{};
@@ -56,26 +76,26 @@ test('creation suggestions reject existing, self and nonreciprocal names and rev
 });
 
 for(const purpose of ['ontology-add','ontology-specify'])test(purpose+' creates vocabulary through the shared editor before separately confirming the connection',async()=>{
- assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=openConnection('${purpose}',pages[1].path),before=p.writes.length;
- check([...fieldPicker(modal).options].some(option=>option.value===''&&option.textContent===t('ontology.createField')),'Creation option absent');
- const editor=createField(modal);check(editor&&modal.saveButton.disabled&&fieldPicker(modal).disabled,'Child does not own parent controls');check(role(editor).value==='child'&&role(editor).disabled,'Captured role not retained');
+ assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=await openConnection('${purpose}',pages[1].path),before=p.writes.length;
+ check(button(modal,'ontology.createField')?.querySelector('svg'),'Creation glyph absent');
+ const editor=createField(modal);await waitFor(()=>fieldPicker(modal).disabled);check(editor&&modal.saveButton.disabled&&fieldPicker(modal).disabled,'Child does not own parent controls');check(role(editor).value==='child'&&role(editor).disabled,'Captured role not retained');
  input(fieldName(editor),'contributes to');input(partner(editor),'supported by');const choice=editor.suggestions.getSuggestions('supported by').find(item=>typeof item!=='string');editor.suggestions.selectSuggestion(choice);save(editor);await waitFor(()=>!editor.modalEl.isConnected);
- check(p.writes.length===before+1&&connectionWrites.length===0,'Vocabulary save wrote a connection');check(fieldPicker(modal).value==='contributes to'&&!modal.saveButton.disabled&&!fieldPicker(modal).disabled,'New field not selected');
+ await waitFor(()=>fieldPicker(modal).value==='contributes to'&&!fieldPicker(modal).disabled);check(p.writes.length===before+1&&connectionWrites.length===0,'Vocabulary save wrote a connection');check(fieldPicker(modal).value==='contributes to'&&!modal.saveButton.disabled&&!fieldPicker(modal).disabled,'New field not selected');
  check(modal.contentEl.textContent.includes('supported by'),'Inverse storage hint ignored new pair');await modal.confirm();
  check(connectionWrites.length===1&&connectionWrites[0][2]==='child'&&connectionWrites[0][3]==='contributes to'&&connectionWrites[0][4]===pages[1].path,'Connection lost field, role or storage');
  check(!modal.modalEl.isConnected&&released===1,'Parent resource leaked');return true;})()`),true);
 });
 
 test('connection creation cancellation, failed saves and parent dismissal preserve the old selection and retire children',async()=>{
- assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=openConnection(),before=p.writes.length;let editor=createField(modal);input(fieldName(editor),'draft field');button(editor,'common.cancel').click();
- check(fieldPicker(modal).value==='Child'&&!modal.saveButton.disabled&&document.activeElement===fieldPicker(modal)&&p.writes.length===before,'Cancel changed field or lost focus');
+ assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=await openConnection(),before=p.writes.length;let editor=createField(modal);input(fieldName(editor),'draft field');button(editor,'common.cancel').click();
+ await waitFor(()=>!fieldPicker(modal).disabled);check(fieldPicker(modal).value==='Child'&&!modal.saveButton.disabled&&document.activeElement===button(modal,'ontology.createField')&&p.writes.length===before,'Cancel changed field or lost focus');
  editor=createField(modal);input(fieldName(editor),'retry field');const store=p.saveData;p.saveData=async()=>{throw Error('Expected storage failure')};save(editor);await waitFor(()=>!editor.busy);
  check(editor.modalEl.isConnected&&fieldName(editor).value==='retry field'&&role(editor).disabled&&fieldPicker(modal).value==='Child'&&p.writes.length===before,'Failed Save lost draft, role or selection');
  p.saveData=store;modal.close();check(!editor.modalEl.isConnected&&!modal.modalEl.isConnected&&released===1&&connectionWrites.length===0,'Parent dismissal leaked or wrote');return true;})()`),true);
 });
 
 test('moving a connection retains the existing-only picker',async()=>{
- assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=openConnection('move');check(![...fieldPicker(modal).options].some(option=>option.value===''),'Relink picker changed scope');modal.close();return true;})()`),true);
+ assert.equal(await scenario(`(async()=>{${connectionSetup}const modal=await openConnection('move');check(!button(modal,'ontology.createField'),'Relink picker changed scope');modal.close();return true;})()`),true);
 });
 test('optional pairing only offers eligible reciprocal fields and unchanged or cancelled editors write nothing',async()=>{
  assert.equal(await scenario(`(async()=>{${setup}const before=p.writes.length;let modal=open('replies to');check(partner(modal).value==='','Unpaired field had partner');check(JSON.stringify(modal.suggestions.getSuggestions(''))===JSON.stringify(['replied by','succeeds']),'Wrong reciprocal candidates');check(modal.suggestions.getSuggestions('r by')[0]==='replied by','Existing fuzzy matching not reused');save(modal);await waitFor(()=>!modal.modalEl.isConnected);check(p.writes.length===before,'Unchanged Save rewrote config');modal=open('replies to');input(partner(modal),'replied by');button(modal,'common.cancel').click();await p.settingsWriteQueue;check(p.writes.length===before,'Cancel saved a pair');return true;})()`),true);

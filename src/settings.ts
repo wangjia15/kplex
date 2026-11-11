@@ -7,6 +7,7 @@
  * density from the same saved value. All saves cross the plugin settings-impact classifier; the
  * injected translator owns display copy. Device indexing strategies and admission take effect after restart; persistent
  * cache estimates run only when their settings row is rendered, never during plugin startup.
+ * Calendar visibility is canvas chrome; journal link memories are independent workflow fields.
  * Date fallback roles reinterpret cached facts through the semantic settings owner; absent/interim
  * preferences use Parent and foreign imports cannot overwrite the local default role.
  * Background throttle changes apply live without reconstructing semantic data. Style creation selects
@@ -34,7 +35,11 @@
  * Built-in read-aloud preferences remain local workflow choices and never invalidate semantic data.
  */
 import { READ_ALOUD_LANGUAGES, readAloudLanguagePreference, sanitizeReadAloudEdgeVoice, sanitizeReadAloudRate, sanitizeReadAloudSystemVoice, type ReadAloudEngine } from "./readAloudPreferences";
+import {FormSetting as Setting, formField} from "./adapters/obsidian/KplexModal";
 import {STARTUP_INDEX_DEFAULTS, sanitizeStartupIndexPreferences, type IndexingMode, type StartupIndexPreferences} from './core/plex/startupIndexPreferences';
+import {PIN_PERIODS, isPeriodicPin, loadSavedPins, type PinPeriod, type SavedPin} from "./core/plex/savedPins";
+import {DEFAULT_PERIODIC_PIN_SETTINGS, loadPeriodicPinSettings, type PeriodicPinConfiguration, type PeriodicPinSettings} from "./core/plex/periodicPins";
+import {periodicPinLabel} from "./ui/savedPinPresentation";
 import { readObsidianPresentationEnvironment } from "./adapters/obsidian/presentationEnvironment";
 import {contentVisibilityPatch} from "./core/plex/contentVisibility";
 import {sanitizeCreationAfterSaving, type CreationAfterSavingAction} from "./core/plex/createdNoteDestination";
@@ -73,7 +78,6 @@ import {
   getIconIds,
   type SettingDefinitionItem,
   type SettingDefinition,
-  type Setting,
 } from "obsidian";
 import type KplexPlugin from "./main";
 import {builtInCanvasViewSettings, canvasViewControl, type CanvasViewSettingsRegistry} from "./ui/plexViews/settingsContributions";
@@ -429,7 +433,12 @@ export interface KplexSettings extends StartupIndexPreferences {
   kplexInitialized: boolean;
   startInPopout: boolean;
   lastActivePath: string;
-  pinnedNodes: string[];
+  pinnedNodes: SavedPin[];
+  periodicPinSettings: PeriodicPinSettings;
+  /** Shared canvas chrome; choosing dates never enables a periodic pin. */
+  showDailyCalendar: boolean;
+  /** Journal chronology remembers fields independently of their configured semantic roles. */
+  dailyNoteLinkFields: {previous: string; next: string};
   layoutProfiles: Record<string, KplexLayoutProfile>;
   /** Bounded effective reads validate registered schemas; unsupported persisted payloads remain inert and round-trip unchanged. */
   canvasViewSettings: unknown;
@@ -473,6 +482,8 @@ export interface KplexSettings extends StartupIndexPreferences {
   editNewNodeAfterCreate: boolean;
   /** Note-creation destination; the old toggle is retained solely for migration compatibility. */
   newNodeAfterSaving: CreationAfterSavingAction;
+  periodicNoteAfterSaving: CreationAfterSavingAction;
+  folderCreationTab: "note" | "folder";
   /** Existing-note/web-link completion is remembered independently from creation. */
   linkAfterSaving: CreationAfterSavingAction;
   /** Remember which create button Ctrl/Cmd+Enter should invoke next time. */
@@ -675,6 +686,9 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   startInPopout: false,
   lastActivePath: "",
   pinnedNodes: [],
+  periodicPinSettings: DEFAULT_PERIODIC_PIN_SETTINGS,
+  showDailyCalendar: true,
+  dailyNoteLinkFields: {previous: "", next: ""},
   layoutProfiles: DEFAULT_LAYOUT_PROFILES,
   canvasViewSettings: {},
   mouseInteractionMode: "smart",
@@ -699,6 +713,8 @@ const LEGACY_DEFAULT_SETTINGS: KplexSettings = {
   allowRemoteNodeImages: false,
   editNewNodeAfterCreate: false,
   newNodeAfterSaving: "return",
+  periodicNoteAfterSaving: "sidecar",
+  folderCreationTab: "note",
   linkAfterSaving: "return",
   newNodeDefaultType: "markdown",
   lastDrawingTemplatePath: null,
@@ -984,7 +1000,12 @@ export function migrateAndMergeSettings(raw: unknown): KplexSettings {
     kplexInitialized: Boolean(old.kplexInitialized),
     startInPopout: Boolean(old.startInPopout),
     lastActivePath: String(old.lastActivePath ?? ""),
-    pinnedNodes: Array.isArray(old.pinnedNodes) ? old.pinnedNodes.filter((value): value is string => typeof value === "string") : [],
+    pinnedNodes: loadSavedPins(old.pinnedNodes),
+    periodicPinSettings: loadPeriodicPinSettings(old.periodicPinSettings),
+    showDailyCalendar: typeof old.showDailyCalendar === "boolean" ? old.showDailyCalendar : true,
+    dailyNoteLinkFields: {...(old.dailyNoteLinkFields && typeof old.dailyNoteLinkFields === "object" && !Array.isArray(old.dailyNoteLinkFields) ? old.dailyNoteLinkFields : {}),
+      previous: typeof old.dailyNoteLinkFields?.previous === "string" ? old.dailyNoteLinkFields.previous : "",
+      next: typeof old.dailyNoteLinkFields?.next === "string" ? old.dailyNoteLinkFields.next : ""},
     layoutProfiles: migratedProfiles,
     typographyProfiles: sanitizeTypographyProfiles(old.typographyProfiles),
     hoverHighlightRequiresAlt: typeof old.hoverHighlightRequiresAlt === "boolean" ? old.hoverHighlightRequiresAlt : true,
@@ -1023,6 +1044,8 @@ export function migrateAndMergeSettings(raw: unknown): KplexSettings {
     allowRemoteNodeImages: old.allowRemoteNodeImages === true,
     editNewNodeAfterCreate: Boolean(old.editNewNodeAfterCreate),
     newNodeAfterSaving: sanitizeCreationAfterSaving(old.newNodeAfterSaving, old.editNewNodeAfterCreate === true),
+    periodicNoteAfterSaving: sanitizeCreationAfterSaving(old.periodicNoteAfterSaving ?? "sidecar"),
+    folderCreationTab: old.folderCreationTab === "folder" ? "folder" : "note",
     linkAfterSaving: sanitizeCreationAfterSaving(old.linkAfterSaving ?? old.newNodeAfterSaving, old.editNewNodeAfterCreate === true),
     trackpadNavigation: old.trackpadNavigation === true,
     lastDrawingTemplatePath: typeof old.lastDrawingTemplatePath === "string" ? old.lastDrawingTemplatePath : null,
@@ -2426,7 +2449,7 @@ export class KplexSettingTab extends PluginSettingTab {
     const result = await this.kplexPlugin.updateStyleSettings(edit, owner);
     if (!isCurrent()) return result;
     let refreshPending = result.refreshPending;
-    for (const refresh of [afterChange, /** Refresh only this still-mounted native Settings page. */ () => { if (this.containerEl.isConnected) this.update(); }]) {
+    for (const refresh of [afterChange, /** Declarative subpages detach the tab root while their actual Settings page stays mounted. */ () => { if (this.colorActionPage().isConnected) this.update(); }]) {
       try { refresh?.(); } catch (error) {
         console.error("K-Plex saved style manager refresh failed", error);
         refreshPending = true;
@@ -2619,6 +2642,60 @@ export class KplexSettingTab extends PluginSettingTab {
     return /** Retire removed controls while allowing an already accepted disk write to settle. */ () => {active = false;unsubscribe();};
   }
 
+  /** Mount one full-width periodic-pin section so its heading cannot compete with the nested
+   * native controls. Initial state, dependent controls and preview share one definition lifetime;
+   * rendering never saves defaults or creates files. */
+  private mountPeriodicPin(setting: Setting, period: PinPeriod): () => void {
+    const plugin = this.kplexPlugin, translate = plugin.translator;
+    setting.settingEl.addClass("kplex-periodic-pin-section");
+    const container = setting.controlEl.createDiv({cls: "kplex-periodic-pin-settings"});
+    let active = true;
+    const refreshers: (() => void)[] = [];
+    /** Read the current configuration after local or incoming settings changes. */
+    const configuration = (): PeriodicPinConfiguration => plugin.settings.periodicPinSettings[period];
+    /** A disabled Daily Notes plugin remains visibly unconfigured rather than silently changing destinations. */
+    const usesDaily = (): boolean => period === "day" && configuration().useDailyNotes;
+    /** Accepted settings edits use the existing serialized writer and retain all unrelated keys. */
+    const save = async (patch: Partial<PeriodicPinConfiguration>, enabled?: boolean): Promise<void> => {
+      if (!active || !container.isConnected) return;
+      try {await plugin.updatePeriodicPin(period, patch, enabled);}
+      catch (error) {console.error("K-Plex periodic pin settings failed", error);if (active) new Notice(translate("pins.saveFailed"));}
+      finally {if (active) refresh();}
+    };
+    new Setting(container).setClass("kplex-periodic-pin-toggle").setName(translate("pins.enabled")).addToggle(/** Enable membership in the canonical saved order, preserving existing positions. */ toggle => {
+      refreshers.push(/** Keep this mounted control in sync with unpinning on another canvas. */ () => {toggle.setValue(plugin.settings.pinnedNodes.some(/** A fixed pin at the resolved path does not enable the symbolic period. */ pin => isPeriodicPin(pin) && pin.period === period));});
+      toggle.onChange(/** Native activation alone changes opt-in membership. */ value => {void save({}, value);});
+    });
+    if (period === "day") new Setting(container).setClass("kplex-periodic-pin-toggle").setName(translate("pins.dailySettings")).addToggle(/** Daily Notes is an optional host capability, not a required plugin. */ toggle => {
+      refreshers.push(/** Apply the current dependency on initial render and subsequent updates. */ () => {toggle.setValue(configuration().useDailyNotes);});
+      toggle.onChange(/** An explicit custom destination remains available when Daily Notes is disabled. */ value => {void save({useDailyNotes: value});});
+    });
+    for (const key of ["folder", "format"] as const) {
+      const row = new Setting(container).setName(translate(key === "folder" ? "pins.folder" : "pins.format"));
+      row.addText(/** Folder/date format are literal text, not numeric preferences. */ text => {
+      refreshers.push(/** Hide unused custom destinations without erasing the user's saved values. */ () => {text.setValue(configuration()[key]).setDisabled(usesDaily()); row.settingEl.toggle(!usesDaily());});
+      text.onChange(/** Preserve intentional blank/invalid drafts with a truthful unavailable preview. */ value => {void save({[key]: value});});
+      });
+    }
+    if (period === "week") new Setting(container).setName(translate("pins.weekStart")).setDesc(translate("pins.calendarHelp")).addDropdown(/** Week anchoring is explicit and never mutates Moment's global locale. */ dropdown => {
+      dropdown.addOption("iso", translate("pins.isoWeek")).addOption("locale", translate("pins.localeWeek"));
+      refreshers.push(/** Restore the saved choice without emitting an edit. */ () => {dropdown.setValue(configuration().weekStart);});
+      dropdown.onChange(/** Date format remains explicit so changing week convention does not rewrite custom formats. */ value => {void save({weekStart: value === "locale" ? "locale" : "iso"});});
+    });
+    const preview = container.createDiv({cls: "setting-item-description kplex-periodic-pin-preview"});
+    /** Refresh the mounted controls from one owner; source and vault enumeration are never involved. */
+    const refresh = (): void => {
+      if (!active) return;
+      for (const paint of refreshers) paint();
+      const row = plugin.previewPeriodicPin(period);
+      preview.setText(row.path ? translate("pins.preview", {path: row.path}) : translate("pins.configurationRequired"));
+      if (row.state === "missing") preview.createDiv({text: translate("pins.missingTarget", {path: row.path ?? ""})});
+    };
+    const unsubscribe = plugin.index.subscribePresentation(refresh);refresh();
+    const timer = window.setInterval(/** A settings preview also follows local rollover while its pin is disabled. */ refresh, 60_000);
+    return /** Removed definitions cannot write or retain calendar/presentation subscriptions. */ () => {active = false;window.clearInterval(timer);unsubscribe();container.remove();};
+  }
+
   /** Build localized native settings and subpages, including shared persisted Plex visibility controls. */
   getSettingDefinitions(): SettingDefinitionItem<DeclarativeSettingKey>[] {
     const translate = createObsidianTranslator();
@@ -2657,6 +2734,10 @@ export class KplexSettingTab extends PluginSettingTab {
         name: translate("settings.ui.plex.behavior"),
         desc: translate("settings.ui.navigation.layout.visibility.and.relationship.behavior.i"),
         items: [
+          {type: "page", name: translate("pins.settingsTitle"), desc: translate("pins.settingsHelp"), items: [
+            {name: translate("daily.showCalendar"), desc: translate("daily.showCalendarHelp"), control: {type: "toggle", key: "showDailyCalendar"}},
+            ...PIN_PERIODS.map(/** One shared renderer supplies all three period editors and their dependent state. */ period => ({name: periodicPinLabel(period, translate), render: (setting: Setting) => this.mountPeriodicPin(setting, period)})),
+          ]},
           {
             type: "group",
             heading: translate("settings.ui.navigation.interaction"),
@@ -2823,10 +2904,13 @@ export class KplexSettingTab extends PluginSettingTab {
               {name: translate("colors.palettePreview"), desc: translate("colors.palettePreviewHelp"), render: setting => this.mountStandardOverview(setting)},
               ...this.standardColorPages(),
             ]},
-            {type: "page", name: translate("colors.semanticColors"), items: [{type: "group", heading: translate("colors.semanticColors"), items: SEMANTIC_COLOR_SLOTS.map(slot => this.colorAction(
+            {type: "page", name: translate("colors.semanticColors"), items: [{type: "group", items: [
+              {name: translate("colors.semanticColors"), desc: translate("colors.semanticColorsHelp", {views: translate("view.settingsViews"), compass: translate("view.classic"), tint: translate("compass.title"), toggle: translate("compass.enabled")}),
+                render: /** Native headings retain their explanatory text on the page itself, not just its navigation entry. */ setting => {setting.setHeading();}},
+              ...SEMANTIC_COLOR_SLOTS.map(slot => this.colorAction(
               translate(`colors.semantic.${slot}`), () => [{label: translate(`colors.semantic.${slot}`), value: {kind: "theme", variable: `--kplex-semantic-${slot}`}, fallback: `var(${SEMANTIC_COLOR_DEFAULTS[slot]}, var(--text-normal))`}],
               () => this.openSemanticColor(slot), translate(`colors.semanticHelp.${slot}`),
-            ))}]},
+            ))]}]},
             {type: "group", items: [
               this.colorAction(translate("settings.ui.plex.background"), () => [{label: translate("settings.ui.plex.background"), value: this.kplexPlugin.settings.backgroundColor, fallback: NATIVE_CANVAS_FILL}], () => this.openCanvasColorEditor()),
               {name: translate("colors.namedColors"), action: () => this.openColorPalette()},
@@ -3149,6 +3233,9 @@ export class KplexSettingTab extends PluginSettingTab {
         searchable: item.searchable, visible: item.visible,
         render: /** Native controls preserve search/navigation styling while the shared draft owns submission. */ setting => this.ontologyField(hierarchyField).mount(setting, control.rows ?? 3),
       };
+      if ((control.type === "textarea" || control.type === "text") && !control.validate && !control.disabled
+        && ["excludeFilepathsCsv", "nameFields", "noteTypeField", "thumbnailProperty", "nodeImageProperty"].includes(control.key))
+        return this.authoredTextControl(item, control);
       if (!/^(baseNodeStyle\.|centralNodeStyle\.|baseLinkStyle\.|backgroundColorHex$)/.test(control.key)
         || (control.type !== "slider" && control.type !== "toggle" && control.type !== "dropdown"))
         return control.type === "slider" ? this.numberControl(item, control) : {...item, control: {...control, key: this.receivedControlKey(control.key) as DeclarativeSettingKey}};
@@ -3199,17 +3286,44 @@ export class KplexSettingTab extends PluginSettingTab {
       }};
   }
 
+  /** Stack the finite long-text settings below their labels, including native global-search rows.
+   * The existing received-key setter retains persistence and conflict authority. No extra writer,
+   * settings subscription, debounce or semantic update is introduced by this layout adapter. */
+  private authoredTextControl(item: SettingDefinition<DeclarativeSettingKey>, control: Extract<NonNullable<SettingDefinition<DeclarativeSettingKey>["control"]>, {type: "text" | "textarea"}>): SettingDefinition<DeclarativeSettingKey> {
+    const key = this.receivedControlKey(control.key);
+    const metadata = {name: item.name, desc: item.desc, aliases: item.aliases, searchable: item.searchable, visible: item.visible};
+    /** A removed search result/page retires its native handlers. */
+    const renderAuthoredTextSetting = (setting: Setting): (() => void) => {
+      let active = true;
+      formField(setting);
+      const initial = this.getControlValue(key) ?? control.defaultValue;
+      /** Text edits retain native change timing and the canonical settings writer. */
+      const configure = (text: import("obsidian").TextComponent | import("obsidian").TextAreaComponent): void => {
+        text.setValue(typeof initial === "string" ? initial : "").setPlaceholder(control.placeholder ?? "");
+        if (control.type === "textarea" && control.rows) (text.inputEl as HTMLTextAreaElement).rows = control.rows;
+        text.inputEl.setAttribute("aria-label", item.name);
+        text.onChange(/** Detached/closed controls cannot write after their definition retires. */ value => {
+          if (active && setting.settingEl.isConnected && !setting.settingEl.ownerDocument.defaultView?.closed) void this.setControlValue(key, value);
+        });
+      };
+      if (control.type === "textarea") setting.addTextArea(configure); else setting.addText(configure);
+      return /** The native declarative renderer owns this release, also for global-search results. */ () => {active = false;};
+    };
+    return {...metadata, render: renderAuthoredTextSetting};
+  }
+
   /** Adapt every declarative numeric preference to the shared visible-value native slider.
    * Captured keys and the existing scalar writer retain view/settings reconciliation authority.
    * Row retirement also fences the shared slider's deferred display and incoming native events. */
   private numberControl(item: SettingDefinition<DeclarativeSettingKey>, control: Extract<NonNullable<SettingDefinition<DeclarativeSettingKey>["control"]>, {type: "slider"}>, unavailable = false): SettingDefinition<DeclarativeSettingKey> {
     const key = this.receivedControlKey(control.key) as DeclarativeSettingKey;
     const plugin = this.kplexPlugin;
+    const subscribeRow = (...args: Parameters<KplexSettingTab["subscribeThemeRow"]>) => this.subscribeThemeRow(...args);
     const readValue = (key: DeclarativeSettingKey) => this.getControlValue(key);
     const writeValue = (key: DeclarativeSettingKey, value: number) => this.setControlValue(key, value);
     return {name: item.name, desc: unavailable ? plugin.translator("view.settingsUnavailable") : item.desc,
       searchable: item.searchable, visible: item.visible, render: function renderNumberSetting(setting) {
-        let active = true;const doc = setting.settingEl.ownerDocument;
+        let active = true, doc = setting.settingEl.ownerDocument;
         const current = (): boolean => active && setting.settingEl.isConnected && setting.settingEl.ownerDocument === doc && !doc.defaultView?.closed;
         setting.settingEl.dataset.kplexSettingKey = key;
         const read = (): number => Number(readValue(key) ?? control.defaultValue ?? control.min);
@@ -3222,7 +3336,10 @@ export class KplexSettingTab extends PluginSettingTab {
             finally {if (current()) slider.setValue(read());}
           }});
         const release = plugin.index.subscribePresentation(() => {if (current()) slider.setValue(read());});
-        return () => {active = false;slider.dispose();release();};
+        return subscribeRow(setting, /** Native Settings may move a live numeric row into its popout document. */ migrated => {
+          if (migrated) doc = setting.settingEl.ownerDocument;
+          if (current()) slider.setValue(read());
+        }, /** Page replacement or its actual owning window closing retires both subscriptions and input. */ () => {active = false;slider.dispose();release();});
       }};
   }
 

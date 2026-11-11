@@ -35,6 +35,9 @@ for (const file of [
   "src/index/fieldParser.ts",
   "src/adapters/obsidian/yieldToHostTask.ts",
   "src/adapters/obsidian/urlIdentity.ts",
+  "src/adapters/obsidian/dailyNotes.ts",
+  "src/core/plex/periodicPins.ts",
+  "src/core/plex/savedPins.ts",
   "src/adapters/obsidian/metadataSourceCollector.ts",
 ]) compile(file);
 
@@ -146,6 +149,25 @@ function assertNoHostObject(value) {
 }
 
 try {
+  {
+    // Property display labels share literal grammar, stream bounded batches and retain cancellation.
+    const source = new TFile("Labels.md");
+    const { host } = makeHost([source]);
+    const meta = makeMetadata({ frontmatter: { Links: Array.from({ length: 600 }, (_, i) => `[Label ${i}](https://example.com/${i})`) } });
+    const settings = { noteTypeField: "Type", primaryTagField: "Style" };
+    const records = await collect(new ObsidianMetadataSourceCollector(host,
+      { isCurrent: () => true, sourceRevision: () => 1, checkpoint: async () => true }, source, meta, settings, "presentation"));
+    assert.equal(records.filter(record => record.kind === "url-label").length, 600);
+    assert.equal(records.some(record => record.kind === "body-url" || record.kind === "reference-candidate"), false,
+      "Labels supplement existing reference evidence instead of adding another relationship");
+    const batches = []; let checkpoints = 0;
+    const cancelled = new ObsidianMetadataSourceCollector(host,
+      { isCurrent: () => true, sourceRevision: () => 1, checkpoint: async () => ++checkpoints < 10 }, source, meta, settings, "presentation");
+    assert.equal(await cancelled.collectBatches(batch => { batches.push(batch); return true; }), false);
+    assert.equal(batches.at(-1)?.final ?? false, false);
+    assert(batches.every(batch => batch.records.length <= MAX_NORMALIZED_SOURCE_RECORDS_PER_BATCH));
+    assert.equal(cancelled.isBoundaryCurrent(cancelled.boundary), false);
+  }
   {
     // Real adapter replay normalizes old raw URL facts without rewriting lexical provenance.
     const source = { id: "source opaque", kind: "document", state: "materialized", semanticPath: "Source.md", physicalPath: "Source.md" };
@@ -364,8 +386,9 @@ try {
       vault: { getFileByPath(path) { return path === target.path ? target : null; } },
       metadataCache: { resolvedLinks: { "Source.md": { [target.path]: 3 } }, getFirstLinkpathDest(linkpath) { return linkpath === "Target" ? target : null; } },
       metadataTypeManager: {
-        getPropertyInfo(name) { return name === "Date" ? { widget: "date" } : null; },
-        getAssignedWidget(name) { return name === "Fallback Date" ? "date" : null; },
+        // Obsidian returns a text descriptor even before this property's inferred info exists.
+        getPropertyInfo(name) { return {widget:name === "Date" || name === "Explicit Text" ? "date" : "text"}; },
+        getAssignedWidget(name) { return name === "Fallback Date" ? "date" : name === "Explicit Text" ? "text" : null; },
       },
       internalPlugins: {
         getPluginById(id) { return id === "daily-notes" ? { enabled: true, instance: { options: { folder: "/Daily//", format: "YYYY/MM/DD" } } } : null; },
@@ -381,6 +404,7 @@ try {
     const host = createObsidianMetadataSourceHost(app);
     assert.equal(host.isDateProperty("Date"), true);
     assert.equal(host.isDateProperty("Fallback Date"), true);
+    assert.equal(host.isDateProperty("Explicit Text"), false, "Explicit Text beats stale inferred Date information");
     assert.deepEqual(host.dailyNotesSettings(), { folder: "Daily", format: "YYYY/MM/DD" });
     assert.equal(host.formatDailyDate("2026-09-18", "YYYY/MM/DD"), "2026/09/18");
     assert.equal(host.formatDailyDate("bad", "YYYY/MM/DD"), null);

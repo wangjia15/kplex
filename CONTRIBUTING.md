@@ -10,7 +10,31 @@ Read [CODING_STANDARDS.md](CODING_STANDARDS.md) before implementing or reviewing
 
 ## Setup
 
+### Validation output and cleanup
+
+Follow [validation storage and retention](docs/VALIDATION_ARTIFACTS.md). Raw output
+uses ignored `.test-work/validation/` runs created with `createValidationRun` from
+`scripts/validationArtifacts.mjs`; complete each run in `finally`. Finished raw data
+expires after 14 days, with reasoned holds limited to 90 days. `preverify` tests the
+policy, purges expired owned runs and checks staged/CI-diff validation content.
+Use `npm run validation:prune` at task start/end, `npm run validation:audit -- --list`
+for the monthly committed-history review, and `npm run check:validation` before
+commit. New validation files are ignored by default. Keep results in the PR;
+exceptional committed summaries require explicit approval and expiring registry
+entries. Cleanup never sweeps personal vaults, deployment backups or arbitrary temp
+directories, and never automatically deletes tracked history.
+
+### Dependencies and checks
+
 Use Node.js **22.22.2** for acceptance checks. If your environment cannot provide it or install dependencies, record the limitation and return runnable checks for the validation agent; results from another runtime do not replace the required lane.
+
+Use `npm run build:local` for an optimized build deployed to a local vault. It has the same
+optimizations and hardening as production, with a compile-time UTC/Git build identity for diagnostics.
+Use `npm run dev` for watch development; each actual rebuild refreshes that identity. The release
+and scanner command remains `npm run build`, reproducible without Git metadata. Release workflows
+must never publish locally identified bundles. See [diagnostic build identities](docs/INDEXING_DIAGNOSTICS.md#local-build-identities).
+
+After exact-build staging, `npm run verify:obsidian:index-pacing` uses the three explicit `kplex-test-small` target variables and a fresh `KPLEX_HOST_REPORT_DIR`. It exercises bundled short-wait pacing in all three scheduling modes, mutation preemption, unload settlement, and replacement/reclamation/restoration of a private synthetic IndexedDB snapshot. It creates no vault notes and preserves settings/enablement bytes. The report compares the retained timer fallback with the native short-wait path and records actual visibility. `KPLEX_PACING_HIDDEN=true` temporarily hides only the selected Small window and restores its visibility/focus/minimized state in independent cleanup; it does not alter Electron throttling. Hosts without asynchronous atomic-wait support retain native timer fallback. Windows evidence does not establish macOS or physical mobile behavior.
 
 ```bash
 npm i
@@ -30,6 +54,43 @@ Build output must appear in `dist/` and contain:
 - `dist/styles.css`
 
 The plugin ID is `k-plex`.
+
+### Indexing and persistence acceptance
+
+The [mandatory indexing and persistence gates](CODING_STANDARDS.md#mandatory-indexing-and-persistence-acceptance-gates)
+apply before declaring an indexing change complete. Include the following in the
+implementation checklist and the PR results:
+
+1. Capture the reported workload, released baseline, branch base, exact artifact,
+   settings and cache condition. State which measured behavior must improve.
+2. Reproduce the failed workflow with executable coverage. Include a settled
+   persisted graph with non-default ontology and structural changes, rather than
+   relying only on a clean installation or a tiny source fixture.
+3. After reconciliation, verify that the correct complete cache actually
+   activates. Run two unchanged restart cycles and compare all work admissions
+   and counters. Verify that the same settings/topology differences do not return
+   and that only actual changed owners and proven dependents require processing.
+   Include Obsidian's **Reload app without saving** when validating application
+   startup: a plugin toggle does not reproduce native metadata-cache startup, and
+   a shutdown flush cannot satisfy this restart path.
+4. Exercise pending-save close/reopen, no-op native events, save failure/retry,
+   idle/wake and foreground mutations during background work. Keep assertions
+   about current-view correctness, cancellation, identities and bounded memory.
+5. Check simultaneous status activities in the real UI. Record first paint,
+   requested-view readiness, full settlement and cache activation separately.
+6. Run `npm run verify` and the affected exact-build native lanes using Node
+   22.22.2. If an aggregate run fails, preserve the failure and record any unchanged
+   rerun plus the completion of every remaining gate; do not claim that failed
+   aggregate invocation passed. Recheck affected evidence after source edits.
+7. Compare the final artifact with the tested/staged/deployed hashes and verify
+   independent cleanup. Keep logs and timing receipts in managed ignored storage;
+   put a concise gate-by-gate result and any unfinished acceptance in the PR.
+
+Read-only observation in a production vault does not authorize changing its notes,
+resetting its cache, altering preferences or creating another test vault. Use the
+existing approved disposable vault for mutation/failure scenarios; obtain consent
+before preparing a new vault. Existing explicit deployment/restart authorization
+continues to apply within its stated scope.
 
 ### Release metadata
 
@@ -60,6 +121,17 @@ Do not consider a change complete until it builds against the real installed Obs
 SI3 source storage has two focused lanes: `npm run test:sources` exercises production codecs, storage-degraded facts, host acquisition and GraphBuilder integration; `npm run test:sources:browser` exercises real Chromium IndexedDB, including a fresh browser-process restart. Both are included in `npm test`. The same `KPLEX_TEST_BROWSER` setting selects Chromium (`KPLEX_CHROMIUM` is also accepted). Missing or administratively blocked browser access fails that lane, rather than substituting a mock. See [the source repository contract](docs/SOURCE_REPOSITORY.md) for current Review limitations.
 
 ### Desktop CLI setup (Windows and macOS)
+
+After exact-build staging, `npm run verify:obsidian:pins-calendar-journal` uses the three explicit disposable `kplex-test-small` target variables below and `KPLEX_HOST_REPORT_DIR`. It exercises pin editing and scrolling, the native Daily Notes calendar, confirmed past-date creation through Core templates, nearest journal links in Compass/Mindmap/Facets, independent ontology memory, narrow light/dark presentation and popout navigation. The driver owns its temporary notes and restores Daily Notes options, settings bytes, appearance, workspace and geometry. Core Daily Notes must be enabled in this disposable vault. It uses Obsidian's DOM menu backend for observable trusted Electron input; macOS, physical touch and OS date-picker behavior remain separate acceptance.
+
+For daily-template materialization, run `node scripts/testing/obsidian/dailyNoteMaterialization.mjs`
+under the same shared application lock, exact-build staging and explicit Small variables.
+Stage and enable real Templater and Excalidraw first; the caller restores that executable
+staging afterward. The scenario checks the native placeholder option and its displayed
+destination, actual template evaluation, calendar and Today confirmation, exact-file drawing
+opening and plain Markdown preservation, with zero additional full graph builds. It restores
+its notes, template callbacks, native options, settings and workspace; it does not run the
+production DNP template or establish physical mobile/Mac acceptance.
 
 Install a CLI-capable Obsidian desktop installer, enable **Settings → General → Advanced → Command line interface**, and complete registration. Keep Obsidian running and the test vault open. Restart the terminal (and an already-running IDE/agent session) after registration so it sees the updated PATH. See [Obsidian's CLI installation and troubleshooting](https://help.obsidian.md/cli).
 
@@ -1165,6 +1237,13 @@ checks. A failed cleanup or an installed/build hash mismatch invalidates accepta
 
 ### Native Sidecar folding acceptance
 
+Set `KPLEX_SIDECAR_ATTACHMENT_ONLY=true` on the folding driver for the focused
+four-edge attachment matrix: selected Sidecar hides both arrows, another document
+shows both, an empty sibling shows only outward flow, and closing the hidden
+companion retains attachment. Trusted arrow clicks verify both synchronization
+directions, replacement ownership and preserving the former companion's tab.
+This reuses the same exact-build staging, shared host lock and state restoration.
+
 After exact-build staging, run `npm run verify:obsidian:sidecar-folding` with all three explicit
 disposable `kplex-test-small` vault variables and a fresh `KPLEX_HOST_REPORT_DIR`. Run native and
 browser lanes serially. The lane exercises the published toggle and trusted native shortcut,
@@ -1473,6 +1552,8 @@ Chromium renderer with a test-only non-Classic definition, including arbitrary
 areas, repeated occurrences, Find, grouping, selection, preference restoration,
 action cancellation and failure recovery. All belong to normal `npm run verify`.
 
+Facets preset node presentation is covered by `facets-node-presentation`, `facets-node-presentation-browser`, `facets-manager-browser` and `portable-presets`. The browser matrix exercises all five layouts, four toggle combinations, default routing in other views, category scroll/crosslink clipping, hover, filtering, resize and theme changes. After exact-build staging under the shared application-user-data lock, use `KPLEX_WUXING_NATIVE_LANE=node-presentation` with `npm run verify:obsidian:wuxing`, the three explicit disposable Small variables and a fresh `KPLEX_HOST_REPORT_DIR`. This native lane observes zero source work during preset toggles, native dirty editor identity and clipping, Sidecar, and main/popout preset independence. Restore native plugin-enablement persistence before capturing a baseline; a completed CLI enable command can precede its file write. Windows automation does not establish macOS or physical touch acceptance.
+
 After exact-build `verify:obsidian` staging in backed-up Small, run
 `npm run verify:obsidian:plex-views` with the three explicit test-vault variables
 and a fresh report directory. Back up the native workspace and establish a usable
@@ -1603,6 +1684,115 @@ unresolved-link cases; run only the affected lane for a scoped menu fix, not an 
 See [the focused menu-target record](docs/validation/file-menu-targets-2026-11-01.md) for the reproduced
 failure, exact-build native evidence and the maintainer's explicit no-full-regression instruction.
 
+
+### Frontmatter URL label acceptance
+
+For frontmatter Markdown URL-label changes, stage the exact build in the existing disposable
+Small vault, then run `npm run verify:obsidian:frontmatter-labels` with the three explicit
+test-vault variables and a fresh `KPLEX_HOST_REPORT_DIR`. The driver uses the shared host lock
+and verifies actual canvas titles/search, native property edits and label removal. It waits
+for ordinary snapshot persistence before real Eager and On-demand plugin reloads, checking
+unchanged-note reads/parses and restoring its notes, settings, enablement and workspace.
+This is a functional desktop/cache lane, not physical mobile or paint-performance evidence.
+
+### Pins, Page Preview and Obsidian URI acceptance
+
+After exact-build staging in the existing disposable Small vault, run
+`npm run verify:obsidian:pins-preview-uri` with the three explicit test-vault variables,
+a fresh `KPLEX_HOST_REPORT_DIR` and one `KPLEX_270_NATIVE_LANE`: `pins`, `settings`,
+`preview`, `uri` or `ontology`. Run lanes serially. The driver owns the shared application
+lock, checks the installed artifacts and restores its notes, views, configuration and workspace.
+It exercises trusted reorder/cancel/History input, controlled calendar rollover and shared
+pin activation, actual declarative controls, core previews across tab/sidebar/popout, native
+URI actions and warm cache reuse, and Add/Edit ontology description typing. Native DOM receipts
+are not physical-device or paint benchmarks. See the [PR #270 validation record](docs/validation/pins-preview-uri-270-2026-11-03.md)
+for exact evidence, baseline reproduction and remaining platform checks.
+
+### Folder, authoring and Compass acceptance
+
+After exact-build staging in disposable Small, run `npm run verify:obsidian:authoring-compass`
+with the three explicit test-vault variables, a fresh `KPLEX_HOST_REPORT_DIR`, and
+`KPLEX_278_NATIVE_LANE` set to `folders`, `structural`, `authoring`, `imports`, `compass`,
+`pins`, `pin-settings`, `lifetime`, `periodic`, `navigation`, `daily-template`, `daily-automation`, `forms`, `gate-defaults` or `controls`. Run these lanes serially; the driver holds the shared application lock,
+verifies installed artifact hashes and restores exact configuration bytes and owned fixtures.
+`inventory` is a read-only host-control discovery lane with the same fixture cleanup.
+
+The folder lane uses trusted Files create/name input and compares affected work at two unrelated
+fixture sizes. Authoring checks actual ontology child dialogs and stored properties. Imports use
+Electron's documented debugger transport for trusted Chromium Files drops from owned external
+Markdown/binary fixtures and a recursive directory with an empty subfolder. It checks one shared destination/child ontology, exact-file retry after a linking failure, and unchanged originals; set `KPLEX_278_IMPORT_WINDOW=window` to repeat in a real popout.
+Compass checks physical layout, gate/keyboard routing, one-sided composition and reload. Pins
+reuse the accepted #270 suite and inspect computed feedback during held native gestures;
+`KPLEX_278_VISUAL_HOLD=true` holds its first gesture for visual review without changing deadlines.
+Focus changes during that hold intentionally cancel the operation. Lifetime checks retire stale
+ontology children on native popout close and migration. Structural checks exercise the shared note/subfolder tabs, remembered choice, and native Move with incoming-link maintenance. Periodic checks confirm Cancel, each opening destination, exact creation and remembered choice across reload. Navigation checks the Files folder menu and trusted folder drag. Set `KPLEX_278_UX_VISUAL_PHASE` to `folder-note`, `folder-subfolder`, `flip`, `imports` or `periodic` for a bounded 45-second dialog review hold. These are Windows/native functional
+receipts, not macOS, physical-mobile or production-vault performance evidence.
+
+`daily-template` delegates actual creation to core Daily Notes with an owned template,
+checking token expansion, configured/default destinations, Cancel, and a missing-template
+failure with no empty substitute. `forms` measures the shared fields, option typography,
+footer glyphs, spacing and divider clearance in native light/wide and dark/narrow windows,
+including declarative Settings; `KPLEX_278_IMPORT_WINDOW=window` exercises a real popout.
+Its template dropdown uses real owned paths with injected drawing availability for layout
+only, not a companion-plugin creation claim. Set `KPLEX_278_UX_VISUAL_PHASE=forms` for
+15-second visual holds, or `form:Add relationship` to hold only that form. Native modal
+and browser viewport coverage cannot establish physical on-screen keyboard acceptance.
+
+`controls` compares the actual relationship direction, template, completion and editable
+ontology controls with core Obsidian Editor/Daily Notes Settings. It checks native
+input/dropdown skin properties, the unboxed ontology disclosure, trusted browse/Escape
+behavior, disabled/enabled remembered creation CTA and equal footer-button top edges/heights.
+`pin-settings` reuses the native declarative Settings lane, including intrinsic stacked
+field heights/gaps at three widths in both themes, dependent controls and persistence. Use
+`KPLEX_278_UX_VISUAL_PHASE=controls-reference` for bounded core-control review holds,
+or `controls` for the composed relationship form. These checks preserve core preferences;
+they do not establish physical mobile or macOS acceptance.
+
+`gate-defaults` exercises trusted source-to-destination gate drops on both lateral
+destination gates, temporal modifiers, empty-canvas Parent/Child and flipped Compass
+orientation. It inspects the actual composer role and per-role ontology default, then
+cancels. `controls` also checks compact Cancel/Link geometry and glyph centering with
+and without drawing availability, and read-only recovery capture with zero new work.
+
+`daily-automation` reproduces a daily-template callback using the installed Excalidraw
+command and actual metadata events. It compares an active-editor command with an
+explicitly targeted Sidecar view, then executes the replacement in
+[the daily-note snippet](docs/snippets/daily-note-excalidraw-view.md), both before
+and after that editor opens. The fixture supplies only the template-complete hook;
+it does not establish full Templater/DNP template processing. Real native
+Markdown/Excalidraw views and all fixture/configuration cleanup are required.
+
+`template-lifecycle` requires actual Templater staged and enabled in the disposable
+vault (the validated run used its installed 2.26.0 executable). It suspends real
+folder/regex template commands in YAML, verifies no early K-Plex metadata writes,
+then checks evaluated body/properties, reversed ownership, handler restoration and
+zero additional full semantic builds. Core Daily Notes commands are also evaluated.
+Templater settings, local automation flags and owned files are restored; the staging
+caller owns temporary executable installation/removal under the shared lock.
+`ontology-export` validates the shared connection picker and Markdown export in
+light/wide and dark/narrow native windows. Use
+`KPLEX_278_UX_VISUAL_PHASE=ontology-export` (or `ontology-export-dark`) for bounded
+review holds. `pin-settings` also verifies that custom Folder/Date format rows hide
+while Daily Notes settings are selected and return with their saved values intact;
+`pin-settings-daily` is its visual hold phase.
+
+`preset-ui` opens the real Facets preset editor from a connected native Settings
+page, exercises aligned dropdowns and the shared paired color/source row, and
+checks centered footer icons and Help/classification spacing at wide and narrow
+sizes. Both the main and Settings documents must use the requested theme during
+capture; restore their original classes afterward. Native renderer screenshots
+are written only into the staging caller's report directory. This lane preserves
+drafts/configuration and requires zero source acquisitions. Its optional hold phase
+is `preset-ui-dark`.
+
+`source-recovery` retires only the disposable acquisition's local lookup authority,
+then runs the real conservative cached-source sweep. It counts native head/dependency
+transactions, requires actual final dependency closure, checks unchanged Markdown
+read/parse counts and verifies a subsequent native edit without a full semantic
+build. Newly inserted notes may shift native ordinals; the existing coordinate CAS
+must still run. This forced retry is not a reproduction of a production storage
+failure or a production-vault timing benchmark. Use the same exact-build staging,
+shared host lock, three explicit disposable-vault variables and baseline restoration.
 
 ### Eager graph maintenance acceptance
 

@@ -1,9 +1,12 @@
 /**
  * Native Obsidian dialog for materializing a placeholder as a real Markdown note. The plugin owns vault changes; this shell owns localized controls, validation feedback and close cleanup.
  */
+import {formActions, iconButton, FormSetting as Setting, KplexModal as Modal, formField} from "../adapters/obsidian/KplexModal";
+
+
 import { DrawingTemplateSelect, type DrawingTemplateChoices } from "./features/DrawingTemplateSelect";
 import { SavedRelationshipPendingError } from "../adapters/obsidian/relationshipMetadataWrite";
-import { Modal, Notice, Setting, type App, type ButtonComponent, type Scope, type TFile } from "obsidian";
+import {Notice, type App, type ButtonComponent, type Scope, type TFile} from "obsidian";
 import { createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createObsidianTranslator } from "../adapters/obsidian/localization";
@@ -26,6 +29,10 @@ export type GhostMaterializationLocation = {
   label: string;
 };
 
+/** Explicit native daily-template choice, separate from the editable ordinary destination. */
+export type GhostDailyNoteChoice = Readonly<{path: string;
+  create(retainedFile: TFile | undefined, current: () => boolean, afterSaving: CreationAfterSavingAction): Promise<boolean>}>;
+
 export class MaterializeGhostModal extends Modal {
   private readonly translate = createObsidianTranslator();
   private selectedFolderPath: string;
@@ -35,10 +42,11 @@ export class MaterializeGhostModal extends Modal {
   private opened = false;
   private generation = 0;
   private folderRoot: Root | null = null;
-  private readonly buttons: Array<{ button: ButtonComponent; kind: GhostMaterializationKind }> = [];
+  private readonly buttons: Array<{ button: ButtonComponent; kind: GhostMaterializationKind; daily?: boolean }> = [];
   private readonly nativeHandlers: Array<ReturnType<Scope["register"]>> = [];
   private partialFile: TFile | null = null;
   private partialKind: GhostMaterializationKind | null = null;
+  private partialDaily = false;
   private folderPaths: string[] = [];
   private recoveryStatus: HTMLElement | null = null;
   private completionRoot: Root | null = null;
@@ -55,6 +63,7 @@ export class MaterializeGhostModal extends Modal {
     private readonly focusFolder = false,
     private readonly templateChoices?: DrawingTemplateChoices | null,
     private readonly completionControl?: CreatedNoteCompletionControl,
+    private readonly dailyNote?: GhostDailyNoteChoice,
   ) {
     super(app);
     this.selectedFolderPath = locations[0]?.folderPath ?? "";
@@ -63,19 +72,22 @@ export class MaterializeGhostModal extends Modal {
   }
 
   /** Submit the validated creation request to the plugin and show localized failure feedback; the modal retains its existing busy/close lifecycle. */
-  private async create(kind: GhostMaterializationKind): Promise<void> {
-    if (this.creating || !this.opened || this.partialKind && kind !== this.partialKind) return;
+  private async create(kind: GhostMaterializationKind, daily = false): Promise<void> {
+    if (this.creating || !this.opened || daily && !this.dailyNote || this.partialKind && (kind !== this.partialKind || daily !== this.partialDaily)) return;
     const generation = this.generation;
     /** Closing and reopening the same shell never revives an earlier submission's UI authority. */
     const current = (): boolean => this.opened && this.generation === generation;
     this.creating = true;
     this.refreshControls();
     try {
-      if (await this.onCreate(kind, this.selectedFolderPath, this.partialFile ?? undefined, current, this.templatePath, this.afterSaving) && current()) this.close();
+      const completed = daily && this.dailyNote
+        ? await this.dailyNote.create(this.partialFile ?? undefined, current, this.afterSaving)
+        : await this.onCreate(kind, this.selectedFolderPath, this.partialFile ?? undefined, current, this.templatePath, this.afterSaving);
+      if (completed && current()) this.close();
     } catch (error) {
       if (!current()) return;
       if (error instanceof PartialRelatedFileError) {
-        this.partialFile = error.file; this.partialKind = kind;
+        this.partialFile = error.file; this.partialKind = kind; this.partialDaily = daily;
         if (this.opened) {
           this.recoveryStatus ??= this.contentEl.createDiv({ cls: "kplex-add-related-recovery", attr: { role: "alert" } });
           this.recoveryStatus.setText(this.translate("ghost.recoverCreated", { path: error.file.path, error: error.message }));
@@ -92,7 +104,7 @@ export class MaterializeGhostModal extends Modal {
   private refreshControls(): void {
     this.renderTemplate();
     this.renderCompletion();
-    for (const { button, kind } of this.buttons) button.setDisabled(this.creating || this.partialKind !== null && kind !== this.partialKind);
+    for (const { button, kind, daily } of this.buttons) button.setDisabled(this.creating || this.partialKind !== null && (kind !== this.partialKind || Boolean(daily) !== this.partialDaily));
     this.folderRoot?.render(createElement(MaterializationFolderInput, {
       value: this.selectedFolderPath, folders: this.folderPaths, translate: this.translate, autoFocus: this.focusFolder,
       openResultsOnFocus: false,
@@ -137,6 +149,7 @@ export class MaterializeGhostModal extends Modal {
 
     const folderSetting = new Setting(this.contentEl).setName(this.translate("folderPicker.label"))
       .setClass("kplex-materialize-folder-row");
+    formField(folderSetting);
     const folderHost = folderSetting.controlEl.createDiv({ cls: "kplex-materialize-folder-input" });
     this.folderRoot = createRoot(folderHost);
     this.folderPaths = this.app.vault.getAllFolders(true).map(/** Include root without exposing note contents. */ folder => folder.path === "/" ? "/" : folder.path);
@@ -150,11 +163,11 @@ export class MaterializeGhostModal extends Modal {
       this.completionRoot = createRoot(this.contentEl.createDiv({cls: "kplex-creation-completion-row"}));
       this.renderCompletion();
     }
-    const actionSetting = new Setting(this.contentEl);
+    if (this.dailyNote) this.contentEl.createEl("p", {text: this.translate("ghost.dailyNoteHelp", {path: this.dailyNote.path}), cls: "setting-item-description"});
+    const actionSetting = formActions(this.contentEl);
     actionSetting.addButton((button) => {
       this.buttons.push({ button, kind: "markdown" });
-      button
-        .setButtonText(this.translate("common.markdown"))
+      iconButton(button, this.translate("common.markdown"), "text-initial")
         .onClick(() => { void this.create("markdown"); });
       if (effectiveDefault === "markdown") button.setCta();
     });
@@ -162,22 +175,25 @@ export class MaterializeGhostModal extends Modal {
     if (this.excalidrawAvailable) {
       actionSetting.addButton((button) => {
         this.buttons.push({ button, kind: "excalidraw" });
-        button
-          .setButtonText(this.translate("common.excalidraw"))
+        iconButton(button, this.translate("common.excalidraw"), "palette")
           .onClick(() => { void this.create("excalidraw"); });
         if (effectiveDefault === "excalidraw") button.setCta();
       });
     }
 
-    actionSetting.addButton((button) => button
-      .setButtonText(this.translate("common.cancel"))
+    if (this.dailyNote) actionSetting.addButton(button => {
+      this.buttons.push({button, kind: "markdown", daily: true});
+      iconButton(button, this.translate("ghost.createDailyNote"), "calendar-days").onClick(() => {void this.create("markdown", true);});
+    });
+
+    actionSetting.addButton((button) => iconButton(button, this.translate("common.cancel"), "x")
       .onClick(() => this.close()));
 
     this.nativeHandlers.push(this.scope.register(["Mod"], "Enter", (event) => {
       if (event.defaultPrevented || event.isComposing || event.repeat || event.getModifierState?.("AltGraph")
         || this.contentEl.querySelector('input[aria-expanded="true"]')) return undefined;
       event.preventDefault();
-      void this.create(this.partialKind ?? effectiveDefault);
+      void this.create(this.partialKind ?? effectiveDefault, this.partialKind !== null && this.partialDaily);
       return true;
     }));
   }

@@ -15,13 +15,14 @@ import ts from "typescript";
 // The real convergence adapter is exercised with host events, not replaced by an immediate success.
 const metadataTemp = mkdtempSync(join(tmpdir(), "kplex-created-metadata-"));
 process.on("exit", () => rmSync(metadataTemp, { recursive: true, force: true }));
-await build({ stdin: { contents: 'export * from "./src/adapters/obsidian/relationshipMetadataWrite"; export { normalizeFieldName } from "./src/core/contracts/fieldName"; export { captureSurfaceContinuation } from "./src/ui/surfaceContinuation"; export { createTranslator } from "./src/lang/index";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
+await build({ stdin: { contents: 'export * from "./src/adapters/obsidian/relationshipMetadataWrite"; export {gateCreationRole,gateGroupRole} from "./src/ui/features/gateRelationshipIntent"; export { normalizeFieldName } from "./src/core/contracts/fieldName"; export { captureSurfaceContinuation } from "./src/ui/surfaceContinuation"; export { createTranslator } from "./src/lang/index";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
   outfile: join(metadataTemp, "observer.mjs"), bundle: true, platform: "node", format: "esm" });
-const { writeRelationshipMetadata, SavedRelationshipPendingError: ActualSavedPendingError, normalizeFieldName: actualNormalizeFieldName, captureSurfaceContinuation, createTranslator }
+const { gateCreationRole,gateGroupRole,writeRelationshipMetadata, SavedRelationshipPendingError: ActualSavedPendingError, normalizeFieldName: actualNormalizeFieldName, captureSurfaceContinuation, createTranslator }
   = await import(pathToFileURL(join(metadataTemp, "observer.mjs")));
 
 /** Compile a production callback/method; class-field arrows capture the supplied owning instance. */
 function productionFunction(path, name, dependencies) {
+  dependencies={gateCreationRole,gateGroupRole,...dependencies};
   const source = ts.createSourceFile(path, readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression;
   function visit(node) {
@@ -38,6 +39,7 @@ function productionFunction(path, name, dependencies) {
 }
 
 const tagMembershipPair = productionFunction("src/ui/structuralConnectionActions.ts", "tagMembershipPair", {});
+const eligibleRelationshipOwner = productionFunction("src/adapters/obsidian/relationshipOwner.ts", "eligibleRelationshipOwner", {});
 const structuralDropKind = productionFunction("src/ui/StructuralNodeDropActions.ts", "structuralDropKind", {tagMembershipPair});
 
 /** Minimal Markdown-backed graph page retaining exact endpoint paths and canonical identity. */
@@ -318,6 +320,7 @@ test("reactive startup backlog cannot rebuild a partial cache preview before hyd
       size: 3, hasPendingStructuralMaintenance: () => false, hasPendingSnapshotHydration: () => hydrating,
       waitForSnapshotHydration: async () => { events.push("wait"); await closed; hydrating = false; return { restored: true, fresh: false }; },
       hasSourceBackedStartup: () => false, isFullSnapshotHydrated: () => !hydrating, hasIncrementalRestorePatch: () => true,
+      finishStartupSnapshot: () => {},
       reconcileRestoredSnapshot: async () => { assert.equal(hydrating, false); events.push("patch-real-delta"); return { reconciled: true, patched: 1 }; },
       rebuild: () => assert.fail("A valid warm delta must not start from zero"),
     },
@@ -344,7 +347,7 @@ for (const outcome of ["fresh", "stale", "failed", "sources", "sources-pending"]
     const events = [];let optionalUrlStarts=0;
     const context = {
       unloading: false, layoutReady: true, initialIndexTask: null, initialIndexComplete: false,
-      indexDirty: true, indexDirtyRevision: 0, preRestoreUncoveredChanges: false,
+      indexDirty: true, indexDirtyRevision: 0, preRestoreUncoveredChanges: false, preRestoreInventoryCreatePaths:new Set(),
       indexBacklogReasons: new Set(["startup:no-snapshot"]), dirtyMarkdownPaths: new Set(), metadataStabilized: false,
       metadataStabilityPromise: null, rebuildTask: null, rebuildTimer: null,
       index: {
@@ -367,13 +370,15 @@ for (const outcome of ["fresh", "stale", "failed", "sources", "sources-pending"]
         noteBuildDecision: () => {},
         rebuild: async () => { events.push("full"); hydrated = true; return true; },
         rebuildProgressively: async () => { events.push("progressive"); hydrated = true; return true; },
+        acknowledgeHostPresentation: () => {},
+        finishStartupSnapshot: () => {},
       },
       waitForMetadataCacheStability: async () => { events.push("metadata"); await metadata; },
       refreshBookmarkedEntryPoints: async () => {}, notifyIndexStatus: () => {}, hasVisibleKplexSurface: () => true,
       scheduleRebuild: () => assert.fail("This settled startup needs no additional rebuild"),
       pruneMissingDirtyMarkdownPaths: () => {}, startupGraphSeedPaths: () => [],
     };
-    for (const name of ["ensureInitialIndex", "performRebuild", "adoptInitialSourceIndex", "retireCoveredCreateReason"]) {
+    for (const name of ["ensureInitialIndex", "performRebuild", "adoptInitialSourceIndex", "retireCoveredCreateReason", "retireCoveredMarkdownBacklog"]) {
       context[name] = productionFunction("src/main.ts", name, { Platform: { isIosApp: false } });
     }
     const task = context.ensureInitialIndex();
@@ -437,6 +442,11 @@ test("a pending relationship update exposes an active source audit and its measu
   sourceActive=false;facts=await compute.call(context,11819);
   assert.equal(facts.phase,"incomplete");assert.equal(facts.upToDate,false);
   assert.equal(JSON.parse((await status.call(context)).label).key,"index.statusRelationshipIncomplete");
+  sourceActive=true;context.index.isWaitingForNativeResolution=()=>true;
+  facts={...facts,phase:"ready",upToDate:true};
+  const waiting=await status.call(context);
+  assert.equal(waiting.activeWork,true,"A usable cached graph remains busy during the native readiness wait");
+  assert(waiting.label.includes("index.waitingNativeResolution"),"The tooltip identifies native resolution separately from K-Plex validation");
 });
 
 /** Alias maintenance reports search work/failure without masquerading as relationship loading or readiness. */
@@ -509,29 +519,37 @@ test("URL discovery status is independent of ready local graphs and clears after
   let facts = await compute.call(context, 100);
   context.computeIndexStatusFacts = () => facts;
   assert.equal(facts.phase, "ready", "Optional discovery cannot withhold local readiness");
-  assert.deepEqual(JSON.parse((await status.call(context)).label), {
+  const activityLabel = async () => {
+    const labels = (await status.call(context)).label.split("\n").map(line => JSON.parse(line));
+    if(localActive)assert.equal(labels[0].key,"indexing.localPreparing");
+    else if(url.active||url.failed)assert(labels[0].key.startsWith("indexing.urls"),"Only remaining work is shown instead of an unqualified ready line");
+    else assert.equal(labels[0].key,"indexing.localReady");
+    assert.equal(labels.length,localActive&&(url.active||url.failed)?2:1,"Concurrent active lanes remain visible");
+    return labels.find(row => row.key.startsWith("indexing.urls")) ?? labels[0];
+  };
+  assert.deepEqual(await activityLabel(), {
     key: "indexing.urlsPreparing",
   });
   url = { active: true, failed: false, processed: 0, total: 0, restored: 42 };
-  assert.deepEqual(JSON.parse((await status.call(context)).label), {
+  assert.deepEqual(await activityLabel(), {
     key: "indexing.urlsRestoring", params: { restored: 42 },
   });
   url = { active: true, failed: false, processed: 0, total: 0, restored: 75 };
-  assert.deepEqual(JSON.parse((await status.call(context)).label), {
+  assert.deepEqual(await activityLabel(), {
     key: "indexing.urlsRestoring", params: { restored: 75 },
   }, "The label tracks the actual restored count");
   url = { active: true, failed: false, processed: 4, total: 100, restored: 75 };
-  assert.deepEqual(JSON.parse((await status.call(context)).label), {
+  assert.deepEqual(await activityLabel(), {
     key: "indexing.urlsProgress", params: { processed: 4, total: 100 },
   });
   url = { active: false, failed: true, processed: 99, total: 100, restored: 75 };
-  assert.equal(JSON.parse((await status.call(context)).label).key, "indexing.urlsIncomplete");
+  assert.equal((await activityLabel()).key, "indexing.urlsIncomplete");
   url = { active: false, failed: false, processed: 100, total: 100, restored: 75 };
-  assert.equal(JSON.parse((await status.call(context)).label).key, "indexing.localReady");
+  assert.equal((await activityLabel()).key, "indexing.localReady");
   localActive = true;
   facts = await compute.call(context, 100);
   assert.equal(facts.upToDate, false);
-  assert.equal(JSON.parse((await status.call(context)).label).key, "indexing.localPreparing");
+  assert.equal((await activityLabel()).key, "indexing.localPreparing");
 });
 
 test("pre-restore file events update temporary availability while preserving backlog revision fences", async () => {
@@ -539,7 +557,7 @@ test("pre-restore file events update temporary availability while preserving bac
   class TFolder { constructor(path) { this.path = path; } }
   const vaultEvents = new Map(), metadataEvents = new Map(), updates = [], cleanup = [], topology = [];
   const context = { indexPreparationAdmitted: true, preRestoreListenerCleanup: null, indexDirtyRevision: 0,
-    preRestoreReasons: new Map(), preRestoreMarkdownPaths: new Map(),
+    preRestoreReasons: new Map(), preRestoreMarkdownPaths: new Map(), preRestoreActualMarkdownChanges:new Set(),
     preRestoreDormantReasons: new Set(), preRestoreDormantMarkdownPaths: new Set(), preRestoreCreatedItems: new Map(),
     app: { vault: { on: (kind, callback) => { vaultEvents.set(kind, callback); return kind; }, offref: kind => vaultEvents.delete(kind) },
       metadataCache: { on: (kind, callback) => { metadataEvents.set(kind, callback); return kind; }, offref: kind => metadataEvents.delete(kind) } },
@@ -669,7 +687,7 @@ function createdMetadataFixture({ extension = "md", displayField = "aliases", in
       if (nextBody !== body) { file.stat.mtime++; file.stat.size = nextBody.length; body = nextBody; }
       writes.push(structuredClone(next)); events.push("native-write");
     },
-  } }, relationshipWriteCancels: new Set(), managedMetadataWrites: new Map(), unloading: false,
+  } }, fileCreationAutomation: {wait: async()=>{}}, relationshipWriteCancels: new Set(), managedMetadataWrites: new Map(), unloading: false,
     pruneManagedMetadataWrites: () => {}, configuredDisplayNameField: () => displayField,
     translator: key => key, validateRelatedNoteName: () => ({ valid: true, existing: null, stem: "Created" }),
     createNewFileInFolder: async () => file,
@@ -690,9 +708,9 @@ function createdMetadataFixture({ extension = "md", displayField = "aliases", in
     assert.equal(destination, "tab"); assert(current());
     await context.openInDocumentLeaf(created.file, hostLeaf);
   };
-  for (const method of ["newRelatedNoteFolder", "validateNoteFolderPath", "mutateCreatedNodeMetadata", "writeCreatedNodeDisplayName", "writeCreatedNodeAlias", "createNewRelatedFileForOrigin", "linkNewRelatedFile", "appendRelationshipReference"])
+  for (const method of ["newRelatedNoteFolder", "validateNoteFolderPath", "waitForCreatedFileAutomation", "mutateCreatedNodeMetadata", "writeCreatedNodeDisplayName", "writeCreatedNodeAlias", "createNewRelatedFileForOrigin", "linkNewRelatedFile", "appendRelationshipReference"])
     context[method] = productionFunction("src/main.ts", method, { writeRelationshipMetadata, normalizeFieldName: actualNormalizeFieldName,
-      normalizePath: value => value,
+      eligibleRelationshipOwner, normalizePath: value => value,
       Notice: class { constructor(message) { notices.push(message); } } }).bind(context);
   return { context, file, origin, writes, events, notices, metadataCache, vault,
     observe() { cache = { frontmatter: structuredClone(frontmatter) }; events.push("cache-body-observed"); metadataCache.emit("changed", file, body, cache); },
@@ -818,9 +836,9 @@ for (const mode of ["refreshing", "preview-failed", "source-replaced", "target-r
         refreshVisibleHostMetadataPreviews: () => { previews++; if (mode === "preview-failed") throw new Error("Preview failed after saving"); } }, configuredDisplayNameField: () => null,
       prepareRelationshipMutation: assert.fail, publishSavedRelationship: assert.fail, translator: key => key,
       referenceForPage: page => `[[${page.path}]]`, valueContainsTarget: (values, _file, page) => values.includes(`[[${page.path}]]`),
-      pruneManagedMetadataWrites() {}, managedMetadataWrites: new Map() };
+      pruneManagedMetadataWrites() {}, managedMetadataWrites: new Map(), fileCreationAutomation: {wait: async()=>{}} };
     context.appendRelationshipReference = productionFunction("src/main.ts", "appendRelationshipReference", { normalizeFieldName: actualNormalizeFieldName });
-    const link = productionFunction("src/main.ts", "linkNewRelatedFile", { normalizeFieldName: actualNormalizeFieldName, SavedRelationshipPendingError: ActualSavedPendingError, console: { error() {} } }).bind(context);
+    const link = productionFunction("src/main.ts", "linkNewRelatedFile", {eligibleRelationshipOwner, normalizeFieldName: actualNormalizeFieldName, SavedRelationshipPendingError: ActualSavedPendingError, console: { error() {} } }).bind(context);
     if (mode === "refreshing" || mode === "preview-failed") {
       const result = await link(origin, "child", target.file, "child");
       assert.equal(result.state, "saved-pending"); assert.equal(result.page, target); assert.equal(writes, 1); assert.equal(previews, 1);

@@ -2,6 +2,19 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {colorEditorScenario} from './support/colorEditorBrowser.mjs';
 const setup=`const M=sourceModules,check=(value,message)=>{if(!value)throw Error(message)};`;
+
+test('long declarative text settings share stacked fields, preserve their writer and retire stale handlers',async()=>{
+ assert.equal(await colorEditorScenario(`(async()=>{${setup}
+ const p=await createAppearanceHost({});p.viewSettingsRegistry=M.builtInCanvasViewSettings;p.manifest={id:'k-plex'};
+ const tab=new M.KplexSettingTab({workspace:{on:()=>({}),offref:()=>{}}},p),all=[];const walk=items=>{for(const row of items){all.push(row);walk(row.items??[])}};walk(tab.getSettingDefinitions());
+ const fields=all.filter(row=>row.render?.name==='renderAuthoredTextSetting');check(fields.length===5,'Finite long native fields');
+ const writes=[];tab.setControlValue=async(key,value)=>writes.push({key,value});
+ for(const definition of fields){const host=document.body.createDiv(),row=new M.Setting(host),release=definition.render(row),input=host.querySelector('input,textarea');
+ check(row.settingEl.classList.contains('kplex-form-field')&&input.getAttribute('aria-label')===definition.name,'Shared full-width labelled field');check(!input.hasAttribute('title'),'No duplicate native tooltip');
+ input.value='Meaningful local value';input.dispatchEvent(new Event('input',{bubbles:true}));check(writes.at(-1)?.value==='Meaningful local value','Canonical setter receives actual input');
+ const before=writes.length;release();input.value='Retired';input.dispatchEvent(new Event('input',{bubbles:true}));check(writes.length===before,'Retired native row wrote settings');host.remove();}
+ return true})()`),true);
+});
 test('every generic Settings slider has a persistent accessible value and never writes on mount',async()=>{
  assert.equal(await colorEditorScenario(`(async()=>{${setup}
  const p=await createAppearanceHost({});p.writes=[];p.viewSettingsRegistry=M.builtInCanvasViewSettings;p.manifest={id:'k-plex'};
@@ -22,6 +35,23 @@ test('native shared slider coalesces slow updates and does not rewind the displa
  check(JSON.stringify(calls)==='[1.1]'&&output.textContent==='2.3','First write and latest immediate readout');slider.setValue(1.1);check(input.value==='2.3','External old completion cannot rewind draft');
  releases.shift()();await Promise.resolve();await Promise.resolve();check(JSON.stringify(calls)==='[1.1,2.3]'&&input.value==='2.3','Only latest unstarted input follows');
  releases.shift()();await Promise.resolve();await Promise.resolve();check(output.textContent==='2.3'&&document.activeElement===input,'Settled value/focus');slider.dispose();const count=calls.length;input.value='3';input.dispatchEvent(new Event('input',{bubbles:true}));check(calls.length===count,'Retired slider inert');host.remove();return true})()`),true);
+});
+
+test('cross-link opacity remains editable after native Settings adopts its row into another window',async()=>{
+ assert.equal(await colorEditorScenario(`(async()=>{${setup}
+ const p=await createAppearanceHost({crossLinkOpacity:85});p.viewSettingsRegistry=M.builtInCanvasViewSettings;p.manifest={id:'k-plex'};
+ const tab=new M.KplexSettingTab({workspace:{on:()=>({}),offref:()=>{}}},p),all=[];
+ const walk=items=>{for(const row of items){all.push(row);walk(row.items??[])}};walk(tab.getSettingDefinitions());
+ const definition=all.find(row=>row.name===p.translator('settings.ui.cross.link.opacity'));
+ const host=document.body.createDiv(),row=new M.Setting(host),release=definition.render(row),input=host.querySelector('input'),output=host.querySelector('output');
+ const frame=document.createElement('iframe');document.body.append(frame);frame.contentDocument.body.append(host);window.emitMigration(row.settingEl);
+ const writes=[];tab.setControlValue=async(key,value)=>{writes.push(value);p.settings.crossLinkOpacity=value;await p.persistSettingsSnapshot()};
+ input.value='40';input.dispatchEvent(new Event('input',{bubbles:true}));
+ check(output.textContent==='40','Adopted slider must display the new percentage immediately');
+ await waitFor(()=>p.writes.at(-1)?.crossLinkOpacity===40);check(p.settings.crossLinkOpacity===40,'Opacity persisted through the canonical writer');
+ release();const count=writes.length;input.value='65';input.dispatchEvent(new Event('input',{bubbles:true}));check(writes.length===count,'Retired adopted slider cannot write');
+ const reopened=document.body.createDiv(),next=new M.Setting(reopened),close=definition.render(next);check(reopened.querySelector('output').textContent==='40','Reopening retains the committed opacity');close();
+ frame.remove();reopened.remove();tab.hide();check(!window.migrationListeners,'Row migration observers were released');return true})()`),true);
 });
 test('optional size sliders preserve inheritance, expose effective defaults and reset only their own axis',async()=>{
  assert.equal(await colorEditorScenario(`(async()=>{${setup}

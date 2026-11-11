@@ -6,6 +6,59 @@ import { chromiumHarness } from './support/browserTypeScript.mjs';
 
 const bundle = await contributorBrowserBundle();
 
+test('uncovered resolver diagnostics distinguish native owner failures without weakening recovery',async()=>{
+ const browser=await chromiumHarness(bundle);try{
+  await browser.evaluate(contributorBrowserInitialize);
+  assert(await browser.evaluate(`(async()=>{
+   for(const [kind,expected]of [['absent','resolve-no-owner'],['foreign','resolve-non-file'],['attachment','resolve-non-markdown'],['retired','resolve-missing-native-file'],['replaced','resolve-replaced-native-file']]){
+    const f=await fixture('uncovered-resolver-'+kind);try{
+     f.add('A.md','');await f.acquire();ok(await f.acquisition.reconcile(),'Source baseline');
+     const File=f.files.get('A.md').constructor;
+     const owner=kind==='absent'?undefined:kind==='foreign'?{}:new File(kind==='attachment'?'Attachment.png':kind==='retired'?'Retired.md':'A.md');
+     f.app.metadataCache.trigger('resolve',owner);
+     equal(f.acquisition.getRecoveryDiagnostics().uncoveredResolverCause,expected,'Fixed native category');
+     ok(!f.acquisition.hasSemanticDependencies(),'Unknown input still fences authority');
+     f.app.metadataCache.trigger('changed',f.files.get('A.md'));
+     equal(f.acquisition.getRecoveryDiagnostics().uncoveredResolverCause,expected,'A later known edit cannot erase the cause');
+    }finally{f.close();}
+   }return true;
+  })()`));
+ }finally{await browser.cleanup();}
+});
+
+for (const reordered of [false,true]) test('a clean recovery sweep shares each head and dependency selection (reordered='+reordered+')', async () => {
+  const browser = await chromiumHarness(bundle);
+  try {
+    await browser.evaluate(contributorBrowserInitialize);
+    const result = await browser.evaluate(`(async()=>{
+      const f=await fixture('recovery-shared-selection');
+      try {
+        for(let n=0;n<24;n++)f.add('Owner'+n+'.md','');
+        await f.acquire();ok(await f.acquisition.reconcile(),'Seed actual source authority');
+        if(${reordered}){const enumerate=f.app.vault.getMarkdownFiles;f.app.vault.getMarkdownFiles=()=>enumerate().reverse();}
+        f.work.reset();f.reads.length=0;f.parses.length=0;
+        let phase='';f.acquisition.startupDiagnostics={phase(_kind,value){phase=value;},processed(){},count(){},recordWork(){},mark(){},beginActivity(){return 0;},endActivity(){},activityCause(){},stopActivityPhase(){}};
+        const transaction=f.repository.transaction;let headOnly=0,selections=0;
+        f.repository.transaction=function(db,stores,mode,...rest){
+          if(phase==='source-reconciliation'&&mode==='readonly'&&stores.length===1&&stores[0]==='sourceHeads')headOnly++;
+          if(phase==='source-reconciliation'&&mode==='readonly'&&stores.includes('sourceHeads')&&stores.includes(sourceModules.SOURCE_LOCAL_OWNER_STORE))selections++;
+          return transaction.call(this,db,stores,mode,...rest);
+        };
+        try {
+          // Retire only lookup authority, as after a failed dependency closure. No file or
+          // resolver event is fabricated; the ordinary broad owner must revalidate all sources.
+          f.acquisition.localDependencyAuthorityReady=false;f.acquisition.localDependenciesReady=false;
+          ok(await f.acquisition.reconcile(),'Unavailable local authority gets a complete conservative sweep');
+          return {headOnly,selections,files:f.files.size,ready:f.acquisition.hasSemanticDependencies(),reads:f.reads.length,parses:f.parses.length};
+        } finally {f.repository.transaction=transaction;}
+      } finally {f.close();}
+    })()`);
+    assert.equal(result.headOnly,0,'The broad recovery path must reuse its authenticated head/dependency selection');
+    assert.equal(result.selections,result.files,'Each clean owner needs one native readonly selection');
+    assert.equal(result.ready,true);assert.equal(result.reads,0);assert.equal(result.parses,0);
+  } finally {await browser.cleanup();}
+});
+
 /** A native sync edit invalidates its selected head, not the already checked inventory prefix. */
 test('restart host comparison retains its prefix when the selected owner changes',async()=>{
  const browser=await chromiumHarness(bundle);
@@ -14,12 +67,17 @@ test('restart host comparison retains its prefix when the selected owner changes
   const result=await browser.evaluate(`(async()=>{
    const f=await fixture('sync-selected-owner'),M=sourceModules;let restarted;
    try{
-    for(let i=0;i<8;i++)f.add('Owner'+i+'.md','Value:: original');await f.acquire();ok(await f.acquisition.reconcile(),'Seed closed sources');f.acquisition.close();
+    for(let i=0;i<8;i++)f.add('Owner'+i+'.md','Value:: original');await f.acquire();ok(await f.acquisition.reconcile(),'Seed closed sources');
+    // This regression deliberately exercises the legacy comparison owner and its selected await.
+    await edit(await f.cache.open(),['meta'],tx=>tx.objectStore('meta').delete('source-host-observation:Owner0.md'));f.acquisition.close();
     restarted=new M.ObsidianSourceAcquisition(f.app,f.cache,async text=>M.parseBodyMetadata(text));restarted.start();
     const inspect=f.repository.inspectWithLocalDependencies,visits=[];let delivered=false;
     f.repository.inspectWithLocalDependencies=async function(...args){
-     const value=await inspect.apply(this,args);visits.push(args[0]);
-     if(!delivered&&args[0]==='Owner6.md'){
+     const value=await inspect.apply(this,args);
+     // The shared selector also serves the later source sweep. This assertion measures
+     // restart comparison prefix retention; the projection argument distinguishes that sweep.
+     if(!args[4])visits.push(args[0]);
+     if(!args[4]&&!delivered&&args[0]==='Owner6.md'){
       delivered=true;const file=f.files.get(args[0]);f.texts.set(file.path,'Value:: synced');file.stat.mtime++;
       f.app.vault.trigger('modify',file);f.app.metadataCache.trigger('changed',file);f.app.metadataCache.trigger('resolved');
      }

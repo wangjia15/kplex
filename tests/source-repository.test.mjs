@@ -160,7 +160,7 @@ test("elapsed flush and a durable stop include active producers; empty acquisiti
 
 test("diagnostics allowlist strips paths, settings, property values, raw exceptions and arbitrary reasons", () => {
   const result = sanitizeSourceRepositoryDiagnostics({ storage: "available", activated: 3, unsaved: 2, path: "secret.md", body: "content",
-    lastReason: "secret.md: private exception", familyFailures: { values: 4, "secret field": 500 }, sequenceMax: NaN,
+    lastReason: "secret.md: private exception", lastReadFailure: "secret.md: private exception", familyFailures: { values: 4, "secret field": 500 }, sequenceMax: NaN,
     factFormatVersion: "SECRET", settings: { ontology: "private" } });
   assert.equal(result.activated, 3); assert.equal(result.unsaved, 2); assert.equal(result.familyFailures.values, 4);
   assert(!JSON.stringify(result).match(/secret|SECRET|private|ontology|content/));
@@ -317,6 +317,26 @@ test("body URL alias codec retains labels and rejects malformed or oversized com
   for (const aliases of ["wrong", [1], [""], [null], new Array(2)]) assert.throws(() => validate([{ ...record, aliases }], "body-urls"), /invalid-frame/);
   const excessive = { ...record, aliases: ["x".repeat(source.SOURCE_DECODE_BUDGET_BYTES)] };
   assert.throws(() => new SourceBodyDecoder().accept(excessive), /decode-budget/);
+});
+
+/** URI upgrades reject older fact authority while retaining strictly known deletion identities. */
+test("URI grammar upgrade admits known older retirement headers without old semantic/body authority", async () => {
+  const f = fixture();
+  try {
+    await f.repository.replace(await f.input("retirement-upgrade", metadata("Field:: [[Alpha]]")));
+    const current = {...(await f.repository.inspect("retirement-upgrade")).head, sequence: 1};
+    for (const parser of [2, 3, 4]) {
+      const old = {...current, compilerVersion: 1, bodyParserVersion: parser};
+      assert.equal(source.sourceHeadReason(old), "format-version", "Old complete facts require the URI grammar");
+      assert.equal(source.decodeSourceHead(old), null);
+      assert.equal(source.decodeSourceRetirementHead(old), old, "Only explicit retirement enumeration admits its physical header");
+      const retired = {...old, state: "tombstone"};
+      assert.equal(source.sourceHeadReason(retired), "tombstone");assert.equal(source.decodeSourceHead(retired), retired);
+    }
+    for (const malformed of [{compilerVersion: 99}, {bodyParserVersion: "4"}, {bodyParserVersion: 99}, {resolutionVersion: 99}, {families: {bogus: {}}}]) {
+      assert.equal(source.decodeSourceRetirementHead({...current, compilerVersion: 1, bodyParserVersion: 4, ...malformed}), null);
+    }
+  } finally {f.repository.close();}
 });
 
 /** Known parser2 primary candidates and retirement markers retain exact bytes; unknown versions fail closed. */

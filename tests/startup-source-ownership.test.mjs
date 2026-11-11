@@ -24,12 +24,13 @@ const interval = onload.body.statements.find(/** Preserve the exact interval pol
 assert(interval, 'Actual legacy interval registration exists');
 const base = startupSourceCoordinatorSource().replace("import {Platform,TFile,TFolder} from 'obsidian';", '')
   .replace("import {perfNow} from './util/perf';", '')
+  .replace("import {INDEX_WORK_PRIORITY} from './index/ForegroundWorkScheduler';", '')
   .replace('export class StartupSourceCoordinator', 'class StartupSourceCoordinator');
 const position = base.lastIndexOf('}');
 const body = base.slice(0, position) + methods.map(/** Retain production method bodies unchanged. */ member => member.getText(module)).join('\n')
   + '\n/** Test-owned wrapper installs the actual onload timer statement. */\ninstallInitialRebuildInterval(){' + interval.getText(module) + '}\n}';
 const js = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-const load = new Function('Platform', 'TFile', 'TFolder', 'Notice', 'window', 'perfNow', js + '\nreturn StartupSourceCoordinator;');
+const load = new Function('Platform', 'TFile', 'TFolder', 'Notice', 'window', 'perfNow', 'INDEX_WORK_PRIORITY', js + '\nreturn StartupSourceCoordinator;');
 
 /** Native notice presentation is outside this coordinator ownership fixture. */
 class Notice { /** Accept the real command's notification without emulating UI. */ constructor() {} }
@@ -41,6 +42,39 @@ class HostFile {
 }
 /** A real folder-shaped native event must remain structurally owed during source adoption. */
 class HostFolder { /** Retain folder identity independently of its path. */ constructor(path) { this.path = path; } }
+
+for (const outcome of ['patched', 'cancelled']) test(`committed backlog drains across unrelated metadata events (${outcome})`, async () => {
+ const f=fixture({reasons:['metadata:changed'],dirty:['A.md'],complete:true});
+ try {
+  f.p.index.insertCreatedFile=()=>{};
+  f.p.index.patchMarkdownPaths=async(paths,options)=>{
+   assert.deepEqual(paths,['A.md']);
+   assert.equal(options.priority,4,'Reactive catch-up must yield to current-view work');
+   options?.onCommitted?.('A.md');
+   f.p.hasVisibleKplexSurface=()=>false;
+   f.p.dirtyMarkdownPaths.add('Later.md');f.p.scheduleRebuild('metadata:changed');
+   return {outcome,count:1,pendingPaths:[]};
+  };
+  await f.p.performRebuild(false,false,'interval');
+  assert.deepEqual([...f.p.dirtyMarkdownPaths],['Later.md'],'An unrelated event must not requeue committed sources');
+  assert(f.p.indexDirty,'The genuinely newer source remains owed');
+ } finally {f.close();}
+});
+
+test('a same-file event after publication remains in the patch backlog', async () => {
+ const f=fixture({reasons:['metadata:changed'],dirty:['A.md'],complete:true});
+ try {
+  f.p.index.insertCreatedFile=()=>{};
+  f.p.index.patchMarkdownPaths=async(paths,options)=>{
+   options?.onCommitted?.('A.md');
+   f.p.hasVisibleKplexSurface=()=>false;
+   f.p.dirtyMarkdownPaths.add('A.md');f.p.scheduleRebuild('metadata:changed');
+   return {outcome:'patched',count:1};
+  };
+  await f.p.performRebuild(false,false,'interval');
+  assert.deepEqual([...f.p.dirtyMarkdownPaths],['A.md']);
+ } finally {f.close();}
+});
 
 for(const newerReason of ['metadata:changed','vault:create'])test(`full publication retires only its captured creation backlog before ${newerReason}`,async()=>{
  const f=fixture({reasons:['vault:create'],complete:true,published:true});
@@ -63,18 +97,19 @@ for(const newerReason of ['metadata:changed','vault:create'])test(`full publicat
  }finally{release?.();f.close();}
 });
 
-/** Supply a held initial adopter and finite graph effects to the actual legacy interval callback. */
-function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacked = true, complete = false, onDemand = false, published = false } = {}) {
+/** Source prerequisites can remain incomplete after an initial task retired. An explicitly active
+ * initial task is tested separately; its real periodic handler must join it. */
+function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacked = true, complete = false, onDemand = false, published = false, activeInitialTask = false } = {}) {
   let callback, period, pending, release;
   const timers = {
     /** Capture registration without changing its requested production interval. */ setInterval(work, delay) { callback = work; period = delay; return 1; },
     /** The production no-op retirement clears the test-owned scheduled marker only. */ clearTimeout() {},
   };
-  const Coordinator = load({ isIosApp: false }, HostFile, HostFolder, Notice, timers, () => 0), p = new Coordinator();
+  const Coordinator = load({ isIosApp: false }, HostFile, HostFolder, Notice, timers, () => 0, {background:4}), p = new Coordinator();
   const counts = { full: 0, local: 0 }, initial = new Promise(/** Hold source adoption independently of automatic graph rebuild. */ done => { release = done; });
   p.app = { vault: { /** Retain the genuine named dirty source. */ getFileByPath: path => path === 'A.md' ? { path, extension: 'md' } : null } };
   p.settings = { indexUpdateInterval: 120000 }; p.layoutReady = true; p.indexPreparationAdmitted = true;
-  p.initialIndexComplete = complete; p.initialIndexTask = initial; p.indexDirty = true; p.rebuildTimer = 1;
+  p.initialIndexComplete = complete; p.initialIndexTask = activeInitialTask ? initial : null; p.indexDirty = true; p.rebuildTimer = 1;
   p.indexBacklogReasons = new Set(reasons); p.dirtyMarkdownPaths = new Set(dirty);
   p.hasVisibleKplexSurface = /** The real interval only flushes a visible dirty surface. */ () => true;
   p.notifyIndexStatus = /** Observe ownership independently of status UI. */ () => {};
@@ -94,18 +129,30 @@ function fixture({ reasons = ['startup:stale-snapshot'], dirty = [], sourceBacke
     /** Count admission only; a false result here is not evidence of a real incomplete build. */ rebuild: async () => { counts.full++; return published; },
     /** Preserve the on-demand branch's own local refresh. */ refreshOnDemandGraph: async () => { counts.local++; return false; },
     /** Decision formatting is outside this admission test. */ noteBuildDecision() {},
+    /** Source-current presentation is outside these counted builder-admission capabilities. */ acknowledgeHostPresentation() {},
+    finishStartupSnapshot() {},
   };
   const rebuild = p.rebuildIndex;
   p.rebuildIndex = /** Preserve the real coordinator promise for the callback's void invocation. */ function(...args) { pending = rebuild.apply(this, args); return pending; };
   p.installInitialRebuildInterval();
   assert.equal(period, 120000, 'The production interval is unchanged');
-  return { p, counts, initial,
+  return { p, counts, initial: activeInitialTask ? initial : null,
     /** Fire the exact registered callback without advancing a watchdog or awaiting the held adopter. */
     async interval() { callback(); await pending; },
     /** Release the independent startup prerequisite after assertions. */
     close() { release(); },
   };
 }
+
+test('a drained coalesced file backlog acknowledges current graph coverage without another patch or build',async()=>{
+ const f=fixture({complete:true,sourceBacked:false,reasons:['metadata:changed','coalesced-backlog'],dirty:[]});
+ try{let acknowledged=0;f.p.index.acknowledgeHostPresentation=()=>acknowledged++;
+  await f.p.performRebuild(false,false,'coalesced-backlog',false);
+  assert.equal(acknowledged,1,'Completed per-file receipts must close the later coordinator epoch');
+  assert.equal(f.p.indexDirty,false);assert.equal(f.p.indexBacklogReasons.size,0);
+  assert.deepEqual(f.counts,{full:0,local:0},'No semantic replay or full writer is admitted');
+ }finally{f.close()}
+});
 
 /** Deliver native-shaped events through the unmodified registered production callbacks. */
 function eventFixture(options = {}) {
@@ -127,6 +174,7 @@ function eventFixture(options = {}) {
   p.managedMetadataWrites = new Map(); p.managedCreatedPaths = new Map(); p.renameMetadataSuppressions = new Map();
   p.managedCreatedFiles = new WeakSet(); p.deletedMarkdownFiles = new WeakSet();
   p.adjustCachedMarkdownFileCount = /** Cached count presentation is outside rebuild admission. */ () => {};
+  p.index.canApplyLocalPhysicalCreate = /** Unproven fixture topology retains the conservative admission path. */ () => false;
   p.index.invalidateHostStructure = /** Retain admission independently of graph storage or structural algorithms. */ () => {};
   p.index.dematerializeFile = /** Observe delegation to semantic deletion without duplicating that algorithm. */ () => { f.counts.dematerialized++; };
   p.index.insertCreatedFile = /** Successful full publication keeps a genuinely dirty native endpoint available. */ () => {};
@@ -156,7 +204,7 @@ test('mixed startup and covered metadata backlog cannot compete with source adop
     await f.interval();
     assert.equal(f.counts.full, 0, 'Covered metadata bookkeeping must not bypass the existing source-adoption owner');
     assert.equal(f.p.initialIndexComplete, false, 'Suppression cannot fabricate initial completion');
-    assert.equal(f.p.initialIndexTask, f.initial, 'The pending initial owner remains unchanged');
+    assert.equal(f.p.initialIndexTask, f.initial, 'No inactive initial task is fabricated');
   } finally { f.close(); }
 });
 
@@ -318,4 +366,12 @@ test('new edits during a successful fallback keep their dirty backlog', /** Star
     assert.equal(p.initialIndexComplete, true); assert.equal(p.indexDirty, true);
     assert.deepEqual([...p.dirtyMarkdownPaths], ['A.md']);
   } finally {f.close();}
+});
+
+for(const reason of ['metadata:changed','vault:create','vault:rename-folder'])test('active initial owner joins periodic '+reason,async()=>{
+ const f=fixture({reasons:['startup:stale-snapshot',reason],dirty:['A.md'],activeInitialTask:true});
+ const flight=f.interval();let ended=false;flight.finally(()=>ended=true);
+ try{await new Promise(setImmediate);assert.equal(ended,false);assert.equal(f.counts.full,0);assert.deepEqual([...f.p.dirtyMarkdownPaths],['A.md']);}
+ finally{f.close();await flight;}
+ assert.equal(f.counts.full,0,'The retired incomplete owner cannot be replaced by the waiting interval');
 });

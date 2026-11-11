@@ -1,7 +1,11 @@
 /** Native structured ontology editor. Drafts are local; complete field/pair intents enter the
  * established queue once, with raw endpoint conflict checks and durable-before-publication semantics.
- * Description rows stack their labels above full-width literal text editors. */
-import {Modal,Notice,Setting,type ButtonComponent,type DropdownComponent,type TextComponent,type TextAreaComponent,type ToggleComponent} from 'obsidian';
+ * Description rows stack their labels above full-width literal text editors. Wording-only input
+ * reuses detached structural validation; it never clones the whole vocabulary per keystroke. */
+import {formActions, iconButton, FormSetting as Setting, KplexModal as Modal} from "../adapters/obsidian/KplexModal";
+
+
+import {Notice, type ButtonComponent, type DropdownComponent, type TextComponent, type TextAreaComponent, type ToggleComponent} from 'obsidian';
 import type KplexPlugin from '../main';
 import {normalizeFieldName} from '../core/contracts/fieldName';
 import {ontologyConfiguration,eligibleOntologyPartners,applyOntologyEdit,ONTOLOGY_RECIPROCAL,type OntologyRole,type OntologyConfigurationInput,type OntologyEdit} from '../core/contracts/ontologyConfiguration';
@@ -24,6 +28,7 @@ export class AddToOntologyModal extends Modal {
   private removing=false;
   private composing=false;
   private newField=false;
+  private structuralValidation:Readonly<{key:string;valid:boolean}>|null=null;
   private readonly descriptionDrafts=new Map<string,string>();
   private readonly physicalNames=new Map<string,string>();
   private partnerDescriptionControl:TextAreaComponent|null=null;
@@ -52,6 +57,7 @@ export class AddToOntologyModal extends Modal {
   /** Capture raw configuration and remote owner before mounting an explicit Save/Cancel form. */
   onOpen():void {
     this.opened=true;this.committed=false;this.newField=!this.fieldName;this.generation++;
+    this.structuralValidation=null;
     this.opening=structuredClone({hierarchy:this.plugin.settings.hierarchy,ontologyPairingVersion:this.plugin.settings.ontologyPairingVersion,ontologyDescriptions:this.plugin.settings.ontologyDescriptions});
     this.physicalNames.clear();
     for(const field of ontologyReadModel(ontologyConfiguration(this.opening)))this.physicalNames.set(field.key,field.name);
@@ -84,7 +90,7 @@ export class AddToOntologyModal extends Modal {
       text.inputEl.setAttribute('aria-label',t('ontology.manager.fieldName'));
       if(!this.fieldName)text.onChange(/** New names remain local until explicit Save; their description follows the typed draft. */ value=>{const description=this.description(this.fieldName);this.fieldName=value;this.descriptionDrafts.set(this.canonicalName(value),description);this.refresh();});
     });
-    if(this.fieldName)new Setting(this.contentEl).addButton(/** Inspect the selected physical name without submitting or replacing this draft. */ button=>button.setButtonText(t('ontology.usage.show')).onClick(/** Each child owns a cancellable read-only lookup. */ ()=>{
+    if(this.fieldName)new Setting(this.contentEl).addButton(/** Inspect the selected physical name without submitting or replacing this draft. */ button=>iconButton(button, t('ontology.usage.show'), "file-search").onClick(/** Each child owns a cancellable read-only lookup. */ ()=>{
       const field=this.fieldName,dialog=new OntologyUsageModal(this.plugin,field,()=>this.usageDialogs.delete(dialog),/** Pass the captured physical field, without changing the editor draft. */ result=>{if(this.opened)this.onUsage?.(field,result);});this.usageDialogs.add(dialog);dialog.open();
     }));
     const descriptionRow=new Setting(this.contentEl).setName(t('ontology.description')).setDesc(t('ontology.descriptionHelp',{count:ONTOLOGY_DESCRIPTION_LIMIT})).addTextArea(/** The description belongs to this exact physical name and stays local until Save. */ text=>{
@@ -110,13 +116,13 @@ export class AddToOntologyModal extends Modal {
     this.partnerDescriptionRow.settingEl.addClass('kplex-ontology-description-setting');
     this.createPartnerRow=new Setting(this.contentEl).setName(t('ontology.manager.createPartner')).setDesc(t('ontology.manager.createPartnerHelp')).addToggle(/** Creating a second new physical field is an explicit draft choice. */ toggle=>{this.createPartnerControl=toggle;toggle.setValue(false).onChange(/** Revalidate the whole two-name candidate. */ value=>{this.createPartner=value;this.refresh();});});
     this.preview=this.contentEl.createEl('p',{cls:'setting-item-description kplex-ontology-preview',attr:{role:'status'}});
-    this.resolutionRow=new Setting(this.contentEl).addButton(/** Clear the partner explicitly, preserving its old role on Save. */ button=>button.setButtonText(t('ontology.clearPair')).onClick(/** No write happens until Save. */ ()=>{this.partner='';this.createPartner=false;this.partnerControl?.setValue('');this.refresh();}));
+    this.resolutionRow=new Setting(this.contentEl).addButton(/** Clear the partner explicitly, preserving its old role on Save. */ button=>iconButton(button, t('ontology.clearPair'), "unlink").onClick(/** No write happens until Save. */ ()=>{this.partner='';this.createPartner=false;this.partnerControl?.setValue('');this.refresh();}));
     if(config.roles.has(normalizeFieldName(this.fieldName)))new Setting(this.contentEl).setName(t('ontology.manager.removeHelp')).addButton(/** Removal is a two-step inline confirmation naming the selected physical endpoint. */ button=>{
-      button.setButtonText(t('ontology.manager.remove')).setDestructive().onClick(/** Require a second explicit durable confirmation. */ ()=>{this.removing=true;this.refresh();});
+      iconButton(button, t('ontology.manager.remove'), "trash-2").setDestructive().onClick(/** Require a second explicit durable confirmation. */ ()=>{this.removing=true;this.refresh();});
     });
     this.feedback=this.contentEl.createEl('p',{cls:'mod-warning',attr:{role:'alert'}});
-    new Setting(this.contentEl).addButton(/** Duplicate submissions are excluded while the queue owns this operation. */ button=>{this.saveButton=button;button.setCta().onClick(/** Submit the complete detached candidate once. */ ()=>{void this.save();});})
-      .addButton(/** Cancel never submits an unaccepted draft. */ button=>{this.cancelButton=button;button.setButtonText(t('common.cancel')).onClick(()=>this.close());});
+    formActions(this.contentEl).addButton(/** Duplicate submissions are excluded while the queue owns this operation. */ button=>{this.saveButton=button;button.setCta().onClick(/** Submit the complete detached candidate once. */ ()=>{void this.save();});})
+      .addButton(/** Cancel never submits an unaccepted draft. */ button=>{this.cancelButton=button;iconButton(button, t('common.cancel'), "x").onClick(()=>this.close());});
     for(const input of Array.from(this.contentEl.querySelectorAll<HTMLInputElement|HTMLTextAreaElement>('input,textarea'))){
       input.addEventListener('compositionstart',/** Composition is an unsubmitted draft, even if Save is clicked. */ ()=>{this.composing=true;this.refresh();});
       input.addEventListener('compositionend',/** Validate only after the IME owns its final text. */ ()=>{this.composing=false;this.refresh();});
@@ -152,8 +158,23 @@ export class AddToOntologyModal extends Modal {
       movePair:Boolean(pair&&partner&&normalizeFieldName(pair.partner)===normalizeFieldName(partner)&&this.selected!==pair.role)};
   }
 
-  /** Validate a complete local candidate without graph/source work or persistence. */
-  private valid():boolean {try{if(this.newField&&ontologyConfiguration(this.opening!).roles.has(normalizeFieldName(this.fieldName)))return false;const operation=this.operation();applyOntologyEdit(this.opening!,operation);if(operation.kind==='assign'){validateOntologyDescription(operation.description??'');validateOntologyDescription(operation.partnerDescription??'');}return true;}catch{return false;}}
+  /** Validate the detached structural candidate once per field/role/pair choice. Descriptions
+   * have independent constant-time length checks; each Save still enters the writer's fresh
+   * complete validation and receipt/conflict fences. No live settings acquire draft authority. */
+  private valid():boolean {
+    try{
+      const operation=this.operation(),structure=operation.kind==='assign'?{...operation,description:undefined,partnerDescription:undefined}:operation;
+      const key=JSON.stringify([this.newField,structure]);
+      if(this.structuralValidation?.key!==key){
+        this.structuralValidation={key,valid:false};
+        if(this.newField&&ontologyConfiguration(this.opening!).roles.has(normalizeFieldName(this.fieldName)))return false;
+        applyOntologyEdit(this.opening!,structure);this.structuralValidation={key,valid:true};
+      }
+      if(!this.structuralValidation.valid)return false;
+      if(operation.kind==='assign'){validateOntologyDescription(operation.description??'');validateOntologyDescription(operation.partnerDescription??'');}
+      return true;
+    }catch{return false;}
+  }
 
   /** Show both derived assignments, destructive scope and inline candidate feedback. */
   private refresh():void {
@@ -161,7 +182,8 @@ export class AddToOntologyModal extends Modal {
     this.partnerRow?.settingEl.toggle(Boolean(reciprocal));
     this.createPartnerRow?.settingEl.toggle(Boolean(reciprocal));
     this.partnerDescriptionRow?.settingEl.toggle(Boolean(reciprocal&&this.partner.trim()));
-    this.partnerDescriptionControl?.setValue(this.description(this.partner.trim()));
+    const partnerDescription=this.description(this.partner.trim());
+    if(this.partnerDescriptionControl&&this.partnerDescriptionControl.inputEl.value!==partnerDescription)this.partnerDescriptionControl.setValue(partnerDescription);
     this.createPartnerControl?.setValue(this.createPartner).setDisabled(this.busy||this.removing);
     this.resolutionRow?.settingEl.toggle(Boolean(this.partner));
     if(this.preview){
@@ -177,7 +199,7 @@ export class AddToOntologyModal extends Modal {
     const pairMove=reciprocal&&pair&&this.partner&&normalizeFieldName(pair.partner)===normalizeFieldName(this.partner)&&this.selected!==pair.role;
     this.modalEl.setAttribute('aria-busy',String(this.busy));
     for(const button of Array.from(this.contentEl.querySelectorAll('button')))if(button!==this.cancelButton?.buttonEl)button.disabled=this.busy||this.committed;
-    this.saveButton?.setButtonText(t(this.removing?'ontology.manager.confirmRemove':pairMove?'ontology.manager.saveBoth':'common.save')).setDisabled(this.busy||this.committed||this.composing||!valid);
+    if(this.saveButton)iconButton(this.saveButton,t(this.removing?'ontology.manager.confirmRemove':pairMove?'ontology.manager.saveBoth':'common.save'),this.removing?'trash-2':'save').setDisabled(this.busy||this.committed||this.composing||!valid);
     this.roleControl?.setDisabled(this.busy||this.removing||Boolean(this.context));this.partnerControl?.setDisabled(this.busy||this.removing);
     for(const input of Array.from(this.contentEl.querySelectorAll<HTMLInputElement|HTMLTextAreaElement>('input,textarea')))input.disabled=this.busy||this.committed||this.removing;
     this.endpointControl?.setDisabled(this.busy||this.removing||this.createPartner||this.composing||this.selected!==pair?.role||this.partner!==pair?.partner||[...this.descriptionDrafts].some(/** Endpoint navigation cannot discard unsaved wording. */ ([field,text])=>text!==(ontologyDescription(this.opening?.ontologyDescriptions,this.canonicalName(field))??'')));
@@ -200,7 +222,7 @@ export class AddToOntologyModal extends Modal {
 
   /** Retire only this invocation; an operation already accepted by storage remains owned by the queue. */
   onClose():void {
-    const notify=this.opened;this.opened=false;this.suggestions?.close();this.suggestions=null;this.releaseWindow?.();this.releaseWindow=null;
+    const notify=this.opened;this.opened=false;this.structuralValidation=null;this.suggestions?.close();this.suggestions=null;this.releaseWindow?.();this.releaseWindow=null;
     for(const dialog of this.usageDialogs)dialog.close();this.usageDialogs.clear();
     this.contentEl.empty();if(notify)this.onClosed?.();
   }

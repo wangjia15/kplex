@@ -1117,13 +1117,17 @@ function relatedComposerBrowserEntry() {
     && ["RelatedNoteComposer", "isNoteTarget", "captureRelatedEndpoint", "refreshCapturedPage"].includes(statement.name?.text)).map((statement) => statement.getText(source)).join("\n");
   const production = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.None } }).outputText;
   return `
-import React, { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { createElement, useCallback, useEffect, useMemo, useRef, useState, useId } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { FuzzySuggester } from ${JSON.stringify(join(root, "src/ui/components/FuzzySuggester.tsx"))};
 import { SavedRelationshipPendingError } from ${JSON.stringify(join(root, "src/adapters/obsidian/relationshipMetadataWrite.ts"))};
 import { PartialRelatedFileError } from ${JSON.stringify(join(root, "src/adapters/obsidian/relatedFileOutcome.ts"))};
 import { CreationCompletionSelect } from ${JSON.stringify(join(root, "src/ui/features/CreationCompletionSelect.tsx"))};
+import {FormField,FormActions} from ${JSON.stringify(join(root,"src/ui/components/FormField.tsx"))};
+import {RelationshipFieldControl} from ${JSON.stringify(join(root,"src/ui/features/RelationshipFieldControl.tsx"))};
+import {RelationshipDirectionControl} from ${JSON.stringify(join(root,"src/ui/features/RelationshipDirectionControl.tsx"))};
+import {eligibleRelationshipOwner} from ${JSON.stringify(join(root,"src/adapters/obsidian/relationshipOwner.ts"))};
 import {resolveCreationAfterSaving,creationAfterSavingActions,effectiveCreationAfterSaving,sanitizeCreationAfterSaving} from ${JSON.stringify(join(root,"src/core/plex/createdNoteDestination.ts"))};
 import {ontologyConfiguration} from ${JSON.stringify(join(root,"src/core/contracts/ontologyConfiguration.ts"))};
 import {normalizeFieldName} from ${JSON.stringify(join(root,"src/core/contracts/fieldName.ts"))};
@@ -1144,16 +1148,17 @@ ${production}
  try {
   const host = document.createElement("div"); document.body.append(host);
   const origin = { path: "Origin.md", file: { path: "Origin.md", extension: "md" } }; const target = { path: "Target.md", file: { path: "Target.md", extension: "md" } };
-  const intents = [], outcomes = []; let commits = 0; let closes = 0; let rejectCommit = true; let savedPending = false;
+  const intents = [], outcomes = [], remembered = []; let commits = 0; let closes = 0; let rejectCommit = true; let savedPending = false;
   let folderEnumerations = 0;
   const session = { continuation: "return", suggestionOwnerId: "composer-browser-fixture", isSessionOpen: () => true, canComplete: () => true, setWriting: () => {}, registerSubmit: () => () => {}, focusName: () => host.querySelector("input")?.focus(), closeForCompletion: () => { closes++; }, finishCompletion: () => {}, focusGraph: () => {} };
+  session.rememberOntology = async field => { remembered.push(field); };
   const plugin = {
    app: { vault: { on: () => ({}), offref: () => {}, getFileByPath: path => [origin, target].find(page => page.path === path)?.file,
     getAllFolders: includeRoot => { check(includeRoot === true, "folder inventory must include the vault root"); folderEnumerations++; return [{ path: "/" }, { path: "Projects" }, { path: "Projects/Ideas" }]; } } },
-   settings: { editNewNodeAfterCreate: false, newNodeDefaultType: "markdown",ontologyPairingVersion:1,hierarchy:{hidden:[],parents:["parent"],children:["children","review","example"],leftFriends:[],rightFriends:[],previous:[],next:[],exclusions:[]} },
+   settings: { editNewNodeAfterCreate: false, newNodeDefaultType: "markdown",ontologyPairingVersion:1,ontologyDescriptions:{review:"Historicterm meaningful synonym",parent:"Historicterm other role"},hierarchy:{hidden:[],parents:["parent"],children:["children","review","example"],leftFriends:[],rightFriends:[],previous:[],next:[],exclusions:[]} },
    createdNoteCompletionControl(_host,options={}){const context={desktop:true,sidepanel:false,another:options.another!==false,editable:options.editable!==false,follow:options.follow!==false},key=options.operation==='link'?'linkAfterSaving':'newNodeAfterSaving';return{choices:creationAfterSavingActions(context),value:effectiveCreationAfterSaving(sanitizeCreationAfterSaving(this.settings[key]??this.settings.newNodeAfterSaving,this.settings.editNewNodeAfterCreate),context),onChange:value=>{this.settings[key]=value}}},
    finishNewRelatedNode:async()=>{},
-   translator: (key) => key, drawingTemplateOptions: () => null, isExcalidrawAvailable: () => false, defaultOntologyField: () => "children",
+   translator: (key) => key, drawingTemplateOptions: () => null, isExcalidrawAvailable: () => false, defaultOntologyField: role => role === "right" ? "Challenger" : role === "parent" ? "parent" : "children",
    ontologyFieldsForRole: () => ["children", "review", "example"],
    allOntologyFields: () => ["children", "review", "example", "parent"],
    ontologyRoleForField: field => field === "parent" ? "parent" : ["children", "review", "example"].includes(field) ? "child" : null,
@@ -1189,8 +1194,15 @@ ${production}
   check(list?.querySelectorAll("button").length === 3, "composer disclosure did not show full empty-input role vocabulary");
   flushSync(() => list.querySelector('[data-kplex-fuzzy-index="1"]').click());
   check(ontology.value === "review" && host.querySelector(".kplex-add-related-link-button"), "ontology choice lost the existing-target selection");
+  flushSync(() => ontology.focus()); flushSync(() => type(ontology,"Historicterm"));
+  list=document.body.querySelector(".kplex-fuzzy-floating-results");
+  check(list?.querySelectorAll("button").length===1&&list.querySelector("span")?.textContent==="review"&&list.textContent.includes("Historicterm meaningful synonym"),"composer description query lost canonical name, own description or role eligibility");
+  flushSync(() => ontology.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true})));
+  flushSync(() => ontology.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+  check(ontology.value==="review"&&commits===0&&intents.length===0,"description keyboard selection inserted annotation text or submitted a relationship");
   flushSync(() => link.click()); await new Promise((resolve) => setTimeout(resolve, 0));
   check(commits === 0 && closes === 0 && notices.length === 1, "failed existing-target write falsely committed or closed composer");
+  check(remembered.length === 1 && remembered[0] === "review", "composer did not forward the accepted ontology to invocation memory");
   rejectCommit = false; savedPending = true;
   flushSync(() => link.click()); await new Promise((resolve) => setTimeout(resolve, 0));
   check(commits === 1 && outcomes[0].state === "saved-pending" && closes === 0 && notices.at(-1) === "Saved; graph pending", "saved-pending outcome lost its committed state or closed the composer");
@@ -1382,6 +1394,7 @@ console.error = (...args) => { warnings.push(args.map(String).join(" ")); origin
 const ObsidianIcon = () => null;
 import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
+import {thoughtCornerRadius} from ${JSON.stringify(join(root,'src/ui/plexViews/nodeConnections.ts'))};
 ${uiDefinitions("src/ui/ThoughtNode.tsx", ["GATES", "ThoughtNode"])}
 
 const settings = { horizontalCompactingFactor: 2, compactingFactor: 2, baseFontSize: 12.4, wrapNodeLabels: false, showNeighborCount: true, graphDepth: 2, minLinkLength: 18, childColumns: 2, maxItemCount: 100, siblingRelativeSize: 85 };
@@ -1571,6 +1584,7 @@ function editorHistoryBrowserEntry(){
   const history=uiDefinitions("src/ui/structuralConnectionActions.ts",["tagMembershipPair"])+uiDefinitions("src/ui/StructuralNodeDropActions.ts",["structuralDropKind"])+uiDefinitions("src/ui/PlexGraph.tsx",["normalizedRole","startNodeDrag","relationshipDropRoles","historyRelationshipTarget","clearHistoryDragHover","updateHistoryDragHover","cancel","lostPointerCapture"]);
   const editor=uiDefinitions("src/ui/CentralNodeEditor.tsx",["CentralNodeEditor"]);
   return `
+import {gateGroupRole} from ${JSON.stringify(join(root,'src/ui/features/gateRelationshipIntent.ts'))};
 import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
 import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
 import * as classicLayout from ${JSON.stringify(join(root,'src/ui/layout.ts'))};
@@ -1664,6 +1678,7 @@ function externalAndPinnedDropBrowserEntry() {
     "relationshipDropRoles", "historyRelationshipTarget", "clearHistoryDragHover", "updateHistoryDragHover", "openHistoryRelationshipMenu",
     "beginNativeNodeDrag", "endNativeNodeDrag", "nativeDragRelationship", "navigationNode", "isDraggedNode", "dropOriginAt", "externalFileDropTarget", "propertyAssignmentAt", "dragExternalFileOver", "leaveExternalFile", "dropExternalFile", "semanticRoleForPosition", "nodeDropRole", "commitNodeAreaDrop", "relationshipDropArea", "up"]);
   return `
+import {gateGroupRole,gateCreationRole,sourceGateRole} from ${JSON.stringify(join(root,'src/ui/features/gateRelationshipIntent.ts'))};
 import {areaContains} from ${JSON.stringify(join(root,'src/core/contracts/areaGeometry.ts'))};
 import {occurrenceKey,edgeOccurrence,edgePhysicalOccurrence,semanticSceneEdge} from ${JSON.stringify(join(root,'src/ui/plexViews/scene.ts'))};
 import {classicViewDefinition,classicAreaDropRole,classicPorts} from ${JSON.stringify(join(root,'src/core/plex/views/classic/definition.ts'))};
@@ -1704,7 +1719,7 @@ try {
  const other=surface.appendChild(document.createElement("div"));other.className="kplex-thought";other.dataset.kplexPath="Other.md";other.style.cssText="position:absolute;left:320px;top:100px;width:40px;height:30px";
  const control=surface.appendChild(document.createElement("button"));control.style.cssText="position:absolute;left:460px;top:100px;width:40px;height:30px";
  const editor=surface.appendChild(document.createElement("div"));editor.className="kplex-central-editor-overlay";editor.style.cssText="position:absolute;left:60px;top:200px;width:100px;height:100px";
- const event=(x,y)=>({clientX:x,clientY:y,currentTarget:surface,target:document.elementFromPoint(x,y),prevented:false,stopped:false,dataTransfer:{dropEffect:"move"},preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}});
+ const event=(x,y)=>({clientX:x,clientY:y,currentTarget:surface,target:document.elementFromPoint(x,y),prevented:false,stopped:false,dataTransfer:{types:[],dropEffect:"move"},preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}});
  let e=event(90,90);dropExternalFile(e);check(e.stopped&&navigated[0]===target&&calls.length===0,"actual center did not navigate the resolved dropped file");
  e=event(90,240);dropExternalFile(e);check(navigated.length===1&&!e.prevented&&!e.stopped,"attention-following native editor did not retain its own drop ownership");
  for(const [role,area] of Object.entries(scene.zoneAreas)) {
@@ -1829,7 +1844,9 @@ try {
 
 test("External file areas and pinned relationship targets use shared production routing",()=>{
   const app=readFileSync(join(root,"src/ui/App.tsx"),"utf8");
-  assert.match(app, /className="kplex-pinned-open" data-kplex-pinned-path=\{pinned.path\}/);
+  const pins=readFileSync(join(root,"src/ui/PinnedNodeBar.tsx"),"utf8");
+  assert.match(app, /<PinnedNodeBar rows=\{pinnedPages\}/);
+  assert.match(pins, /className="kplex-pinned-open" data-kplex-pinned-path=\{row.path \?\? undefined\}/);
   runBrowserDom(externalAndPinnedDropBrowserEntry(),"External and pinned drop behavior passed");
 });
 
@@ -2271,6 +2288,7 @@ import {HoverPreview,bindHoverPreview} from ${JSON.stringify(join(root,'src/ui/c
 const ObsidianIcon=()=>null;
 import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
+import {thoughtCornerRadius} from ${JSON.stringify(join(root,'src/ui/plexViews/nodeConnections.ts'))};
 ${uiDefinitions('src/ui/ThoughtNode.tsx',['GATES','ThoughtNode'])}
 const result=document.querySelector('#result'),container=document.body.appendChild(document.createElement('div')),root=createRoot(container);
 const check=(condition,message)=>{if(!condition)throw Error(message)},translate=createTranslator('en'),noop=()=>{};
@@ -2337,6 +2355,7 @@ import {canDisplayNodeImage} from ${JSON.stringify(join(root,'src/core/plex/node
 const ObsidianIcon=()=>null;
 import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
+import {thoughtCornerRadius} from ${JSON.stringify(join(root,'src/ui/plexViews/nodeConnections.ts'))};
 ${uiDefinitions('src/ui/ThoughtNode.tsx',['GATES','ThoughtNode'])}
 const result=document.querySelector('#result'),container=document.body.appendChild(document.createElement('div')),root=createRoot(container),noop=()=>{};
 const check=(condition,message)=>{if(!condition)throw Error(message)};
@@ -2354,6 +2373,21 @@ try{
    if(kind!=='ordinary')check(!container.querySelector('.gate-'+side).getAttribute('aria-label').includes('node.gateHostUnavailable'),'Structural zero inherited an unrelated unavailable tooltip');
   }
   check(container.querySelector('.gate-wrap-top .kplex-gate-count'),'Structural lateral rule incorrectly hid unresolved hierarchy counts');
+ }
+ // An unresolved first paint must yield to an available local/cache observation, even when
+ // its numerical lower bound remains zero. It is not a previous numerical label to retain.
+ for(const coverage of ['local','cached']){
+  node.page={path:'Resolving-'+coverage+'.md',name:'Resolving',isTag:false,isFolder:false};
+  node.gateStats=Object.fromEntries(['top','bottom','left','right'].map(side=>[side,{visibleCount:0,hasAny:false,complete:false}]));
+  flushSync(()=>root.render(<ThoughtNode {...props}/>));
+  check(container.querySelector('.gate-wrap-top .kplex-gate-count').textContent==='…','Initial unknown count was certified');
+  for(const stat of Object.values(node.gateStats))stat.coverage=coverage;
+  flushSync(()=>root.render(<ThoughtNode {...props}/>));
+  check(container.querySelector('.gate-wrap-top .kplex-gate-count').textContent==='0','Available '+coverage+' zero stayed behind an unknown label');
+  check(node.gateStats.top.complete===false,'Resolving a label incorrectly certified complete incidence');
+  node.gateStats.top.visibleCount=2;node.gateStats.top.hasAny=true;
+  flushSync(()=>root.render(<ThoughtNode {...props}/>));
+  check(container.querySelector('.gate-wrap-top .kplex-gate-count').textContent==='2','Newly observed relationships did not update the local count');
  }
  node.page={path:'Stable.md',name:'Stable'};
  node.gateStats=Object.fromEntries(['top','bottom','left','right'].map(side=>[side,{visibleCount:side==='top'?2:0,hasAny:side==='top',complete:true}]));
@@ -2397,6 +2431,7 @@ import { physicalPositionLabel } from ${JSON.stringify(join(root, "src/ui/featur
 const ObsidianIcon=({className,size})=><span className={"kplex-icon "+className} style={{width:size,height:size}}/>;
 import {physicalGateStats} from ${JSON.stringify(join(root,"src/ui/plexViews/measurement.ts"))};
 import {useGateCountPresentation} from ${JSON.stringify(join(root,'src/ui/useGateCountPresentation.ts'))};
+import {thoughtCornerRadius} from ${JSON.stringify(join(root,'src/ui/plexViews/nodeConnections.ts'))};
 ${uiDefinitions("src/ui/ThoughtNode.tsx", ["GATES", "ThoughtNode"])}
 const result=document.querySelector("#result"),container=document.createElement("div");document.body.append(container);
 container.className="kplex-view-host";container.style.fontFamily="Arial, sans-serif";

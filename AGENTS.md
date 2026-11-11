@@ -4,6 +4,20 @@
 
 Read [CODING_STANDARDS.md](CODING_STANDARDS.md) before implementing or reviewing changes. It is the canonical home for cross-cutting coding requirements. Add future requirements there; keep architecture and subsystem constraints here. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and build workflows.
 
+For every task, follow [validation storage and retention](docs/VALIDATION_ARTIFACTS.md).
+Run its local cleanup at task start/end and its commit gate before staging/pushing.
+Do not turn routine test output into new committed validation reports.
+
+Read [UI_RULES.md](UI_RULES.md) before implementing or reviewing any modal, form,
+settings page, selector or button. Its shared owners and visual acceptance checklist
+are mandatory; reusing a bare input without its shared field/layout is insufficient.
+
+For startup, indexing, cache, scheduling or index-status work, read and apply the
+[mandatory indexing and persistence acceptance gates](CODING_STANDARDS.md#mandatory-indexing-and-persistence-acceptance-gates)
+and [restart acceptance procedure](CONTRIBUTING.md#indexing-and-persistence-acceptance).
+Include these gates in the task checklist before implementation and in the final
+acceptance report. A missing gate leaves that workflow unfinished.
+
 ## Mission
 
 Develop **K-Plex (Knowledge Plex)** as a dedicated React application inside Obsidian. Preserve relationship semantics, ontology and graph/node/link styling when migrating data from its predecessor, [ExcaliBrain](https://github.com/zsviczian/excalibrain). K-Plex is an independent, standalone solution with additional features and no runtime dependency on the legacy plugin, Excalidraw or Dataview.
@@ -20,6 +34,12 @@ npm run build
 ```
 
 Use `npm run dev` for watch-mode development.
+
+When deploying an optimized build to any local Obsidian vault, use
+`npm run build:local` so diagnostics identify the exact local rebuild. Use
+`npm run dev` when watch mode is required. `npm run build` remains the
+deterministic release/scanner build and must stay unchanged in release workflows;
+never publish a locally identified artifact as a release.
 
 A change is not complete if the real repository does not build successfully.
 
@@ -71,6 +91,8 @@ See [coding standards](CODING_STANDARDS.md#documentation-contract).
 ## K-Plex Help authoring (separate repository)
 
 When tasked with editing the living K-Plex Help vault at [zsviczian/kplex-help](https://github.com/zsviczian/kplex-help), **first read [docs/help-authoring/README.md](docs/help-authoring/README.md)** and its [feature](docs/help-authoring/FEATURE_TEMPLATE.md), [use-case](docs/help-authoring/USE_CASE_TEMPLATE.md) and [release](docs/help-authoring/RELEASE_TEMPLATE.md) templates as applicable. K-Plex Help is a separate Obsidian-vault repository, combining readable help pages, ontology relationships, visual styling and screenshots. The K-Plex product README and interface should **not** become navigational advertising for that vault.
+
+Follow the playbook's [link and table rules](docs/help-authoring/README.md#links-and-markdown-tables): short Obsidian targets unless filenames are ambiguous, and no aliased wikilinks in Markdown tables. Audit table column counts and resolved targets before completing Help edits.
 
 Use the Help repository's current branch, own instructions, ontology and existing documentation as authority for content organization. Keep use cases evergreen and marked `Note type: Use case`; connect release pages to relevant feature/use-case pages via the Help vault's existing `Explains` ontology. Release pages must distinguish drafts from published history. Capture authentic screenshots locally, preserve existing visual assets and avoid changing its bundled plugin executables or `.obsidian` settings without separate authorization. Verify Help-repository writes independently of K-Plex source changes.
 
@@ -338,6 +360,11 @@ Density must **not** change node interior padding. Use the tight padding from th
 - During iOS pinch, prefer a temporarily simplified scene over GPU/WebView memory pressure: no expensive shadows/filters and relationship SVGs may be temporarily suppressed until the gesture ends.
 
 ### Companion sidecar
+
+Attachment arrows inspect the visible tab in the remembered-side group even when
+another, hidden tab remains the managed Sidecar. Hide them for a selected managed
+Sidecar; an empty ordinary tab exposes only the outward arrow. Reattachment must
+leave the former companion open and restore its ownership if native opening fails.
 
 The sidecar is a **native adjacent Obsidian WorkspaceLeaf**, never a fake nested leaf inside React. It is also an **owned companion leaf**: Normal Open creates the leaf it manages as a sidecar and never silently adopts an adjacent/recent/pinned user tab. The explicit edge arrows may attach the visible eligible tab in one unambiguous adjacent group on the configured side: outward copies the current center into the pane, inward centers its existing note/URL in K-Plex. Empty panes expose only outward attachment. Once explicitly attached, that native leaf has the same managed close/move/detach lifecycle as a created sidecar. This ownership distinction is critical because sidecar move/close actions may detach the managed leaf; ordinary tabs must never be collateral damage. A pinned/synchronized note tab and a sidecar are separate concepts even when both happen to be adjacent to K-Plex. Opening a sidecar pins synchronization to the K-Plex-created companion; closing it turns that sidecar synchronization off. If the user manually moves a managed sidecar away, keep that document tab open and release/recreate sidecar ownership as needed rather than dragging or closing the moved tab. Detach breaks synchronization but leaves the native tab open. Closing K-Plex must also release ownership without detaching the user's companion document. Sidecar Markdown mode is a persisted K-Plex default (Reading view vs Edit/source mode). Folding K-Plex in sidecar mode hides the complete K-Plex tab-group DOM container, keeps both workspace leaves alive, and mounts the recovery/unfold button on the surviving document tab group; all fold state is ephemeral and must be restored on leaf removal/plugin unload. Sidecar is unavailable when K-Plex itself is hosted in a sidepanel. Folding uses the existing action ID as a true toggle and captures an exact native pair/window/view incarnation. `collapsedPlexHosts` remains the sole fold inventory. New folds require two direct native tab groups in an isolated split; unsupported direct three-group/nested partial-edge layouts stay visible. Install native-group recovery before hiding, preserve native model/flex dimensions, restore before ownership release/reveal/migration, and honor native sibling-tab selection. Pure checks and recovery must not depend on graph readiness or acquire sources. Physical drag/restart/device acceptance is recorded separately from DOM/unit evidence.
 
